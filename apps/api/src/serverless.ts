@@ -1,4 +1,5 @@
-// v22 serverless: the API as a Vercel function (apps/api/api/index.js loads this). The Nest app is built once per
+// v22 serverless: the API inside the website's Vercel function (apps/web/src/pages/api/[...path].ts loads this, with
+// the /api prefix already removed). The Nest app is built once per
 // function instance and reused by the requests it serves. Differences from main.ts (see docs/backend.md):
 // - background jobs do not run on timers: POST /cron/tick runs them (runtime/cron.controller.ts);
 // - after the response is sent the function stays alive until the event bus has delivered this request's events

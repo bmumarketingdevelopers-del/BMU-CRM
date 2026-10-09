@@ -19,7 +19,7 @@ export default function WorkflowRunsPage() {
 }
 
 function RunsLog() {
-  const params = useSearchParams();
+  const params = useSearchParams()!;
   const [workflowId, setWorkflowId] = useState(params.get("workflowId") ?? "");
   const [status, setStatus] = useState(params.get("status") ?? "");
   const [open, setOpen] = useState<string | null>(null);

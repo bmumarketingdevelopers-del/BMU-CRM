@@ -20,7 +20,7 @@ export default function AgentRunsPage() {
 }
 
 function RunsLog() {
-  const params = useSearchParams();
+  const params = useSearchParams()!;
   const agent = params.get("agent") ?? "";
   const status = params.get("status") ?? "";
   return <Runs key={`${agent}|${status}`} agent={agent} status={status} />;

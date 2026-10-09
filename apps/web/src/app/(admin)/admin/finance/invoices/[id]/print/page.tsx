@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
 export default function FinanceTaxInvoicePage() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>()!;
   const state = useLoad(() => api.service.taxInvoice(id));
   return (
     <>

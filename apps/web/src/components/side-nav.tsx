@@ -7,7 +7,7 @@ import { UnreadBadge } from "@/components/service/unread-badge";
 export type NavSection = { section: string; items: { label: string; href?: string }[] };
 
 export function SideNav({ sections }: { sections: NavSection[] }) {
-  const path = usePathname();
+  const path = usePathname()!;
   return (
     <nav className="flex gap-4 overflow-x-auto px-5 pb-3 text-sm md:block md:space-y-5 md:overflow-visible">
       {sections.map((s) => (

@@ -19,7 +19,7 @@ export default function DiscussionsPage() {
 }
 
 function Discussions() {
-  const params = useSearchParams();
+  const params = useSearchParams()!; // never null in the App Router (src/pages only holds the API route)
   const router = useRouter();
   const { notify } = useActions();
   const list = useLoad(() => api.ops.threads.list());

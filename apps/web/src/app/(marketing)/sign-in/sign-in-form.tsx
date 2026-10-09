@@ -11,7 +11,7 @@ type Demo = { name: string; email: string; role: string };
 
 export function SignInForm() {
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useSearchParams()!; // never null in the App Router (src/pages only holds the API route)
   // Only same-site paths: never send someone to another website after sign-in.
   const rawNext = params.get("next");
   const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.startsWith("/sign-in") ? rawNext : null;

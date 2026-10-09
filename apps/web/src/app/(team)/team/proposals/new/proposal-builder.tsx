@@ -14,7 +14,7 @@ const TIERS: Tier[] = ["starter", "growth", "premium"];
 
 export function ProposalBuilder() {
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useSearchParams()!; // never null in the App Router (src/pages only holds the API route)
   const reviseId = params.get("revise") ?? "";
   const pricing = useLoad(() => api.proposals.pricing());
   const leads = useLoad(() => api.leads.list());

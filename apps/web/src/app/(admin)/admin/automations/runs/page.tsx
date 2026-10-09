@@ -22,7 +22,7 @@ export default function AutomationRunsPage() {
 }
 
 function RunsLog() {
-  const params = useSearchParams();
+  const params = useSearchParams()!;
   const [ruleId, setRuleId] = useState(params.get("ruleId") ?? "");
   const [status, setStatus] = useState<StatusFilter>("all");
   const { period, setPeriod } = usePeriod("30d");

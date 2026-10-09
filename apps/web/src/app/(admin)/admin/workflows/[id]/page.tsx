@@ -12,7 +12,7 @@ import { RunDrawer, RunsTable } from "../_parts/runs";
 import { WorkflowBuilder, WorkflowHint } from "../_parts/workflow-builder";
 
 export default function WorkflowDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>()!;
   const state = useLoad(() => Promise.all([api.workflows.get(id), api.workflows.options(), api.workflows.runs({ workflowId: id })]));
   const [open, setOpen] = useState<string | null>(null);
   return (

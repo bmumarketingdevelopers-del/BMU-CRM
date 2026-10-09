@@ -192,21 +192,27 @@ database host). For a service manager, run the three processes separately: `pnpm
 
 ### C. Vercel + Supabase (v22)
 
-The website and the API are two Vercel projects from this one repository; Supabase holds the database and files.
+One Vercel project (root directory `apps/web`) serves the website **and** the API; Supabase holds the database and
+files. The API runs inside the website as a single function, `apps/web/src/pages/api/[...path].ts`, which loads the
+NestJS app (`apps/api/src/serverless.ts`) as one self-contained file, `apps/api/dist/vercel/serverless.mjs` (built by
+`pnpm --filter @bmu/api build:vercel`: `nest build`, then esbuild bundles it with every package it uses). Every API
+route, webhook, live-update stream and the cron endpoint share that function. A Vercel build creates 5 functions in
+all (the pages, the pre-rendered pages, the favicon, the sign-in check in `proxy.ts` and the API); the Hobby limit is
+12. Adding pages does not add functions (Vercel groups them); adding another file under `src/pages/api` or
+`src/app/**/route.ts` with different settings can, so put new API code in apps/api instead.
 
 1. **Supabase.** Note the project's Transaction pooler (port 6543) and Session pooler (port 5432) connection
    strings (dashboard > Connect), the project URL and the secret and publishable keys (Project Settings > API Keys).
-2. **API project** (Vercel > Add New > Project, root directory `apps/api`; `apps/api/vercel.json` does the rest).
-   Environment variables: `DATABASE_URL` (transaction pooler), `DIRECT_DATABASE_URL` (session pooler),
-   `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `CRON_SECRET`, `JWT_SECRET`,
-   `NODE_ENV=production`, `APP_URL` and `CORS_ORIGINS` (the website's address), `OWNER_EMAIL`, `SMTP_*` and any
-   integration keys. Each build applies new migrations (`pnpm db:deploy`).
-3. **Website project** (root directory `apps/web`): set `API_URL` to the API project's address. The browser calls
-   `/api/*` on the website, which forwards to the API, so the sign-in cookie stays on the website's domain.
-4. **Background jobs.** Run `scripts/supabase-cron.sql` once in the Supabase SQL editor (with the API address and
-   `CRON_SECRET` filled in): Supabase then calls `POST /cron/tick` every minute. (A Vercel Cron Job can call it
-   instead, but every minute needs Vercel Pro.)
-5. **Existing files.** Run `pnpm --filter @bmu/api storage:upload` once on the computer that has them.
+2. **Vercel project** (root directory `apps/web`; `apps/web/vercel.json` builds the shared package, compiles the API,
+   applies new migrations and builds the website). Environment variables: `DATABASE_URL` (transaction pooler),
+   `DIRECT_DATABASE_URL` (session pooler), `SUPABASE_URL`, `SUPABASE_SECRET_KEY`,
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `CRON_SECRET`, `JWT_SECRET`, `NODE_ENV=production`, `APP_URL` and
+   `CORS_ORIGINS` (the site's address), `OWNER_EMAIL`, `SMTP_*` and any integration keys. Do **not** set `API_URL`:
+   it is only for development, where it points at the separate API server.
+3. **Background jobs.** Run `scripts/supabase-cron.sql` once in the Supabase SQL editor (with the site address and
+   `CRON_SECRET` filled in): Supabase then calls `POST /api/cron/tick` every minute. (Vercel's own Cron Jobs run only
+   once a day on the Hobby plan.)
+4. **Existing files.** Run `pnpm --filter @bmu/api storage:upload` once on the computer that has them.
 
 What changes on Vercel (`VERCEL=1` switches it on; `SERVERLESS=1` forces it elsewhere):
 

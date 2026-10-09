@@ -19,3 +19,6 @@ pnpm-debug.log*
 __pycache__/
 *.pyc
 .env.production
+
+# Vercel CLI (local builds and project link)
+.vercel

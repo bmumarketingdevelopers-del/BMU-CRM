@@ -12,7 +12,7 @@ import { useLoad } from "@/lib/use-load";
 const dayFmt = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 
 export default function ComparePage() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>()!;
   const loaded = useLoad(() => api.deliverables.get(id));
   const d = loaded.data;
   return (

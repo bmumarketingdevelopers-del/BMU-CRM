@@ -17,7 +17,7 @@ import { useLoad } from "@/lib/use-load";
 import { Field, FormNote, InvoiceStatus, WithData, fmtDate, fmtDateTime, inr, rupeesInput, todayIst } from "../../../_insights/kit";
 
 export default function InvoiceDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>()!;
   const state = useLoad(() => api.finance.invoice(id));
   return (
     <WithData state={state}>

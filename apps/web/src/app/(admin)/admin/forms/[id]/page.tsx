@@ -19,7 +19,7 @@ const STANDARD = FORM_FIELD_TYPES.filter((t) => formFieldTypeLabels[t].standard)
 const CUSTOM_TYPES: Record<string, string[]> = { text: ["text"], long_text: ["long_text"], select: ["select"], checkbox: ["checkbox"], number: ["number", "money"], date: ["date"] };
 
 export default function FormBuilderPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>()!;
   const state = useLoad(() => Promise.all([api.forms.get(id), api.customFields.list("lead").catch(() => [] as CustomFieldDefView[]), api.services().catch(() => [] as ServiceSummary[])]), { live: false });
   return <WithData state={state}>{([form, fields, services]) => <Builder key={form.id} form={form} customFields={fields} services={services} reload={state.reload} />}</WithData>;
 }

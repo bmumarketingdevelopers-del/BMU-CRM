@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 /** Unread client messages, shown next to "Messages" in the menu. Refreshes every 30 seconds and on navigation. */
 export function UnreadBadge() {
   const [n, setN] = useState(0);
-  const path = usePathname();
+  const path = usePathname()!;
   useEffect(() => {
     let alive = true;
     const load = () =>

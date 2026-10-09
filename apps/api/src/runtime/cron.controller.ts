@@ -1,6 +1,7 @@
 // v22 serverless: the background jobs' clock. On Vercel nothing runs between requests, so something outside calls
-// this once a minute: Supabase pg_cron + pg_net (scripts/supabase-cron.sql, works on every Vercel plan) or a Vercel
-// Cron Job (apps/api/vercel.json, every minute needs Vercel Pro). Each call runs the jobs that are due (jobs.ts).
+// this once a minute: Supabase pg_cron + pg_net (scripts/supabase-cron.sql, works on every Vercel plan; Vercel's own
+// Cron Jobs run only once a day on Hobby). On Vercel the address is https://<site>/api/cron/tick. Each call runs the
+// jobs that are due (jobs.ts).
 //
 // Jobs run after the answer is sent (Vercel waitUntil keeps the function alive for up to its maxDuration).
 // Guarded by CRON_SECRET (Authorization: Bearer <secret>, which is also what Vercel Cron sends). A repeated call for

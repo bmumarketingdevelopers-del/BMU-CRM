@@ -19,7 +19,13 @@ export const api = createApiClient("/api", {
   },
 });
 
-export const API_URL = process.env.API_URL ?? "http://localhost:4000";
+/**
+ * Where server-side code reaches the API without a visitor's request at hand (e.g. a page built ahead of time):
+ * API_URL in development (the API server next to the website), else this site's own /api on Vercel.
+ */
+export const API_URL =
+  process.env.API_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api` : process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/api` : "http://localhost:4000");
 
 /** Catalogue from the API, or the bundled seed if the API isn't running yet. Server-side. */
 export async function getServices(): Promise<{ data: ServiceSummary[]; live: boolean }> {

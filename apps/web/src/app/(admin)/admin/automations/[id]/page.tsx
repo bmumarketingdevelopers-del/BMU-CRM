@@ -11,7 +11,7 @@ import { RunStatus, Steps, WithData, ago, fmtWhen } from "../_parts/kit";
 import { RuleBuilder } from "../_parts/rule-builder";
 
 export default function AutomationDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>()!;
   const state = useLoad(() => Promise.all([api.automations.get(id), api.automations.options()]));
   return (
     <WithData state={state}>

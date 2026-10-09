@@ -218,7 +218,7 @@ export function useLiveChanges(fn: () => void, entities?: string[]) {
 /** Server-rendered pages (no useLoad) refresh their data after changes. */
 function ServerRefresh() {
   const router = useRouter();
-  const path = usePathname();
+  const path = usePathname()!;
   const last = useRef(0);
   useLiveChanges(() => {
     // Don't refresh while someone is typing in a form on the page.
