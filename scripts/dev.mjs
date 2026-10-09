@@ -77,6 +77,13 @@ if (!isLocalDb) {
   say(`Using the database at ${dbUrl.hostname}.`);
 } else if (await portOpen(db.port)) {
   say(`Using the database already running on port ${db.port}.`);
+} else if (/^EMBEDDED_DB=["']?0/m.test(envText)) {
+  // Set once the data lives in an installed PostgreSQL: starting the old private copy would show stale data.
+  fail(
+    `No database is running on port ${db.port}.\n` +
+      `      Start your PostgreSQL service (as Administrator: Start-Service postgresql-x64-17), then run pnpm dev again.\n` +
+      `      (EMBEDDED_DB=0 in apps/api/.env stops pnpm dev from using the old private database in .bmu-data.)`,
+  );
 } else {
   const { default: EmbeddedPostgres } = await import("embedded-postgres");
   const dataDir = join(root, ".bmu-data", "postgres");

@@ -10,7 +10,6 @@
 # At the end it prints the DATABASE_URL line to put in apps/api/.env.
 
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
 $bin = 'C:\Program Files\PostgreSQL\17\bin'
 $psql = Join-Path $bin 'psql.exe'
 $pgDump = Join-Path $bin 'pg_dump.exe'
@@ -45,12 +44,13 @@ $p = Plain (Read-Host 'Local bmu password (press Enter for the default "bmu")' -
 $local.Password = if ($p) { $p } else { 'bmu' }
 
 $uriText = (Read-Host 'Paste the Supabase "Session pooler" connection string').Trim()
-try { $uri = [Uri]$uriText } catch { Fail 'That does not look like a connection string (it should start with postgresql://).' }
-if ($uri.Scheme -notin 'postgres', 'postgresql') { Fail 'That does not look like a connection string (it should start with postgresql://).' }
-$remote.Host = $uri.Host
-$remote.Port = if ($uri.Port -gt 0) { "$($uri.Port)" } else { '5432' }
-$remote.User = [Uri]::UnescapeDataString($uri.UserInfo.Split(':')[0])
-$remote.Db = if ($uri.AbsolutePath.Trim('/')) { $uri.AbsolutePath.Trim('/') } else { 'postgres' }
+# Parsed by hand: Supabase's string contains "[YOUR-PASSWORD]", which [Uri] rejects. The password part is ignored.
+$m = [regex]::Match($uriText, '^postgres(?:ql)?://([^:@/]+)(?::[^@]*)?@([^:/?]+)(?::(\d+))?(?:/([^?]*))?')
+if (-not $m.Success) { Fail 'That does not look like a connection string (it should start with postgresql://).' }
+$remote.User = [Uri]::UnescapeDataString($m.Groups[1].Value)
+$remote.Host = $m.Groups[2].Value
+$remote.Port = if ($m.Groups[3].Value) { $m.Groups[3].Value } else { '5432' }
+$remote.Db = if ($m.Groups[4].Value) { $m.Groups[4].Value } else { 'postgres' }
 if ($remote.Port -eq '6543') { Fail 'That is the Transaction pooler (port 6543). Choose "Session pooler" (port 5432) in Supabase > Connect.' }
 $remote.Password = Plain (Read-Host 'Supabase database password' -AsSecureString)
 if (-not $remote.Password) { Fail 'The Supabase database password is required.' }
@@ -59,13 +59,18 @@ $failed = $false
 try {
   # --- Checks ------------------------------------------------------------------------------------
   Say 'Checking the local database...'
+  # pnpm dev starts the old private database (PostgreSQL 18, .bmu-data) on the same port when PostgreSQL 17 is down.
+  $localVersion = Invoke-Sql $local 'show server_version_num'
+  if ([int]$localVersion -lt 170000 -or [int]$localVersion -ge 180000) {
+    throw "localhost:5432 is PostgreSQL $([math]::Floor([int]$localVersion / 10000)), not your PostgreSQL 17. Stop pnpm dev (Ctrl+C), start the postgresql-x64-17 service (Administrator), then run this again."
+  }
   $tables = @(Invoke-Sql $local "select tablename from pg_tables where schemaname = 'public' order by 1")
   if (-not $tables.Count) { throw 'The local bmu_hub database has no tables.' }
 
   Say "Connecting to Supabase ($($remote.Host))..."
   $version = Invoke-Sql $remote 'show server_version'
   Say "Supabase PostgreSQL $version"
-  $clash = Invoke-Sql $remote "select count(*) from pg_tables where schemaname = 'public' and tablename in ('_prisma_migrations', 'User', 'Organisation')"
+  $clash = Invoke-Sql $remote "select count(*) from pg_tables where schemaname = 'public' and tablename in ('_prisma_migrations', 'users', 'organisations')"
   if ([int]$clash -gt 0) { throw 'This Supabase database already has BMU Hub tables. Nothing was changed. Use a fresh project, or drop those tables first.' }
 
   # --- Copy --------------------------------------------------------------------------------------
@@ -97,6 +102,24 @@ try {
     if ($a -ne $b) { $bad += "$t (local $a, Supabase $b)" }
   }
   if ($bad.Count) { throw "Row counts differ: $($bad -join '; ')" }
+
+  # Supabase publishes the public schema through its web API (roles anon / authenticated, reachable with the
+  # project's public key). BMU Hub never uses that API, so shut it out: no grants, and row level security on
+  # with no policies. The app connects as the table owner, which RLS does not restrict.
+  Say 'Closing Supabase web API access to the CRM tables...'
+  Invoke-Sql $remote @"
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+revoke all on all functions in schema public from anon, authenticated;
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;
+alter default privileges in schema public revoke all on functions from anon, authenticated;
+do `$`$ declare t record; begin
+  for t in select tablename from pg_tables where schemaname = 'public' loop
+    execute format('alter table public.%I enable row level security', t.tablename);
+  end loop;
+end `$`$;
+"@ | Out-Null
   Invoke-Sql $remote 'ANALYZE' | Out-Null
   Say "All $($tables.Count) tables copied and row counts match."
 }
@@ -115,5 +138,7 @@ Write-Host ''
 Say 'Done. To make BMU Hub use Supabase, put this line in apps\api\.env in place of the current DATABASE_URL:'
 Write-Host ''
 Write-Host "DATABASE_URL=`"$url`"" -ForegroundColor Yellow
+Write-Host 'DATABASE_POOL_MAX=5' -ForegroundColor Yellow
 Write-Host ''
+Say 'DATABASE_POOL_MAX=5 keeps BMU Hub inside the free pooler limit (about 15 connections).'
 Say 'Then restart pnpm dev. Your local PostgreSQL 17 copy is unchanged (keep it as a backup).'
