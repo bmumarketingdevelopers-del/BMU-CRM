@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { CronController } from './cron.controller.js';
 import { EventBridgeService } from './event-bridge.js';
 import { HeartbeatService } from './heartbeat.service.js';
 
@@ -8,6 +9,7 @@ import { HeartbeatService } from './heartbeat.service.js';
  */
 @Global()
 @Module({
+  controllers: [CronController],
   providers: [EventBridgeService, HeartbeatService],
   exports: [EventBridgeService, HeartbeatService],
 })

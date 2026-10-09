@@ -1,13 +1,14 @@
 import { mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { extname, join, resolve } from 'node:path';
-import { Body, Controller, Get, HttpCode, NotFoundException, Param, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { extname, join } from 'node:path';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { createRequestSchema, decideRequestSchema, sendMessageSchema, serviceRateRequestSchema, serviceReopenRequestSchema, type Me } from '@bmu/shared';
 import { storageRoot } from '../production/production.controller.js';
+import { sendStoredFile } from '../storage/file-store.js';
 import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
 import { BillingService } from './billing.service.js';
@@ -200,16 +201,7 @@ export class ThreadFilesController {
   @Get(':id')
   async get(@CurrentUser() me: Me, @Param('id') id: string, @Query('download') download: string | undefined, @Res() res: Response) {
     const file = await this.messages.attachmentFor(me, id);
-    const root = storageRoot();
-    const abs = resolve(root, file.path);
-    if (!abs.startsWith(root)) throw new NotFoundException('File not found');
     const inline = !download && /^(image\/(png|jpe?g|gif|webp)|application\/pdf)$/.test(file.mimeType ?? '');
-    res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${(file.name ?? 'file').replace(/[^\w.\- ]/g, '_')}"`);
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (file.mimeType) res.type(file.mimeType);
-    res.sendFile(abs, (err) => {
-      if (err && !res.headersSent) res.status(404).json({ message: 'File missing on disk' });
-    });
+    return sendStoredFile(res, file, { disposition: inline ? 'inline' : 'attachment' });
   }
 }

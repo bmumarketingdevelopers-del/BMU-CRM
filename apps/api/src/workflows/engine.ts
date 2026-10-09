@@ -119,7 +119,7 @@ export class WorkflowEngine implements OnModuleInit, OnModuleDestroy {
   }
 
   private safeTick() {
-    this.tick().catch((e: Error) => this.log.error(`Tick failed: ${e.message}`));
+    return this.tick().catch((e: Error) => this.log.error(`Tick failed: ${e.message}`));
   }
 
   // -------------------------------------------------------------------------

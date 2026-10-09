@@ -133,7 +133,7 @@ finally {
 if ($failed) { exit 1 }
 
 $enc = [Uri]::EscapeDataString($remote.Password)
-$url = "postgresql://$([Uri]::EscapeDataString($remote.User)):$enc@$($remote.Host):$($remote.Port)/$($remote.Db)?sslmode=require"
+$url = "postgresql://$([Uri]::EscapeDataString($remote.User)):$enc@$($remote.Host):$($remote.Port)/$($remote.Db)?sslmode=require&uselibpqcompat=true"
 Write-Host ''
 Say 'Done. To make BMU Hub use Supabase, put this line in apps\api\.env in place of the current DATABASE_URL:'
 Write-Host ''

@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { isLeadership, visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { storageRoot } from '../production/production.controller.js';
 import { ZipStream } from './zip-stream.js';
+import { localFile } from '../storage/file-store.js';
 
 const DONE_D = ['approved', 'scheduled', 'published'];
 const safe = (s: string) => s.replace(/[^\w.\- ]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 80) || 'file';
@@ -177,7 +178,7 @@ export class DeliverHandoverService {
     for (const f of v.files) {
       const file = files.find((x) => x.id === f.fileId);
       if (!file) continue;
-      const abs = resolve(root, file.path);
+      const abs = await localFile(file.path).catch(() => resolve(root, file.path));
       if (!abs.startsWith(root)) continue;
       const ext = (file.name ?? '').match(/\.[a-z0-9]{1,8}$/i)?.[0] ?? '';
       let name = `${safe(f.deliverable)} v${f.version}${ext}`;

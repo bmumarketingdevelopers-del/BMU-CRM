@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { extname, isAbsolute, join, resolve } from 'node:path';
-import { Body, Controller, ForbiddenException, Get, HttpCode, NotFoundException, Param, Patch, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { extname, join } from 'node:path';
+import { Body, Controller, ForbiddenException, Get, HttpCode, Param, Patch, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import type { Response } from 'express';
@@ -11,12 +11,10 @@ import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
 import { ProductionService, type UploadedFile as Upload } from './production.service.js';
 import { TasksActionsService } from '../actions/tasks/tasks.service.js';
+import { sendStoredFile, storageRoot } from '../storage/file-store.js';
 
-/** Uploaded files live on disk under STORAGE_DIR (default apps/api/storage). Swap for S3/R2 in production. */
-export const storageRoot = () => {
-  const dir = process.env.STORAGE_DIR?.trim() || 'storage';
-  return isAbsolute(dir) ? dir : resolve(process.cwd(), dir);
-};
+/** Where uploads land first; see storage/file-store.ts (Supabase Storage or disk). Re-exported for older imports. */
+export { storageRoot };
 
 const upload = FileInterceptor('file', {
   storage: diskStorage({
@@ -173,15 +171,6 @@ export class FilesController {
     // Clients download final files only after Gate 5 (sign-off + balance paid) released them.
     if (download && me.type === 'client' && !file.released) throw new ForbiddenException('Final files unlock after sign-off and the final payment');
     if (file.kind === 'link') return res.redirect(file.path);
-    const root = storageRoot();
-    const abs = resolve(root, file.path);
-    if (!abs.startsWith(root)) throw new NotFoundException('File not found');
-    res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${(file.name ?? 'file').replace(/[^\w.\- ]/g, '_')}"`);
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (file.mimeType) res.type(file.mimeType);
-    res.sendFile(abs, (err) => {
-      if (err && !res.headersSent) res.status(404).json({ message: 'File missing on disk' });
-    });
+    return sendStoredFile(res, file, { disposition: download ? 'attachment' : 'inline' });
   }
 }

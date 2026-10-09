@@ -1,11 +1,10 @@
 // v11 ops: HTTP endpoints for the ops actions (all under /ops). Services hold the rules; controllers only parse.
-import { resolve } from 'node:path';
-import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import type { Response } from 'express';
 import { opsLeadBulkSchema, opsLeadLostSchema, opsLeadMergeSchema, opsLeadNoteSchema, type Me } from '@bmu/shared';
 import { ClientIp, CurrentUser, Public } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
-import { storageRoot } from '../production/production.controller.js';
+import { sendStoredFile } from '../storage/file-store.js';
 import { OpsAdminService } from './ops-admin.service.js';
 import { OpsCommsService } from './ops-comms.service.js';
 import { OpsCreatorsService } from './ops-creators.service.js';
@@ -224,16 +223,7 @@ export class OpsFilesController {
   @Get('public/share/:token/file')
   async publicFile(@Param('token') token: string, @Query('k') k: string | undefined, @Res() res: Response) {
     const f = await this.files.publicFile(token, k);
-    const root = storageRoot();
-    const abs = resolve(root, f.path);
-    if (!abs.startsWith(root)) throw new NotFoundException('File not found');
-    res.setHeader('Content-Disposition', `attachment; filename="${(f.name ?? 'file').replace(/[^\w.\- ]/g, '_')}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (f.mimeType) res.type(f.mimeType);
-    res.sendFile(abs, (err) => {
-      if (err && !res.headersSent) res.status(404).json({ message: 'File missing on disk' });
-    });
+    return sendStoredFile(res, f, { disposition: 'attachment', cache: 'no-store' });
   }
 }
 

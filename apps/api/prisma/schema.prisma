@@ -3597,3 +3597,12 @@ model RuntimeProcess {
 
   @@map("runtime_processes")
 }
+
+/// v22 serverless: "first caller wins" markers, e.g. "intelligence.alerts:2026-10-09" so a daily job runs once a day
+/// even though every serverless start forgets what it did, and "cron:<minute>" so a repeated cron call is ignored.
+model CronClaim {
+  key       String   @id
+  claimedAt DateTime @default(now())
+
+  @@map("cron_claims")
+}

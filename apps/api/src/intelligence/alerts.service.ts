@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { todayIst } from '../money/dates.js';
 import { MetricsService, windowOf } from './metrics.service.js';
 import { systemActor } from './actor.js';
+import { claimOnce } from '../runtime/claims.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
 
 const DAY = 86_400_000;
@@ -44,6 +45,7 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
     const day = todayIst();
     if (this.lastRunDay === day || new Date(Date.now() + 330 * 60_000).getUTCHours() < 8) return;
     this.lastRunDay = day;
+    if (!(await claimOnce(this.prisma, `intelligence.alerts:${day}`))) return;
     for (const o of await this.prisma.organisation.findMany({ select: { id: true } })) await this.check(o.id);
   }
 

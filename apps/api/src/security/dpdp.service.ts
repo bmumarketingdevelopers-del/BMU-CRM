@@ -19,6 +19,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { parse } from '../common/zod.js';
+import { claimOnce } from '../runtime/claims.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
 
 const DAY = 86_400_000;
@@ -218,6 +219,7 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
     const day = ist.toISOString().slice(0, 10);
     if (ist.getUTCHours() < 2 || this.lastRunDay === day) return;
     this.lastRunDay = day;
+    if (!(await claimOnce(this.prisma, `security.retention:${day}`))) return;
     const orgs = await this.prisma.retentionRule.findMany({ where: { enabled: true }, distinct: ['orgId'], select: { orgId: true } });
     for (const o of orgs) await this.runRetention(o.orgId, now);
   }

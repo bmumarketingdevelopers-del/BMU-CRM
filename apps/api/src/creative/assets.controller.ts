@@ -56,8 +56,9 @@ export class AssetsController {
 
   @Post('uploads/:id/complete')
   @HttpCode(200)
-  completeUpload(@CurrentUser() me: Me, @Param('id') id: string, @ClientIp() ip?: string) {
-    return this.assets.completeUpload(me, id, ip);
+  completeUpload(@CurrentUser() me: Me, @Param('id') id: string, @Req() req: { file?: { path: string; size: number } }, @ClientIp() ip?: string) {
+    // req.file is set when the browser uploaded the whole file to Supabase Storage (storage/uploads.ts).
+    return this.assets.completeUpload(me, id, ip, req.file);
   }
 
   @Delete('uploads/:id')

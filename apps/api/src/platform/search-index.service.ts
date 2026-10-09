@@ -6,7 +6,7 @@ import { SEARCH_MIN_SCORE, prepareSearchText, searchScorePrepared, type Prepared
 import { PrismaService } from '../prisma/prisma.service.js';
 import { eventBus, type BusEvent } from './event-bus.js';
 import { backgroundJobsOff } from './events.service.js';
-import { servesHttp } from '../runtime/process-role.js';
+import { isServerless, servesHttp } from '../runtime/process-role.js';
 
 type Doc = { kind: IndexedKind; entityId: string; title: string; keywords: string };
 /** Each document's normalised text, worked out once (documents are replaced, never changed, so this stays right). */
@@ -43,7 +43,8 @@ export class SearchIndexService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.unsub = eventBus.subscribe('search_index', (e) => this.onEvent(e), ['change']);
-    if (!backgroundJobsOff() && servesHttp()) setTimeout(() => void this.warmAll(), 5_000).unref?.();
+    // Serverless: each function instance builds an organisation's index on its first search instead.
+    if (!backgroundJobsOff() && servesHttp() && !isServerless()) setTimeout(() => void this.warmAll(), 5_000).unref?.();
   }
 
   onModuleDestroy() {
@@ -155,6 +156,8 @@ export class SearchIndexService implements OnModuleInit, OnModuleDestroy {
       else if (cur.ids) for (const id of e.ids) cur.ids.add(id);
       this.pending.set(key, cur);
     }
+    // Serverless: write now, while the request's function is still kept alive for its events (serverless.ts).
+    if (isServerless()) return this.flush();
     this.schedule(1_500);
   }
 

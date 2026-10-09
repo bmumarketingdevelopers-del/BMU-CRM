@@ -57,6 +57,8 @@ export class EventBus {
   private readonly watchers = new Set<(e: ChangeEvent) => void>();
   /** v21: set by EventBridgeService to pass this process's events on to the other backend processes. */
   outbound: ((e: BusEvent) => void) | null = null;
+  /** v22: deliveries not finished yet (a serverless function waits for these before it may be frozen). */
+  private readonly pending = new Set<Promise<void>>();
 
   subscribe(name: string, handler: BusHandler, kinds: BusEvent['kind'][] = ['change', 'domain']) {
     this.subs.set(name, { name, handler, kinds });
@@ -94,10 +96,21 @@ export class EventBus {
     if (this.recent.length > RECENT_MAX) this.recent = this.recent.filter((r) => r.at > now - DAY_MS).slice(-RECENT_MAX / 2);
     for (const sub of this.subs.values()) {
       if (!sub.kinds.includes(e.kind)) continue;
-      setImmediate(() => {
-        void this.run(sub, e).catch((err: Error) => this.onFailure?.(sub.name, e, err));
-      });
+      const p = new Promise<void>((done) =>
+        setImmediate(() => {
+          void this.run(sub, e)
+            .catch((err: Error) => this.onFailure?.(sub.name, e, err))
+            .finally(done);
+        }),
+      );
+      this.pending.add(p);
+      void p.finally(() => this.pending.delete(p));
     }
+  }
+
+  /** Resolves once every delivery started so far (and any they start in turn) has finished. */
+  async idle(): Promise<void> {
+    while (this.pending.size) await Promise.allSettled(this.pending);
   }
 
   /** Delivers to one subscriber now; throws if it fails (used by retries). */

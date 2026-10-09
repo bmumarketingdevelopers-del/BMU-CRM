@@ -1,9 +1,8 @@
-import { resolve } from 'node:path';
-import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Post, Put, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import type { Me } from '@bmu/shared';
 import { ClientIp, CurrentUser, Public } from '../common/decorators.js';
-import { storageRoot } from '../production/production.controller.js';
+import { sendStoredFile } from '../storage/file-store.js';
 import { CreativeService } from './creative.service.js';
 import { ProofingService } from './proofing.service.js';
 
@@ -111,15 +110,6 @@ export class CreativeClientController {
   async file(@Param('token') token: string, @Res() res: Response) {
     const f = await this.proofing.publicFile(token);
     if (f.kind === 'link') return res.redirect(f.path);
-    const root = storageRoot();
-    const abs = resolve(root, f.path);
-    if (!abs.startsWith(root)) throw new NotFoundException('File not found');
-    res.setHeader('Content-Disposition', `inline; filename="${(f.name ?? 'file').replace(/[^\w.\- ]/g, '_')}"`);
-    res.setHeader('Cache-Control', 'private, no-store');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (f.mimeType) res.type(f.mimeType);
-    res.sendFile(abs, (err) => {
-      if (err && !res.headersSent) res.status(404).json({ message: 'File missing on disk' });
-    });
+    return sendStoredFile(res, f, { cache: 'private, no-store' });
   }
 }

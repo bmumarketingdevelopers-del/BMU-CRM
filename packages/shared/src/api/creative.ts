@@ -48,6 +48,11 @@ export const creativeApi = (t: Transport) => ({
     uploadChunk: (id: string, offset: number, chunk: Blob) =>
       t.request<UploadSessionView>(`/assets/uploads/${id}?offset=${offset}`, { method: "PUT", body: chunk, headers: { "Content-Type": "application/octet-stream" } }),
     completeUpload: (id: string) => t.post<AssetDetail>(`/assets/uploads/${id}/complete`),
+    /** v22: uploads the whole file straight to storage and finishes the upload; null when the API wants pieces instead. */
+    completeWithFile: async (id: string, file: Blob) => {
+      const headers = await t.storeFile(file);
+      return headers ? t.request<AssetDetail>(`/assets/uploads/${id}/complete`, { method: "POST", headers }) : null;
+    },
     cancelUpload: (id: string) => t.del<{ ok: true }>(`/assets/uploads/${id}`),
     clientList: (q: AssetQuery = {}) => t.get<AssetList>(`/client/assets${qs(q)}`),
     clientGet: (id: string) => t.get<AssetDetail>(`/client/assets/${id}`),

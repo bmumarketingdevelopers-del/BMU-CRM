@@ -4,17 +4,16 @@
 // stop and tell the AM and leadership. Never publishes without an approved version on record.
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { CHANNEL_PROVIDER, PROVIDER_INFO, type IntegrationProvider, type Me, type PublicationView } from '@bmu/shared';
-import { resolve } from 'node:path';
 import type { IntegrationAccount, PostPublication } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { hasRole } from '../creative/scope.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { storageRoot } from '../production/production.controller.js';
 import { signToken } from './crypto.js';
 import { apiPublicUrl, IntegrationsService } from './integrations.service.js';
 import { connectorFor, type PostMedia, type PublishResult } from './providers/index.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
+import { localFile } from '../storage/file-store.js';
 
 const RETRY_MIN = [5, 15, 60];
 const MAX_ATTEMPTS = 3;
@@ -84,9 +83,9 @@ export class PublisherService implements OnModuleInit, OnModuleDestroy {
     if (v.file.kind === 'link') return { kind: 'link', url: v.file.path, mimeType: null, localPath: null };
     const mime = v.file.mimeType ?? '';
     const kind = mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'none';
-    const root = storageRoot();
-    const abs = resolve(root, v.file.path);
-    return { kind, mimeType: mime || null, localPath: abs.startsWith(root) ? abs : null, url: `${apiPublicUrl()}/public/media/${signToken({ f: v.file.id }, 6 * 3600)}` };
+    // LinkedIn and YouTube upload the bytes themselves, so fetch a working copy from storage first.
+    const abs = kind === 'none' ? null : await localFile(v.file.path).catch(() => null);
+    return { kind, mimeType: mime || null, localPath: abs, url: `${apiPublicUrl()}/public/media/${signToken({ f: v.file.id }, 6 * 3600)}` };
   }
 
   /** Sends one post. Safe to call twice: a publication already publishing or published is left alone. */

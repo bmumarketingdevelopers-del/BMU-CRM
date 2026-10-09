@@ -1,6 +1,7 @@
 import { decodeEvent, encodeEvent } from './event-bridge.js';
 import { checkEnv } from './env.js';
-import { runsJobs } from './process-role.js';
+import { isDue } from './jobs.js';
+import { isServerless, runsJobs } from './process-role.js';
 import type { ChangeEvent } from '../platform/event-bus.js';
 
 const change = (ids: string[]): ChangeEvent => ({ kind: 'change', orgId: 'o1', entity: 'Task', op: 'update', ids, at: new Date('2026-10-07T10:00:00Z'), actorId: 'u1', quiet: false, refs: { engagementId: 'e1' } });
@@ -55,5 +56,42 @@ describe('start-up settings check', () => {
 describe('where jobs run', () => {
   it('never in tests', () => {
     expect(runsJobs()).toBe(false);
+  });
+});
+
+describe('serverless (Vercel)', () => {
+  const MIN = 60_000;
+  const at = (iso: string) => new Date(iso).getTime();
+
+  it('is on when Vercel runs the API, and SERVERLESS overrides it', () => {
+    expect(isServerless({ VERCEL: '1' })).toBe(true);
+    expect(isServerless({})).toBe(false);
+    expect(isServerless({ VERCEL: '1', SERVERLESS: '0' })).toBe(false);
+    expect(isServerless({ SERVERLESS: '1' })).toBe(true);
+  });
+
+  it('runs a job on the cron call that crosses its interval', () => {
+    expect(isDue(15_000, at('2026-10-09T10:07:00Z'), MIN)).toBe(true); // shorter than a minute: every call
+    expect(isDue(MIN, at('2026-10-09T10:07:00Z'), MIN)).toBe(true);
+    expect(isDue(15 * MIN, at('2026-10-09T10:15:00Z'), MIN)).toBe(true);
+    expect(isDue(15 * MIN, at('2026-10-09T10:16:00Z'), MIN)).toBe(false);
+    // A call a little late still counts the boundary it crossed, and only once.
+    expect(isDue(15 * MIN, at('2026-10-09T10:15:20Z'), MIN)).toBe(true);
+    expect(isDue(15 * MIN, at('2026-10-09T10:16:20Z'), MIN)).toBe(false);
+  });
+
+  it('runs a 15-minute job 4 times an hour', () => {
+    let runs = 0;
+    for (let m = 0; m < 60; m++) if (isDue(15 * MIN, at('2026-10-09T10:00:00Z') + m * MIN, MIN)) runs++;
+    expect(runs).toBe(4);
+  });
+
+  it('explains a web address in DATABASE_URL and asks for storage and cron settings', () => {
+    const r = checkEnv({ VERCEL: '1', DATABASE_URL: 'https://abc.supabase.co' });
+    expect(r.errors.join(' ')).toMatch(/Postgres connection string/);
+    expect(r.errors.join(' ')).toMatch(/SUPABASE_URL and SUPABASE_SECRET_KEY/);
+    expect(r.warnings.join(' ')).toMatch(/CRON_SECRET/);
+    const ok = checkEnv({ VERCEL: '1', DATABASE_URL: 'postgresql://x', SUPABASE_URL: 'https://abc.supabase.co', SUPABASE_SECRET_KEY: 'sb_secret_x', CRON_SECRET: 'c' });
+    expect(ok.errors).toEqual([]);
   });
 });

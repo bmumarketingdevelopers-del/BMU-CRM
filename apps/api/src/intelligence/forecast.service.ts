@@ -13,6 +13,7 @@ import { CapacityService } from '../money/capacity.service.js';
 import { addDays, DAY, mondayOf, todayIst } from '../money/dates.js';
 import { MetricsService, windowOf } from './metrics.service.js';
 import { systemActor } from './actor.js';
+import { claimOnce } from '../runtime/claims.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
 
 type Row = { kind: ForecastView['kind']; subjectType: string; subjectId: string; period?: string; value: number; score?: number | null; reasons: ForecastReason[]; source?: 'ts' | 'python'; meta?: Record<string, unknown> };
@@ -62,14 +63,17 @@ export class ForecastService implements OnModuleInit, OnModuleDestroy {
   private async nightly(startup = false) {
     const day = todayIst();
     const hourIst = new Date(Date.now() + 330 * 60_000).getUTCHours();
+    if (!startup) {
+      if (this.lastRunDay === day || hourIst < 1) return;
+      // Recorded in the database too, so a restarted (or serverless) process does not run it again today.
+      this.lastRunDay = day;
+      if (!(await claimOnce(this.prisma, `intelligence.forecast:${day}`))) return;
+    }
     const orgs = await this.prisma.organisation.findMany({ select: { id: true } });
     for (const o of orgs) {
-      if (startup) {
-        if (await this.prisma.forecast.count({ where: { orgId: o.id } })) continue;
-      } else if (this.lastRunDay === day || hourIst < 1) continue;
+      if (startup && (await this.prisma.forecast.count({ where: { orgId: o.id } }))) continue;
       await this.refresh(o.id);
     }
-    if (!startup && hourIst >= 1) this.lastRunDay = day;
   }
 
   /** Recomputes every forecast for the organisation. Returns how many rows were written per kind. */

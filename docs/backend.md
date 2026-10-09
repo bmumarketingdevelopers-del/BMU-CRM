@@ -117,7 +117,10 @@ refuse to start on a live server (`NODE_ENV=production`) when a required setting
 | Setting | Needed | Notes |
 |---|---|---|
 | DATABASE_URL | always | Postgres connection |
-| DIRECT_DATABASE_URL | with PgBouncer | Direct connection for live events and the jobs lock |
+| DIRECT_DATABASE_URL | with PgBouncer / Supabase transaction pooler | Session connection for migrations, live events and the jobs lock |
+| SUPABASE_URL, SUPABASE_SECRET_KEY | on Vercel | Files go to Supabase Storage (private bucket `SUPABASE_STORAGE_BUCKET`, default `bmu-files`) |
+| NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY | | Sent with direct browser uploads |
+| CRON_SECRET | on Vercel | Guards `/cron/tick`, which runs the background jobs |
 | JWT_SECRET | live | 32+ random characters |
 | APP_URL, CORS_ORIGINS | live | Public web address |
 | INTEGRATIONS_KEY | live, for integrations | Encrypts saved sign-ins |
@@ -187,7 +190,36 @@ Settings come from `apps/api/.env` (copy the values from `.env.production.exampl
 database host). For a service manager, run the three processes separately: `pnpm start:api`, `pnpm start:worker`,
 `pnpm start:web`.
 
-### C. Development
+### C. Vercel + Supabase (v22)
+
+The website and the API are two Vercel projects from this one repository; Supabase holds the database and files.
+
+1. **Supabase.** Note the project's Transaction pooler (port 6543) and Session pooler (port 5432) connection
+   strings (dashboard > Connect), the project URL and the secret and publishable keys (Project Settings > API Keys).
+2. **API project** (Vercel > Add New > Project, root directory `apps/api`; `apps/api/vercel.json` does the rest).
+   Environment variables: `DATABASE_URL` (transaction pooler), `DIRECT_DATABASE_URL` (session pooler),
+   `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `CRON_SECRET`, `JWT_SECRET`,
+   `NODE_ENV=production`, `APP_URL` and `CORS_ORIGINS` (the website's address), `OWNER_EMAIL`, `SMTP_*` and any
+   integration keys. Each build applies new migrations (`pnpm db:deploy`).
+3. **Website project** (root directory `apps/web`): set `API_URL` to the API project's address. The browser calls
+   `/api/*` on the website, which forwards to the API, so the sign-in cookie stays on the website's domain.
+4. **Background jobs.** Run `scripts/supabase-cron.sql` once in the Supabase SQL editor (with the API address and
+   `CRON_SECRET` filled in): Supabase then calls `POST /cron/tick` every minute. (A Vercel Cron Job can call it
+   instead, but every minute needs Vercel Pro.)
+5. **Existing files.** Run `pnpm --filter @bmu/api storage:upload` once on the computer that has them.
+
+What changes on Vercel (`VERCEL=1` switches it on; `SERVERLESS=1` forces it elsewhere):
+
+- No timers: each `/cron/tick` call runs the jobs that are due (a 15-minute job on every 15th call). A second call
+  for the same minute is ignored; daily jobs record the day in `cron_claims` so they run once.
+  "Right after a change" nudges are off, so workflows and AI agents react within a minute instead of seconds.
+- Files: uploads go from the browser straight to Supabase Storage (Vercel refuses requests over 4.5 MB); the
+  upload endpoints receive them as usual (`storage/uploads.ts`). Downloads redirect to a one-hour signed link.
+- Live updates reach screens served by the same function instance only, so some screens refresh on the next load
+  instead of instantly (`EVENT_BRIDGE=1` shares events through Postgres again, at one session connection per
+  instance). Phone app uploads still go through the API, so they are limited to 4.5 MB.
+
+### D. Development
 
 `pnpm dev` is unchanged: embedded or Docker Postgres, one all-in-one API process with demo data, and the website.
 

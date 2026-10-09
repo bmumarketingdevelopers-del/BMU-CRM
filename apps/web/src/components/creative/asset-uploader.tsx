@@ -61,6 +61,14 @@ export function AssetUploader({
       if (!session || session.done) session = await api.assets.startUpload({ ...target, name: file.name, size: file.size, mimeType: file.type || "application/octet-stream" });
       remember(sk, session.id);
       patch(key, { sessionId: session.id, received: session.received });
+      // On Vercel the whole file goes straight to Supabase Storage (null: this API takes it in pieces instead).
+      const stored = session.received === 0 ? await api.assets.completeWithFile(session.id, file) : null;
+      if (stored) {
+        remember(sk);
+        patch(key, { state: "done", received: file.size });
+        onDone(stored);
+        return;
+      }
       let at = session.received;
       while (at < file.size) {
         if (paused.current.has(key)) {

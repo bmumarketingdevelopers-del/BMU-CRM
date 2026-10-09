@@ -9,6 +9,7 @@ import type { IntegrationAccount } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { IntegrationsService, istDay } from './integrations.service.js';
 import { connectorFor, type AdRow, type PostStats } from './providers/index.js';
+import { claimOnce } from '../runtime/claims.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
 
 const DAY = 86_400_000;
@@ -40,6 +41,7 @@ export class MetricsSyncService implements OnModuleInit, OnModuleDestroy {
     const hour = new Date(now.getTime() + 330 * 60_000).getUTCHours();
     if (hour < 7 || this.lastDay === today) return;
     this.lastDay = today;
+    if (!(await claimOnce(this.prisma, `integrations.metrics_sync:${today}`))) return;
     await this.runAll(now);
   }
 

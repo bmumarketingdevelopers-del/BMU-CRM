@@ -6,7 +6,7 @@ import { APP_VERSION } from '@bmu/shared';
 import { hostname } from 'node:os';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { jobStats } from './jobs.js';
-import { instanceId, isTestRun, processRole } from './process-role.js';
+import { instanceId, isServerless, isTestRun, processRole } from './process-role.js';
 
 const EVERY_MS = 20_000;
 /** A process that has not written for this long is shown as stopped (and cleaned up after a day). */
@@ -22,7 +22,8 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly prisma: PrismaService) {}
 
   onModuleInit() {
-    if (isTestRun()) return;
+    // Serverless functions come and go per request: they would only leave a trail of stopped processes.
+    if (isTestRun() || isServerless()) return;
     void this.beat();
     this.timer = setInterval(() => void this.beat(), EVERY_MS);
     this.timer.unref?.();
@@ -30,7 +31,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleDestroy() {
     if (this.timer) clearInterval(this.timer);
-    if (isTestRun()) return;
+    if (isTestRun() || isServerless()) return;
     await this.prisma.$executeRaw`DELETE FROM runtime_processes WHERE id = ${instanceId}`.catch(() => undefined);
   }
 

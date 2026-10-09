@@ -20,6 +20,7 @@ import { parse } from '../common/zod.js';
 import { ProductionService } from '../production/production.service.js';
 import { storageRoot } from '../production/production.controller.js';
 import { CraftService } from './craft.service.js';
+import { putFile, relPathOf } from '../storage/file-store.js';
 
 const brandUpload = FileInterceptor('file', {
   storage: diskStorage({
@@ -117,6 +118,7 @@ export class CraftController {
     const path = join(dir, `${randomUUID()}.md`);
     const content = `# ${s.title}\n\n${s.body}\n`;
     writeFileSync(path, content, 'utf8');
+    await putFile(relPathOf(path), path, 'text/markdown');
     const name = `${s.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').slice(0, 60) || 'script'}.md`;
     const production = this.moduleRef.get(ProductionService, { strict: false });
     const detail = await production.addVersion(me, s.deliverableId!, { file: { path, originalname: name, mimetype: 'text/markdown', size: Buffer.byteLength(content) }, note: `Script: ${s.title}` }, root, ip);

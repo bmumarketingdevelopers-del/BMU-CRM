@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { extname, join, resolve } from 'node:path';
-import { Body, Controller, Get, HttpCode, NotFoundException, Param, Patch, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { extname, join } from 'node:path';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import type { Response } from 'express';
@@ -19,6 +19,7 @@ import {
 import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
 import { storageRoot } from '../production/production.controller.js';
+import { sendStoredFile } from '../storage/file-store.js';
 import { ClientWorkspaceService } from './client-workspace.service.js';
 import { CreatorsService, type Upload } from './creators.service.js';
 import { TeamWorkspaceService } from './team.service.js';
@@ -150,16 +151,7 @@ export class CreatorAdminController {
   @Get('submissions/:id/file')
   async file(@CurrentUser() me: Me, @Param('id') id: string, @Res() res: Response) {
     const file = await this.creators.submissionFile(me, id);
-    const root = storageRoot();
-    const abs = resolve(root, file.path);
-    if (!abs.startsWith(root)) throw new NotFoundException('File not found');
-    res.setHeader('Content-Disposition', `inline; filename="${(file.name ?? 'file').replace(/[^\w.\- ]/g, '_')}"`);
-    res.setHeader('Cache-Control', 'private, max-age=3600');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (file.mimeType) res.type(file.mimeType);
-    res.sendFile(abs, (err) => {
-      if (err && !res.headersSent) res.status(404).json({ message: 'File missing on disk' });
-    });
+    return sendStoredFile(res, file, {});
   }
 }
 

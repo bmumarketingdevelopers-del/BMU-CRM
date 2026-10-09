@@ -17,7 +17,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { seal, unseal } from './crypto.js';
 import { snapshot } from './shapes.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
-import { processRole } from '../runtime/process-role.js';
+import { isServerless, processRole } from '../runtime/process-role.js';
 
 export const RETRY_MINUTES = [1, 5, 30, 120, 360, 720];
 export const MAX_ATTEMPTS = RETRY_MINUTES.length + 1;
@@ -63,7 +63,8 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     // Deliveries are queued once, by the process that runs jobs (an API-only process leaves it to the worker).
-    if (processRole() !== 'api') this.unsubscribe = eventBus.subscribe('webhooks', (e) => this.onEvent(e), ['domain']);
+    // Serverless: every request queues its own events (nothing passes them on to a worker); the cron call sends them.
+    if (processRole() !== 'api' || isServerless()) this.unsubscribe = eventBus.subscribe('webhooks', (e) => this.onEvent(e), ['domain']);
     this.job = startJob({ name: 'integrations.webhooks', hint: 'Delivers outgoing webhooks (with retries)', everyMs: 15_000, run: () => this.dispatchDue() });
   }
 

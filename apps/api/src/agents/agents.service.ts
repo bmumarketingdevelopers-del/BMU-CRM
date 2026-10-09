@@ -40,9 +40,7 @@ import { AiOffError, AiRefusal, AiService, textOf, type AiOut, type AiRunner } f
 import { startOfMonth } from '../insights/ist.js';
 import { eventBus, type BusEvent } from '../platform/event-bus.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { storageRoot } from '../production/production.controller.js';
 import { readFile } from 'node:fs/promises';
-import { resolve as resolvePath } from 'node:path';
 import { ACTIONS } from './catalogue.js';
 import { KnowledgeService } from './knowledge.service.js';
 import {
@@ -70,6 +68,7 @@ import {
 import { AgentRuntime, type RunCtx } from './runtime.js';
 import { financeBasic, financeFacts, financePrompt } from './finance-plan.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
+import { localFile } from '../storage/file-store.js';
 
 const TICK_MS = 60_000;
 const MAX_TURNS = 8;
@@ -150,7 +149,7 @@ export class AgentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private safeTick() {
-    this.tick().catch((e: Error) => this.log.error(`Agents tick failed: ${e.message}`));
+    return this.tick().catch((e: Error) => this.log.error(`Agents tick failed: ${e.message}`));
   }
 
   // ------------------------------------------------------------------------------------------ setup
@@ -597,9 +596,8 @@ export class AgentsService implements OnModuleInit, OnModuleDestroy {
   /** v16: a draft picture for the Creative reviewer to look at (JPG/PNG/GIF/WebP up to 3.7 MB), else null. */
   private async imageBlock(file: { kind: string; mimeType: string | null; sizeBytes: number | null; path: string }): Promise<Anthropic.Beta.BetaImageBlockParam | null> {
     if (file.kind !== 'image' || !file.mimeType || !['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.mimeType) || (file.sizeBytes ?? Infinity) > 3_700_000) return null;
-    const abs = resolvePath(storageRoot(), file.path);
-    if (!abs.startsWith(storageRoot())) return null;
-    const data = await readFile(abs).catch(() => null);
+    const abs = await localFile(file.path).catch(() => null);
+    const data = abs ? await readFile(abs).catch(() => null) : null;
     return data ? { type: 'image', source: { type: 'base64', media_type: file.mimeType as 'image/png', data: data.toString('base64') } } : null;
   }
 

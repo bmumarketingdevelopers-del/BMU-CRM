@@ -2,8 +2,10 @@
 // Each feature starts its timer through startJob, which decides whether this process runs jobs (process-role.ts),
 // never lets two runs of the same job overlap, logs failures, and keeps run counts for System health and the
 // worker's /health/ready. On shutdown the worker stops every timer and waits for runs in progress to finish.
+// Serverless (Vercel): no timers. Jobs are only registered here, and runCronTick runs the ones that are due each
+// time the cron endpoint is called (once a minute, see runtime/cron.controller.ts).
 import { Logger } from '@nestjs/common';
-import { runsJobs } from './process-role.js';
+import { isServerless, runsJobs } from './process-role.js';
 
 export type JobOptions = {
   /** Stable id, e.g. "deliver.sla". */
@@ -40,8 +42,18 @@ const log = new Logger('Jobs');
 const stats = new Map<string, JobStat>();
 const inFlight = new Set<Promise<void>>();
 const handles = new Set<JobHandle>();
+/** Serverless: every job this deployment runs, keyed by name, run by runCronTick. */
+const cronJobs = new Map<string, JobOptions>();
 
+/**
+ * Returns undefined when this process does not run the job on a timer. Features then also skip their "run right
+ * after a change" nudges, which is what serverless needs: only the cron call runs jobs, so two never overlap.
+ */
 export function startJob(opts: JobOptions): JobHandle | undefined {
+  if (isServerless()) {
+    if (!opts.everywhere && runsJobs(opts.flags, { core: opts.core })) cronJobs.set(opts.name, opts);
+    return undefined;
+  }
   if (!opts.everywhere && !runsJobs(opts.flags, { core: opts.core })) return undefined;
   if (opts.everywhere && (process.env.NODE_ENV === 'test' || process.env.VITEST)) return undefined;
   const stat: JobStat = { name: opts.name, hint: opts.hint, everyMs: opts.everyMs, runs: 0, failures: 0, lastRunAt: null, lastMs: null, lastError: null, running: false };
@@ -90,6 +102,34 @@ export function startJob(opts: JobOptions): JobHandle | undefined {
   };
   handles.add(handle);
   return handle;
+}
+
+/**
+ * A job is due on a cron call at `now` when an `everyMs` boundary was crossed since the previous call (`windowMs`
+ * earlier), so a 15-minute job runs on every 15th one-minute call. Jobs shorter than the window run every call.
+ * Stateless on purpose: a missed call only delays a job, and every job sweeps whatever has fallen due.
+ */
+export function isDue(everyMs: number, now: number, windowMs: number) {
+  return everyMs <= windowMs || Math.floor(now / everyMs) !== Math.floor((now - windowMs) / everyMs);
+}
+
+/** Serverless: runs every due job once, side by side, and reports how each went. */
+export async function runCronTick(now = Date.now(), windowMs = 60_000, only?: string[]) {
+  const due = [...cronJobs.values()].filter((j) => (only ? only.includes(j.name) : isDue(j.everyMs, now, windowMs)));
+  const results = await Promise.all(
+    due.map(async (j) => {
+      const t0 = Date.now();
+      try {
+        await j.run();
+        return { name: j.name, ok: true, ms: Date.now() - t0 };
+      } catch (e) {
+        const error = ((e as Error)?.message ?? String(e)).slice(0, 500);
+        log.error(`${j.name} failed: ${error}`);
+        return { name: j.name, ok: false, ms: Date.now() - t0, error };
+      }
+    }),
+  );
+  return { at: new Date(now).toISOString(), registered: cronJobs.size, ran: results };
 }
 
 export function jobStats(): JobStat[] {

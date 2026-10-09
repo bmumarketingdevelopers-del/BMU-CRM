@@ -26,6 +26,14 @@ export const instanceId = `${hostname()}:${process.pid}:${randomUUID().slice(0, 
 
 export const isTestRun = () => process.env.NODE_ENV === 'test' || !!process.env.VITEST;
 
+/**
+ * Serverless hosting (Vercel functions): no process lives between requests, so nothing may rely on timers or open
+ * connections. Background jobs are registered but run only when POST /cron/tick is called (see runtime/cron.controller.ts).
+ * On automatically when Vercel runs the API (VERCEL=1); SERVERLESS=1 forces it (e.g. to try it locally).
+ */
+export const isServerless = (env: NodeJS.ProcessEnv = process.env) =>
+  env.SERVERLESS === undefined ? !!env.VERCEL : !!env.SERVERLESS && env.SERVERLESS !== '0' && env.SERVERLESS.toLowerCase() !== 'false';
+
 const on = (name: string) => {
   const v = process.env[name];
   return !!v && v !== '0' && v.toLowerCase() !== 'false';
@@ -45,5 +53,8 @@ export function runsJobs(flags: string[] = [], opts: { core?: boolean } = {}) {
   return !flags.some(on);
 }
 
-/** Events are shared between processes through Postgres unless EVENT_BRIDGE=0 (off in tests). */
-export const bridgeEnabled = () => !isTestRun() && (process.env.EVENT_BRIDGE === undefined || on('EVENT_BRIDGE'));
+/**
+ * Events are shared between processes through Postgres unless EVENT_BRIDGE=0 (off in tests). Serverless: off unless
+ * EVENT_BRIDGE=1, because each running function would hold its own LISTEN connection on the session pooler.
+ */
+export const bridgeEnabled = () => !isTestRun() && (process.env.EVENT_BRIDGE === undefined ? !isServerless() : on('EVENT_BRIDGE'));

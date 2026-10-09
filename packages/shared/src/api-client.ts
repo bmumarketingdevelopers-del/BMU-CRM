@@ -111,9 +111,66 @@ type Options = {
   onTwoFactorRequired?: (path: string) => void;
 };
 
+type UploadTicket = { direct: false } | { direct: true; key: string; url: string; token: string; exp: number; sig: string; apikey?: string };
+
+const toBase64Url = (text: string) => {
+  let bin = "";
+  for (const b of new TextEncoder().encode(text)) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
 /** Typed client for the BMU Hub API, used by the website and the mobile app. */
 export function createApiClient(baseUrl: string, options: Options = {}) {
+  /** v22: false once the API has said it keeps files on its own disk (no direct uploads). */
+  let directUploads: boolean | undefined;
+
+  /**
+   * v22: uploads one file straight to Supabase Storage (the API runs on Vercel, which refuses requests over 4.5 MB)
+   * and returns the header that tells the upload endpoint where it is. Null when the API stores files itself.
+   */
+  async function storeFile(file: Blob, field = "file"): Promise<Record<string, string> | null> {
+    if (directUploads === false) return null;
+    const name = (file as File).name || "file";
+    const type = file.type || "application/octet-stream";
+    const ticket = await request<UploadTicket>("/storage/uploads", { method: "POST", body: JSON.stringify({ name, type, size: file.size }) });
+    if (!ticket.direct) {
+      directUploads = false;
+      return null;
+    }
+    directUploads = true;
+    const put = await fetch(ticket.url, { method: "PUT", body: file, headers: { "Content-Type": type, "x-upsert": "false", ...(ticket.apikey ? { apikey: ticket.apikey } : {}) } });
+    if (!put.ok) {
+      let message = `Upload failed (${put.status})`;
+      try {
+        const body = (await put.json()) as { message?: unknown; error?: unknown };
+        if (typeof body.message === "string") message = /maximum allowed size|too large/i.test(body.message) ? "That file is larger than storage allows" : body.message;
+      } catch {
+        // keep default message
+      }
+      throw new ApiError(put.status, message);
+    }
+    return { "X-BMU-Stored-File": toBase64Url(JSON.stringify({ field, key: ticket.key, name, type, exp: ticket.exp, sig: ticket.sig })) };
+  }
+
+  /** A form with exactly one file: upload the file directly and send the other fields as JSON instead. */
+  async function directForm(form: FormData): Promise<RequestInit | null> {
+    if (directUploads === false || typeof Blob === "undefined") return null;
+    const entries: [string, FormDataEntryValue][] = [];
+    form.forEach((v, k) => entries.push([k, v]));
+    const files = entries.filter(([, v]) => v instanceof Blob);
+    if (files.length !== 1) return null;
+    const [field, file] = files[0] as [string, Blob];
+    const headers = await storeFile(file, field);
+    if (!headers) return null;
+    const fields = Object.fromEntries(entries.filter(([, v]) => !(v instanceof Blob)).map(([k, v]) => [k, String(v)]));
+    return { body: JSON.stringify(fields), headers };
+  }
+
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    if (typeof FormData !== "undefined" && init.body instanceof FormData) {
+      const direct = await directForm(init.body);
+      if (direct) init = { ...init, body: direct.body, headers: { ...(init.headers as Record<string, string> | undefined), ...(direct.headers as Record<string, string>) } };
+    }
     const token = await options.getToken?.();
     const res = await fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
       credentials: "include",
@@ -153,6 +210,7 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
     patch,
     put: <T>(path: string, body: unknown) => request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
     del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+    storeFile,
   };
 
   return {

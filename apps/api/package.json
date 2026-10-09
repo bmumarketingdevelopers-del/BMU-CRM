@@ -29,7 +29,8 @@
     "db:studio": "prisma studio",
     "start:api": "node dist/main.js",
     "start:worker": "node dist/worker.js",
-    "env:check": "tsx src/runtime/env-cli.ts"
+    "env:check": "tsx src/runtime/env-cli.ts",
+    "storage:upload": "tsx src/storage/upload-cli.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
@@ -42,6 +43,8 @@
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "@simplewebauthn/server": "^14.0.3",
+    "@supabase/supabase-js": "^2.117.3",
+    "@vercel/functions": "^3.9.11",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.2.0",
     "multer": "^2.4.0",

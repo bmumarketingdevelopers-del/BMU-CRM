@@ -4,7 +4,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream, mkdirSync } from 'node:fs';
 import { rename, rm, stat, readFile, writeFile } from 'node:fs/promises';
-import { extname, join, resolve } from 'node:path';
+import { extname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
@@ -33,6 +33,7 @@ import { parse } from '../common/zod.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { storageRoot } from '../production/production.controller.js';
 import { amOf, clientScope, hasRole, inScope, isLeadership } from './scope.js';
+import { localFile, putFile, relPathOf } from '../storage/file-store.js';
 
 const DAY = 86_400_000;
 const include = { collection: { select: { id: true, name: true } }, versions: { orderBy: { number: 'asc' } } } satisfies Prisma.AssetInclude;
@@ -463,24 +464,41 @@ export class AssetsService {
     return this.sessionView(await this.prisma.uploadSession.update({ where: { id }, data: { received: BigInt(size) } }));
   }
 
-  async completeUpload(me: Me, id: string, ip?: string) {
+  /**
+   * Finishes an upload: from the pieces sent to this server, or (v22, `stored`) from the whole file the browser put
+   * straight into Supabase Storage, which is how uploads work when the API runs on Vercel.
+   */
+  async completeUpload(me: Me, id: string, ip?: string, stored?: { path: string; size: number }) {
     const s = await this.session(me, id);
     if (s.completedAt) throw new BadRequestException('This upload is already finished');
-    const size = await stat(s.tmpPath).then((x) => x.size, () => -1);
-    if (size !== Number(s.size)) throw new BadRequestException(`Only ${Math.max(0, size)} of ${s.size} bytes arrived. Keep uploading.`);
-    const month = new Date().toISOString().slice(0, 7);
-    const dir = join(storageRoot(), 'assets', month);
-    mkdirSync(dir, { recursive: true });
-    const name = `${randomUUID()}${extname(s.name).toLowerCase().slice(0, 10)}`;
-    const abs = join(dir, name);
-    await rename(s.tmpPath, abs);
+    let abs: string;
+    let rel: string;
+    let size: number;
+    if (stored) {
+      size = stored.size;
+      if (size !== Number(s.size)) throw new BadRequestException(`The stored file has ${size} bytes, not ${s.size}. Upload it again.`);
+      abs = stored.path;
+      rel = relPathOf(abs);
+      await rm(s.tmpPath, { force: true });
+    } else {
+      size = await stat(s.tmpPath).then((x) => x.size, () => -1);
+      if (size !== Number(s.size)) throw new BadRequestException(`Only ${Math.max(0, size)} of ${s.size} bytes arrived. Keep uploading.`);
+      const month = new Date().toISOString().slice(0, 7);
+      const dir = join(storageRoot(), 'assets', month);
+      mkdirSync(dir, { recursive: true });
+      const name = `${randomUUID()}${extname(s.name).toLowerCase().slice(0, 10)}`;
+      abs = join(dir, name);
+      rel = join('assets', month, name);
+      await rename(s.tmpPath, abs);
+      await putFile(relPathOf(abs), abs, s.mimeType);
+    }
     const checksum = await sha256File(abs);
     await this.prisma.uploadSession.update({ where: { id }, data: { completedAt: new Date(), received: s.size } });
     const t = (s.target ?? {}) as { assetId?: string; title?: string; clientOrgId?: string | null; collectionId?: string | null; tags?: string[]; note?: string };
     const mime = s.mimeType === 'application/octet-stream' ? guessMime(s.name) : s.mimeType;
     return this.attach(
       me,
-      { orgId: me.orgId, path: join('assets', month, name), kind: fileKindFromMime(mime), name: s.name, mimeType: mime, sizeBytes: size > 2_147_483_647 ? null : size, checksum, uploadedById: me.id, tags: t.tags ?? [] },
+      { orgId: me.orgId, path: rel, kind: fileKindFromMime(mime), name: s.name, mimeType: mime, sizeBytes: size > 2_147_483_647 ? null : size, checksum, uploadedById: me.id, tags: t.tags ?? [] },
       t,
       ip,
     );
@@ -553,9 +571,7 @@ export class AssetsService {
       return null;
     }
     if (!explicit && !this.ai.connected()) return null;
-    const abs = resolve(storageRoot(), f.path);
-    if (!abs.startsWith(storageRoot())) return null;
-    const data = (await readFile(abs)).toString('base64');
+    const data = (await readFile(await localFile(f.path))).toString('base64');
     let tags: string[] = [];
     const res = await this.ai.execute({ orgId, userId: me?.id ?? null, me: me ?? undefined }, 'asset_tags', {
       target: { type: 'Asset', id: assetId },

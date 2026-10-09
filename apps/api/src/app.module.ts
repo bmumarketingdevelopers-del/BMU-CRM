@@ -42,6 +42,7 @@ import { SecurityModule } from './security/security.module.js';
 import { IntelligenceModule } from './intelligence/intelligence.module.js';
 import { DevicesModule } from './devices/devices.module.js';
 import { RuntimeModule } from './runtime/runtime.module.js';
+import { StorageModule } from './storage/uploads.js';
 import {
   ClientReviewsController,
   DeliverablesController,
@@ -67,7 +68,7 @@ import { DeliverJobsService } from './deliver/deliver-jobs.service.js';
 import { DeliverSlaService } from './deliver/deliver-sla.service.js';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RuntimeModule, AuditModule, AuthModule, OrgModule, ProposalsModule, SettingsModule, InsightsModule, AdminOrgModule, AdminPlatformModule, WorkspaceModule, AutomationsModule, AnalyticsModule, OpsAnalyticsModule, FlowsModule, ServiceModule, CraftModule, AiModule, TeamFlowsModule, ActionsModule, ClientsActionsModule, PeopleActionsModule, OpsActionsModule, DashboardsModule, PlatformModule, CustomiseModule, WorkflowsModule, AgentsModule, CreativeModule, CommsModule, MoneyModule, IntegrationsModule, SecurityModule, IntelligenceModule, DevicesModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RuntimeModule, StorageModule, AuditModule, AuthModule, OrgModule, ProposalsModule, SettingsModule, InsightsModule, AdminOrgModule, AdminPlatformModule, WorkspaceModule, AutomationsModule, AnalyticsModule, OpsAnalyticsModule, FlowsModule, ServiceModule, CraftModule, AiModule, TeamFlowsModule, ActionsModule, ClientsActionsModule, PeopleActionsModule, OpsActionsModule, DashboardsModule, PlatformModule, CustomiseModule, WorkflowsModule, AgentsModule, CreativeModule, CommsModule, MoneyModule, IntegrationsModule, SecurityModule, IntelligenceModule, DevicesModule],
   controllers: [
     HealthController,
     CatalogueController,

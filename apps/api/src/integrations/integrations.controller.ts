@@ -1,10 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { resolve } from 'node:path';
 import type { Me } from '@bmu/shared';
 import { ClientIp, CurrentUser, Public } from '../common/decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { storageRoot } from '../production/production.controller.js';
+import { sendStoredFile } from '../storage/file-store.js';
 import { ApiKeysService } from './api-keys.service.js';
 import { verifyToken } from './crypto.js';
 import { IntegrationsService } from './integrations.service.js';
@@ -107,14 +106,7 @@ export class PublicIntegrationsController {
     const file = t ? await this.prisma.file.findUnique({ where: { id: t.f } }) : null;
     if (!file) return res.status(404).json({ message: 'Link expired' });
     if (file.kind === 'link') return res.redirect(file.path);
-    const root = storageRoot();
-    const abs = resolve(root, file.path);
-    if (!abs.startsWith(root)) return res.status(404).json({ message: 'File not found' });
-    if (file.mimeType) res.type(file.mimeType);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.sendFile(abs, (err) => {
-      if (err && !res.headersSent) res.status(404).json({ message: 'File missing on disk' });
-    });
+    return sendStoredFile(res, file, { cache: 'public, max-age=3600' });
   }
 
   @Public()

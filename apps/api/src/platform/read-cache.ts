@@ -2,10 +2,14 @@
 // Entries are per person (so permissions and hidden fields stay exactly as computed) and per organisation, and the
 // whole organisation's entries are dropped on any real write (EventBus.publish calls clearReadCache), so a change
 // shows on the next load. The short time limit covers things that change with the clock (overdue, "due today").
+import { bridgeEnabled, isServerless } from '../runtime/process-role.js';
+
 type Entry = { at: number; value: Promise<unknown> };
 const store = new Map<string, Map<string, Entry>>();
 const MAX_PER_ORG = 2000;
-const off = () => process.env.READ_CACHE === '0';
+// Serverless (Vercel): off by default. A write in one function instance cannot clear another instance's copy
+// unless events are shared (EVENT_BRIDGE=1), so a saved change could look lost for up to a minute.
+const off = () => process.env.READ_CACHE === '0' || (process.env.READ_CACHE === undefined && isServerless() && !bridgeEnabled());
 
 export function cached<T>(orgId: string, key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
   if (off()) return fn();
