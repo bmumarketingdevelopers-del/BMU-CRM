@@ -1,0 +1,15 @@
+.git
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/.expo
+**/coverage
+**/*.tsbuildinfo
+apps/api/src/generated
+apps/api/storage
+.bmu-data
+**/.env
+**/.env.*
+!**/.env.example
+**/__pycache__

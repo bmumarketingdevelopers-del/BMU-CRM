@@ -1,0 +1,2405 @@
+{
+  "prompt_meta": {
+    "name": "BMU Hub — Client + Team Platform with Hierarchical Admin Panel",
+    "version": "2.1",
+    "owner": "BMU Marketing (Build My Universee), Bengaluru",
+    "purpose": "Single source of truth for building the BMU CRM website, client app, team app and admin panel. Use together with the UX/UI design files uploaded to this project.",
+    "currency": "INR",
+    "tax": "GST 18%, always shown separately; all catalogue prices exclusive of GST",
+    "timezone": "Asia/Kolkata",
+    "locale": "en-IN (Indian number format, e.g. ₹1,00,000)",
+    "as_built": "BMU Hub v21, 7 Oct 2026 (repo commit history v1 to v21; backend structure in docs/backend.md)",
+    "change_log": [
+      {
+        "version": "1.0",
+        "note": "Original product and architecture prompt."
+      },
+      {
+        "version": "2.0",
+        "note": "Architecture v2 roadmap (docs/spec/architecture-v2.json): events, workflows, AI agents, creative studio, inbox, finance 2.0, integrations, intelligence, offline phone app, security and DPDP. Built as v13 to v20."
+      },
+      {
+        "version": "2.1",
+        "note": "tech_stack updated to what is actually built; new backend_runtime section describing the live backend processes, jobs, events, health checks, configuration and deployment (v21)."
+      }
+    ]
+  },
+  "instructions_to_ai": {
+    "role": "You are the lead product architect and full-stack engineer for BMU Hub.",
+    "source_of_truth_order": [
+      "Uploaded UX/UI design files in this project (visual + layout authority)",
+      "This JSON (behaviour, data, permissions, flows authority)",
+      "BMU Master Operating System (process authority — embedded in workflow below)",
+      "BMU Services & Packages Catalogue 2026 (pricing authority — embedded in catalogue_seed)"
+    ],
+    "rules": [
+      "Follow the uploaded UX/UI designs exactly. Do not redesign, restyle or add screens that are not in the design unless this JSON requires them; if a required screen has no design, build it using the same components and tokens and flag it.",
+      "Make targeted changes when asked to revise. Never regenerate unrelated parts.",
+      "Enforce every gate, permission and rule in this JSON in the backend, not only in the UI.",
+      "Never expose internal-only data (internal notes, QC results, costs, margins, staff below AM, other clients) to client roles.",
+      "Use the exact vocabulary in glossary for team UI; use the client_label equivalents in client UI.",
+      "When something is ambiguous, choose the option that keeps the MOS rule intact and list the assumption in a short ASSUMPTIONS section of your output."
+    ],
+    "expected_outputs": [
+      "System architecture diagram + module boundaries",
+      "Database schema (Prisma) with migrations",
+      "API contract (OpenAPI 3.1)",
+      "RBAC policy file generated from permissions in this JSON",
+      "State machine definitions for engagement, cycle, deliverable, task, request, invoice",
+      "Screen-by-screen implementation mapped to uploaded designs",
+      "Seed data from catalogue_seed",
+      "Test cases for every gate, rule and permission"
+    ]
+  },
+  "design_system": {
+    "authority": "Uploaded UX/UI design files override everything in this block.",
+    "fallback_tokens": {
+      "charcoal": "#121F2F",
+      "green": "#8BB72C",
+      "ivory": "#F8F7F4",
+      "grey": "#C2C2C2",
+      "paper": "#FFFFFF",
+      "muted": "#5E6672",
+      "line": "#E4E3DE",
+      "canvas": "#ECEBE6",
+      "status_amber": "#F2D27A",
+      "status_red": "#E7735C"
+    },
+    "fallback_typography": {
+      "display": "Zen Dots",
+      "body": "Albert Sans"
+    },
+    "principles": [
+      "One green primary action per screen",
+      "Charcoal for navigation and status, ivory for surfaces",
+      "Square corners on UI components (devices excepted)",
+      "Five-segment gate track on every project/engagement",
+      "Home screens open on 'What needs you', sorted by deadline",
+      "Light and dark themes via tokens",
+      "Responsive to 360px; keyboard focus visible; reduced motion respected"
+    ]
+  },
+  "product": {
+    "vision": "One platform where every enquiry, proposal, agreement, payment, requirement, plan, task, review, approval, file, message, report and renewal happens. No WhatsApp groups, no scattered drives.",
+    "scale_target": "Architected to support BMU's growth toward ₹100 Cr revenue: multi-tenant, multi-branch, white-label ready.",
+    "surfaces": [
+      {
+        "id": "website",
+        "name": "bmu.marketing",
+        "platform": "Next.js (extend existing bmu-marketing repo)",
+        "audience": "Public, prospects, client sign-in",
+        "key_features": [
+          "Services catalogue rendered from pricing engine",
+          "Package builder with live price, bundle detection (−10%), add-ons",
+          "Enquiry + discovery call booking → creates Lead",
+          "Proposal link page (accept, e-sign, pay)",
+          "Client and team sign-in"
+        ]
+      },
+      {
+        "id": "client_app",
+        "name": "Client App",
+        "platform": "Web (Next.js) + iOS/Android (Expo React Native)",
+        "audience": "Client users",
+        "key_features": [
+          "Home: needs your action",
+          "Onboarding checklist",
+          "Approvals + Review Studio",
+          "Request desk",
+          "Files",
+          "Billing + reports",
+          "Single thread with Account Manager"
+        ]
+      },
+      {
+        "id": "team_app",
+        "name": "Team App",
+        "platform": "Web + iOS/Android",
+        "audience": "BMU staff",
+        "key_features": [
+          "My Day + check-in/EOD",
+          "Tasks + department flows",
+          "QC",
+          "Review Studio",
+          "Client 360",
+          "Calendar",
+          "Capacity",
+          "SOP library"
+        ]
+      },
+      {
+        "id": "admin_panel",
+        "name": "Admin Panel / Command Centre",
+        "platform": "Web (desktop-first)",
+        "audience": "Founder, Admin, Directors, Department Heads (scoped)",
+        "key_features": [
+          "Hierarchy + users",
+          "Roles + permissions",
+          "Catalogue + pricing engine",
+          "SOP, checklist and flow template editors",
+          "Gate + SLA configuration",
+          "Weekly management review",
+          "Finance + collections",
+          "Audit log",
+          "Integrations + notification templates",
+          "Tenant / branch settings"
+        ]
+      },
+      {
+        "id": "creator_portal",
+        "name": "Creator Portal",
+        "platform": "Web + mobile web",
+        "audience": "UGC creators, freelancers",
+        "key_features": [
+          "Assigned briefs only",
+          "Product delivery status",
+          "Upload slot",
+          "Revision notes",
+          "Payout status"
+        ]
+      }
+    ]
+  },
+  "hierarchy": {
+    "model": "Tree of Organisation → Branch → Department → Team → User. Every user has exactly one reporting manager (except Founder). Data visibility for managers rolls up: a manager sees everything their reports can see.",
+    "organisation_levels": [
+      {
+        "level": 0,
+        "id": "tenant",
+        "name": "Organisation (Tenant)",
+        "example": "BMU Marketing",
+        "notes": "Future: franchise branches and white-label agencies become tenants or sub-tenants."
+      },
+      {
+        "level": 1,
+        "id": "branch",
+        "name": "Branch",
+        "example": "Bengaluru HQ, Hosur",
+        "notes": "Optional; default single branch."
+      },
+      {
+        "level": 2,
+        "id": "department",
+        "name": "Department",
+        "values": [
+          "Sales",
+          "Account Management",
+          "Strategy",
+          "Creative / Design",
+          "Video / Production",
+          "Web / AI",
+          "SEO",
+          "Performance Ads",
+          "Creator / UGC",
+          "QC",
+          "Finance",
+          "HR / Ops"
+        ]
+      },
+      {
+        "level": 3,
+        "id": "team",
+        "name": "Team / Pod",
+        "notes": "Client pods: 1 AM + strategist + producers serving a client group."
+      }
+    ],
+    "team_roles": [
+      {
+        "rank": 1,
+        "id": "founder",
+        "name": "Founder / Super Admin",
+        "reports_to": null,
+        "scope": "all tenants/branches",
+        "can_manage": "everything, including roles, pricing, commercial terms"
+      },
+      {
+        "rank": 2,
+        "id": "admin",
+        "name": "Admin / Director",
+        "reports_to": "founder",
+        "scope": "assigned branch(es)",
+        "can_manage": "users, departments, clients, settings within branch; cannot change Founder or tenant billing"
+      },
+      {
+        "rank": 3,
+        "id": "department_head",
+        "name": "Department Head",
+        "reports_to": "admin",
+        "scope": "own department",
+        "can_manage": "department members, flow templates and QC checklists of own department (subject to admin approval), capacity, task reassignment"
+      },
+      {
+        "rank": 4,
+        "id": "sales_manager",
+        "name": "Sales Manager",
+        "reports_to": "admin",
+        "scope": "sales team + all leads",
+        "can_manage": "lead assignment, proposals, discounts up to configured limit"
+      },
+      {
+        "rank": 4,
+        "id": "am_lead",
+        "name": "Account Management Lead",
+        "reports_to": "admin",
+        "scope": "all AMs and their clients",
+        "can_manage": "AM assignment, escalations, client health"
+      },
+      {
+        "rank": 5,
+        "id": "account_manager",
+        "name": "Account Manager",
+        "reports_to": "am_lead",
+        "scope": "assigned clients",
+        "can_manage": "onboarding, RCD, client comms, requests, quotes from add-on list, sending drafts"
+      },
+      {
+        "rank": 5,
+        "id": "strategist",
+        "name": "Strategist",
+        "reports_to": "department_head",
+        "scope": "assigned engagements",
+        "can_manage": "plans, calendars"
+      },
+      {
+        "rank": 5,
+        "id": "sales_executive",
+        "name": "Sales Executive",
+        "reports_to": "sales_manager",
+        "scope": "own leads",
+        "can_manage": "own leads and proposals at catalogue price"
+      },
+      {
+        "rank": 5,
+        "id": "qc_reviewer",
+        "name": "QC Reviewer",
+        "reports_to": "department_head",
+        "scope": "assigned QC queue",
+        "can_manage": "pass/fail QC"
+      },
+      {
+        "rank": 5,
+        "id": "finance",
+        "name": "Finance",
+        "reports_to": "admin",
+        "scope": "all invoices/payments in branch",
+        "can_manage": "invoices, credit notes, reconciliation, creator payouts"
+      },
+      {
+        "rank": 5,
+        "id": "hr_ops",
+        "name": "HR / Ops",
+        "reports_to": "admin",
+        "scope": "people data",
+        "can_manage": "attendance, leave, onboarding/offboarding of staff"
+      },
+      {
+        "rank": 6,
+        "id": "producer",
+        "name": "Producer (Designer, Editor, Developer, SEO Exec, Ads Exec, UGC Coordinator)",
+        "reports_to": "department_head",
+        "scope": "assigned tasks",
+        "can_manage": "own tasks, uploads, blocked status"
+      },
+      {
+        "rank": 7,
+        "id": "intern",
+        "name": "Intern",
+        "reports_to": "department_head",
+        "scope": "assigned tasks, no client contact data",
+        "can_manage": "own tasks only; uploads require producer/lead review"
+      }
+    ],
+    "client_roles": [
+      {
+        "rank": 1,
+        "id": "client_owner",
+        "name": "Client Owner",
+        "can": "approve plans and work, approve quotes, pay, add/remove client users, view all reports"
+      },
+      {
+        "rank": 2,
+        "id": "client_approver",
+        "name": "Client Approver",
+        "can": "review and approve creative only, raise requests"
+      },
+      {
+        "rank": 3,
+        "id": "client_viewer",
+        "name": "Client Viewer",
+        "can": "view progress, files and reports; comment only"
+      },
+      {
+        "rank": 4,
+        "id": "client_finance",
+        "name": "Client Finance",
+        "can": "view and pay invoices, download receipts"
+      }
+    ],
+    "client_account_structure": "Client Organisation → Brands/Locations (for multi-brand or multi-location clients) → Engagements. Client users can be scoped to specific brands/locations.",
+    "external_roles": [
+      {
+        "id": "creator",
+        "name": "Creator / Freelancer",
+        "can": "see and deliver only assigned briefs; no client contact details, no pricing"
+      }
+    ],
+    "rules": [
+      "Roles are permission sets; a user may hold multiple roles (e.g. AM + Strategist).",
+      "Custom roles can be cloned from a base role in Admin Panel.",
+      "Role changes require a manager at least one rank higher.",
+      "Every privileged action is written to the audit log.",
+      "Clients never message or tag production staff; all client messages route to the AM (Client → AM → Team)."
+    ]
+  },
+  "permissions": {
+    "legend": {
+      "full": "all records in scope",
+      "own": "only own records/assigned clients/tasks",
+      "none": "no access"
+    },
+    "matrix": {
+      "leads_pipeline": {
+        "founder": "full",
+        "admin": "full",
+        "sales_manager": "full",
+        "sales_executive": "own",
+        "am_lead": "none",
+        "account_manager": "none",
+        "producer": "none",
+        "finance": "none",
+        "client_owner": "none"
+      },
+      "proposal_price_override": {
+        "founder": "full",
+        "admin": "full (within limit)",
+        "sales_manager": "within discount_limit",
+        "sales_executive": "none",
+        "account_manager": "none"
+      },
+      "mark_rcd_gate1": {
+        "founder": "full",
+        "account_manager": "own",
+        "am_lead": "full",
+        "others": "none"
+      },
+      "plan_and_calendar": {
+        "founder": "full",
+        "strategist": "own",
+        "account_manager": "own",
+        "department_head": "full (dept)",
+        "client_owner": "approve",
+        "client_approver": "approve",
+        "client_viewer": "view"
+      },
+      "tasks_files": {
+        "founder": "full",
+        "department_head": "full (dept)",
+        "account_manager": "own",
+        "strategist": "own",
+        "producer": "own",
+        "intern": "own",
+        "qc_reviewer": "own",
+        "client_any": "files: released only"
+      },
+      "qc_pass_fail": {
+        "founder": "full",
+        "department_head": "full (dept)",
+        "qc_reviewer": "own",
+        "others": "none"
+      },
+      "send_draft_to_client": {
+        "founder": "full",
+        "account_manager": "own (requires QC pass)",
+        "others": "none"
+      },
+      "approve_creative": {
+        "client_owner": "full",
+        "client_approver": "full",
+        "others": "none"
+      },
+      "quote_addon": {
+        "founder": "full",
+        "admin": "full",
+        "account_manager": "own (from add-on price list only)",
+        "others": "none"
+      },
+      "approve_addon_quote": {
+        "client_owner": "full",
+        "others": "none"
+      },
+      "invoices_payments": {
+        "founder": "full",
+        "admin": "full",
+        "finance": "full",
+        "client_owner": "own",
+        "client_finance": "own",
+        "others": "none"
+      },
+      "revenue_margins": {
+        "founder": "full",
+        "admin": "full",
+        "finance": "view",
+        "others": "none"
+      },
+      "users_roles_hierarchy": {
+        "founder": "full",
+        "admin": "branch",
+        "department_head": "view dept",
+        "hr_ops": "people data only",
+        "client_owner": "own client users"
+      },
+      "catalogue_pricing_engine": {
+        "founder": "full",
+        "admin": "propose (founder approves)",
+        "others": "none"
+      },
+      "sop_checklists_flow_templates": {
+        "founder": "full",
+        "admin": "full",
+        "department_head": "edit dept (admin approves)",
+        "others": "view"
+      },
+      "audit_log": {
+        "founder": "full",
+        "admin": "branch",
+        "others": "none"
+      },
+      "credential_vault_reveal": {
+        "account_manager": "own (logged)",
+        "department_head": "on request, approved by AM (logged)",
+        "founder": "full (logged)",
+        "others": "none"
+      }
+    },
+    "client_hidden_data": [
+      "internal notes",
+      "QC results",
+      "task owners below AM",
+      "costs, margins, staff rates",
+      "other clients",
+      "creator rates"
+    ]
+  },
+  "admin_panel": {
+    "navigation": [
+      {
+        "section": "Command",
+        "items": [
+          "Weekly Review",
+          "Pipeline",
+          "Revenue",
+          "Collections",
+          "Capacity",
+          "Quality",
+          "Client Health"
+        ]
+      },
+      {
+        "section": "Organisation",
+        "items": [
+          "Hierarchy Tree",
+          "Users",
+          "Roles & Permissions",
+          "Departments & Teams",
+          "Branches",
+          "Attendance & Leave",
+          "Holidays & Working Hours"
+        ]
+      },
+      {
+        "section": "Clients",
+        "items": [
+          "Clients",
+          "Engagements",
+          "AM Assignment",
+          "Requests & Add-ons",
+          "Offboarding"
+        ]
+      },
+      {
+        "section": "Catalogue",
+        "items": [
+          "Services & Tiers",
+          "Bundles",
+          "Add-ons",
+          "Discount Limits",
+          "Proposal & Agreement Templates"
+        ]
+      },
+      {
+        "section": "Operations",
+        "items": [
+          "SOP Library",
+          "Requirement Checklists",
+          "Department Flow Templates",
+          "QC Checklists",
+          "Gate Rules",
+          "SLA Rules",
+          "Error Log"
+        ]
+      },
+      {
+        "section": "Finance",
+        "items": [
+          "Invoices",
+          "Payments",
+          "Credit Notes",
+          "Creator Payouts",
+          "GST Settings",
+          "Accounting Sync"
+        ]
+      },
+      {
+        "section": "Platform",
+        "items": [
+          "Notification Templates (push, email, WhatsApp)",
+          "Integrations",
+          "Branding & Theme",
+          "Audit Log",
+          "Data Export / Deletion (DPDP)",
+          "Tenant Settings"
+        ]
+      }
+    ],
+    "key_screens": {
+      "hierarchy_tree": "Drag-and-drop org chart (Branch → Department → Team → User). Shows reporting line, roles, load %, active clients. Reassigning a manager or moving a user updates visibility immediately and logs to audit.",
+      "users": "Invite by email/phone, assign roles, department, manager, branch, client pod; suspend/offboard with access revocation checklist.",
+      "roles_permissions": "Base roles + cloned custom roles; capability toggles per module with scope (none/own/department/branch/all).",
+      "weekly_review": "Clients (new, active, at-risk, delayed), Projects (on track, delayed, blocked), Team + capacity, Finance (collections, dues, sales), Quality (complaints, revisions, QC fails), Client health (Green/Amber/Red). Every number drills down.",
+      "pricing_engine": "Edit services, tiers, deliverables, billing type, excluded notes; bundle composition with automatic 10% saving; versioned price books with effective dates; website and proposals read from active price book.",
+      "flow_templates": "Visual editor for department flows (steps, owner role, durations in working days, QC checkpoint, client review points). Templates generate tasks when a plan is approved.",
+      "gate_rules": "Read-only display of the 5 gates and their conditions; only Founder can change conditions.",
+      "sla_rules": "Response/resolution targets per request type; working-hours calendar (9:30–18:30 Mon–Sat, Sundays and government holidays off).",
+      "impersonation": "Founder/Admin may 'view as' a user for support; read-only by default, logged, client users notified."
+    }
+  },
+  "modules": [
+    {
+      "id": "crm",
+      "phase": "sell",
+      "features": [
+        "Lead capture: website, Meta/Google lead forms, BMU QR, referral, manual",
+        "Stages: new → contacted → discovery → proposal → won / lost",
+        "Lead score, source ROI, follow-up reminders, lost reason",
+        "Capacity check before committing start date"
+      ]
+    },
+    {
+      "id": "catalogue_proposals",
+      "phase": "sell",
+      "features": [
+        "Proposal builder from catalogue",
+        "Bundle detection with 10% saving",
+        "Overrides beyond discount limit need approval",
+        "Branded proposal link: accept, e-sign, pay"
+      ]
+    },
+    {
+      "id": "agreements",
+      "phase": "sell",
+      "features": [
+        "Auto-generated per service from agreement templates",
+        "Aadhaar/OTP e-sign",
+        "Versioned PDFs"
+      ]
+    },
+    {
+      "id": "billing",
+      "phase": "sell+deliver",
+      "features": [
+        "Retainers billed in advance; projects 50% on confirmation, 50% before handover",
+        "Separate lines: service fee, ad spend, creator fees, third-party, production extras, GST",
+        "Razorpay (UPI, cards, netbanking, autopay subscriptions, payment links)",
+        "Reminders, dunning, receipts, credit notes",
+        "Zoho Books / Tally sync"
+      ]
+    },
+    {
+      "id": "handover_onboarding",
+      "phase": "onboard",
+      "features": [
+        "Sales → AM handover form (client, service, package, value, payment, deliverables, promised timeline, special commitments)",
+        "Auto AM assignment by load",
+        "Welcome flow introducing AM"
+      ]
+    },
+    {
+      "id": "requirements",
+      "phase": "onboard",
+      "features": [
+        "Per-service requirement checklists (info, assets, access, brand material, min. 10 reference videos for content/video/UGC)",
+        "Encrypted credential vault",
+        "Blocked items with reason, waiting for, owner, date requested",
+        "AM marks RCD → project clock starts (Gate 1)"
+      ]
+    },
+    {
+      "id": "strategy_planning",
+      "phase": "plan",
+      "features": [
+        "4-working-day planning timer from RCD",
+        "Strategy workspace (business, competitors, references, audience, pillars, campaign + creative direction, scripts)",
+        "Internal approval chain: Strategist → Dept Head → AM",
+        "Client plan presentation + written approval (Gate 2)"
+      ]
+    },
+    {
+      "id": "content_calendar",
+      "phase": "plan",
+      "features": [
+        "Month calendar of posts, reels, stories, blogs, shoots, campaigns",
+        "Locks after approval"
+      ]
+    },
+    {
+      "id": "projects_tasks",
+      "phase": "build",
+      "features": [
+        "Tasks generated from flow templates",
+        "Owner, deadline, dependency, status, time logged",
+        "Board, list, calendar, Gantt views",
+        "Blocked status requires documented reason"
+      ]
+    },
+    {
+      "id": "qc",
+      "phase": "build",
+      "features": [
+        "Department QC checklists",
+        "Fail returns with notes; pass unlocks send-to-client",
+        "QC fail rate per person/department"
+      ]
+    },
+    {
+      "id": "review_studio",
+      "phase": "build",
+      "features": [
+        "Frame-accurate video comments, pinned image/PDF comments, live URL comments",
+        "Version compare",
+        "Revision rounds counted against package",
+        "Approve / Request changes; AI consolidates feedback (AM edits before sending to team)"
+      ]
+    },
+    {
+      "id": "assets",
+      "phase": "all",
+      "features": [
+        "Per-client library: brand kit, raw, finals, reports",
+        "Finals released only after Gate 5"
+      ]
+    },
+    {
+      "id": "publishing_handover",
+      "phase": "deliver",
+      "features": [
+        "Scheduled publishing: Instagram, Facebook, LinkedIn, YouTube, GBP",
+        "Website deploy checklist",
+        "Access handover",
+        "Offboarding checklist: dues, final files, access removal, permissions, reports, pending work, contract closure"
+      ]
+    },
+    {
+      "id": "reports",
+      "phase": "deliver",
+      "features": [
+        "Service-specific monthly reports",
+        "Live data: Meta Ads, Google Ads, GA4, Search Console, GBP, YouTube, Instagram",
+        "AI summary reviewed by AM before release"
+      ]
+    },
+    {
+      "id": "messaging_requests",
+      "phase": "all",
+      "features": [
+        "Client thread per client (with AM)",
+        "Project threads",
+        "Internal notes (hidden from client, lock icon)",
+        "Request desk: change, add-on, urgent, query with SLA timers"
+      ]
+    },
+    {
+      "id": "people_capacity",
+      "phase": "all",
+      "features": [
+        "Check-in/out, attendance, leave, holidays",
+        "My Day priorities and EOD report (completed, pending, blocked, waiting)",
+        "Load per person, timesheets per client, utilisation"
+      ]
+    },
+    {
+      "id": "creator_network",
+      "phase": "build",
+      "features": [
+        "Creator database: niche, rates, past work, ratings",
+        "Briefs, product shipping, uploads, usage rights, payouts"
+      ]
+    },
+    {
+      "id": "command_centre",
+      "phase": "all",
+      "features": [
+        "Weekly review",
+        "Client health scoring",
+        "Revenue, MRR, collections, capacity, quality dashboards"
+      ]
+    }
+  ],
+  "workflow": {
+    "phases": [
+      {
+        "id": "sell",
+        "owner": "sales",
+        "steps": [
+          "lead",
+          "discovery",
+          "proposal",
+          "commercial_approved?",
+          "payment_agreement",
+          "handover"
+        ]
+      },
+      {
+        "id": "onboard",
+        "owner": "account_manager",
+        "steps": [
+          "onboarding",
+          "requirement_collection",
+          "all_inputs_received?",
+          "rcd"
+        ]
+      },
+      {
+        "id": "plan",
+        "owner": "strategist",
+        "window": "up to 4 working days after RCD",
+        "steps": [
+          "planning",
+          "internal_approval?",
+          "client_plan_presentation",
+          "client_approved?"
+        ]
+      },
+      {
+        "id": "build",
+        "owner": "department",
+        "first_draft": "2–3 working days after approved plan + inputs",
+        "steps": [
+          "ready_to_execute?",
+          "production",
+          "internal_qc?",
+          "first_draft_to_client",
+          "draft_approved?"
+        ]
+      },
+      {
+        "id": "deliver",
+        "owner": "account_manager",
+        "steps": [
+          "final_approval",
+          "payment_complete?",
+          "publish_deploy_handover",
+          "reporting",
+          "retainer_continues? → next cycle (back to plan) or offboarding"
+        ]
+      }
+    ],
+    "gates": [
+      {
+        "id": "G1",
+        "name": "Requirements Complete",
+        "unlock_when": "All requirement checklist items received AND AM marks RCD",
+        "locks": [
+          "planning timer",
+          "strategy workspace",
+          "project clock"
+        ]
+      },
+      {
+        "id": "G2",
+        "name": "Plan Approved",
+        "unlock_when": "Client Owner/Approver approves plan in writing in-app",
+        "locks": [
+          "production task generation"
+        ],
+        "effect": "plan becomes read-only"
+      },
+      {
+        "id": "G3",
+        "name": "Production Approved to Start",
+        "unlock_when": "requirements + approved plan + assets + access + payment condition met + task assigned",
+        "locks": [
+          "start production"
+        ],
+        "effect": "deadline written to schedule"
+      },
+      {
+        "id": "G4",
+        "name": "Draft Approved",
+        "unlock_when": "Internal QC passed AND client approves draft",
+        "locks": [
+          "send to client (needs QC)",
+          "final production"
+        ],
+        "effect": "approved version locked"
+      },
+      {
+        "id": "G5",
+        "name": "Final Delivery",
+        "unlock_when": "Written final sign-off AND final payment cleared",
+        "locks": [
+          "final file download",
+          "deploy",
+          "handover"
+        ]
+      }
+    ],
+    "state_machines": {
+      "lead": [
+        "new",
+        "contacted",
+        "discovery",
+        "proposal_sent",
+        "won",
+        "lost"
+      ],
+      "engagement": [
+        "pending_payment",
+        "onboarding",
+        "blocked",
+        "planning",
+        "awaiting_plan_approval",
+        "in_production",
+        "in_review",
+        "awaiting_final_payment",
+        "delivered",
+        "active_retainer",
+        "paused",
+        "offboarding",
+        "closed"
+      ],
+      "deliverable": [
+        "planned",
+        "in_production",
+        "in_qc",
+        "qc_failed",
+        "ready_for_client",
+        "changes_requested",
+        "approved",
+        "scheduled",
+        "published"
+      ],
+      "task": [
+        "todo",
+        "in_progress",
+        "blocked",
+        "waiting",
+        "in_qc",
+        "done",
+        "cancelled"
+      ],
+      "request": [
+        "received",
+        "scope_check",
+        "in_scope",
+        "quoted",
+        "approved",
+        "paid",
+        "in_progress",
+        "done",
+        "declined",
+        "rescheduled"
+      ],
+      "invoice": [
+        "draft",
+        "issued",
+        "partially_paid",
+        "paid",
+        "overdue",
+        "void",
+        "credit_noted"
+      ]
+    },
+    "exception_flows": {
+      "change_addon": [
+        "client raises request",
+        "auto-ack: 'Received — we'll check scope and confirm timeline.'",
+        "AM: within scope? yes → schedule",
+        "no → quote cost + timeline (impact: scope, timeline, resource, commercial)",
+        "client approves in writing",
+        "payment if applicable",
+        "execute; log in Add-on Tracker"
+      ],
+      "urgent": [
+        "client flags urgent",
+        "system shows in-scope check, brief completeness, affected work, capacity, extra charge",
+        "AM accepts or reschedules; confirmed in writing"
+      ],
+      "blocked": [
+        "owner marks BLOCKED with reason, waiting for, responsible, date requested, expected resolution",
+        "AM informs client immediately (no-surprise rule)",
+        "unresolved → auto-escalate to weekly review",
+        "on resume, delivery date shifts by delay"
+      ],
+      "error": [
+        "record what, why, who found it, impact",
+        "fix",
+        "prevent: update SOP/checklist",
+        "review revision rate by cause: brief, references, QC, indecision, strategy, execution, scope"
+      ],
+      "revision_vs_new_scope": "Revision within approved brief consumes a revision round; new concept/direction auto-creates an add-on request. Late feedback moves delivery."
+    },
+    "department_flows": {
+      "social_media": [
+        "last-month analysis",
+        "strategy",
+        "content pillars",
+        "calendar",
+        "client approval",
+        "scripts",
+        "shoot",
+        "edit/design",
+        "QC",
+        "client review",
+        "revision",
+        "final approval",
+        "schedule",
+        "publish",
+        "report"
+      ],
+      "shoots": [
+        "pre-shoot plan",
+        "shot list + script",
+        "talent, props, crew, permits",
+        "shoot day",
+        "backup footage",
+        "client sign-off",
+        "file backup",
+        "edit queue",
+        "first draft",
+        "QC",
+        "client review"
+      ],
+      "website": [
+        "discovery",
+        "sitemap",
+        "content",
+        "wireframe",
+        "UI design",
+        "design approval",
+        "development",
+        "integration",
+        "testing",
+        "client QA",
+        "fixes",
+        "deploy",
+        "handover"
+      ],
+      "branding": [
+        "discovery",
+        "strategy",
+        "moodboard",
+        "logo concepts",
+        "client review",
+        "direction",
+        "refinement",
+        "colour + type",
+        "elements",
+        "applications",
+        "guidelines",
+        "final files"
+      ],
+      "seo": [
+        "month 1: audit",
+        "strategy",
+        "technical foundation",
+        "monthly: keywords",
+        "on-page",
+        "technical",
+        "content",
+        "backlinks",
+        "AEO/GEO",
+        "report"
+      ],
+      "gbp": [
+        "setup/audit",
+        "optimise",
+        "category",
+        "local keywords",
+        "posts",
+        "reviews",
+        "photos",
+        "competitors",
+        "local ranking",
+        "report"
+      ],
+      "performance_ads": [
+        "discovery",
+        "funnel",
+        "tracking",
+        "audience",
+        "creative",
+        "campaign",
+        "test",
+        "optimise",
+        "retarget",
+        "report"
+      ],
+      "ugc": [
+        "brief",
+        "angles",
+        "creator requirements",
+        "sourcing",
+        "negotiation",
+        "creator brief",
+        "product delivery",
+        "creation",
+        "collection",
+        "QC",
+        "client approval",
+        "usage/publish"
+      ],
+      "experiential": [
+        "idea",
+        "audience",
+        "activation",
+        "location",
+        "production plan",
+        "creator plan",
+        "budget",
+        "approval",
+        "execution",
+        "capture",
+        "amplify",
+        "report"
+      ],
+      "bundles": "One AM, one roadmap, one calendar, multiple departments, one reporting system",
+      "hard_rules": [
+        "No development on an unapproved design",
+        "Every flow ends in internal QC before the client"
+      ]
+    },
+    "operating_rhythm": {
+      "daily": [
+        "morning priorities",
+        "update task status during day",
+        "EOD: completed, pending, blocked, waiting"
+      ],
+      "weekly_management": [
+        "clients",
+        "projects",
+        "team + capacity",
+        "finance",
+        "quality",
+        "client health G/A/R"
+      ],
+      "monthly_retainer": [
+        "kick-off",
+        "plan",
+        "production + approval",
+        "publish + optimise",
+        "report + review",
+        "next month plan"
+      ]
+    },
+    "non_negotiable_rules": [
+      "Working hours 9:30 AM–6:30 PM, Mon–Sat; Sundays and government holidays are non-working.",
+      "No complete requirements = no project clock.",
+      "All information, assets and references received before planning begins.",
+      "Planning gets up to 4 working days after requirements are complete.",
+      "First draft generally takes 2–3 working days after approved planning and inputs.",
+      "Every service has a defined scope.",
+      "Every client gets one primary Account Manager.",
+      "Clients do not directly manage production staff.",
+      "Every client request is checked against scope.",
+      "Every additional requirement is documented before execution.",
+      "Client feedback is consolidated.",
+      "Approved concepts and directions are locked.",
+      "Client delays can move delivery dates.",
+      "No client-facing work leaves BMU without internal QC.",
+      "No employee independently promises free additional work.",
+      "No employee independently changes commercial terms.",
+      "Every task has an owner and a deadline.",
+      "Every blocked task has a documented reason.",
+      "Every major decision is documented."
+    ]
+  },
+  "communication": {
+    "policy": "No WhatsApp groups. All conversation, feedback, approvals and files live in the app.",
+    "channels": [
+      "client_thread (client ↔ AM)",
+      "project_thread",
+      "contextual comments on deliverables/frames/tasks",
+      "internal notes (team only)",
+      "request desk",
+      "announcements (admin → all clients or all team)"
+    ],
+    "whatsapp_business_api": "One-way template notifications with deep links to the exact screen. Inbound WhatsApp replies are posted into the client's AM thread and answered with the app link.",
+    "notifications": {
+      "channels": [
+        "push",
+        "email",
+        "whatsapp_template",
+        "in_app"
+      ],
+      "user_controls": "per-category preferences; critical (approvals due, invoices, blocked) cannot be fully muted"
+    },
+    "sla": [
+      {
+        "type": "message_to_am",
+        "first_reply": "same working day"
+      },
+      {
+        "type": "change_within_scope",
+        "first_reply": "4 working hours",
+        "resolution": "next revision slot"
+      },
+      {
+        "type": "addon_request",
+        "first_reply": "1 working day",
+        "resolution": "quote in app"
+      },
+      {
+        "type": "urgent_request",
+        "first_reply": "2 working hours",
+        "resolution": "accept or reschedule in writing"
+      },
+      {
+        "type": "billing_query",
+        "first_reply": "1 working day"
+      }
+    ],
+    "sla_timer_rules": "Timers pause outside working hours and on holidays; breaches surface on AM dashboard and weekly review."
+  },
+  "screens": {
+    "website": [
+      "Home",
+      "Services (by track)",
+      "Service detail (3 tiers)",
+      "Bundles",
+      "Package builder",
+      "Book discovery call",
+      "Proposal link (accept → e-sign → pay)",
+      "Sign in"
+    ],
+    "client_app": [
+      "Home (needs you, services with gate track, AM card)",
+      "Onboarding checklist",
+      "Approvals list",
+      "Plan approval",
+      "Review Studio",
+      "Requests list + new request + quote approval",
+      "Files",
+      "Billing (due, autopay, history)",
+      "Reports",
+      "Thread with AM",
+      "Team users (Owner only)",
+      "Profile & notifications"
+    ],
+    "team_app": [
+      "My Day (check-in, priorities, EOD)",
+      "Tasks (board/list/calendar)",
+      "Task detail",
+      "QC queue + checklist",
+      "Review Studio (team side)",
+      "Projects board by phase",
+      "Client 360",
+      "Requests inbox (AM)",
+      "Calendar",
+      "Capacity",
+      "SOP library",
+      "Profile, leave, attendance"
+    ],
+    "admin_panel": [
+      "Weekly Review",
+      "Pipeline",
+      "Revenue",
+      "Collections",
+      "Capacity",
+      "Quality",
+      "Client Health",
+      "Hierarchy Tree",
+      "Users",
+      "Roles & Permissions",
+      "Departments & Teams",
+      "Branches",
+      "Catalogue (services, bundles, add-ons, discount limits)",
+      "Templates (proposal, agreement, checklists, flows, QC)",
+      "Gate & SLA rules",
+      "Invoices & payouts",
+      "Notification templates",
+      "Integrations",
+      "Audit log",
+      "Data export/deletion",
+      "Tenant settings"
+    ],
+    "creator_portal": [
+      "Briefs",
+      "Brief detail + upload",
+      "Revisions",
+      "Payouts"
+    ]
+  },
+  "data_model": {
+    "entities": {
+      "Organisation": [
+        "id",
+        "name",
+        "plan",
+        "settings",
+        "branding"
+      ],
+      "Branch": [
+        "id",
+        "org_id",
+        "name",
+        "city",
+        "working_hours_calendar_id"
+      ],
+      "Department": [
+        "id",
+        "branch_id",
+        "name",
+        "head_user_id"
+      ],
+      "Team": [
+        "id",
+        "department_id",
+        "name",
+        "lead_user_id"
+      ],
+      "User": [
+        "id",
+        "org_id",
+        "type(staff|client|creator)",
+        "name",
+        "email",
+        "phone",
+        "status",
+        "manager_id",
+        "department_id",
+        "team_id",
+        "branch_id"
+      ],
+      "Role": [
+        "id",
+        "org_id",
+        "name",
+        "base_role",
+        "is_custom"
+      ],
+      "Permission": [
+        "role_id",
+        "capability",
+        "scope(none|own|team|department|branch|all)"
+      ],
+      "UserRole": [
+        "user_id",
+        "role_id",
+        "scope_ref"
+      ],
+      "ClientOrg": [
+        "id",
+        "org_id",
+        "name",
+        "industry",
+        "gstin",
+        "billing_address",
+        "am_user_id",
+        "health",
+        "tenure_start"
+      ],
+      "ClientBrand": [
+        "id",
+        "client_org_id",
+        "name",
+        "location"
+      ],
+      "ClientUser": [
+        "user_id",
+        "client_org_id",
+        "client_role",
+        "brand_scope[]"
+      ],
+      "Lead": [
+        "id",
+        "source",
+        "contact",
+        "need",
+        "budget",
+        "score",
+        "stage",
+        "owner_id",
+        "lost_reason"
+      ],
+      "PriceBook": [
+        "id",
+        "version",
+        "effective_from",
+        "status"
+      ],
+      "Service": [
+        "id",
+        "price_book_id",
+        "name",
+        "track",
+        "billing_type",
+        "unit",
+        "excluded_note"
+      ],
+      "ServiceTier": [
+        "service_id",
+        "tier",
+        "price",
+        "is_from_price",
+        "with_shoot_price",
+        "deliverables[]",
+        "revision_rounds"
+      ],
+      "Bundle": [
+        "id",
+        "name",
+        "service_ids[]",
+        "discount_pct"
+      ],
+      "AddOn": [
+        "id",
+        "name",
+        "price",
+        "is_custom_quote"
+      ],
+      "Proposal": [
+        "id",
+        "lead_id",
+        "lines[]",
+        "subtotal",
+        "discount",
+        "gst",
+        "valid_until",
+        "status",
+        "version"
+      ],
+      "Agreement": [
+        "id",
+        "proposal_id",
+        "template_id",
+        "signed_pdf_url",
+        "signed_at",
+        "signer"
+      ],
+      "Engagement": [
+        "id",
+        "client_org_id",
+        "service_id",
+        "tier",
+        "billing_type",
+        "status",
+        "current_gate",
+        "am_id",
+        "start_date",
+        "end_date"
+      ],
+      "Cycle": [
+        "id",
+        "engagement_id",
+        "period",
+        "rcd_at",
+        "planning_due",
+        "first_draft_due",
+        "status"
+      ],
+      "RequirementItem": [
+        "id",
+        "cycle_id",
+        "label",
+        "type",
+        "status",
+        "blocked_reason",
+        "waiting_for",
+        "owner_id",
+        "date_requested"
+      ],
+      "Plan": [
+        "id",
+        "cycle_id",
+        "content",
+        "status",
+        "approved_by",
+        "approved_at"
+      ],
+      "Deliverable": [
+        "id",
+        "cycle_id",
+        "type",
+        "title",
+        "status",
+        "revision_rounds_used",
+        "approved_version_id"
+      ],
+      "Version": [
+        "id",
+        "deliverable_id",
+        "file_id",
+        "number",
+        "uploaded_by"
+      ],
+      "Comment": [
+        "id",
+        "target_type",
+        "target_id",
+        "timestamp_or_pin",
+        "body",
+        "is_internal",
+        "author_id"
+      ],
+      "Task": [
+        "id",
+        "deliverable_id",
+        "flow_step",
+        "owner_id",
+        "department_id",
+        "deadline",
+        "status",
+        "depends_on[]",
+        "blocked_reason",
+        "time_logged"
+      ],
+      "QCResult": [
+        "id",
+        "version_id",
+        "checklist_id",
+        "items[]",
+        "result",
+        "reviewer_id"
+      ],
+      "Approval": [
+        "id",
+        "target_type",
+        "target_id",
+        "gate",
+        "user_id",
+        "at",
+        "version_id",
+        "immutable:true"
+      ],
+      "Request": [
+        "id",
+        "engagement_id",
+        "type",
+        "description",
+        "status",
+        "scope_decision",
+        "quote_amount",
+        "timeline",
+        "sla_due"
+      ],
+      "Invoice": [
+        "id",
+        "client_org_id",
+        "lines[]",
+        "gst",
+        "total",
+        "due_date",
+        "status",
+        "razorpay_ref"
+      ],
+      "Payment": [
+        "id",
+        "invoice_id",
+        "amount",
+        "method",
+        "at",
+        "ref"
+      ],
+      "Thread": [
+        "id",
+        "client_org_id",
+        "engagement_id?",
+        "type"
+      ],
+      "Message": [
+        "id",
+        "thread_id",
+        "author_id",
+        "body",
+        "attachments[]",
+        "is_internal",
+        "source(app|whatsapp|email)"
+      ],
+      "File": [
+        "id",
+        "client_org_id",
+        "path",
+        "kind",
+        "released",
+        "checksum"
+      ],
+      "Creator": [
+        "id",
+        "user_id",
+        "niche[]",
+        "rates",
+        "rating",
+        "payout_details_ref"
+      ],
+      "Attendance": [
+        "user_id",
+        "date",
+        "check_in",
+        "check_out"
+      ],
+      "EODReport": [
+        "user_id",
+        "date",
+        "completed[]",
+        "pending[]",
+        "blocked[]",
+        "waiting[]"
+      ],
+      "SOP": [
+        "id",
+        "department_id",
+        "title",
+        "version",
+        "body"
+      ],
+      "FlowTemplate": [
+        "id",
+        "department_id",
+        "steps[]",
+        "version"
+      ],
+      "ChecklistTemplate": [
+        "id",
+        "service_id|department_id",
+        "kind(requirements|qc)",
+        "items[]",
+        "version"
+      ],
+      "ErrorLog": [
+        "id",
+        "what",
+        "why",
+        "found_by",
+        "impact",
+        "fix",
+        "prevention",
+        "cause"
+      ],
+      "AuditEvent": [
+        "id",
+        "actor_id",
+        "action",
+        "entity",
+        "entity_id",
+        "before",
+        "after",
+        "at",
+        "ip"
+      ]
+    },
+    "rules": [
+      "Every table carries org_id; row-level security by tenant",
+      "Soft delete with retention policy",
+      "Money stored as integer paise"
+    ]
+  },
+  "automations": [
+    "New lead → assign owner + first-reply timer",
+    "Proposal viewed, not accepted in 48h → sales nudge",
+    "Payment received → create client account, send agreement copy, assign AM, welcome",
+    "Pending requirement items → client reminder every 2 working days",
+    "All requirements received → prompt AM to mark RCD",
+    "RCD marked → create 4-working-day planning task",
+    "Plan approved → generate department tasks from flow templates",
+    "Task late or blocked → department head alert",
+    "QC pass → prompt AM to send to client",
+    "Retainer invoice raised 5 days before month start",
+    "Invoice overdue 7 days → pause new production, alert AM + Finance",
+    "Client health turns Red → Founder alert",
+    "Month end → generate report → next cycle kick-off",
+    "Blocked > 3 working days → add to weekly review"
+  ],
+  "integrations": [
+    "Razorpay",
+    "Leegality or Digio (e-sign)",
+    "WhatsApp Business API",
+    "Resend/AWS SES (email)",
+    "Expo push",
+    "Meta Graph + Marketing API",
+    "Google Ads API",
+    "GA4",
+    "Google Search Console",
+    "Google Business Profile API",
+    "YouTube Data API",
+    "Instagram Graph API",
+    "Zoho Books / Tally",
+    "Google Calendar",
+    "Mux or Cloudflare Stream (video review)",
+    "LLM API (summaries, feedback consolidation, report narratives)"
+  ],
+  "tech_stack": {
+    "web": "Next.js 16 (App Router) + TypeScript + Tailwind 4 with BMU design tokens; route groups marketing, client, team, admin, creator, account. Light-only design. The website forwards /api/* to the API.",
+    "mobile": "Expo SDK 57 React Native app (client + team) sharing packages/shared (types, validation, permission rules, API client); offline cache and outbox in SQLite; Expo push.",
+    "api": "NestJS 12 modular monolith (ESM). One codebase started in three roles: PROCESS_ROLE=all (API + jobs, used by pnpm dev), api (HTTP + live updates, scale out), worker (background jobs, workflows, AI agents, webhooks). Domain events on an in-process bus shared across processes through Postgres.",
+    "db": "PostgreSQL 16/17 + Prisma 7 (driver adapter pg). Single organisation; every query scoped by organisation and permission in the API (Postgres row-level security not used). Migrations per version in apps/api/prisma/migrations.",
+    "cache_queue": "No Redis needed: background jobs run in the worker through one job registry (overlap protection, run history) and a Postgres advisory lock so jobs never run twice; per-person read cache in memory, cleared on every change in every process. Redis/BullMQ remain an option only if job volume demands it.",
+    "realtime": "Server-Sent Events (/realtime) with presence; changes reach every API process through Postgres LISTEN/NOTIFY (channel bmu_events).",
+    "storage": "Uploaded files on disk under STORAGE_DIR (a Docker volume shared by API and worker); signed share links. S3/R2 + CDN still planned.",
+    "auth": "Email OTP (phone OTP waits for an SMS/WhatsApp provider), httpOnly session cookie or bearer token, TOTP 2FA with recovery codes and passkeys (WebAuthn), session list and sign-out everywhere, 2FA enforcement per role. Google sign-in and SSO not built.",
+    "observability": "JSON logs (LOG_FORMAT=json) with X-Request-Id on every request, /health, /health/live, /health/ready on the API and worker, process heartbeats and job history on Command Centre > System health, error log page, load test (pnpm loadtest). Sentry/PostHog/uptime monitoring not connected yet.",
+    "infra": "Dockerfile (one image) + docker-compose.prod.yml (postgres, migrate, api, worker, web, optional forecast); pnpm build:prod + pnpm start for a server without Docker; pnpm dev with embedded Postgres for development. CI/CD, staging and point-in-time-restore backups still to set up by the hosting choice.",
+    "python": "Optional forecasting service (services/forecast, FastAPI or standard library) used through FORECAST_URL; the API falls back to built-in TypeScript forecasts."
+  },
+  "tech_stack_original_plan": {
+    "web": "Next.js (App Router) + TypeScript + Tailwind with design tokens; extend existing bmu-marketing repo using route groups (marketing, client, team, admin, creator)",
+    "mobile": "Expo React Native; shared UI package and API client",
+    "api": "NestJS modular monolith; module boundaries + domain events; split into services only when required",
+    "db": "PostgreSQL (India region) + Prisma; row-level tenant isolation",
+    "cache_queue": "Redis + BullMQ",
+    "realtime": "WebSockets via Redis pub/sub",
+    "storage": "S3-compatible (AWS S3 Mumbai or Cloudflare R2) + CDN",
+    "auth": "OTP (phone/email), Google sign-in, 2FA for staff; SSO later",
+    "observability": "Sentry, uptime monitoring, PostHog",
+    "infra": "Docker, CI/CD, staging + production, daily backups, point-in-time restore"
+  },
+  "backend_runtime": {
+    "summary": "How the built backend runs as real server processes (v21). Only Postgres is required; every optional service has a built-in fallback.",
+    "processes": [
+      {
+        "name": "web",
+        "start": "pnpm start:web (next start, port 3000)",
+        "does": "Website and all web surfaces; forwards /api/* to the API",
+        "instances": "1 or more"
+      },
+      {
+        "name": "api",
+        "start": "pnpm start:api (node apps/api/dist/main.js, PROCESS_ROLE=api, port 4000)",
+        "does": "HTTP API, permissions and field access, live updates (SSE) and presence, search index",
+        "instances": "1 or more behind a load balancer"
+      },
+      {
+        "name": "worker",
+        "start": "pnpm start:worker (node apps/api/dist/worker.js, PROCESS_ROLE=worker, health port 4001)",
+        "does": "All background jobs, workflow engine, AI agents, outgoing webhooks",
+        "instances": "1 active; extra workers wait on standby (advisory lock) and take over within 15 seconds"
+      },
+      {
+        "name": "migrate",
+        "start": "pnpm db:deploy then pnpm db:seed",
+        "does": "Applies migrations; seeds roles, permissions, catalogue, templates, settings and the OWNER_EMAIL Founder (demo data only in development)",
+        "instances": "once per deploy"
+      },
+      {
+        "name": "forecast (optional)",
+        "start": "python services/forecast/main.py (port 8000)",
+        "does": "Revenue, churn and slip forecasts",
+        "instances": "0 or 1"
+      }
+    ],
+    "all_in_one": "PROCESS_ROLE=all (default) runs api + worker in one process for pnpm dev and small installs; a second all-in-one copy detects the jobs lock and serves the API only.",
+    "events": {
+      "bus": "Every database write publishes a change event (Prisma extension) and every audited action a domain event.",
+      "cross_process": "Postgres LISTEN/NOTIFY channel bmu_events; each event is sent once with the sender process id and re-published by the other processes. EVENT_BRIDGE=0 turns it off. Needs a direct connection (DIRECT_DATABASE_URL behind PgBouncer).",
+      "reliability": "Failed listener deliveries are stored (event_failures) and retried after 1, 2, 4 and 8 minutes by the process that owns that listener, then shown on System health."
+    },
+    "jobs": {
+      "registry": "apps/api/src/runtime/jobs.ts startJob(): one place that decides where jobs run, prevents overlapping runs, logs failures, records run history and drains running jobs on shutdown.",
+      "list": [
+        "actions.jobs 10m",
+        "agents.scheduler 1m + events",
+        "ai.digest 5m",
+        "automations.engine 1m",
+        "clients.lifecycle 10m",
+        "comms.meeting_reminders 1m",
+        "comms.notification_router 1m",
+        "creative.timers 5m",
+        "deliver.jobs 10m",
+        "devices.snoozed 1m",
+        "events.retries 30s (every process)",
+        "integrations.metrics_sync 15m",
+        "integrations.publisher 1m",
+        "integrations.webhooks 15s",
+        "intelligence.alerts 30m (daily 08:00 IST)",
+        "intelligence.forecast 30m (nightly 01:00 IST)",
+        "intelligence.reports 5m",
+        "money.invoice_plans 15m",
+        "ops.lead_alerts 10m",
+        "people.leavers 10m",
+        "people.scheduled_changes 10m",
+        "security.retention 1h (daily 02:00 IST)",
+        "sell.scheduler 1m",
+        "service.dunning 15m",
+        "workflows.engine 30s + events"
+      ],
+      "switches": "AUTOMATIONS_DISABLED (all but the two people jobs), ACTIONS_JOBS_DISABLED, DELIVER_JOBS_DISABLED, AGENTS_DISABLED, WORKFLOWS_DISABLED"
+    },
+    "health": {
+      "api": [
+        "GET /health (summary)",
+        "GET /health/live (liveness)",
+        "GET /health/ready (database + all migrations applied, else 503)"
+      ],
+      "worker": [
+        "GET :4001/health/live (state standby/running/stopping)",
+        "GET :4001/health/ready (database, migrations, every job with last run and error)"
+      ],
+      "in_app": "Command Centre > System health: processes, jobs, event sharing, listeners, failed deliveries, search index, feature switches."
+    },
+    "configuration": {
+      "check": "pnpm env:check, and the same check at start-up: on NODE_ENV=production the API and worker refuse to start without DATABASE_URL or with a weak JWT_SECRET, and warn about APP_URL, CORS_ORIGINS, INTEGRATIONS_KEY, SMTP and OWNER_EMAIL.",
+      "required_live": [
+        "DATABASE_URL",
+        "JWT_SECRET (32+ chars)",
+        "APP_URL",
+        "CORS_ORIGINS",
+        "OWNER_EMAIL",
+        "SMTP_* (or OTP_LOG=1 for the first sign-in only)",
+        "INTEGRATIONS_KEY (for integrations)"
+      ],
+      "runtime": [
+        "PROCESS_ROLE",
+        "PORT",
+        "WORKER_PORT",
+        "TRUST_PROXY",
+        "LOG_FORMAT",
+        "LOG_LEVEL",
+        "LOG_REQUESTS",
+        "EVENT_BRIDGE",
+        "DIRECT_DATABASE_URL",
+        "STORAGE_DIR",
+        "SEED_DEMO"
+      ],
+      "templates": [
+        "apps/api/.env.example (development)",
+        ".env.production.example (live, Docker)"
+      ]
+    },
+    "deployment": {
+      "docker": "cp .env.production.example .env.production; pnpm docker:up (docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build). HTTPS reverse proxy (Caddy/Nginx) in front of port 3000. Scale: --scale api=N, keep one worker.",
+      "no_docker": "pnpm install; pnpm build:prod; pnpm start (migrations, then api + worker + web with automatic restart).",
+      "updates": "Pull or unzip the new version and repeat the same command; migrations run before the new API starts.",
+      "backups": "pg_dump -Fc nightly plus the uploaded files folder; restore with pg_restore.",
+      "shutdown": "SIGTERM/Ctrl+C: stop timers, wait for running jobs (up to 20 s), close connections, release the jobs lock."
+    },
+    "code_layout": {
+      "runtime": "apps/api/src/runtime (process roles, jobs, event bridge, jobs lock, heartbeats, env check, HTTP basics), main.ts, worker.ts, health/",
+      "platform": "prisma/, platform/ (event bus, realtime, search, flags, system health), audit/, common/",
+      "identity_security": "auth/, security/, org/, settings/, devices/",
+      "sell": "leads/, sell/, proposals/, catalogue/, ops-actions/",
+      "deliver": "engagements/, deliver/, production/, craft/, creative/, flows/, requests/, clients/, clients-actions/",
+      "money": "service/, money/",
+      "people": "team-flows/, people-actions/, workspace/",
+      "automation_ai": "automations/, workflows/, agents/, ai/, actions/",
+      "insight": "insights/, analytics/, ops-analytics/, dashboards/, intelligence/",
+      "admin_comms": "admin-org/, admin-platform/, customise/, comms/, integrations/, notifications/",
+      "shared": "packages/shared (types, zod schemas, permission matrix, gates, catalogue, API client) used by api, web and mobile"
+    },
+    "limits": [
+      "Postgres row-level security is not used; isolation is enforced in the API.",
+      "Uploaded files live on local disk; with API processes on several machines the folder must be shared storage (or move to S3/R2).",
+      "The search index and read cache are per process (kept fresh by events); each API process builds its own index on first search.",
+      "Event notifications are capped at 8 KB; very large bulk writes are shared as \"several rows changed\".",
+      "Phone OTP, Google sign-in, SSO, virus scanning of uploads, Sentry and PostHog are not built yet."
+    ],
+    "docs": [
+      "docs/backend.md",
+      "docs/flows/*.md",
+      "docs/spec/architecture-v2.json",
+      "docs/loadtest-results.md",
+      "README.md"
+    ]
+  },
+  "security_compliance": [
+    "RBAC + scope check on every API call (server-side)",
+    "Encrypted credential vault; every reveal logged",
+    "Immutable approvals and audit events",
+    "DPDP Act 2023: consent, data export, deletion requests",
+    "GST-compliant invoices; e-invoicing when applicable",
+    "Instant access revocation on staff offboarding",
+    "Rate limiting, file virus scan, signed URLs for files"
+  ],
+  "scale_plan": [
+    {
+      "stage": "today",
+      "clients": "10–50",
+      "team": "5–20",
+      "architecture": "single tenant, modular monolith",
+      "status": "Built: modular monolith, runs all-in-one or as API + worker."
+    },
+    {
+      "stage": "growth",
+      "clients": "50–300",
+      "team": "20–100",
+      "architecture": "read replicas, separate workers, isolated video pipeline",
+      "status": "Separate workers built in v21 (PROCESS_ROLE=worker); read replicas and an isolated video pipeline not built."
+    },
+    {
+      "stage": "scale",
+      "clients": "300–1,500",
+      "team": "100–500",
+      "architecture": "branches as sub-tenants, Review + Messaging as services, data warehouse"
+    },
+    {
+      "stage": "platform",
+      "clients": "1,500+",
+      "team": "500+ plus partners",
+      "architecture": "white-label tenants, public API, marketplace billing"
+    }
+  ],
+  "roadmap": [
+    {
+      "release": 1,
+      "name": "Run BMU (MVP)",
+      "months": "0–4",
+      "scope": [
+        "auth, roles, hierarchy, admin panel core",
+        "CRM",
+        "catalogue + proposals",
+        "payments + GST invoices",
+        "onboarding + RCD",
+        "projects, tasks, QC, gates",
+        "Review Studio",
+        "client threads + request desk",
+        "client + team web (PWA)"
+      ]
+    },
+    {
+      "release": 2,
+      "name": "Delight clients",
+      "months": "4–8",
+      "scope": [
+        "native iOS + Android",
+        "website package builder",
+        "e-sign",
+        "content calendar + auto-publishing",
+        "live reports",
+        "WhatsApp alert bot",
+        "autopay"
+      ]
+    },
+    {
+      "release": 3,
+      "name": "Run at scale",
+      "months": "8–14",
+      "scope": [
+        "Command Centre analytics",
+        "capacity planning",
+        "creator portal + payouts",
+        "client health scoring",
+        "AI copilot for AMs",
+        "accounting sync"
+      ]
+    },
+    {
+      "release": 4,
+      "name": "Become a platform",
+      "months": "14+",
+      "scope": [
+        "branch/franchise tenants",
+        "white-label",
+        "add-on marketplace in client app",
+        "BMU QR + Smart Review data in reports",
+        "Real Estate Suite for developer clients",
+        "public API"
+      ]
+    }
+  ],
+  "catalogue_seed": {
+    "edition": "2026",
+    "prices_exclusive_of": "GST",
+    "services": [
+      {
+        "id": "digital_marketing",
+        "name": "Digital Marketing",
+        "track": "Marketing & Visibility",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 25000,
+          "growth": 50000,
+          "premium": 100000
+        },
+        "premium_is_starting_price": false,
+        "excluded_note": "Ad spend excluded"
+      },
+      {
+        "id": "chatgpt_ads",
+        "name": "ChatGPT Ads",
+        "track": "Marketing & Visibility",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 20000,
+          "growth": 40000,
+          "premium": 75000
+        },
+        "premium_is_starting_price": false,
+        "excluded_note": "Ad spend excluded; platform access subject to provider availability"
+      },
+      {
+        "id": "seo",
+        "name": "SEO",
+        "track": "Marketing & Visibility",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 15000,
+          "growth": 30000,
+          "premium": 60000
+        },
+        "premium_is_starting_price": false
+      },
+      {
+        "id": "gbp",
+        "name": "Google Business Profile",
+        "track": "Marketing & Visibility",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 7500,
+          "growth": 15000,
+          "premium": 25000
+        },
+        "premium_is_starting_price": false
+      },
+      {
+        "id": "complete_branding",
+        "name": "Complete Branding",
+        "track": "Brand & Design",
+        "billing_type": "one_time",
+        "tiers": {
+          "starter": 40000,
+          "growth": 75000,
+          "premium": 150000
+        },
+        "premium_is_starting_price": true
+      },
+      {
+        "id": "logo_brand_kit",
+        "name": "Logo & Brand Kit",
+        "track": "Brand & Design",
+        "billing_type": "one_time",
+        "tiers": {
+          "starter": 15000,
+          "growth": 30000,
+          "premium": 60000
+        },
+        "premium_is_starting_price": false
+      },
+      {
+        "id": "graphic_design",
+        "name": "Graphic Designing",
+        "track": "Brand & Design",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 10000,
+          "growth": 20000,
+          "premium": 40000
+        },
+        "premium_is_starting_price": false
+      },
+      {
+        "id": "website",
+        "name": "Website Design & Development",
+        "track": "Web & AI",
+        "billing_type": "one_time",
+        "tiers": {
+          "starter": 25000,
+          "growth": 60000,
+          "premium": 125000
+        },
+        "premium_is_starting_price": true,
+        "excluded_note": "Domain/hosting/paid plugins excluded"
+      },
+      {
+        "id": "ai_chatbot",
+        "name": "AI Chatbots",
+        "track": "Web & AI",
+        "billing_type": "one_time",
+        "tiers": {
+          "starter": 10000,
+          "growth": 25000,
+          "premium": 50000
+        },
+        "premium_is_starting_price": true,
+        "excluded_note": "Platform/API charges excluded"
+      },
+      {
+        "id": "smm",
+        "name": "Social Media Management",
+        "track": "Social & Personal Brand",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 25000,
+          "growth": 45000,
+          "premium": 65000
+        },
+        "premium_is_starting_price": false,
+        "with_shoot_tiers": {
+          "starter": 35000,
+          "growth": 55000,
+          "premium": 75000,
+          "sessions": [
+            1,
+            2,
+            3
+          ],
+          "session_hours": 6
+        }
+      },
+      {
+        "id": "smm_brands",
+        "name": "Social Media Management — Brands",
+        "track": "Social & Personal Brand",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 25000,
+          "growth": 45000,
+          "premium": 65000
+        },
+        "premium_is_starting_price": false,
+        "with_shoot_tiers": {
+          "starter": 35000,
+          "growth": 55000,
+          "premium": 75000,
+          "sessions": [
+            1,
+            2,
+            3
+          ],
+          "session_hours": 6
+        }
+      },
+      {
+        "id": "smm_influencers",
+        "name": "Social Media Management — Influencers",
+        "track": "Social & Personal Brand",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 25000,
+          "growth": 45000,
+          "premium": 65000
+        },
+        "premium_is_starting_price": false,
+        "with_shoot_tiers": {
+          "starter": 35000,
+          "growth": 55000,
+          "premium": 75000,
+          "sessions": [
+            1,
+            2,
+            3
+          ],
+          "session_hours": 6
+        }
+      },
+      {
+        "id": "personal_branding",
+        "name": "Personal Branding",
+        "track": "Social & Personal Brand",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 20000,
+          "growth": 40000,
+          "premium": 75000
+        },
+        "premium_is_starting_price": false
+      },
+      {
+        "id": "video_editing",
+        "name": "Video Editing",
+        "track": "Content & Production",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 12000,
+          "growth": 25000,
+          "premium": 50000
+        },
+        "premium_is_starting_price": false
+      },
+      {
+        "id": "business_video_shoot",
+        "name": "Business Video Shoots",
+        "track": "Content & Production",
+        "billing_type": "per_unit",
+        "tiers": {
+          "starter": 12000,
+          "growth": 25000,
+          "premium": 50000
+        },
+        "premium_is_starting_price": true,
+        "unit": "shoot",
+        "excluded_note": "Travel/special equipment may be additional"
+      },
+      {
+        "id": "podcast_shoot",
+        "name": "Podcast Shoots",
+        "track": "Content & Production",
+        "billing_type": "per_unit",
+        "tiers": {
+          "starter": 15000,
+          "growth": 30000,
+          "premium": 50000
+        },
+        "premium_is_starting_price": true,
+        "unit": "session (3 hrs)"
+      },
+      {
+        "id": "ugc_content",
+        "name": "UGC Content",
+        "track": "UGC & Creator Marketing",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 15000,
+          "growth": 30000,
+          "premium": 60000
+        },
+        "premium_is_starting_price": false,
+        "excluded_note": "Creator fees/product shipping may be additional"
+      },
+      {
+        "id": "ugc_ads",
+        "name": "UGC Ads",
+        "track": "UGC & Creator Marketing",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 15000,
+          "growth": 30000,
+          "premium": 60000
+        },
+        "premium_is_starting_price": false,
+        "excluded_note": "Ad spend + creator fees excluded"
+      },
+      {
+        "id": "ugc_outsourcing",
+        "name": "UGC Outsourcing",
+        "track": "UGC & Creator Marketing",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 10000,
+          "growth": 20000,
+          "premium": 40000
+        },
+        "premium_is_starting_price": false,
+        "excluded_note": "Creator payments separate"
+      },
+      {
+        "id": "ugc_promotions",
+        "name": "UGC Promotions",
+        "track": "UGC & Creator Marketing",
+        "billing_type": "monthly",
+        "tiers": {
+          "starter": 25000,
+          "growth": 40000,
+          "premium": 80000
+        },
+        "premium_is_starting_price": false,
+        "excluded_note": "Creator fees separate"
+      },
+      {
+        "id": "brand_collaborations",
+        "name": "Brand Collaborations",
+        "track": "UGC & Creator Marketing",
+        "billing_type": "per_unit",
+        "tiers": {
+          "starter": 25000,
+          "growth": 40000,
+          "premium": 80000
+        },
+        "premium_is_starting_price": true,
+        "unit": "campaign",
+        "excluded_note": "Partner/creator fees separate"
+      },
+      {
+        "id": "experiential_ads",
+        "name": "Experiential Ads",
+        "track": "UGC & Creator Marketing",
+        "billing_type": "per_unit",
+        "tiers": {
+          "starter": 25000,
+          "growth": 50000,
+          "premium": 100000
+        },
+        "premium_is_starting_price": true,
+        "unit": "campaign",
+        "excluded_note": "Actual activation/production costs extra"
+      }
+    ],
+    "bundles": {
+      "discount_pct": 10,
+      "rule": "Combined value of selected tier across included services less 10%. Social media priced without shoot; shoot-based packages quoted on request.",
+      "items": [
+        {
+          "id": "digital_presence",
+          "name": "Digital Presence",
+          "services": [
+            "website",
+            "seo",
+            "gbp",
+            "smm"
+          ]
+        },
+        {
+          "id": "brand_launch",
+          "name": "Brand Launch",
+          "services": [
+            "complete_branding",
+            "graphic_design",
+            "website"
+          ]
+        },
+        {
+          "id": "social_growth",
+          "name": "Social Growth",
+          "services": [
+            "smm",
+            "graphic_design",
+            "video_editing",
+            "ugc_content"
+          ]
+        },
+        {
+          "id": "ugc_growth",
+          "name": "UGC Growth",
+          "services": [
+            "ugc_content",
+            "ugc_outsourcing",
+            "ugc_ads",
+            "ugc_promotions"
+          ]
+        },
+        {
+          "id": "founder_brand",
+          "name": "Founder Brand",
+          "services": [
+            "personal_branding",
+            "business_video_shoot",
+            "video_editing",
+            "smm"
+          ]
+        },
+        {
+          "id": "business_ai",
+          "name": "Business AI",
+          "services": [
+            "ai_chatbot",
+            "website",
+            "digital_marketing"
+          ]
+        },
+        {
+          "id": "local_business_growth",
+          "name": "Local Business Growth",
+          "services": [
+            "gbp",
+            "seo",
+            "smm",
+            "business_video_shoot",
+            "graphic_design"
+          ]
+        },
+        {
+          "id": "complete_digital_growth",
+          "name": "Complete Digital Growth",
+          "services": [
+            "digital_marketing",
+            "seo",
+            "complete_branding",
+            "website",
+            "smm",
+            "video_editing",
+            "ugc_content",
+            "ai_chatbot"
+          ]
+        }
+      ]
+    },
+    "priced_addons": [
+      {
+        "name": "Additional platform in a social media package",
+        "price": 7000,
+        "unit": "each"
+      },
+      {
+        "name": "Additional shoot session (6 hours)",
+        "price": 10000
+      },
+      {
+        "name": "Ranking on AI engines (AEO / GEO)",
+        "price": 10000
+      }
+    ],
+    "custom_quote_addon_groups": [
+      "Content & Creative",
+      "Production",
+      "Creator & UGC",
+      "Web, SEO & AI",
+      "Management"
+    ],
+    "billed_separately": [
+      "advertising spend",
+      "creator & influencer fees",
+      "third-party charges (domain, hosting, plugins, fonts, stock, chatbot platform/API)",
+      "production extras (travel outside city, permits, venue, props, models, special equipment)",
+      "GST"
+    ],
+    "payment_terms": {
+      "retainer": "billed monthly in advance",
+      "project": "50% on confirmation, 50% before final handover"
+    },
+    "ownership": "Final approved files handed over on completion of payment",
+    "deliverables_source": "Load per-tier deliverables from BMU Services & Packages Catalogue 2026"
+  },
+  "glossary": [
+    {
+      "term": "RCD",
+      "meaning": "Requirement Completion Date — marked only by the AM; starts project clock",
+      "client_label": "Project start date"
+    },
+    {
+      "term": "Gate",
+      "meaning": "Mandatory checkpoint; next phase locked until passed",
+      "client_label": "Milestone"
+    },
+    {
+      "term": "Blocked",
+      "meaning": "Work cannot continue; reason documented",
+      "client_label": "Waiting on input"
+    },
+    {
+      "term": "QC",
+      "meaning": "Internal quality check before anything reaches the client",
+      "client_label": "(hidden)"
+    },
+    {
+      "term": "Add-on",
+      "meaning": "Work outside approved scope; quoted and approved in writing",
+      "client_label": "Extra request"
+    },
+    {
+      "term": "Cycle",
+      "meaning": "One monthly run of a retainer or the life of a project",
+      "client_label": "Month / Project"
+    }
+  ],
+  "acceptance_criteria": [
+    "A client cannot see any internal note, QC result, cost or staff below AM via UI or API.",
+    "'Send to client' is impossible (UI + API) without a QC pass on that version.",
+    "Planning cannot start before RCD; RCD can only be set by the client's AM or above.",
+    "Final files cannot be downloaded by the client before final payment clears.",
+    "A request marked new direction creates an add-on that requires written client approval before tasks are created.",
+    "Every approval stores user, timestamp and version and cannot be edited.",
+    "A manager sees all records visible to their reports; moving a user in the hierarchy updates access immediately.",
+    "Catalogue price changes create a new price book version; existing proposals keep their original prices.",
+    "SLA timers pause outside 9:30–18:30 Mon–Sat and on holidays.",
+    "No feature requires a WhatsApp group; every WhatsApp alert deep-links into the app."
+  ],
+  "build_order": [
+    "1. Read uploaded UX/UI files; list every screen and map to screens in this JSON; report gaps",
+    "2. Schema + RBAC + hierarchy",
+    "3. Admin panel: hierarchy, users, roles, catalogue",
+    "4. CRM → proposal → payment → client account",
+    "5. Onboarding + RCD + planning + gates",
+    "6. Tasks, flow templates, QC, Review Studio",
+    "7. Client app home, approvals, requests, billing",
+    "8. Messaging + notifications",
+    "9. Reports + Command Centre",
+    "10. Tests for acceptance_criteria"
+  ]
+}

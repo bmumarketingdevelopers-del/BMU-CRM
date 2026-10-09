@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "BMU Hub",
+    "slug": "bmu-hub",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "marketing.bmu.hub"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#121F2F",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "marketing.bmu.hub"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "BMU Hub uses your photos so you can send pictures and videos to your team.",
+          "cameraPermission": "BMU Hub uses the camera so you can take a photo or video for your team."
+        }
+      ],
+      "expo-sqlite",
+      "expo-notifications",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "BMU Hub uses Face ID to unlock the app when you turn on the app lock."
+        }
+      ]
+    ],
+    "scheme": "bmuhub"
+  }
+}

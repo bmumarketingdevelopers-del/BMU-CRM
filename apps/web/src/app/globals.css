@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/* BMU design tokens (packages/shared/src/tokens.ts). Uploaded UX/UI files override these. */
+:root {
+  /* Light only, like bmumarketing.in: the app ignores the device's dark mode. */
+  color-scheme: light;
+  --bmu-charcoal: #121f2f;
+  --bmu-green: #8bb72c;
+  --bmu-ivory: #f8f7f4;
+  --bmu-grey: #c2c2c2;
+  --bmu-paper: #ffffff;
+  --bmu-muted: #5e6672;
+  --bmu-line: #ebeae6;
+  --bmu-canvas: #f1f0ec;
+  --bmu-amber: #f2d27a;
+  --bmu-red: #e7735c;
+
+  /* Minimal: white work area, hairline borders, colour only where it means something. */
+  --surface: var(--bmu-paper);
+  --surface-raised: var(--bmu-paper);
+  --ink: var(--bmu-charcoal);
+  --ink-muted: var(--bmu-muted);
+  --border: var(--bmu-line);
+}
+
+
+@theme inline {
+  --color-charcoal: var(--bmu-charcoal);
+  --color-green: var(--bmu-green);
+  --color-ivory: var(--bmu-ivory);
+  --color-grey: var(--bmu-grey);
+  --color-paper: var(--bmu-paper);
+  --color-muted: var(--bmu-muted);
+  --color-line: var(--bmu-line);
+  --color-canvas: var(--bmu-canvas);
+  --color-amber: var(--bmu-amber);
+  --color-red: var(--bmu-red);
+
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-border: var(--border);
+
+  /* Headings use the body face, tight and quiet; Zen Dots is kept for the wordmark only. */
+  --font-display: var(--font-albert-sans);
+  --font-logo: var(--font-zen-dots);
+  --font-sans: var(--font-albert-sans);
+
+  /* Square corners on UI components (design_system.principles). */
+  --radius-ui: 0px;
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--bmu-green) 35%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--bmu-green);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

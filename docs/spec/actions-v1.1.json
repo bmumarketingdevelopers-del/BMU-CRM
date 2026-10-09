@@ -1,0 +1,186 @@
+{
+  "patch_meta": {"name": "BMU Hub — Actions Architecture (Create · Edit · Assign · Reassign · Move · Archive)", "version": "1.1", "merge_instruction": "Merge into BMU_Hub_Architecture_Prompt.json as top-level key 'actions'. Where this conflicts with v1.0, this patch wins. Do not change any other section.", "applies_to": ["website", "client_app", "team_app", "admin_panel", "creator_portal"]},
+  "global_action_system": {
+    "principle": "Anything a user can see, a permitted user can add, edit, assign, reassign, move, duplicate, archive or restore — from wherever they are, without leaving the screen.",
+    "entry_points": {
+      "global_new_button": "Persistent '+ New' button in top bar (web) and floating button (mobile). Menu is filtered by the user's permissions and shows: Person, Client, Lead, Task, Request, Engagement, Invoice, File upload, Creator, Note, Meeting, Announcement.",
+      "command_palette": "Ctrl/Cmd + K on web: search any record or type an action ('new task for Aroma', 'reassign Reel 03 to Arjun', 'add user to Design').",
+      "contextual_add": "Inline '+ Add' inside every list, board column, calendar day, hierarchy node, client 360 tab and thread. Context is pre-filled (e.g. adding a task inside a client pre-fills client + engagement).",
+      "row_actions": "Every row/card has a '⋯' menu: Edit, Assign/Reassign, Change deadline, Move, Duplicate, Archive, View history.",
+      "drag_and_drop": "Board columns (change status/phase), hierarchy tree (change manager/team), calendar (change date), capacity view (reassign to another person).",
+      "bulk_actions": "Multi-select in any list: reassign, change status, change deadline, add tag, archive, export.",
+      "import": "CSV/Excel import for people, clients, leads, tasks, creators with column mapping, validation preview and duplicate check.",
+      "quick_add_mobile": "Long-press floating button: Task, Note, Photo/Video upload, Request (client), Blocked report.",
+      "keyboard_shortcuts": {"N": "new in current context", "A": "assign", "R": "reassign", "D": "change deadline", "E": "edit", "/": "search"}
+    },
+    "form_pattern": {
+      "layout": "Side drawer on web, full-screen sheet on mobile. Required fields first; optional fields collapsed under 'More details'.",
+      "save_options": ["Save", "Save and add another", "Save as draft"],
+      "validation": "Inline, on blur and on save; server re-validates.",
+      "duplicate_detection": "On person/client/lead/creator create: match on phone, email, GSTIN, business name; show 'Possible duplicate' with Merge or Continue.",
+      "autosave_drafts": "Forms with more than 5 fields autosave drafts every 10 seconds."
+    },
+    "record_lifecycle": {
+      "states": ["draft", "active", "paused", "archived", "deleted"],
+      "archive": "Default for removal; hidden from lists, kept for reports and audit; restorable.",
+      "delete": "Only Founder/Admin; only records with no financial or approval history; 30-day trash then purge.",
+      "undo": "Toast with Undo for 10 seconds after edit, move, reassign, archive and bulk actions."
+    },
+    "history": "Every record has a 'History' tab: who changed what, from → to, when, reason. Written to AuditEvent.",
+    "permission_check": "Every action checks role + scope on the server. Buttons the user cannot use are hidden; buttons blocked by a gate are shown disabled with the reason on hover/tap.",
+    "sensitive_action_approval": {"rule": "Actions marked approval_required create an ApprovalRequest; the change applies only after approval.", "approver": "Next rank up in hierarchy, unless specified", "states": ["pending", "approved", "rejected", "expired (72 working hours)"], "where": "Approver sees it in 'Needs you' and Admin Panel → Approvals queue"},
+    "reason_required": "Reassign, deadline change, archive, price override, role change and offboarding require a short reason (dropdown + optional note)."
+  },
+  "reassignment_engine": {
+    "applies_to": ["task", "deliverable", "engagement (AM, strategist, producer)", "client (AM)", "lead (sales owner)", "request", "QC queue item", "creator brief", "approval request"],
+    "flow": ["Select record(s) → Reassign", "Pick new owner: list filtered to eligible roles + department, showing current load %, leave status, active tasks and skills", "System shows impact: deadlines at risk, dependencies, client-facing dates", "Choose deadline handling: keep / extend by N working days / set new", "Add handover note (required for in-progress work) and reason", "Confirm → ownership moves; full history, files, comments and time logs stay on the record"],
+    "rules": ["Cannot assign to a user on approved leave for the deadline date (override needs Department Head).", "Assigning above 100% capacity shows a warning; above 120% needs Department Head approval.", "Reassigning a client's AM requires AM Lead or Admin, and the client is notified with the new AM's intro.", "Client-facing deadline changes caused by reassignment require AM confirmation and a client update in thread.", "Previous owner keeps read access for 7 days for handover questions.", "Reassign reasons: leave, overload, skill fit, quality issue, priority change, offboarding, client request, other."],
+    "auto_reassign": {"on_leave_approved": "Tasks due during leave are suggested for reassignment to the Department Head 2 working days before leave starts.", "on_offboarding": "All open records must be reassigned before offboarding can complete (blocking checklist).", "on_overdue_unacknowledged": "Task not started 1 working day before deadline → Department Head alert with one-tap reassign."},
+    "bulk_reassign": "Admin/Department Head can move all open work from Person A to Person B (or split across several) with preview.",
+    "notify": ["new owner (push + in-app)", "previous owner", "manager", "AM if client work", "client only if AM or client-facing date changes"]
+  },
+  "actions": {
+    "organisation_hierarchy": [
+      {"id": "add_person", "name": "Add person to team", "allowed_roles": ["founder", "admin", "hr_ops", "department_head (own dept, needs admin approval)"], "required_fields": ["full name", "phone", "email", "role(s)", "department", "team/pod", "reporting manager", "branch", "joining date", "employment type (full-time, intern, contract)"], "flow": ["Open from + New → Person, or '+ Add' on any hierarchy node (pre-fills department/manager)", "Fill details, choose role(s) and permissions preview", "Select onboarding checklist (laptop, accounts, SOP reading, shadowing)", "Send invite (SMS + email) → user sets password/OTP and 2FA"], "approval": "Department Head-initiated adds need Admin approval", "system_effects": ["new user", "reporting manager", "HR"], "notify": ["user created with status 'invited'", "appears on hierarchy tree", "access scoped by role + manager chain", "staff onboarding tasks created for HR and manager"], "entry_points": ["Admin → Users", "Hierarchy tree node", "+ New → Person", "CSV import"]},
+      {"id": "edit_person", "name": "Edit person", "allowed_roles": ["founder", "admin", "hr_ops", "self (contact, photo only)"], "rules": ["Role, department and manager changes go through change_role / move_person"]},
+      {"id": "move_person", "name": "Change manager / team / department / branch", "allowed_roles": ["founder", "admin", "department_head (within own dept)"], "required_fields": ["new position", "effective date", "reason"], "flow": ["Drag node on hierarchy tree or use Move", "Preview access changes (gains/loses visibility)", "Choose what happens to open work: keep / reassign via reassignment_engine", "Confirm"], "approval": "Cross-department moves need Admin", "system_effects": ["person", "old manager", "new manager"], "notify": ["visibility recalculated immediately on effective date", "history kept"]},
+      {"id": "change_role", "name": "Promote / change role / add secondary role", "allowed_roles": ["founder", "admin"], "required_fields": ["new role(s)", "effective date", "reason"], "flow": ["Select person → Change role", "See permission diff", "Confirm"], "approval": "Must be done by someone at least one rank above the new role; Founder for Admin role", "system_effects": ["person", "manager"], "notify": ["permissions updated", "audit logged"]},
+      {"id": "create_department_team_branch", "name": "Create department, team/pod or branch", "allowed_roles": ["founder", "admin"], "required_fields": ["name", "parent", "head/lead", "working-hours calendar (branch)"], "flow": ["+ Add on hierarchy tree", "Assign head/lead", "Attach default flow templates and QC checklists (department)"]},
+      {"id": "create_client_pod", "name": "Create client pod", "allowed_roles": ["founder", "admin", "am_lead"], "required_fields": ["pod name", "AM", "strategist", "producers", "clients"], "flow": ["Create pod", "Add members", "Attach clients"], "system_effects": ["clients' new tasks default to pod members"]},
+      {"id": "leave_request", "name": "Apply / approve leave", "allowed_roles": ["any staff (apply)", "manager (approve)"], "required_fields": ["dates", "type", "note"], "flow": ["Apply in Team App → Me", "Manager sees open tasks during leave and approves", "Triggers auto_reassign suggestion"]},
+      {"id": "offboard_person", "name": "Offboard team member", "allowed_roles": ["founder", "admin", "hr_ops"], "required_fields": ["last working day", "reason"], "flow": ["Start offboarding", "Blocking checklist: reassign all open tasks, clients, leads, requests, approvals; return assets; revoke vault access; transfer file ownership", "Final confirmation by Admin"], "approval": "Admin", "system_effects": ["manager", "HR", "affected AMs"], "notify": ["login disabled at end of last day", "record archived, history kept", "person removed from tree, shown under 'Former'"]},
+      {"id": "custom_role", "name": "Create custom role", "allowed_roles": ["founder", "admin (founder approves)"], "required_fields": ["name", "clone from base role", "capability scopes"]}
+    ],
+    "leads_sales": [
+      {"id": "add_lead", "name": "Add lead", "allowed_roles": ["sales_manager", "sales_executive", "founder", "admin", "account_manager (referral only)"], "required_fields": ["name", "phone", "business name", "source", "service interest"], "flow": ["+ New → Lead / pipeline column '+ Add' / auto from website, ad forms, BMU QR", "Duplicate check on phone/email", "Assign owner (auto round-robin or manual)"], "system_effects": ["first-reply SLA timer starts"], "notify": ["lead owner"]},
+      {"id": "assign_reassign_lead", "name": "Assign / reassign lead", "allowed_roles": ["sales_manager", "founder", "admin"], "flow": ["Use reassignment_engine"]},
+      {"id": "log_activity", "name": "Log call / meeting / note / follow-up", "allowed_roles": ["lead owner", "sales_manager"], "required_fields": ["type", "outcome", "next follow-up date"]},
+      {"id": "merge_leads", "name": "Merge duplicate leads", "allowed_roles": ["sales_manager", "admin"]},
+      {"id": "create_proposal", "name": "Create proposal", "allowed_roles": ["sales_executive", "sales_manager", "founder"], "required_fields": ["lead", "services + tiers", "validity"], "flow": ["From lead → Create proposal", "Pick services/tiers; bundles auto-detected", "Discount within limit or request approval", "Preview → Send link"], "approval": "Discount above role limit → Sales Manager; above Sales Manager limit → Founder"},
+      {"id": "revise_proposal", "name": "Revise proposal", "allowed_roles": ["proposal owner"], "rules": ["Creates new version; old link shows 'Superseded'"]},
+      {"id": "mark_lost", "name": "Mark lead lost", "allowed_roles": ["lead owner"], "required_fields": ["lost reason"]},
+      {"id": "convert_to_client", "name": "Convert lead to client", "allowed_roles": ["system on payment", "sales_manager (manual, e.g. offline payment)"], "flow": ["Triggered by proposal payment, or manual with payment proof", "Runs add_client with data from lead + proposal"]}
+    ],
+    "clients": [
+      {"id": "add_client", "name": "Add new client", "allowed_roles": ["founder", "admin", "sales_manager", "am_lead"], "required_fields": ["business name", "primary contact name + phone + email", "industry", "billing name", "GSTIN (optional)", "billing address", "branch"], "flow": ["Entry: + New → Client, Clients list '+ Add', lead conversion, or CSV import", "Duplicate check (GSTIN, phone, business name)", "Add brands/locations (optional)", "Add engagements (services + tiers) or skip to add later", "Assign AM (auto-suggest by load and industry) → handover form", "Choose: invite client users now / later", "Choose start mode: new onboarding or 'existing client migration' (skips sales steps, lets AM set current gate with reason)"], "approval": "Manual client without online payment needs Finance to confirm payment received", "system_effects": ["AM", "AM Lead", "Finance", "client owner (invite)"], "notify": ["ClientOrg created", "client thread created", "onboarding checklists generated per engagement", "welcome message sent when users invited"], "rules": ["Existing-client migration: import past files and invoices; mark historical approvals as 'migrated'"]},
+      {"id": "edit_client", "name": "Edit client details", "allowed_roles": ["AM (contact info)", "admin", "finance (billing fields)", "client_owner (own contact + billing info, AM notified)"]},
+      {"id": "add_client_user", "name": "Invite client user", "allowed_roles": ["client_owner", "account_manager", "admin"], "required_fields": ["name", "phone/email", "client role", "brand/location scope"], "flow": ["Client Owner: Settings → Team → Invite", "AM: Client 360 → Users → Invite"], "rules": ["AM-invited Owner role needs existing Owner or Admin confirmation"]},
+      {"id": "add_brand_location", "name": "Add brand / location", "allowed_roles": ["client_owner", "account_manager", "admin"], "required_fields": ["name", "address"]},
+      {"id": "assign_reassign_am", "name": "Assign / reassign Account Manager", "allowed_roles": ["am_lead", "admin", "founder"], "flow": ["Use reassignment_engine", "Old AM writes handover note (open requests, client preferences, pending approvals)", "Client receives intro of new AM in thread"]},
+      {"id": "add_engagement", "name": "Add service to existing client", "allowed_roles": ["account_manager (propose)", "sales_manager", "admin"], "required_fields": ["service", "tier", "start month", "billing"], "flow": ["Client 360 → Services → '+ Add service', or client taps 'Add service' in app", "Generates proposal/quote → client approves + pays", "New onboarding checklist for that service only"], "approval": "Client Owner approval + payment"},
+      {"id": "change_tier", "name": "Upgrade / downgrade tier", "allowed_roles": ["account_manager", "client_owner (request)", "admin"], "required_fields": ["new tier", "effective cycle"], "flow": ["Request → quote difference → client approves", "Applies from next cycle (upgrade can apply mid-cycle with pro-rata)"], "approval": "Client Owner; downgrade also notifies AM Lead"},
+      {"id": "pause_engagement", "name": "Pause engagement", "allowed_roles": ["account_manager (request)", "admin"], "required_fields": ["reason", "pause until"], "approval": "AM Lead", "system_effects": ["tasks paused", "invoices skipped for paused months", "clock paused"]},
+      {"id": "cancel_offboard_client", "name": "Cancel engagement / offboard client", "allowed_roles": ["admin", "am_lead"], "required_fields": ["reason", "last cycle"], "flow": ["Start offboarding", "Checklist: dues cleared, final files, access removal, permissions, final report, pending work, contract closure", "Client confirms receipt"], "approval": "Admin", "notify": ["client users set read-only for 90 days, then archived"]},
+      {"id": "set_client_health", "name": "Override client health", "allowed_roles": ["account_manager", "am_lead"], "required_fields": ["status", "reason"]}
+    ],
+    "tasks_work": [
+      {"id": "add_task", "name": "Add new task", "allowed_roles": ["founder", "admin", "department_head", "account_manager", "strategist", "producer (for self or as subtask)"], "required_fields": ["title", "client + engagement (or 'Internal')", "department", "assignee", "deadline", "priority"], "flow": ["Entry: + New → Task, '+ Add' in board column/list/calendar day/client 360/deliverable, convert from message or comment, quick add on mobile", "Optional: description, brief, references, checklist, subtasks, dependencies, estimate, attachments, linked deliverable, watchers", "Assignee picker shows load % and leave", "Save"], "system_effects": ["task appears in assignee's My Day on start date", "capacity updated"], "notify": ["assignee", "watchers"], "rules": ["Client tasks must link to an engagement in Gate 3 or later, or be marked 'pre-production' (planning/onboarding).", "A task that adds client deliverables beyond scope must link to an approved add-on request; otherwise saved as draft and AM is alerted.", "Producers can assign tasks only to themselves or create subtasks; assigning to others needs Department Head / AM / Strategist.", "Internal tasks (training, admin, pitches) allowed with no client."]},
+      {"id": "add_task_from_template", "name": "Add tasks from flow template", "allowed_roles": ["department_head", "strategist", "account_manager"], "flow": ["Pick template (e.g. Website flow)", "Set start date; durations computed in working days", "Map roles to people", "Preview → Create all"]},
+      {"id": "recurring_task", "name": "Create recurring task", "allowed_roles": ["department_head", "account_manager"], "required_fields": ["repeat rule (daily, weekly, monthly, cycle start)", "end"], "rules": ["Instances generated 7 days ahead; skip Sundays/holidays"]},
+      {"id": "subtask_dependency", "name": "Add subtask / dependency", "allowed_roles": ["task owner", "department_head", "strategist"], "rules": ["Parent can't move to Done while subtasks are open", "Dependent task shows 'Waiting' until predecessor is Done"]},
+      {"id": "assign_reassign_task", "name": "Assign / reassign task", "allowed_roles": ["department_head", "account_manager (client tasks)", "strategist (own engagements)", "admin"], "flow": ["Use reassignment_engine"]},
+      {"id": "self_unassign", "name": "Request to hand back task", "allowed_roles": ["producer"], "required_fields": ["reason"], "flow": ["Producer taps 'Can't take this'", "Manager reassigns or rejects"]},
+      {"id": "change_deadline", "name": "Change deadline", "allowed_roles": ["department_head", "account_manager", "strategist"], "required_fields": ["new date", "reason"], "rules": ["Producers can request, not change", "If client-facing date moves, AM must post update in client thread", "Changes counted in delivery reports"]},
+      {"id": "change_status", "name": "Update status", "allowed_roles": ["assignee", "department_head"], "rules": ["Blocked requires reason, waiting for, responsible, date requested, expected resolution", "Done on deliverable tasks routes to QC, not directly to client"]},
+      {"id": "duplicate_task", "name": "Duplicate task / set of tasks", "allowed_roles": ["department_head", "account_manager", "strategist"]},
+      {"id": "archive_task", "name": "Cancel / archive task", "allowed_roles": ["department_head", "account_manager"], "required_fields": ["reason"]},
+      {"id": "log_time", "name": "Log time", "allowed_roles": ["assignee"], "required_fields": ["minutes", "note"]},
+      {"id": "add_deliverable", "name": "Add deliverable to plan/calendar", "allowed_roles": ["strategist", "account_manager"], "required_fields": ["type", "title", "date", "channel"], "rules": ["After Gate 2 the plan is locked: new deliverables need an add-on request or a scope swap approved by client"]},
+      {"id": "scope_swap", "name": "Swap deliverable within scope", "allowed_roles": ["account_manager"], "required_fields": ["swap out", "swap in", "reason"], "approval": "Client Owner/Approver in-app"},
+      {"id": "upload_version", "name": "Upload new version", "allowed_roles": ["assignee"], "system_effects": ["version number increments", "QC queue item created"]},
+      {"id": "assign_qc", "name": "Assign / reassign QC reviewer", "allowed_roles": ["department_head"], "flow": ["Use reassignment_engine"]}
+    ],
+    "requests_approvals": [
+      {"id": "raise_request", "name": "Raise request", "allowed_roles": ["client_owner", "client_approver", "client_viewer (query only)", "account_manager (on behalf of client)"], "required_fields": ["type", "description", "attachments", "needed by"]},
+      {"id": "assign_request", "name": "Assign / reassign request", "allowed_roles": ["account_manager", "am_lead"]},
+      {"id": "quote_addon", "name": "Create add-on quote", "allowed_roles": ["account_manager", "admin"], "required_fields": ["items from add-on list or custom", "price", "timeline"], "approval": "Custom-priced items above limit → Admin"},
+      {"id": "convert_request_to_tasks", "name": "Convert approved request to tasks", "allowed_roles": ["account_manager", "department_head"], "flow": ["One tap after approval + payment; uses template if matched"]},
+      {"id": "request_approval_internal", "name": "Request internal approval", "allowed_roles": ["any staff"], "required_fields": ["what", "approver", "by when"]}
+    ],
+    "finance": [
+      {"id": "create_invoice", "name": "Create manual invoice", "allowed_roles": ["finance", "admin"], "required_fields": ["client", "lines", "due date"], "rules": ["Pass-through items (ad spend, creator fees) on separate lines"]},
+      {"id": "credit_note", "name": "Issue credit note", "allowed_roles": ["finance"], "required_fields": ["invoice", "amount", "reason"], "approval": "Admin"},
+      {"id": "record_offline_payment", "name": "Record offline payment (bank transfer, cheque, cash)", "allowed_roles": ["finance"], "required_fields": ["amount", "date", "reference", "proof"]},
+      {"id": "adjust_due_date", "name": "Extend payment due date", "allowed_roles": ["finance"], "required_fields": ["new date", "reason"], "approval": "Admin if > 7 days"},
+      {"id": "creator_payout", "name": "Create creator payout", "allowed_roles": ["finance", "ugc coordinator (propose)"], "required_fields": ["creator", "brief", "amount"], "approval": "Finance"}
+    ],
+    "creators": [
+      {"id": "add_creator", "name": "Add creator", "allowed_roles": ["ugc coordinator", "department_head (UGC)"], "required_fields": ["name", "phone", "handle", "niche", "rates", "city"], "rules": ["Duplicate check on phone and handle"]},
+      {"id": "assign_creator_brief", "name": "Assign / reassign creator to brief", "allowed_roles": ["ugc coordinator"], "flow": ["Use reassignment_engine"]},
+      {"id": "rate_creator", "name": "Rate creator after delivery", "allowed_roles": ["ugc coordinator"], "required_fields": ["score", "note"]}
+    ],
+    "files_content": [
+      {"id": "upload_files", "name": "Upload files", "allowed_roles": ["all staff on assigned clients", "client users (inputs folder)", "creators (own brief)"], "rules": ["Client uploads land in 'From client' and tick matching requirement items when tagged"]},
+      {"id": "move_rename_files", "name": "Move / rename / tag files", "allowed_roles": ["AM", "department_head", "uploader"]},
+      {"id": "release_files", "name": "Release final files to client", "allowed_roles": ["account_manager"], "rules": ["Only after Gate 5"]},
+      {"id": "share_link", "name": "Share external link", "allowed_roles": ["account_manager", "admin"], "required_fields": ["expiry", "password optional"]}
+    ],
+    "communication": [
+      {"id": "start_thread", "name": "Start project thread / internal discussion", "allowed_roles": ["staff"]},
+      {"id": "message_to_task", "name": "Convert message or comment into task / request", "allowed_roles": ["staff"], "flow": ["'⋯' on message → Create task / Create request", "Message linked on new record"]},
+      {"id": "announcement", "name": "Send announcement", "allowed_roles": ["founder", "admin"], "required_fields": ["audience (all clients, segment, all team, department)", "message", "channels"]}
+    ],
+    "admin_configuration": [
+      {"id": "add_service_tier", "name": "Add / edit service, tier, bundle, add-on", "allowed_roles": ["founder"], "rules": ["Creates new price book version"]},
+      {"id": "edit_templates", "name": "Add / edit SOP, checklist, flow template, QC checklist", "allowed_roles": ["founder", "admin", "department_head (draft)"], "approval": "Admin publishes department drafts", "rules": ["Versioned; running cycles keep old version unless AM opts in"]},
+      {"id": "holidays_hours", "name": "Add holiday / change working hours", "allowed_roles": ["admin", "hr_ops"], "rules": ["Recalculates SLA timers and working-day deadlines"]},
+      {"id": "notification_template", "name": "Add / edit notification template", "allowed_roles": ["admin"], "rules": ["WhatsApp templates require Meta approval status before use"]},
+      {"id": "integration_connect", "name": "Connect / disconnect integration", "allowed_roles": ["admin"], "rules": ["Per-client ad/social accounts connected by AM with client consent"]}
+    ]
+  },
+  "approval_matrix": [
+    {"action": "add_person (by Department Head)", "approver": "Admin"},
+    {"action": "change_role to Admin", "approver": "Founder"},
+    {"action": "cross-department move_person", "approver": "Admin"},
+    {"action": "offboard_person", "approver": "Admin"},
+    {"action": "proposal discount above role limit", "approver": "Sales Manager → Founder"},
+    {"action": "manual client without online payment", "approver": "Finance"},
+    {"action": "reassign client AM", "approver": "AM Lead or Admin"},
+    {"action": "pause engagement", "approver": "AM Lead"},
+    {"action": "cancel / offboard client", "approver": "Admin"},
+    {"action": "assign task above 120% capacity", "approver": "Department Head"},
+    {"action": "assign to user on leave", "approver": "Department Head"},
+    {"action": "out-of-scope task without add-on", "approver": "blocked until add-on approved by client"},
+    {"action": "scope swap / add-on / tier change", "approver": "Client Owner (in-app, written)"},
+    {"action": "credit note", "approver": "Admin"},
+    {"action": "payment due extension > 7 days", "approver": "Admin"},
+    {"action": "price book change", "approver": "Founder"}
+  ],
+  "ui_requirements": {
+    "every_list_screen": ["'+ Add' button", "search", "filters (owner, client, department, status, date)", "saved views", "multi-select bulk actions", "export"],
+    "every_detail_screen": ["Edit", "Assign/Reassign", "⋯ menu", "History tab", "Comments (internal toggle for staff)", "Linked records"],
+    "hierarchy_tree": ["'+ Add person' and '+ Add team' on each node", "drag to move", "click node → profile drawer with Reassign work / Change role / Offboard", "toggle: show load %, show leave"],
+    "capacity_view": ["people × days grid", "drag task between people to reassign", "over-capacity cells highlighted"],
+    "board": ["'+ Add' at top of each column", "drag between columns respects gates (blocked moves bounce back with reason)"],
+    "empty_states": "Every empty list shows the primary add action, e.g. 'No clients yet — Add client'.",
+    "mobile": "Floating '+' on every tab; swipe on a task card: right = update status, left = reassign/deadline.",
+    "design_authority": "Use components and tokens from uploaded UX/UI designs; where no design exists for a form or drawer, build from existing design components and flag it."
+  },
+  "data_model_additions": {
+    "ApprovalRequest": ["id", "action", "target_type", "target_id", "payload_diff", "requested_by", "approver_id", "status", "reason", "decided_at"],
+    "Assignment": ["id", "target_type", "target_id", "from_user_id", "to_user_id", "reason", "handover_note", "deadline_change", "at", "by"],
+    "ImportJob": ["id", "entity", "file_id", "mapping", "rows_ok", "rows_failed", "error_report_file_id", "by", "at"],
+    "Draft": ["id", "user_id", "entity", "payload", "updated_at"],
+    "SavedView": ["id", "user_id", "entity", "filters", "columns", "is_shared"],
+    "Watcher": ["user_id", "target_type", "target_id"],
+    "Leave": ["id", "user_id", "from", "to", "type", "status", "approver_id"],
+    "StaffOnboarding": ["id", "user_id", "checklist_items[]", "status"],
+    "Tag": ["id", "name", "color"]
+  },
+  "api_conventions": {
+    "pattern": "REST: POST /{entity} (create), PATCH /{entity}/{id} (edit), POST /{entity}/{id}/assign, POST /{entity}/{id}/reassign, POST /{entity}/{id}/move, POST /{entity}/{id}/archive, POST /{entity}/{id}/restore, POST /{entity}/bulk, POST /imports/{entity}",
+    "every_mutation": ["checks role + scope", "checks gate rules", "creates ApprovalRequest if required instead of applying", "writes AuditEvent", "emits domain event for notifications/automations", "returns updated record + undo token where applicable"]
+  },
+  "acceptance_criteria_additions": [
+    "Every entity in data_model can be created from '+ New', from its list and from at least one contextual location.",
+    "A permitted user can add a person anywhere in the hierarchy tree in under 60 seconds.",
+    "A new client can be added manually (no lead) and as a migrated existing client with current gate set.",
+    "Any task can be created, assigned, reassigned, re-dated and archived from web and mobile.",
+    "Reassignment preserves comments, files, time logs and history and notifies new owner, old owner and manager.",
+    "Offboarding a person is impossible while they own any open record.",
+    "Bulk reassign of all open work from one person to another works with preview and undo.",
+    "Producers cannot assign work to other people or change deadlines; they can only request.",
+    "Out-of-scope client tasks cannot go active without an approved add-on.",
+    "Every create/edit/assign/reassign/archive appears in the record's History tab and in the audit log."
+  ]
+}

@@ -1,0 +1,103 @@
+# BMU Hub on one server with Docker: database, migrations, API, background worker and website.
+#
+#   cp .env.production.example .env.production      # then fill in the values marked CHANGE
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Open http://<server>:3000 (put Caddy/Nginx with HTTPS in front for a real domain). Add the forecasting service
+# with `--profile forecast`. Scale the API with `--scale api=3` (keep one worker). See docs/backend.md.
+
+x-app: &app
+  build:
+    context: .
+    args:
+      API_URL: http://api:4000
+  image: bmu-hub:latest
+  env_file: .env.production
+  restart: unless-stopped
+  volumes:
+    - storage:/data/storage
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bmu}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      POSTGRES_DB: ${POSTGRES_DB:-bmu_hub}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Applies database migrations and the first-time setup (roles, catalogue, templates, owner login), then exits.
+  migrate:
+    <<: *app
+    restart: "no"
+    working_dir: /app/apps/api
+    command: ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    working_dir: /app/apps/api
+    command: ["node", "dist/main.js"]
+    environment:
+      PROCESS_ROLE: api
+      PORT: "4000"
+    ports:
+      # For the phone app; the website reaches the API inside Docker.
+      - "${API_PORT:-4000}:4000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    <<: *app
+    working_dir: /app/apps/api
+    command: ["node", "dist/worker.js"]
+    environment:
+      PROCESS_ROLE: worker
+      WORKER_PORT: "4001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4001/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  web:
+    <<: *app
+    working_dir: /app/apps/web
+    command: ["node", "node_modules/next/dist/bin/next", "start", "--port", "3000"]
+    environment:
+      # Server-side calls from the website go straight to the API service.
+      API_URL: http://api:4000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  forecast:
+    profiles: ["forecast"]
+    build: ./services/forecast
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  storage:

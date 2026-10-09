@@ -1,0 +1,21 @@
+node_modules
+dist
+.next
+.turbo
+.expo
+coverage
+*.tsbuildinfo
+.env
+.env.local
+apps/*/.env
+apps/*/.env.local
+apps/api/src/generated
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*
+.bmu-data/
+
+# Python
+__pycache__/
+*.pyc
+.env.production

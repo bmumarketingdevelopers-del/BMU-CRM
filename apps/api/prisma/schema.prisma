@@ -1,0 +1,3599 @@
+// BMU Hub schema: all entities in data_model of BMU_Hub_Architecture_Prompt.json.
+// Rules: every table carries orgId (tenant), soft delete via deletedAt, money as integer paise.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserType {
+  staff
+  client
+  creator
+}
+
+enum UserStatus {
+  invited
+  active
+  suspended
+}
+
+enum AccessScope {
+  none
+  own
+  team
+  department
+  branch
+  all
+}
+
+enum BillingType {
+  monthly
+  one_time
+  per_unit
+}
+
+enum Tier {
+  starter
+  growth
+  premium
+}
+
+enum LeadStage {
+  new
+  contacted
+  discovery
+  proposal_sent
+  won
+  lost
+}
+
+enum ProposalStatus {
+  draft
+  sent
+  accepted
+  rejected
+  expired
+  superseded
+}
+
+enum EngagementStatus {
+  pending_payment
+  onboarding
+  blocked
+  planning
+  awaiting_plan_approval
+  in_production
+  in_review
+  awaiting_final_payment
+  delivered
+  active_retainer
+  paused
+  offboarding
+  closed
+}
+
+enum RequirementStatus {
+  pending
+  received
+  blocked
+  waiting
+}
+
+enum PlanStatus {
+  draft
+  internal_review
+  sent_to_client
+  changes_requested
+  approved
+}
+
+enum DeliverableStatus {
+  planned
+  in_production
+  in_qc
+  qc_failed
+  qc_passed
+  ready_for_client
+  changes_requested
+  approved
+  scheduled
+  published
+}
+
+enum TaskStatus {
+  todo
+  in_progress
+  blocked
+  waiting
+  in_qc
+  done
+  cancelled
+}
+
+enum QcOutcome {
+  pass
+  fail
+}
+
+enum RequestStatus {
+  received
+  scope_check
+  in_scope
+  quoted
+  approved
+  paid
+  in_progress
+  done
+  declined
+  rescheduled
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  partially_paid
+  paid
+  overdue
+  void
+  credit_noted
+}
+
+enum MessageSource {
+  app
+  whatsapp
+  email
+}
+
+enum ChecklistKind {
+  requirements
+  qc
+}
+
+enum PriceBookStatus {
+  draft
+  active
+  archived
+}
+
+model Organisation {
+  id        String    @id @default(cuid())
+  name      String
+  plan      String    @default("standard")
+  settings  Json      @default("{}")
+  branding  Json      @default("{}")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  branches   Branch[]
+  users      User[]
+  roles      Role[]
+  clientOrgs ClientOrg[]
+  leads      Lead[]
+  priceBooks PriceBook[]
+  audit      AuditEvent[]
+
+  @@map("organisations")
+}
+
+model Branch {
+  id                     String    @id @default(cuid())
+  orgId                  String
+  name                   String
+  city                   String
+  workingHoursCalendarId String?
+  createdAt              DateTime  @default(now())
+  deletedAt              DateTime?
+  /// v11 people: the branch's working-hours calendar ("10:00"–"19:00", days 0=Sun…6=Sat)
+  workStart              String?
+  workEnd                String?
+  workDays               Int[]     @default([])
+
+  org         Organisation @relation(fields: [orgId], references: [id])
+  departments Department[]
+  users       User[]
+
+  @@index([orgId])
+  @@map("branches")
+}
+
+model Department {
+  id         String    @id @default(cuid())
+  orgId      String
+  branchId   String
+  name       String
+  headUserId String?
+  deletedAt  DateTime?
+
+  branch        Branch         @relation(fields: [branchId], references: [id])
+  teams         Team[]
+  users         User[]
+  sops          SOP[]
+  flowTemplates FlowTemplate[]
+
+  @@unique([branchId, name])
+  @@index([orgId])
+  @@map("departments")
+}
+
+model Team {
+  id           String    @id @default(cuid())
+  orgId        String
+  departmentId String
+  name         String
+  leadUserId   String?
+  deletedAt    DateTime?
+
+  department Department @relation(fields: [departmentId], references: [id])
+  users      User[]
+
+  @@index([orgId])
+  @@map("teams")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  orgId        String
+  type         UserType
+  name         String
+  email        String?
+  phone        String?
+  status       UserStatus @default(invited)
+  managerId    String?
+  departmentId String?
+  teamId       String?
+  branchId     String?
+  /// v10 craft: job function within the base role (video_editor, script_writer, social_media_manager, developer, ux_ui_designer, graphic_designer, …)
+  specialty    String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  /// v11 people: joining date, employment type (full_time | intern | contract), photo, and when they left (offboarded → "Former")
+  joiningDate    DateTime? @db.Date
+  employmentType String?
+  photoUrl       String?
+  leftAt         DateTime?
+  /// v18 capacity: contracted hours per week (before leave and holidays)
+  weeklyHours    Int       @default(45)
+
+  org            Organisation @relation(fields: [orgId], references: [id])
+  manager        User?        @relation("ReportsTo", fields: [managerId], references: [id])
+  reports        User[]       @relation("ReportsTo")
+  department     Department?  @relation(fields: [departmentId], references: [id])
+  team           Team?        @relation(fields: [teamId], references: [id])
+  branch         Branch?      @relation(fields: [branchId], references: [id])
+  roles          UserRole[]
+  clientUser     ClientUser?
+  ownedLeads     Lead[]
+  managedClients ClientOrg[]
+  engagementsAm  Engagement[] @relation("EngagementAm")
+  tasks          Task[]       @relation("TaskOwner")
+  creator        Creator?
+  attendance     Attendance[]
+  eodReports     EODReport[]
+
+  @@unique([orgId, email])
+  @@unique([orgId, phone])
+  @@index([managerId])
+  @@map("users")
+}
+
+model Role {
+  id       String  @id @default(cuid())
+  orgId    String
+  name     String
+  baseRole String
+  isCustom Boolean @default(false)
+
+  org         Organisation @relation(fields: [orgId], references: [id])
+  permissions Permission[]
+  users       UserRole[]
+
+  @@unique([orgId, name])
+  @@map("roles")
+}
+
+model Permission {
+  roleId     String
+  capability String
+  scope      AccessScope
+  rule       String // raw rule from the spec matrix, e.g. "within discount_limit"
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, capability])
+  @@map("permissions")
+}
+
+model UserRole {
+  userId   String
+  roleId   String
+  scopeRef String @default("")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId, scopeRef])
+  @@map("user_roles")
+}
+
+model ClientOrg {
+  id             String    @id @default(cuid())
+  /// v14: values of the org's custom fields for this record, { [key]: value }
+  customFields   Json      @default("{}")
+  orgId          String
+  leadId         String?   @unique
+  name           String
+  industry       String?
+  gstin          String?
+  billingAddress String?
+  /// v10 service: optional billing details for the GST tax invoice (editable by client owner / finance)
+  legalName      String?
+  /// Two-digit GST state code of the place of supply, e.g. "29" for Karnataka
+  placeOfSupply  String?
+  billingEmail   String?
+  amUserId       String?
+  health         String    @default("green")
+  /// v10 deliver: who must approve plans and drafts: any (one approver) | owner (an owner must approve) | all (every owner and approver)
+  approvalMode   String    @default("any")
+  tenureStart    DateTime?
+  createdAt      DateTime  @default(now())
+
+  /// v11 core: archived records are hidden from lists, kept for reports and restorable
+  archivedAt     DateTime?
+  archivedReason String?
+  deletedAt      DateTime?
+
+  /// v11 clients: primary contact { name, phone, email } (manual clients; proposal clients use the lead contact)
+  primaryContact       Json?
+  branchId             String?
+  /// v11 clients: how the account was created: proposal | manual | lead | import
+  source               String    @default("proposal")
+  /// v11 clients: onboarding (new, gates from G1) | migration (existing client moved in at its current gate)
+  startMode            String    @default("onboarding")
+  /// v11 clients: confirmed | pending (manual client without online payment: Finance must confirm the money)
+  paymentStatus        String    @default("confirmed")
+  /// v11 clients: health set by hand (AM / AM Lead) with a reason
+  healthReason         String?
+  healthOverriddenAt   DateTime?
+  healthOverriddenBy   String?
+  /// v11 clients: offboarding { status, reason, lastCycle, checklist, requestedAt, approvedAt, completedAt, clientConfirmedAt }
+  offboarding          Json?
+  /// v11 clients: client users are read-only until this date after offboarding, then archived
+  readOnlyUntil        DateTime?
+  /// v16 creative: posts need the client's approval before they can be scheduled and published (default on)
+  publishNeedsApproval Boolean   @default(true)
+
+  org         Organisation  @relation(fields: [orgId], references: [id])
+  am          User?         @relation(fields: [amUserId], references: [id])
+  brands      ClientBrand[]
+  users       ClientUser[]
+  engagements Engagement[]
+  invoices    Invoice[]
+  threads     Thread[]
+
+  @@index([orgId])
+  @@map("client_orgs")
+}
+
+model ClientBrand {
+  id          String    @id @default(cuid())
+  orgId       String
+  clientOrgId String
+  name        String
+  location    String?
+  deletedAt   DateTime?
+
+  clientOrg ClientOrg @relation(fields: [clientOrgId], references: [id])
+
+  @@map("client_brands")
+}
+
+model ClientUser {
+  userId      String   @id
+  orgId       String
+  clientOrgId String
+  clientRole  String // client_owner | client_approver | client_viewer | client_finance
+  brandScope  String[]
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientOrg ClientOrg @relation(fields: [clientOrgId], references: [id])
+
+  @@map("client_users")
+}
+
+model Lead {
+  id                 String    @id @default(cuid())
+  orgId              String
+  source             String
+  contact            Json // { name, email, phone, company }
+  need               String
+  budgetPaise        Int?
+  score              Int       @default(0)
+  stage              LeadStage @default(new)
+  ownerId            String?
+  lostReason         String?
+  serviceIds         String[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+  // v10 sell: follow-ups, duplicate detection, activity
+  nextFollowUpAt     DateTime?
+  followUpNotifiedAt DateTime?
+  duplicateOfId      String?
+  lastActivityAt     DateTime?
+
+  /// v11 core: archived records are hidden from lists, kept for reports and restorable
+  archivedAt     DateTime?
+  archivedReason String?
+
+  /// v11 ops: first-reply SLA for leads added in the CRM or by the website (working hours)
+  firstReplyDueAt     DateTime?
+  firstReplyAt        DateTime?
+  firstReplyAlertedAt DateTime?
+  createdById         String?
+  /// v14: values of the org's custom fields for this record, { [key]: value }
+  customFields        Json      @default("{}")
+
+  org        Organisation   @relation(fields: [orgId], references: [id])
+  owner      User?          @relation(fields: [ownerId], references: [id])
+  proposals  Proposal[]
+  activities LeadActivity[]
+
+  @@index([orgId, stage])
+  @@map("leads")
+}
+
+model PriceBook {
+  id            String          @id @default(cuid())
+  orgId         String
+  version       String
+  effectiveFrom DateTime
+  status        PriceBookStatus @default(draft)
+
+  org      Organisation @relation(fields: [orgId], references: [id])
+  services Service[]
+  bundles  Bundle[]
+  addOns   AddOn[]
+
+  @@unique([orgId, version])
+  @@map("price_books")
+}
+
+model Service {
+  id           String      @id @default(cuid())
+  orgId        String
+  priceBookId  String
+  key          String // stable catalogue id, e.g. "digital_marketing"
+  name         String
+  track        String
+  billingType  BillingType
+  unit         String?
+  excludedNote String?
+
+  priceBook   PriceBook     @relation(fields: [priceBookId], references: [id], onDelete: Cascade)
+  tiers       ServiceTier[]
+  engagements Engagement[]
+
+  @@unique([priceBookId, key])
+  @@map("services")
+}
+
+model ServiceTier {
+  serviceId           String
+  tier                Tier
+  pricePaise          Int
+  isFromPrice         Boolean  @default(false)
+  withShootPricePaise Int?
+  deliverables        String[]
+  revisionRounds      Int      @default(2)
+
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([serviceId, tier])
+  @@map("service_tiers")
+}
+
+model Bundle {
+  id          String   @id @default(cuid())
+  orgId       String
+  priceBookId String
+  key         String
+  name        String
+  serviceKeys String[]
+  discountPct Int
+
+  priceBook PriceBook @relation(fields: [priceBookId], references: [id], onDelete: Cascade)
+
+  @@unique([priceBookId, key])
+  @@map("bundles")
+}
+
+model AddOn {
+  id            String  @id @default(cuid())
+  orgId         String
+  priceBookId   String
+  name          String
+  pricePaise    Int?
+  unit          String?
+  isCustomQuote Boolean @default(false)
+
+  priceBook PriceBook @relation(fields: [priceBookId], references: [id], onDelete: Cascade)
+
+  @@map("add_ons")
+}
+
+model AuditEvent {
+  id       String   @id @default(cuid())
+  orgId    String
+  actorId  String?
+  action   String
+  entity   String
+  entityId String
+  before   Json?
+  after    Json?
+  at       DateTime @default(now())
+  ip       String?
+  /// v20: tamper-evident chain per organisation. hash = sha256(prevHash + canonical event); seq counts up per org.
+  seq      Int?
+  prevHash String?
+  hash     String?
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, entity, entityId])
+  @@index([orgId, seq])
+  @@map("audit_events")
+}
+
+// ---------------------------------------------------------------------------
+// Sell: proposals and agreements
+
+model Proposal {
+  id                    String         @id @default(cuid())
+  orgId                 String
+  leadId                String
+  priceBookId           String
+  lines                 Json // ProposalLine[]: prices are a snapshot, so later price changes never alter a proposal
+  subtotalPaise         Int
+  bundleDiscountPaise   Int            @default(0)
+  extraDiscountPct      Int            @default(0)
+  discountPaise         Int            @default(0)
+  gstPaise              Int
+  totalPaise            Int
+  validUntil            DateTime
+  status                ProposalStatus @default(draft)
+  version               Int            @default(1)
+  publicToken           String         @unique @default(cuid())
+  discountNeedsApproval Boolean        @default(false)
+  discountApprovedById  String?
+  createdById           String?
+  sentAt                DateTime?
+  viewedAt              DateTime?
+  acceptedAt            DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  deletedAt             DateTime?
+  // v10 sell: revisions, view tracking, multi-step discount approval, renewals
+  kind                  String         @default("new") // new | renewal
+  renewalClientOrgId    String?
+  renewalEngagementIds  String[]       @default([])
+  rootId                String? // first version's id; versions of one proposal share it
+  supersededById        String?
+  supersededAt          DateTime?
+  changeNote            String?
+  viewCount             Int            @default(0)
+  lastViewedAt          DateTime?
+  discountStatus        String         @default("none") // none | pending | approved | rejected
+
+  lead           Lead                    @relation(fields: [leadId], references: [id])
+  agreement      Agreement?
+  invoices       Invoice[]
+  changeRequests ProposalChangeRequest[]
+  discountSteps  DiscountApprovalStep[]
+
+  @@index([orgId, status])
+  @@map("proposals")
+}
+
+model Agreement {
+  id           String    @id @default(cuid())
+  orgId        String
+  proposalId   String    @unique
+  templateId   String?
+  signedPdfUrl String?
+  signedAt     DateTime?
+  signer       Json? // { name, email, ip }
+
+  proposal Proposal @relation(fields: [proposalId], references: [id])
+
+  @@map("agreements")
+}
+
+// ---------------------------------------------------------------------------
+// Deliver: engagements, cycles, requirements, plans, deliverables
+
+model Engagement {
+  id               String           @id @default(cuid())
+  /// v14: values of the org's custom fields for this record, { [key]: value }
+  customFields     Json             @default("{}")
+  orgId            String
+  clientOrgId      String
+  serviceId        String
+  tier             Tier
+  billingType      BillingType
+  status           EngagementStatus @default(pending_payment)
+  currentGate      String           @default("G1")
+  amId             String?
+  startDate        DateTime?
+  endDate          DateTime?
+  finalSignedOffAt DateTime?
+  createdAt        DateTime         @default(now())
+  deletedAt        DateTime?
+  renewedAt        DateTime?
+  renewalCount     Int              @default(0)
+
+  /// v11 core: archived records are hidden from lists, kept for reports and restorable
+  archivedAt     DateTime?
+  archivedReason String?
+
+  /// v11 clients: manual client without online payment: work can't pass Gate 1 until Finance confirms the money
+  paymentPending  Boolean   @default(false)
+  /// v11 clients: pause (AM Lead approved) { until, reason }; pauseState keeps what to restore on resume
+  pausedUntil     DateTime?
+  pauseReason     String?
+  pauseState      Json?
+  /// v11 clients: existing client moved in at its current gate (sales steps skipped)
+  migrated        Boolean   @default(false)
+  migrationReason String?
+  /// v11 clients: first month of service, e.g. "2026-11"
+  startMonth      String?
+
+  clientOrg ClientOrg @relation(fields: [clientOrgId], references: [id])
+  service   Service   @relation(fields: [serviceId], references: [id])
+  am        User?     @relation("EngagementAm", fields: [amId], references: [id])
+  cycles    Cycle[]
+  requests  Request[]
+  threads   Thread[]
+
+  @@index([orgId, status])
+  @@map("engagements")
+}
+
+model Cycle {
+  id            String    @id @default(cuid())
+  orgId         String
+  engagementId  String
+  period        String // e.g. "2026-10" for retainers, "project" for one-time
+  rcdAt         DateTime?
+  planningDue   DateTime?
+  firstDraftDue DateTime?
+  status        String    @default("onboarding")
+  /// v10 deliver: retainer month invoice issued when the cycle started
+  invoiceId     String?
+  /// v10 deliver: "auto" (scheduled job) | "manual" (AM button) | null (first cycle)
+  startedBy     String?
+  /// v10 deliver: unused quota rolled over from the previous month [{ type, count, fromPeriod }]
+  carriedOver   Json      @default("[]")
+  createdAt     DateTime  @default(now())
+
+  engagement   Engagement        @relation(fields: [engagementId], references: [id])
+  requirements RequirementItem[]
+  plans        Plan[]
+  deliverables Deliverable[]
+
+  @@unique([engagementId, period])
+  @@map("cycles")
+}
+
+model RequirementItem {
+  id            String            @id @default(cuid())
+  orgId         String
+  cycleId       String
+  label         String
+  type          String // asset | access | info | payment
+  status        RequirementStatus @default(pending)
+  blockedReason String?
+  waitingFor    String?
+  ownerId       String?
+  dateRequested DateTime          @default(now())
+
+  cycle Cycle @relation(fields: [cycleId], references: [id])
+
+  @@map("requirement_items")
+}
+
+model Plan {
+  id           String     @id @default(cuid())
+  orgId        String
+  cycleId      String
+  content      Json
+  status       PlanStatus @default(draft)
+  approvedById String?
+  approvedAt   DateTime?
+
+  cycle Cycle @relation(fields: [cycleId], references: [id])
+
+  @@map("plans")
+}
+
+model Deliverable {
+  id                   String            @id @default(cuid())
+  orgId                String
+  cycleId              String
+  type                 String
+  title                String
+  status               DeliverableStatus @default(planned)
+  revisionRoundsUsed   Int               @default(0)
+  approvedVersionId    String?
+  dueAt                DateTime?
+  departmentId         String?
+  flowKey              String?
+  /// v10 deliver: content calendar
+  scheduledAt          DateTime?
+  channel              String?
+  publishedAt          DateTime?
+  liveUrl              String?
+  /// v16 creative: post text for the content calendar, and when the team was told it is due to go out
+  caption              String?
+  publishDueNotifiedAt DateTime?
+
+  /// v11 core: archived records are hidden from lists, kept for reports and restorable
+  archivedAt     DateTime?
+  archivedReason String?
+
+  cycle    Cycle     @relation(fields: [cycleId], references: [id])
+  versions Version[]
+  tasks    Task[]
+
+  @@map("deliverables")
+}
+
+model Version {
+  id             String    @id @default(cuid())
+  orgId          String
+  deliverableId  String
+  fileId         String
+  number         Int
+  uploadedById   String
+  note           String?
+  sentToClientAt DateTime?
+  sentById       String?
+  createdAt      DateTime  @default(now())
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id])
+  file        File        @relation(fields: [fileId], references: [id])
+  qcResults   QCResult[]
+
+  @@unique([deliverableId, number])
+  @@map("versions")
+}
+
+model Comment {
+  id             String    @id @default(cuid())
+  orgId          String
+  targetType     String
+  targetId       String
+  timestampOrPin String?
+  body           String
+  isInternal     Boolean   @default(false)
+  authorId       String
+  createdAt      DateTime  @default(now())
+  /// v10 craft: feedback marked as handled by the maker
+  resolvedAt     DateTime?
+  resolvedById   String?
+  /// v16 creative: copied from an open comment on the previous version (that comment's id)
+  carriedFromId  String?
+
+  @@index([targetType, targetId])
+  @@map("comments")
+}
+
+model Task {
+  id            String     @id @default(cuid())
+  orgId         String
+  deliverableId String?
+  engagementId  String?
+  title         String
+  flowStep      String?
+  ownerId       String?
+  departmentId  String?
+  deadline      DateTime?
+  status        TaskStatus @default(todo)
+  dependsOn     String[]
+  blockedReason String?
+  timeLoggedMin Int        @default(0)
+  kind          String     @default("work") // work | qc | client_review | planning
+  /// v10 craft: high | normal | low, set by managers on the assignment board
+  priority      String     @default("normal")
+  specialty     String? // v10 craft: who should do it (ad-hoc tasks); flow tasks use flowStep
+  role          String?
+  sort          Int        @default(0)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // v11 core: task actions (create anywhere, subtasks, archive, drafts, blocked details, recurring)
+  archivedAt           DateTime?
+  archivedReason       String?
+  archivedFromStatus   String?
+  parentId             String?
+  description          String?
+  brief                String?
+  references           String[]  @default([])
+  /// [{ id, label, done }]
+  checklist            Json      @default("[]")
+  estimateMin          Int?
+  /// internal tasks (training, admin, pitches) have no client
+  isInternal           Boolean   @default(false)
+  /// client task before Gate 3 (planning / onboarding work)
+  preProduction        Boolean   @default(false)
+  /// saved as a draft (by the author, or because it is out of scope without an approved add-on)
+  isDraft              Boolean   @default(false)
+  draftReason          String?
+  outOfScope           Boolean   @default(false)
+  addOnRequestId       String?
+  blockedWaitingFor    String?
+  blockedResponsibleId String?
+  blockedExpectedAt    DateTime?
+  blockedAt            DateTime?
+  deadlineChanges      Int       @default(0)
+  recurrenceId         String?
+  createdById          String?
+
+  deliverable Deliverable? @relation(fields: [deliverableId], references: [id])
+  owner       User?        @relation("TaskOwner", fields: [ownerId], references: [id])
+
+  @@index([orgId, ownerId, status])
+  @@index([parentId])
+  @@map("tasks")
+}
+
+model QCResult {
+  id          String    @id @default(cuid())
+  orgId       String
+  versionId   String
+  checklistId String
+  items       Json
+  result      QcOutcome
+  reviewerId  String
+  createdAt   DateTime  @default(now())
+
+  version Version @relation(fields: [versionId], references: [id])
+
+  @@map("qc_results")
+}
+
+/// Immutable record of a written approval (gate passes, plan/draft/quote approvals). Never updated or deleted.
+model Approval {
+  id         String   @id @default(cuid())
+  orgId      String
+  targetType String
+  targetId   String
+  gate       String?
+  userId     String
+  at         DateTime @default(now())
+  versionId  String?
+  /// v11 clients: historical approval recorded when an existing client was migrated in
+  migrated   Boolean  @default(false)
+  /// v16 creative: where the approval came from (portal | email | whatsapp | migrated) and from which address
+  via        String?
+  ip         String?
+
+  @@index([targetType, targetId])
+  @@map("approvals")
+}
+
+model Request {
+  id               String        @id @default(cuid())
+  /// v14: values of the org's custom fields for this record, { [key]: value }
+  customFields     Json          @default("{}")
+  orgId            String
+  engagementId     String
+  type             String // revision | new_scope | urgent | question
+  description      String
+  status           RequestStatus @default(received)
+  scopeDecision    String?
+  quoteAmountPaise Int?
+  timeline         String?
+  slaDue           DateTime? // first reply due (working hours)
+  createdById      String?
+  deliverableId    String?
+  addOnId          String?
+  firstReplyAt     DateTime?
+  resolvedAt       DateTime?
+  approvedById     String?
+  approvedAt       DateTime?
+  invoiceId        String?
+  /// v10 service: client satisfaction once done (1 = thumbs up, -1 = thumbs down)
+  rating           Int?
+  ratingComment    String?
+  ratedAt          DateTime?
+  ratedById        String?
+  reopenCount      Int           @default(0)
+  reopenedAt       DateTime?
+  /// v11 ops: the message a request was created from
+  sourceMessageId  String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @default(now()) @updatedAt
+  /// v11 clients: who handles it (default the client's AM), when the client needs it, files, raised by the AM for the client
+  assigneeId       String?
+  neededBy         DateTime?
+  attachments      String[]      @default([])
+  raisedOnBehalf   Boolean       @default(false)
+
+  engagement Engagement @relation(fields: [engagementId], references: [id])
+
+  @@map("requests")
+}
+
+// ---------------------------------------------------------------------------
+// Finance
+
+model Invoice {
+  id             String        @id @default(cuid())
+  orgId          String
+  clientOrgId    String? // empty until the first payment creates the client account
+  number         String
+  lines          Json
+  subtotalPaise  Int
+  gstPaise       Int
+  totalPaise     Int
+  dueDate        DateTime
+  status         InvoiceStatus @default(draft)
+  razorpayRef    String?
+  proposalId     String?
+  kind           String        @default("standard") // first_payment | retainer | project_balance | addon
+  engagementId   String?
+  requestId      String?
+  /// v10 service: billing period for retainer invoices, e.g. "2026-10" (billing run duplicate check)
+  period         String?
+  createdAt      DateTime      @default(now())
+  /// v11 clients: past invoice imported as a record when an existing client was migrated in
+  migrated       Boolean       @default(false)
+  /// v11 ops: manual invoices (who raised it, notes) and how many times the due date moved
+  createdById    String?
+  notes          String?
+  dueDateChanges Int           @default(0)
+
+  clientOrg ClientOrg? @relation(fields: [clientOrgId], references: [id])
+  proposal  Proposal?  @relation(fields: [proposalId], references: [id])
+  payments  Payment[]
+
+  @@unique([orgId, number])
+  @@map("invoices")
+}
+
+model Payment {
+  id           String   @id @default(cuid())
+  orgId        String
+  invoiceId    String
+  amountPaise  Int
+  method       String
+  at           DateTime @default(now())
+  ref          String?
+  /// v11 ops: uploaded proof (bank slip, cheque photo) for an offline payment
+  proofFileId  String?
+  recordedById String?
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Communication and files
+
+model Thread {
+  id             String   @id @default(cuid())
+  orgId          String
+  clientOrgId    String
+  engagementId   String?
+  type           String   @default("client_am")
+  /// v11 ops: project threads and internal discussions (team only): a title, who started it and who is in it
+  title          String?
+  createdById    String?
+  participantIds String[] @default([])
+  createdAt      DateTime @default(now())
+
+  clientOrg  ClientOrg   @relation(fields: [clientOrgId], references: [id])
+  engagement Engagement? @relation(fields: [engagementId], references: [id])
+  messages   Message[]
+
+  @@map("threads")
+}
+
+model Message {
+  id          String        @id @default(cuid())
+  orgId       String
+  threadId    String
+  authorId    String
+  body        String
+  attachments String[]
+  isInternal  Boolean       @default(false)
+  source      MessageSource @default(app)
+  createdAt   DateTime      @default(now())
+
+  thread Thread @relation(fields: [threadId], references: [id])
+
+  @@index([threadId, createdAt])
+  @@map("messages")
+}
+
+model File {
+  id             String    @id @default(cuid())
+  orgId          String
+  clientOrgId    String?
+  path           String
+  kind           String
+  name           String?
+  mimeType       String?
+  sizeBytes      Int?
+  released       Boolean   @default(false)
+  checksum       String?
+  /// v10 craft: e.g. ["brand"] for a client's brand assets
+  tags           String[]  @default([])
+  /// v11 ops: folder (from_client | working | final | brand | general), who uploaded it, the project and archive
+  folder         String    @default("general")
+  uploadedById   String?
+  engagementId   String?
+  archivedAt     DateTime?
+  archivedReason String?
+  createdAt      DateTime  @default(now())
+
+  versions Version[]
+
+  @@map("files")
+}
+
+// ---------------------------------------------------------------------------
+// People and operations
+
+model Creator {
+  id               String   @id @default(cuid())
+  /// v14: values of the org's custom fields for this record, { [key]: value }
+  customFields     Json     @default("{}")
+  orgId            String
+  userId           String   @unique
+  niche            String[]
+  rates            Json?
+  rating           Float?
+  payoutDetailsRef String?
+
+  /// v11 core: archived records are hidden from lists, kept for reports and restorable
+  archivedAt     DateTime?
+  archivedReason String?
+
+  /// v11 ops: social handle (unique per org, without @), city and the number of ratings behind `rating`
+  handle      String?
+  city        String?
+  ratingCount Int     @default(0)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("creators")
+}
+
+model Attendance {
+  userId   String
+  date     DateTime  @db.Date
+  orgId    String
+  checkIn  DateTime?
+  checkOut DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([userId, date])
+  @@map("attendance")
+}
+
+model EODReport {
+  userId    String
+  date      DateTime @db.Date
+  orgId     String
+  completed String[]
+  pending   String[]
+  blocked   String[]
+  waiting   String[]
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@id([userId, date])
+  @@map("eod_reports")
+}
+
+model SOP {
+  id           String    @id @default(cuid())
+  orgId        String
+  departmentId String
+  title        String
+  version      Int       @default(1)
+  body         String
+  /// v10 team: draft | published. Only published SOPs show in the team library.
+  status       String    @default("published")
+  publishedAt  DateTime?
+
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@map("sops")
+}
+
+model FlowTemplate {
+  id               String   @id @default(cuid())
+  orgId            String
+  departmentId     String
+  name             String
+  key              String   @default("general")
+  deliverableTypes String[]
+  steps            Json
+  version          Int      @default(1)
+  active           Boolean  @default(true)
+
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([departmentId, name, version])
+  @@map("flow_templates")
+}
+
+model ChecklistTemplate {
+  id           String        @id @default(cuid())
+  orgId        String
+  serviceId    String?
+  departmentId String?
+  kind         ChecklistKind
+  key          String?
+  name         String
+  items        Json
+  version      Int           @default(1)
+
+  @@map("checklist_templates")
+}
+
+model ErrorLog {
+  id         String   @id @default(cuid())
+  orgId      String
+  what       String
+  why        String?
+  foundBy    String?
+  impact     String?
+  fix        String?
+  prevention String?
+  cause      String?
+  createdAt  DateTime @default(now())
+
+  @@map("error_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+
+model OtpCode {
+  id         String    @id @default(cuid())
+  identifier String // email or phone, normalised
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([identifier, createdAt])
+  @@map("otp_codes")
+}
+
+model Notification {
+  id           String    @id @default(cuid())
+  orgId        String
+  userId       String
+  kind         String // e.g. draft_sent, qc_failed, request_created, message
+  title        String
+  body         String?
+  link         String?
+  critical     Boolean   @default(false)
+  readAt       DateTime?
+  /// v20: snoozed from a push quick action; hidden until then, then shown (and pushed) again
+  snoozedUntil DateTime?
+  /// v20: the record a phone quick action works on (approval id, thread id, task id)
+  ref          String?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+// ---------------------------------------------------------------------------
+// v8: leave, credit notes, creator briefs and payouts
+
+enum LeaveStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+model LeaveRequest {
+  id                 String      @id @default(cuid())
+  orgId              String
+  userId             String
+  from               DateTime    @db.Date
+  to                 DateTime    @db.Date
+  type               String      @default("casual")
+  reason             String?
+  status             LeaveStatus @default(pending)
+  decidedById        String?
+  decidedAt          DateTime?
+  createdAt          DateTime    @default(now())
+  /// v10 team approval chain: manager -> hr (leave over 3 working days) -> done
+  stage              String      @default("manager")
+  managerDecidedById String?
+  managerDecidedAt   DateTime?
+  decisionNote       String?
+
+  @@index([orgId, status])
+  @@index([userId])
+  @@map("leave_requests")
+}
+
+model CreditNote {
+  id          String   @id @default(cuid())
+  orgId       String
+  invoiceId   String
+  number      String
+  amountPaise Int
+  gstPaise    Int
+  totalPaise  Int
+  reason      String
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@unique([orgId, number])
+  @@index([invoiceId])
+  @@map("credit_notes")
+}
+
+enum CreatorBriefStatus {
+  offered
+  accepted
+  declined
+  submitted
+  revision
+  approved
+  paid
+  cancelled
+}
+
+model CreatorBrief {
+  id           String             @id @default(cuid())
+  orgId        String
+  creatorId    String
+  clientOrgId  String?
+  engagementId String?
+  title        String
+  brief        String
+  deliverables String[]
+  dueAt        DateTime?
+  feePaise     Int
+  status       CreatorBriefStatus @default(offered)
+  createdById  String
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  submissions CreatorSubmission[]
+
+  @@index([orgId, status])
+  @@index([creatorId])
+  @@map("creator_briefs")
+}
+
+model CreatorSubmission {
+  id         String    @id @default(cuid())
+  orgId      String
+  briefId    String
+  number     Int
+  fileId     String?
+  url        String?
+  note       String?
+  feedback   String?
+  reviewedAt DateTime?
+  approved   Boolean?
+  createdAt  DateTime  @default(now())
+
+  brief CreatorBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  @@unique([briefId, number])
+  @@map("creator_submissions")
+}
+
+enum PayoutStatus {
+  pending
+  paid
+  on_hold
+}
+
+model CreatorPayout {
+  id          String       @id @default(cuid())
+  orgId       String
+  creatorId   String
+  briefId     String?      @unique
+  amountPaise Int
+  tdsPaise    Int          @default(0)
+  netPaise    Int
+  status      PayoutStatus @default(pending)
+  paidAt      DateTime?
+  ref         String?
+  createdAt   DateTime     @default(now())
+
+  @@index([orgId, status])
+  @@map("creator_payouts")
+}
+
+// ---------------------------------------------------------------------------
+// v9: automations ("when this happens, do that") and saved analytics reports
+
+model AutomationRule {
+  id                String    @id @default(cuid())
+  orgId             String
+  name              String
+  description       String?
+  enabled           Boolean   @default(true)
+  /// Trigger key, e.g. lead_created, invoice_overdue (see packages/shared/src/automations-types.ts)
+  trigger           String
+  /// Trigger options, e.g. { days: 3 }
+  triggerArgs       Json      @default("{}")
+  /// [{ field, op, value }] all must match
+  conditions        Json      @default("[]")
+  /// [{ type, ...args }] run in order
+  actions           Json      @default("[]")
+  templateKey       String?
+  createdById       String?
+  runCount          Int       @default(0)
+  lastRunAt         DateTime?
+  /// Records created/changed before this are ignored by event triggers (set when the rule is created or enabled)
+  watermark         DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  deletedAt         DateTime?
+  /// v14: set when the rule was moved into a workflow (the rule is then switched off)
+  movedToWorkflowId String?
+
+  runs AutomationRun[]
+
+  @@index([orgId, enabled])
+  @@map("automation_rules")
+}
+
+model AutomationRun {
+  id        String   @id @default(cuid())
+  orgId     String
+  ruleId    String
+  entity    String
+  entityId  String
+  /// Same rule never fires twice for the same entity + key (e.g. one reminder per invoice per overdue step)
+  dedupeKey String
+  status    String // success | failed | skipped
+  detail    Json     @default("{}")
+  at        DateTime @default(now())
+
+  rule AutomationRule @relation(fields: [ruleId], references: [id])
+
+  @@unique([ruleId, entity, entityId, dedupeKey])
+  @@index([orgId, at])
+  @@map("automation_runs")
+}
+
+model SavedReport {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  name      String
+  /// { metric, dimension, period, from, to, chart }
+  config    Json
+  pinned    Boolean  @default(false)
+  shared    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, userId])
+  @@map("saved_reports")
+}
+
+// ---------------------------------------------------------------- v10 sell
+/// A call, meeting, note, email or WhatsApp logged against a lead (plus system entries like repeat enquiries).
+model LeadActivity {
+  id             String    @id @default(cuid())
+  orgId          String
+  leadId         String
+  kind           String // call | meeting | note | email | whatsapp | enquiry | system
+  outcome        String?
+  body           String
+  at             DateTime  @default(now())
+  nextFollowUpAt DateTime?
+  userId         String?
+  createdAt      DateTime  @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, at])
+  @@map("lead_activities")
+}
+
+/// "Request changes" from a client on the public proposal link.
+model ProposalChangeRequest {
+  id         String    @id @default(cuid())
+  orgId      String
+  proposalId String
+  comment    String
+  byName     String
+  byEmail    String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  revisionId String?
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@map("proposal_change_requests")
+}
+
+/// One step of the discount approval chain (sales manager, then Founder above the admin limit).
+model DiscountApprovalStep {
+  id         String    @id @default(cuid())
+  orgId      String
+  proposalId String
+  step       Int
+  level      String // manager | founder
+  status     String    @default("waiting") // waiting | pending | approved | rejected | cancelled
+  deciderId  String?
+  note       String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status])
+  @@index([proposalId])
+  @@map("discount_approval_steps")
+}
+
+// ---------------------------------------------------------------------------
+// v10 service: message reads, notification preferences, email outbox, dunning, promises to pay, billing runs
+
+/// When a person last read a client thread (unread counts).
+model ThreadRead {
+  threadId   String
+  userId     String
+  orgId      String
+  lastReadAt DateTime @default(now())
+
+  @@id([threadId, userId])
+  @@map("thread_reads")
+}
+
+/// A person's own notification choices per kind group. Missing row = on.
+model NotificationPreference {
+  userId   String
+  kind     String
+  orgId    String
+  inApp    Boolean @default(true)
+  email    Boolean @default(true)
+  /// v17: WhatsApp copy of this kind of alert (needs a phone number on the profile)
+  whatsapp Boolean @default(false)
+
+  @@id([userId, kind])
+  @@map("notification_preferences")
+}
+
+/// Every email the system sends (or would send without SMTP). Shown in Command Centre -> Outbox.
+model EmailOutbox {
+  id          String    @id @default(cuid())
+  orgId       String?
+  toEmail     String
+  toName      String?
+  toUserId    String?
+  subject     String
+  text        String
+  html        String
+  kind        String
+  /// simulated (no SMTP) | sent | failed | skipped
+  status      String    @default("simulated")
+  error       String?
+  entity      String?
+  entityId    String?
+  /// v20: [{ filename, contentType, base64 }] (scheduled report PDFs)
+  attachments Json?
+  createdAt   DateTime  @default(now())
+  sentAt      DateTime?
+
+  @@index([orgId, createdAt])
+  @@map("email_outbox")
+}
+
+/// One overdue reminder step sent for an invoice (dunning). Never sent twice.
+model InvoiceReminder {
+  id          String   @id @default(cuid())
+  orgId       String
+  invoiceId   String
+  step        Int
+  daysOverdue Int
+  channels    String[]
+  manual      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@unique([invoiceId, step])
+  @@index([orgId, createdAt])
+  @@map("invoice_reminders")
+}
+
+/// Finance logs the date a client promised to pay. Reminders pause until then.
+model PaymentPromise {
+  id          String   @id @default(cuid())
+  orgId       String
+  invoiceId   String
+  promisedFor DateTime @db.Date
+  note        String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([invoiceId])
+  @@map("payment_promises")
+}
+
+/// Monthly retainer billing run by Finance.
+model BillingRun {
+  id           String   @id @default(cuid())
+  orgId        String
+  period       String
+  createdById  String
+  issuedCount  Int
+  skippedCount Int      @default(0)
+  totalPaise   Int
+  invoiceIds   String[]
+  detail       Json     @default("[]")
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@map("billing_runs")
+}
+
+// ---------------------------------------------------------------------------
+// v10 deliver: handover pack (links, credentials and notes handed over at Gate 5) and client feedback (NPS)
+
+model DeliverHandoverItem {
+  id           String    @id @default(cuid())
+  orgId        String
+  engagementId String
+  /// link | credential | note
+  kind         String
+  label        String
+  value        String
+  createdById  String
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  @@index([engagementId])
+  @@map("deliver_handover_items")
+}
+
+model DeliverFeedback {
+  id           String   @id @default(cuid())
+  orgId        String
+  engagementId String
+  clientOrgId  String
+  userId       String
+  /// 0-10 "How likely are you to recommend BMU?"
+  score        Int
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  @@unique([engagementId, userId])
+  @@index([clientOrgId])
+  @@map("deliver_feedback")
+}
+
+// ---------------------------------------------------------------------------
+// v10 craft: specialist workspaces (hooks library, script drafts, checklists, brand kits)
+
+model CraftHook {
+  id          String    @id @default(cuid())
+  orgId       String
+  userId      String
+  text        String
+  tags        String[]  @default([])
+  clientOrgId String?
+  uses        Int       @default(0)
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  @@index([orgId, userId])
+  @@map("craft_hooks")
+}
+
+model CraftScript {
+  id                 String   @id @default(cuid())
+  orgId              String
+  authorId           String
+  deliverableId      String?
+  title              String
+  body               String   @default("")
+  submittedVersionId String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([orgId, authorId])
+  @@map("craft_scripts")
+}
+
+/// Per-deliverable working checklist (kind: export | web_qc | handoff). items: [{ label, done, by?, at? }]
+model CraftChecklist {
+  id            String   @id @default(cuid())
+  orgId         String
+  deliverableId String
+  kind          String
+  items         Json     @default("[]")
+  updatedById   String?
+  updatedAt     DateTime @updatedAt
+
+  @@unique([deliverableId, kind])
+  @@map("craft_checklists")
+}
+
+/// Brand kit per client: colours, fonts and notes. Brand files are File rows tagged "brand".
+model CraftBrandKit {
+  id          String   @id @default(cuid())
+  orgId       String
+  clientOrgId String   @unique
+  colours     String[] @default([])
+  fonts       String[] @default([])
+  notes       String?
+  /// v16 creative: tone of voice, do and don't lists, competitors
+  tone        String?
+  dos         String[] @default([])
+  donts       String[] @default([])
+  competitors String[] @default([])
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("craft_brand_kits")
+}
+
+/// Manager's client log: call notes, notes and meeting reminders (remindAt) per client.
+model CraftClientNote {
+  id          String    @id @default(cuid())
+  orgId       String
+  clientOrgId String
+  authorId    String
+  kind        String // call | note | meeting
+  body        String
+  remindAt    DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([orgId, clientOrgId])
+  @@map("craft_client_notes")
+}
+
+// ---------------------------------------------------------------- v10 ai
+/// One AI Copilot call (or a basic-mode answer / a blocked attempt): who, which feature, tokens, cost estimate, speed.
+model AiLog {
+  id              String   @id @default(cuid())
+  orgId           String
+  userId          String?
+  feature         String
+  /// ai | basic
+  mode            String   @default("ai")
+  /// ok | error | blocked | refused
+  status          String   @default("ok")
+  model           String?
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  cacheReadTokens Int      @default(0)
+  /// Estimated cost in paise (list price converted at a fixed rate).
+  costPaise       Int      @default(0)
+  latencyMs       Int      @default(0)
+  targetType      String?
+  targetId        String?
+  error           String?
+  createdAt       DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@index([userId, createdAt])
+  @@map("ai_logs")
+}
+
+/// Ask BMU conversation history (per user). messages: [{ role, text, citations, mode, at }]
+model AiConversation {
+  id        String    @id @default(cuid())
+  orgId     String
+  userId    String
+  title     String
+  messages  Json      @default("[]")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([userId, updatedAt])
+  @@map("ai_conversations")
+}
+
+/// Tone of a client message or request (negative / urgent / positive / neutral). Feeds Client Health.
+model AiSignal {
+  id          String   @id @default(cuid())
+  orgId       String
+  clientOrgId String?
+  sourceType  String // message | request
+  sourceId    String
+  tone        String
+  reason      String?
+  mode        String   @default("basic")
+  createdAt   DateTime @default(now())
+
+  @@unique([sourceType, sourceId])
+  @@index([orgId, clientOrgId, createdAt])
+  @@map("ai_signals")
+}
+
+/// The founder's weekly AI digest (Monday job or on demand from the Weekly Review).
+model AiDigest {
+  id          String   @id @default(cuid())
+  orgId       String
+  weekStart   DateTime
+  text        String
+  data        Json     @default("{}")
+  mode        String   @default("basic")
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@map("ai_digests")
+}
+
+// ---------------------------------------------------------------------------
+// v10 team: timesheets, onboarding/offboarding, SOP acknowledgements
+
+/// One block of worked time: logged on a task (source task_log) or added by hand (source manual).
+model TimeEntry {
+  id           String   @id @default(cuid())
+  orgId        String
+  userId       String
+  date         DateTime @db.Date
+  minutes      Int
+  /// task | internal | admin | meeting | training | leave
+  category     String   @default("task")
+  source       String   @default("manual")
+  taskId       String?
+  engagementId String?
+  note         String?
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, userId, date])
+  @@index([taskId])
+  @@map("time_entries")
+}
+
+/// A person's week (Monday start) submitted to their manager.
+model Timesheet {
+  id           String    @id @default(cuid())
+  orgId        String
+  userId       String
+  weekStart    DateTime  @db.Date
+  /// draft | submitted | approved | returned
+  status       String    @default("draft")
+  totalMinutes Int       @default(0)
+  submittedAt  DateTime?
+  decidedById  String?
+  decidedAt    DateTime?
+  comment      String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, weekStart])
+  @@index([orgId, status])
+  @@map("timesheets")
+}
+
+/// Employee onboarding or offboarding checklist run by HR.
+model PeopleProcess {
+  id          String    @id @default(cuid())
+  orgId       String
+  userId      String
+  /// onboarding | offboarding
+  kind        String
+  /// open | done | cancelled
+  status      String    @default("open")
+  startedById String
+  buddyId     String?
+  startDate   DateTime? @db.Date
+  lastDay     DateTime? @db.Date
+  /// [{ key, label, group, done, doneAt, doneById, sopId? }]
+  items       Json      @default("[]")
+  note        String?
+  completedAt DateTime?
+  suspendedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([orgId, kind, status])
+  @@index([userId])
+  @@map("people_processes")
+}
+
+/// "I have read" acknowledgement of one SOP version.
+model SopAcknowledgement {
+  id      String   @id @default(cuid())
+  orgId   String
+  sopId   String
+  userId  String
+  version Int
+  at      DateTime @default(now())
+
+  @@unique([sopId, userId, version])
+  @@index([userId])
+  @@map("sop_acknowledgements")
+}
+
+// ---------------------------------------------------------------------------
+// v11 core: shared action system (approvals, assignments, undo, drafts, saved views, watchers, tags, imports)
+
+/// A change that waits for someone's approval (approval_matrix). On approve, the stored payload is applied by the handler registered for `action`.
+model ApprovalRequest {
+  id            String    @id @default(cuid())
+  orgId         String
+  /// handler key, e.g. task.reassign_over_capacity, task.deadline_change, task.handback
+  action        String
+  targetType    String
+  targetId      String
+  /// what to apply on approval (the handler's input) plus a before/after diff for display
+  payload       Json      @default("{}")
+  summary       String
+  requestedById String
+  /// the person who must decide; null = anyone with approverRoles
+  approverId    String?
+  approverRoles String[]  @default([])
+  /// pending | approved | rejected | expired | cancelled
+  status        String    @default("pending")
+  reason        String?
+  decisionNote  String?
+  decidedById   String?
+  decidedAt     DateTime?
+  expiresAt     DateTime
+  result        Json?
+  createdAt     DateTime  @default(now())
+
+  @@index([orgId, status])
+  @@index([approverId, status])
+  @@index([targetType, targetId])
+  @@map("approval_requests")
+}
+
+/// Every change of owner on any record (task, deliverable, lead, client AM, engagement roles…).
+model Assignment {
+  id                String    @id @default(cuid())
+  orgId             String
+  targetType        String
+  targetId          String
+  /// which seat changed: owner | am | strategist | producer | qc_reviewer | sales_owner
+  role              String    @default("owner")
+  fromUserId        String?
+  toUserId          String?
+  reason            String
+  note              String?
+  handoverNote      String?
+  /// { mode: keep | extend | set, from, to, days }
+  deadlineChange    Json?
+  approvalRequestId String?
+  /// the previous owner keeps read access until this time (7 days)
+  readAccessUntil   DateTime?
+  byId              String
+  at                DateTime  @default(now())
+
+  @@index([orgId, targetType, targetId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("assignments")
+}
+
+/// Before-state of a change, so it can be undone for a short time.
+model UndoEntry {
+  id        String    @id @default(cuid())
+  orgId     String
+  userId    String
+  label     String
+  /// [{ model, id, data }] rows to restore, plus side effects to reverse
+  before    Json
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("undo_entries")
+}
+
+/// Autosaved form drafts (forms with more than 5 fields).
+model Draft {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  entity    String
+  /// form context, e.g. "new" or "new:client=abc"
+  key       String   @default("new")
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, entity, key])
+  @@map("drafts")
+}
+
+model SavedView {
+  id        String   @id @default(cuid())
+  orgId     String
+  userId    String
+  entity    String
+  name      String
+  filters   Json     @default("{}")
+  columns   Json     @default("[]")
+  isShared  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, entity])
+  @@map("saved_views")
+}
+
+model Watcher {
+  orgId      String
+  userId     String
+  targetType String
+  targetId   String
+  createdAt  DateTime @default(now())
+
+  @@id([userId, targetType, targetId])
+  @@index([targetType, targetId])
+  @@map("watchers")
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  color     String   @default("neutral")
+  createdAt DateTime @default(now())
+
+  links TagLink[]
+
+  @@unique([orgId, name])
+  @@map("tags")
+}
+
+/// A tag on any record (task, client, lead, creator…).
+model TagLink {
+  tagId      String
+  orgId      String
+  targetType String
+  targetId   String
+  byId       String?
+  createdAt  DateTime @default(now())
+
+  tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([tagId, targetType, targetId])
+  @@index([targetType, targetId])
+  @@map("tag_links")
+}
+
+/// CSV import: preview (validated rows) then commit.
+model ImportJob {
+  id                String    @id @default(cuid())
+  orgId             String
+  entity            String
+  fileName          String?
+  /// { csvColumn: fieldKey }
+  mapping           Json      @default("{}")
+  /// preview | committed | cancelled
+  status            String    @default("preview")
+  rowsTotal         Int       @default(0)
+  rowsOk            Int       @default(0)
+  rowsFailed        Int       @default(0)
+  /// [{ row, ok, errors[], duplicate?, values }]
+  rows              Json      @default("[]")
+  /// [{ row, message }]
+  errors            Json      @default("[]")
+  createdIds        String[]  @default([])
+  errorReportFileId String?
+  byId              String
+  createdAt         DateTime  @default(now())
+  committedAt       DateTime?
+
+  @@index([orgId, entity])
+  @@map("import_jobs")
+}
+
+/// Recurring task rule: instances are generated 7 days ahead, skipping days off and holidays.
+model TaskRecurrence {
+  id          String    @id @default(cuid())
+  orgId       String
+  /// task fields copied to each instance { title, ownerId, departmentId, engagementId, priority, … }
+  template    Json
+  /// daily | weekly | monthly | cycle_start
+  rule        String
+  /// weekly: 1 = Monday … 6 = Saturday; monthly: day of month
+  dayOf       Int?
+  startDate   DateTime  @db.Date
+  endDate     DateTime? @db.Date
+  lastDate    DateTime? @db.Date
+  active      Boolean   @default(true)
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  @@index([orgId, active])
+  @@map("task_recurrences")
+}
+
+/// v11 clients: a quote to add a service to an existing client or change an engagement's tier. The client owner
+/// approves in the app; an invoice (when there is something to pay now) must be paid before it applies.
+model ClientServiceQuote {
+  id                 String    @id @default(cuid())
+  orgId              String
+  clientOrgId        String
+  /// add_service | change_tier
+  kind               String
+  engagementId       String?
+  serviceId          String
+  tier               Tier
+  fromTier           Tier?
+  /// first month, e.g. "2026-11" (add_service)
+  startMonth         String?
+  /// next_cycle | now_prorata (change_tier)
+  effective          String    @default("next_cycle")
+  /// paid now (first payment, or the pro-rata difference); 0 = nothing to pay now
+  amountPaise        Int       @default(0)
+  /// monthly price difference (change_tier), for display
+  monthlyDiffPaise   Int?
+  /// requested (client asked; AM to send) | sent | approved | applied | declined | cancelled
+  status             String    @default("sent")
+  note               String?
+  requestedById      String
+  requestedByClient  Boolean   @default(false)
+  sentById           String?
+  approvedById       String?
+  approvedAt         DateTime?
+  invoiceId          String?
+  appliedAt          DateTime?
+  resultEngagementId String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @default(now()) @updatedAt
+
+  @@index([orgId, clientOrgId])
+  @@index([invoiceId])
+  @@map("client_service_quotes")
+}
+
+// ---------------------------------------------------------------------------
+// v11 people: hierarchy actions (scheduled moves and role changes, client pods)
+
+/// A move or role change that takes effect on a later date (applied by the people job on that day).
+model PeopleScheduledChange {
+  id                String    @id @default(cuid())
+  orgId             String
+  userId            String
+  /// move | role
+  kind              String
+  /// move: { departmentId, teamId, managerId, branchId }; role: { roleIds }
+  payload           Json
+  effectiveDate     DateTime  @db.Date
+  reason            String
+  /// scheduled | applied | cancelled
+  status            String    @default("scheduled")
+  byId              String
+  approvalRequestId String?
+  createdAt         DateTime  @default(now())
+  appliedAt         DateTime?
+
+  @@index([orgId, status, effectiveDate])
+  @@index([userId])
+  @@map("people_scheduled_changes")
+}
+
+/// A client pod: an AM, a strategist and producers who serve a set of clients. New tasks for those clients default to pod members.
+model ClientPod {
+  id               String    @id @default(cuid())
+  orgId            String
+  name             String
+  amUserId         String
+  strategistUserId String?
+  producerIds      String[]  @default([])
+  clientIds        String[]  @default([])
+  createdAt        DateTime  @default(now())
+  deletedAt        DateTime?
+
+  @@index([orgId])
+  @@map("client_pods")
+}
+
+// ---------------------------------------------------------------- v11 ops
+/// A coordinator's score for a creator after a brief is delivered (one per brief).
+model OpsCreatorRating {
+  id        String   @id @default(cuid())
+  orgId     String
+  creatorId String
+  briefId   String   @unique
+  score     Int
+  note      String
+  byId      String
+  createdAt DateTime @default(now())
+
+  @@index([creatorId])
+  @@map("ops_creator_ratings")
+}
+
+/// External share link for a file: expires, optional password (scrypt hash), can be revoked.
+model OpsShareLink {
+  id           String    @id @default(cuid())
+  orgId        String
+  fileId       String
+  token        String    @unique
+  expiresAt    DateTime
+  passwordHash String?
+  createdById  String
+  revokedAt    DateTime?
+  views        Int       @default(0)
+  lastViewedAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([fileId])
+  @@map("ops_share_links")
+}
+
+/// An announcement sent to clients or the team (in-app and email through the Outbox).
+model OpsAnnouncement {
+  id             String   @id @default(cuid())
+  orgId          String
+  title          String
+  body           String
+  /// all_clients | segment | all_team | department
+  audience       String
+  /// segment: a service key (clients with that service) or a health value; department: the department id
+  segment        String?
+  channels       String[]
+  recipientCount Int      @default(0)
+  sentById       String
+  createdAt      DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@map("ops_announcements")
+}
+
+/// Org-level integration switch (connect / disconnect by Admin) and per-client ad/social accounts (by the AM with consent).
+model OpsIntegration {
+  id               String    @id @default(cuid())
+  orgId            String
+  key              String
+  /// null = org-level; otherwise the client the account belongs to
+  clientOrgId      String?
+  /// for client accounts: meta_ads | google_ads | instagram | facebook | youtube | linkedin
+  platform         String?
+  accountName      String?
+  connected        Boolean   @default(true)
+  consentBy        String?
+  consentAt        DateTime?
+  connectedById    String
+  connectedAt      DateTime  @default(now())
+  disconnectedAt   DateTime?
+  disconnectedById String?
+
+  @@index([orgId, key])
+  @@index([clientOrgId])
+  @@map("ops_integrations")
+}
+
+// ---------------------------------------------------------------- v12 dashboards
+/// A dashboard: a built-in one's saved layout (key = built-in key) or a custom one (key = "custom:<id>").
+model Dashboard {
+  id             String    @id @default(cuid())
+  orgId          String
+  key            String
+  builtin        String?
+  name           String
+  description    String?
+  /// team | admin | client
+  surface        String    @default("team")
+  /// menu | team_home | admin_home (custom only)
+  placement      String    @default("menu")
+  /// { everyone, roles[], specialties[], userIds[] } (custom only)
+  audience       Json      @default("{}")
+  /// DashboardWidget[]
+  layout         Json      @default("[]")
+  createdById    String?
+  updatedById    String?
+  archivedAt     DateTime?
+  archivedReason String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  versions DashboardVersion[]
+
+  @@unique([orgId, key])
+  @@index([orgId, archivedAt])
+  @@map("dashboards")
+}
+
+/// Every save of a dashboard, so any earlier version can be restored.
+model DashboardVersion {
+  id          String   @id @default(cuid())
+  orgId       String
+  dashboardId String
+  name        String
+  placement   String
+  audience    Json
+  layout      Json
+  note        String?
+  savedById   String?
+  savedAt     DateTime @default(now())
+
+  dashboard Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([dashboardId, savedAt])
+  @@map("dashboard_versions")
+}
+
+/// v13 foundation: feature flags per organisation (Command Centre → System health). Missing row = the default.
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  orgId       String
+  key         String
+  enabled     Boolean
+  roles       String[] @default([])
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([orgId, key])
+  @@map("feature_flags")
+}
+
+/// v13 foundation: an event-bus delivery that failed. Retried with backoff, then kept as "dead" for a person to retry or dismiss.
+model EventFailure {
+  id            String    @id @default(cuid())
+  orgId         String?
+  subscriber    String
+  eventKind     String
+  entity        String?
+  event         Json
+  error         String
+  attempts      Int       @default(1)
+  status        String    @default("retrying") // retrying | dead | resolved | dismissed
+  nextAttemptAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@map("event_failures")
+}
+
+/// v13 foundation: smart search index. One row per searchable record, kept fresh by the event bus.
+/// Permissions are not stored here: search uses it only to find candidates, then each area's own access rules decide.
+model SearchDoc {
+  id        String   @id @default(cuid())
+  orgId     String
+  kind      String
+  entityId  String
+  title     String
+  keywords  String   @default("")
+  updatedAt DateTime @updatedAt
+
+  @@unique([kind, entityId])
+  @@index([orgId, kind])
+  @@map("search_docs")
+}
+
+// ---------------------------------------------------------------------------
+// v14: workflows, custom fields, forms, pipelines
+
+/// A workflow: a trigger, start conditions and a tree of steps (actions, if/else, waits, approvals).
+model WorkflowDef {
+  id               String    @id @default(cuid())
+  orgId            String
+  name             String
+  description      String?
+  enabled          Boolean   @default(true)
+  trigger          String
+  triggerArgs      Json      @default("{}")
+  /// { match: all|any, conditions: [{ field, op, value }] }
+  start            Json      @default("{}")
+  steps            Json      @default("[]")
+  versionNumber    Int       @default(1)
+  currentVersionId String?
+  templateKey      String?
+  movedFromRuleId  String?
+  /// Records created/changed before this are ignored by event triggers
+  watermark        DateTime  @default(now())
+  /// Engine memory across runs, e.g. { lastAssignedUserId }
+  state            Json      @default("{}")
+  runCount         Int       @default(0)
+  lastRunAt        DateTime?
+  createdById      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  versions WorkflowVersion[]
+  runs     WorkflowRun[]
+
+  @@index([orgId, enabled])
+  @@map("workflow_defs")
+}
+
+/// Every saved edit is a new version. Runs stay on the version they started with.
+model WorkflowVersion {
+  id          String   @id @default(cuid())
+  workflowId  String
+  number      Int
+  trigger     String
+  triggerArgs Json     @default("{}")
+  start       Json     @default("{}")
+  steps       Json     @default("[]")
+  /// The steps compiled to a flat list of instructions (see compileWorkflow in shared)
+  program     Json     @default("[]")
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  workflow WorkflowDef   @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  runs     WorkflowRun[]
+
+  @@unique([workflowId, number])
+  @@map("workflow_versions")
+}
+
+/// One record going through one workflow. Survives restarts: the position (pc) and wake time are stored.
+model WorkflowRun {
+  id          String    @id @default(cuid())
+  orgId       String
+  workflowId  String
+  versionId   String
+  entity      String
+  entityId    String
+  dedupeKey   String
+  record      String
+  link        String?
+  /// running | waiting | waiting_approval | done | failed | cancelled
+  status      String    @default("running")
+  pc          Int       @default(0)
+  wakeAt      DateTime?
+  approvalId  String?
+  /// The trigger's record snapshot (fields, vars, people, links)
+  subject     Json      @default("{}")
+  meta        Json      @default("{}")
+  failures    Int       @default(0)
+  error       String?
+  lockedUntil DateTime?
+  startedAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  finishedAt  DateTime?
+
+  workflow WorkflowDef       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  version  WorkflowVersion   @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  steps    WorkflowRunStep[]
+
+  @@unique([workflowId, entity, entityId, dedupeKey])
+  @@index([status, wakeAt])
+  @@index([orgId, startedAt])
+  @@index([entity, entityId])
+  @@map("workflow_runs")
+}
+
+/// What happened at each step of a run, in plain words.
+model WorkflowRunStep {
+  id      String   @id @default(cuid())
+  orgId   String
+  runId   String
+  stepId  String
+  kind    String
+  ok      Boolean  @default(true)
+  skipped Boolean  @default(false)
+  text    String
+  at      DateTime @default(now())
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, at])
+  @@map("workflow_run_steps")
+}
+
+/// An extra field on leads, clients, projects, requests or creators.
+model CustomFieldDef {
+  id          String    @id @default(cuid())
+  orgId       String
+  /// lead | client | engagement | request | creator
+  entity      String
+  key         String
+  label       String
+  /// text | long_text | number | money | date | select | checkbox
+  type        String
+  options     Json      @default("[]")
+  required    Boolean   @default(false)
+  helpText    String?
+  position    Int       @default(0)
+  /// v20 field-level permissions: roles that cannot see this field, and roles that can see but not change it.
+  hiddenFrom  String[]  @default([])
+  readOnlyFor String[]  @default([])
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([orgId, entity, key])
+  @@index([orgId, entity])
+  @@map("custom_field_defs")
+}
+
+/// A form that can be shared as a link or embedded on a website. Each submission creates a lead.
+model FormDef {
+  id             String    @id @default(cuid())
+  orgId          String
+  slug           String    @unique
+  name           String
+  title          String
+  intro          String?
+  fields         Json      @default("[]")
+  submitLabel    String    @default("Send")
+  successMessage String
+  serviceIds     String[]
+  enabled        Boolean   @default(true)
+  submitCount    Int       @default(0)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  submissions FormSubmission[]
+
+  @@index([orgId])
+  @@map("form_defs")
+}
+
+model FormSubmission {
+  id        String   @id @default(cuid())
+  orgId     String
+  formId    String
+  leadId    String?
+  data      Json     @default("{}")
+  ipHash    String?
+  pageUrl   String?
+  createdAt DateTime @default(now())
+
+  form FormDef @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId, createdAt])
+  @@index([orgId, createdAt])
+  @@map("form_submissions")
+}
+
+/// Per-org names, order, visibility, required fields and time targets for lead stages, project phases and request statuses.
+model PipelineConfig {
+  id          String   @id @default(cuid())
+  orgId       String
+  /// lead | engagement | request
+  kind        String
+  stages      Json     @default("[]")
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@unique([orgId, kind])
+  @@map("pipeline_configs")
+}
+
+/// WhatsApp messages written by workflows. Kept here until WhatsApp Business is connected (v19 integrations).
+model WhatsAppMessage {
+  id        String   @id @default(cuid())
+  orgId     String
+  toPhone   String
+  toName    String?
+  body      String
+  /// queued | sent | failed
+  status    String   @default("queued")
+  entity    String?
+  entityId  String?
+  source    String   @default("workflow")
+  createdAt DateTime @default(now())
+
+  @@index([orgId, createdAt])
+  @@map("whatsapp_messages")
+}
+
+// ---------------------------------------------------------------- v15 AI agents
+
+/// One AI agent for the organisation (Sales assistant, Request triage, Producer, Analyst). Off until switched on.
+model Agent {
+  id                 String    @id @default(cuid())
+  orgId              String
+  /// sales_assistant | request_triage | producer | analyst
+  key                String
+  enabled            Boolean   @default(false)
+  /// The agent can only do what this person could do; null = the agent can't act yet.
+  actsForUserId      String?
+  /// 0 = no limit. When this month's AI cost reaches it, the agent keeps working in basic mode.
+  monthlyBudgetPaise Int       @default(100000)
+  settings           Json      @default("{}")
+  lastRunAt          DateTime?
+  /// New leads / requests created after this time are picked up on the next pass.
+  scannedAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  runs AgentRun[]
+
+  @@unique([orgId, key])
+  @@map("agents")
+}
+
+/// One agent run: what started it, what it looked at, what it did, what it asked about, and what it cost.
+model AgentRun {
+  id           String    @id @default(cuid())
+  orgId        String
+  agentId      String
+  agentKey     String
+  /// event | schedule | manual | ask | eval
+  trigger      String
+  subjectType  String?
+  subjectId    String?
+  subjectLabel String?
+  /// running | done | failed | undone
+  status       String    @default("running")
+  /// ai | basic
+  mode         String    @default("basic")
+  summary      String?
+  answer       String?
+  citations    Json      @default("[]")
+  notice       String?
+  costPaise    Int       @default(0)
+  inputTokens  Int       @default(0)
+  outputTokens Int       @default(0)
+  aiLogId      String?
+  actingUserId String?
+  startedById  String?
+  error        String?
+  feedback     Int?
+  feedbackById String?
+  feedbackNote String?
+  /// safety-check runs are hidden from the normal run log
+  isEval       Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  finishedAt   DateTime?
+
+  agent Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  steps AgentStep[]
+
+  @@index([orgId, createdAt])
+  @@index([agentId, createdAt])
+  @@index([subjectType, subjectId])
+  @@map("agent_runs")
+}
+
+/// One step of a run: a lookup, an action it took (with what is needed to undo it), a proposal or a blocked attempt.
+model AgentStep {
+  id         String    @id @default(cuid())
+  orgId      String
+  runId      String
+  seq        Int
+  /// read | action | proposal | blocked | note | error
+  kind       String
+  tool       String?
+  title      String
+  detail     String?
+  input      Json      @default("{}")
+  output     Json?
+  /// auto | confirm | never | read
+  policy     String?
+  ok         Boolean   @default(true)
+  link       String?
+  /// rows to restore (UndoRow[]); null = nothing to undo
+  undo       Json?
+  undoneAt   DateTime?
+  undoneById String?
+  proposalId String?
+  at         DateTime  @default(now())
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, seq])
+  @@map("agent_steps")
+}
+
+/// Something an agent wants to do that needs a person first (client-facing, money, someone else's work).
+model AgentProposal {
+  id           String    @id @default(cuid())
+  orgId        String
+  agentId      String
+  agentKey     String
+  runId        String
+  action       String
+  title        String
+  summary      String
+  /// the action's input; editable fields can be changed by the person deciding
+  payload      Json      @default("{}")
+  fields       Json      @default("[]")
+  targetType   String?
+  targetId     String?
+  link         String?
+  actingUserId String
+  /// people who may decide besides the Founder and Admins
+  deciderIds   String[]  @default([])
+  /// pending | approved | rejected | failed | expired
+  status       String    @default("pending")
+  decidedById  String?
+  decidedAt    DateTime?
+  decisionNote String?
+  result       Json?
+  error        String?
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  @@index([orgId, status])
+  @@index([targetType, targetId])
+  @@map("agent_proposals")
+}
+
+/// Searchable knowledge for agents (SOPs, services, approved plans, brand kits, client notes). Postgres full-text search.
+model KnowledgeChunk {
+  id          String   @id @default(cuid())
+  orgId       String
+  /// set for client-specific knowledge, so only people who can see the client find it
+  clientOrgId String?
+  /// sop | service | plan | brand_kit | client_note
+  sourceType  String
+  sourceId    String
+  part        Int      @default(0)
+  title       String
+  link        String?
+  text        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([sourceType, sourceId, part])
+  @@index([orgId, sourceType])
+  @@map("knowledge_chunks")
+}
+
+// ---------------------------------------------------------------- v16 creative studio
+
+/// A group of assets, e.g. a campaign ("Diwali 2026"), for one client or for BMU itself.
+model AssetCollection {
+  id          String    @id @default(cuid())
+  orgId       String
+  clientOrgId String?
+  name        String
+  description String?
+  createdById String
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  assets Asset[]
+
+  @@index([orgId, clientOrgId])
+  @@map("asset_collections")
+}
+
+/// One item in the asset library (image, video, design, document or link). Its files are AssetVersions.
+model Asset {
+  id               String    @id @default(cuid())
+  orgId            String
+  clientOrgId      String?
+  collectionId     String?
+  title            String
+  /// image | video | pdf | link | other (from the current file)
+  kind             String
+  tags             String[]  @default([])
+  aiTags           String[]  @default([])
+  /// upload | deliverable (approved work, added automatically) | brand
+  source           String    @default("upload")
+  deliverableId    String?
+  /// the client can see it in their own library
+  clientVisible    Boolean   @default(false)
+  currentVersionId String?
+  /// usage rights, e.g. creator content licensed for 6 months
+  rightsNote       String?
+  rightsExpireAt   DateTime?
+  creatorId        String?
+  rightsWarnedAt   DateTime?
+  createdById      String
+  archivedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  collection AssetCollection? @relation(fields: [collectionId], references: [id])
+  versions   AssetVersion[]
+
+  @@unique([deliverableId])
+  @@index([orgId, clientOrgId])
+  @@index([orgId, updatedAt])
+  @@map("assets")
+}
+
+model AssetVersion {
+  id           String   @id @default(cuid())
+  orgId        String
+  assetId      String
+  number       Int
+  fileId       String
+  note         String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, number])
+  @@map("asset_versions")
+}
+
+/// A resumable upload in progress (pieces are appended to a temporary file until complete).
+model UploadSession {
+  id          String    @id @default(cuid())
+  orgId       String
+  userId      String
+  name        String
+  mimeType    String
+  size        BigInt
+  received    BigInt    @default(0)
+  tmpPath     String
+  /// what to do when complete: { assetId?, title?, clientOrgId?, collectionId?, tags?, note? }
+  target      Json      @default("{}")
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@map("upload_sessions")
+}
+
+/// Stored when a draft is finally approved: who approved which exact file, when and how, sealed with a hash.
+model ApprovalCertificate {
+  id            String   @id @default(cuid())
+  orgId         String
+  code          String   @unique
+  deliverableId String
+  versionId     String   @unique
+  data          Json
+  hash          String
+  createdAt     DateTime @default(now())
+
+  @@index([deliverableId])
+  @@map("approval_certificates")
+}
+
+/// A one-tap approval link sent to one client approver for one version (email or WhatsApp).
+model ProofLink {
+  id        String    @id @default(cuid())
+  orgId     String
+  tokenHash String    @unique
+  versionId String
+  userId    String
+  channel   String    @default("email")
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([versionId])
+  @@map("proof_links")
+}
+
+/// A client's social account the content calendar posts to (Instagram handle, LinkedIn page…).
+model ContentChannel {
+  id          String   @id @default(cuid())
+  orgId       String
+  clientOrgId String
+  platform    String
+  handle      String
+  url         String?
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@unique([clientOrgId, platform, handle])
+  @@map("content_channels")
+}
+
+/// Results of a published post (typed in by the team until the platforms are connected). Latest row counts.
+model PostMetric {
+  id            String   @id @default(cuid())
+  orgId         String
+  deliverableId String
+  reach         Int      @default(0)
+  impressions   Int      @default(0)
+  engagement    Int      @default(0)
+  clicks        Int      @default(0)
+  spendPaise    Int      @default(0)
+  source        String   @default("manual")
+  recordedById  String?
+  createdAt     DateTime @default(now())
+
+  @@index([deliverableId, createdAt])
+  @@index([orgId, createdAt])
+  @@map("post_metrics")
+}
+
+// ---------------------------------------------------------------- v17 client portal 2.0 and communications
+
+/// One WhatsApp number or email address talking to BMU. Linked to a client (and their thread) or a lead when known.
+model Conversation {
+  id            String   @id @default(cuid())
+  orgId         String
+  /// whatsapp | email
+  channel       String
+  /// Last 10 digits of the phone (WhatsApp) or the lower-case email address
+  address       String
+  name          String?
+  clientOrgId   String?
+  userId        String?
+  leadId        String?
+  threadId      String?
+  assigneeId    String?
+  /// open | closed
+  status        String   @default("open")
+  unread        Int      @default(0)
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  messages ConversationMessage[]
+
+  @@unique([orgId, channel, address])
+  @@index([orgId, status, lastMessageAt])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String   @id @default(cuid())
+  orgId          String
+  conversationId String
+  /// in | out
+  direction      String
+  subject        String?
+  body           String
+  /// Provider message id (WhatsApp wamid, email Message-ID): a repeated webhook is ignored
+  externalId     String?
+  /// received | queued | sent | simulated | failed
+  status         String   @default("received")
+  error          String?
+  authorId       String?
+  /// The copy on the client's thread, when the conversation is linked to one
+  messageId      String?
+  aiDrafted      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, externalId])
+  @@index([conversationId, createdAt])
+  @@map("conversation_messages")
+}
+
+/// Saved replies with {{variables}}.
+model ReplyTemplate {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  /// any | whatsapp | email
+  channel     String   @default("any")
+  body        String
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orgId])
+  @@map("reply_templates")
+}
+
+/// Per person: quiet hours (IST) and the daily digest.
+model NotificationSetting {
+  userId       String    @id
+  orgId        String
+  quietStart   String?
+  quietEnd     String?
+  /// off | daily
+  digest       String    @default("off")
+  digestHour   Int       @default(18)
+  lastDigestAt DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@map("notification_settings")
+}
+
+/// Emails and WhatsApp alerts held back by quiet hours or waiting for the daily digest.
+model NotificationDelivery {
+  id        String    @id @default(cuid())
+  orgId     String
+  userId    String
+  /// email | whatsapp
+  channel   String
+  kind      String
+  title     String
+  body      String?
+  link      String?
+  /// quiet (send when quiet hours end) | digest (bundle into the daily digest)
+  reason    String
+  sendAfter DateTime
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([sendAfter, sentAt])
+  @@index([userId, sentAt])
+  @@map("notification_deliveries")
+}
+
+/// A shared document (brief, proposal draft, notes) that several people edit at the same time (Yjs CRDT state).
+model CollabDoc {
+  id            String    @id @default(cuid())
+  orgId         String
+  title         String
+  /// brief | proposal | notes
+  kind          String    @default("brief")
+  clientOrgId   String?
+  engagementId  String?
+  leadId        String?
+  /// Clients of clientOrgId can open and edit it
+  clientVisible Boolean   @default(false)
+  state         Bytes
+  text          String    @default("")
+  version       Int       @default(0)
+  createdById   String
+  updatedById   String?
+  archivedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([orgId, updatedAt])
+  @@index([engagementId])
+  @@index([leadId])
+  @@map("collab_docs")
+}
+
+/// When a team member can be booked: weekdays and hours (IST), meeting length.
+model BookingPage {
+  id          String   @id @default(cuid())
+  orgId       String
+  userId      String   @unique
+  slug        String   @unique
+  title       String
+  durationMin Int      @default(30)
+  /// 1 = Monday ... 7 = Sunday
+  days        Int[]    @default([1, 2, 3, 4, 5])
+  startTime   String   @default("10:00")
+  endTime     String   @default("18:00")
+  /// Minimum notice in hours
+  noticeHours Int      @default(4)
+  active      Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+
+  @@map("booking_pages")
+}
+
+model Meeting {
+  id          String    @id @default(cuid())
+  orgId       String
+  title       String
+  hostId      String
+  startAt     DateTime
+  endAt       DateTime
+  clientOrgId String?
+  leadId      String?
+  bookedById  String?
+  guestName   String?
+  guestEmail  String?
+  guestPhone  String?
+  agenda      String?
+  location    String?
+  /// booked | cancelled | done
+  status      String    @default("booked")
+  /// client | public | team
+  bookedVia   String    @default("team")
+  notes       String?
+  summary     String?
+  /// [{ text, taskId? }]
+  actionItems Json      @default("[]")
+  cancelledAt DateTime?
+  reminderAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([hostId, startAt])
+  @@index([clientOrgId, startAt])
+  @@map("meetings")
+}
+
+// ---------------------------------------------------------------------------
+// v18 Finance 2.0 and capacity
+
+/// A planned invoice (milestone, retainer instalment or one-off) issued automatically on its date.
+model InvoiceSchedule {
+  id           String   @id @default(cuid())
+  orgId        String
+  clientOrgId  String
+  engagementId String?
+  label        String
+  /// Before GST
+  amountPaise  Int
+  dueOn        DateTime @db.Date
+  /// milestone | retainer | one_off
+  kind         String   @default("milestone")
+  /// planned | issued | skipped
+  status       String   @default("planned")
+  invoiceId    String?
+  error        String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, status, dueOn])
+  @@index([clientOrgId])
+  @@map("invoice_schedules")
+}
+
+/// A pay-by-link for one invoice (Razorpay Payment Link, or a test link without keys).
+model PaymentLink {
+  id          String    @id @default(cuid())
+  orgId       String
+  invoiceId   String
+  token       String    @unique
+  /// razorpay | test
+  provider    String    @default("test")
+  externalId  String?   @unique
+  shortUrl    String?
+  amountPaise Int
+  /// active | paid | cancelled
+  status      String    @default("active")
+  paidAt      DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  @@index([invoiceId])
+  @@map("payment_links")
+}
+
+/// Money received that could not be tied to an invoice automatically.
+model UnmatchedPayment {
+  id          String    @id @default(cuid())
+  orgId       String
+  provider    String
+  ref         String
+  amountPaise Int
+  payerName   String?
+  payerEmail  String?
+  payerPhone  String?
+  note        String?
+  receivedAt  DateTime  @default(now())
+  invoiceId   String?
+  matchedById String?
+  matchedAt   DateTime?
+  ignoredAt   DateTime?
+
+  @@unique([orgId, provider, ref])
+  @@index([orgId, matchedAt])
+  @@map("unmatched_payments")
+}
+
+/// An expense (claim or card spend) or a vendor bill to pay.
+model Expense {
+  id            String    @id @default(cuid())
+  orgId         String
+  /// expense | vendor_bill
+  kind          String    @default("expense")
+  category      String
+  vendorName    String?
+  billNumber    String?
+  description   String
+  date          DateTime  @db.Date
+  dueDate       DateTime? @db.Date
+  /// Before GST
+  amountPaise   Int
+  gstPaise      Int       @default(0)
+  tdsPaise      Int       @default(0)
+  clientOrgId   String?
+  engagementId  String?
+  /// Re-billed to the client (then it is not a cost to BMU)
+  billable      Boolean   @default(false)
+  invoiceId     String?
+  /// submitted | approved | rejected | paid
+  status        String    @default("submitted")
+  receiptFileId String?
+  paidAt        DateTime?
+  paidRef       String?
+  createdById   String
+  decidedById   String?
+  decidedAt     DateTime?
+  decisionNote  String?
+  createdAt     DateTime  @default(now())
+
+  @@index([orgId, kind, status])
+  @@index([clientOrgId])
+  @@index([engagementId])
+  @@map("expenses")
+}
+
+/// A running stopwatch (one per person).
+model ActiveTimer {
+  userId       String   @id
+  orgId        String
+  taskId       String?
+  engagementId String?
+  note         String?
+  startedAt    DateTime @default(now())
+
+  @@map("active_timers")
+}
+
+/// Hours reserved for a person (or requested for a specialty) on a project in one week.
+model ResourceBooking {
+  id           String   @id @default(cuid())
+  orgId        String
+  engagementId String
+  /// null = a request for someone with `specialty`
+  userId       String?
+  specialty    String?
+  /// Monday of the week (IST)
+  weekStart    DateTime @db.Date
+  hours        Int
+  note         String?
+  /// booked | requested
+  status       String   @default("booked")
+  createdById  String?
+  createdAt    DateTime @default(now())
+
+  @@index([orgId, weekStart])
+  @@index([userId, weekStart])
+  @@index([engagementId])
+  @@map("resource_bookings")
+}
+
+// ---------------------------------------------------------------- v19 integrations, publishing and public API
+
+/// A connected outside account: a client's Facebook page, Instagram, LinkedIn page, YouTube channel, ad account or
+/// GA4 property. mode "test" is BMU's built-in test account (no keys, made-up but steady numbers).
+model IntegrationAccount {
+  id             String    @id @default(cuid())
+  orgId          String
+  /// instagram | facebook | linkedin | youtube | meta_ads | google_ads | ga4
+  provider       String
+  mode           String    @default("live")
+  clientOrgId    String?
+  name           String
+  externalId     String
+  /// AES-GCM encrypted tokens (never sent to the browser)
+  tokenEnc       String?
+  refreshEnc     String?
+  tokenExpiresAt DateTime?
+  scopes         String[]  @default([])
+  /// connected | error | disconnected
+  status         String    @default("connected")
+  lastSyncAt     DateTime?
+  lastError      String?
+  connectedById  String
+  createdAt      DateTime  @default(now())
+  disconnectedAt DateTime?
+
+  @@unique([orgId, provider, externalId])
+  @@index([clientOrgId])
+  @@map("integration_accounts")
+}
+
+/// One run of a connector job (publish, post results, ad results, token refresh) for the status page.
+model SyncJob {
+  id         String    @id @default(cuid())
+  orgId      String
+  accountId  String
+  /// publish | post_metrics | ad_metrics | refresh
+  kind       String
+  /// running | ok | failed
+  status     String    @default("running")
+  items      Int       @default(0)
+  error      String?
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([accountId, startedAt])
+  @@index([orgId, startedAt])
+  @@map("sync_jobs")
+}
+
+/// A scheduled post sent to a connected account by the publisher.
+model PostPublication {
+  id            String    @id @default(cuid())
+  orgId         String
+  deliverableId String    @unique
+  accountId     String
+  /// queued | publishing | published | failed
+  status        String    @default("queued")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime?
+  externalId    String?
+  url           String?
+  error         String?
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([accountId])
+  @@index([status, nextAttemptAt])
+  @@map("post_publications")
+}
+
+/// Daily ad and website numbers per account (and campaign) for client dashboards.
+model AdMetricDaily {
+  id           String   @id @default(cuid())
+  orgId        String
+  accountId    String
+  clientOrgId  String?
+  provider     String
+  date         DateTime @db.Date
+  campaign     String   @default("")
+  spendPaise   Int      @default(0)
+  impressions  Int      @default(0)
+  clicks       Int      @default(0)
+  conversions  Int      @default(0)
+  sessions     Int      @default(0)
+  users        Int      @default(0)
+  revenuePaise Int      @default(0)
+  syncedAt     DateTime @default(now())
+
+  @@unique([accountId, date, campaign])
+  @@index([clientOrgId, date])
+  @@map("ad_metrics_daily")
+}
+
+/// Public API v1 key. Only a hash is stored; requests act as the person who made it, limited to its scopes.
+model ApiKey {
+  id              String    @id @default(cuid())
+  orgId           String
+  name            String
+  prefix          String
+  hash            String    @unique
+  scopes          String[]
+  userId          String
+  createdById     String
+  rateLimitPerMin Int       @default(120)
+  lastUsedAt      DateTime?
+  expiresAt       DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([orgId])
+  @@map("api_keys")
+}
+
+/// An outside URL that receives BMU events (signed, retried).
+model WebhookSubscription {
+  id           String    @id @default(cuid())
+  orgId        String
+  url          String
+  description  String?
+  /// event types: exact ("lead.created"), area ("lead.*") or "*"
+  events       String[]
+  secretEnc    String
+  active       Boolean   @default(true)
+  failingSince DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+
+  @@index([orgId])
+  @@map("webhook_subscriptions")
+}
+
+model WebhookDelivery {
+  id             String    @id @default(cuid())
+  orgId          String
+  subscriptionId String
+  type           String
+  payload        Json
+  /// pending | delivered | dead
+  status         String    @default("pending")
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  lastStatus     Int?
+  lastError      String?
+  durationMs     Int?
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([status, nextAttemptAt])
+  @@index([subscriptionId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// v20: security, data protection, intelligence, mobile sync
+
+/// One signed-in device. The session token carries its id, so it can be signed out from anywhere.
+model UserSession {
+  id         String    @id @default(cuid())
+  orgId      String
+  userId     String
+  /// otp | otp+totp | passkey
+  method     String
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  @@index([userId, revokedAt])
+  @@map("user_sessions")
+}
+
+/// Two-factor (authenticator app) for one person. The secret is sealed; recovery codes are stored as hashes.
+model UserTotp {
+  userId        String    @id
+  orgId         String
+  secretEnc     String
+  enabledAt     DateTime?
+  recoveryCodes String[]  @default([])
+  lastUsedStep  Int?
+  createdAt     DateTime  @default(now())
+
+  @@map("user_totp")
+}
+
+model Passkey {
+  id           String    @id @default(cuid())
+  orgId        String
+  userId       String
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      Int       @default(0)
+  transports   String[]  @default([])
+  name         String
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([userId])
+  @@map("passkeys")
+}
+
+/// DPDP consent: what a person agreed to, when, where, and against which privacy notice.
+model Consent {
+  id            String    @id @default(cuid())
+  orgId         String
+  /// lead | user | form_submission
+  subjectType   String
+  subjectId     String
+  email         String?
+  phone         String?
+  /// marketing | service | whatsapp | analytics
+  purpose       String
+  granted       Boolean   @default(true)
+  /// website_enquiry | form | proposal | sign_in | manual
+  source        String
+  noticeVersion String
+  ip            String?
+  createdAt     DateTime  @default(now())
+  withdrawnAt   DateTime?
+
+  @@index([orgId, subjectType, subjectId])
+  @@index([orgId, email])
+  @@map("consents")
+}
+
+/// A data principal's request (DPDP): access/export, correction or erasure, with a deadline.
+model DataRequest {
+  id             String    @id @default(cuid())
+  orgId          String
+  /// export | correction | deletion
+  kind           String
+  /// lead | client | user
+  subjectType    String
+  subjectId      String?
+  requesterName  String
+  requesterEmail String
+  details        String?
+  /// open | in_progress | done | rejected
+  status         String    @default("open")
+  dueAt          DateTime
+  assigneeId     String?
+  resolution     String?
+  completedAt    DateTime?
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([orgId, status, dueAt])
+  @@map("data_requests")
+}
+
+/// How long each kind of record is kept before it is anonymised or deleted (runs nightly).
+model RetentionRule {
+  id         String    @id @default(cuid())
+  orgId      String
+  /// lost_lead | otp_code | notification | audit_ip | form_submission | email_outbox | webhook_delivery | former_client_user
+  recordType String
+  keepDays   Int
+  /// anonymise | delete
+  action     String
+  enabled    Boolean   @default(true)
+  lastRunAt  DateTime?
+  lastCount  Int?
+
+  @@unique([orgId, recordType])
+  @@map("retention_rules")
+}
+
+/// Forecasts and risk scores with the reasons behind them (TypeScript model, or the optional Python service).
+model Forecast {
+  id          String   @id @default(cuid())
+  orgId       String
+  /// revenue | churn | win | slip | capacity
+  kind        String
+  subjectType String
+  subjectId   String
+  /// revenue: month (yyyy-mm); others: ""
+  period      String   @default("")
+  value       Float
+  /// 0–100 risk or probability
+  score       Int?
+  reasons     Json     @default("[]")
+  /// revenue: { lowPaise, highPaise, trendPaise, label, targetPaise }
+  meta        Json?
+  /// ts | python
+  source      String   @default("ts")
+  computedAt  DateTime @default(now())
+
+  @@unique([orgId, kind, subjectType, subjectId, period])
+  @@index([orgId, kind])
+  @@map("forecasts")
+}
+
+/// "Tell me when this number moves unusually."
+model MetricAlert {
+  id            String    @id @default(cuid())
+  orgId         String
+  name          String
+  metricKey     String
+  /// org | client
+  scope         String    @default("org")
+  clientOrgId   String?
+  /// drop_pct | rise_pct | above | below
+  condition     String
+  threshold     Float
+  windowDays    Int       @default(7)
+  roles         String[]  @default([])
+  userIds       String[]  @default([])
+  active        Boolean   @default(true)
+  builtIn       Boolean   @default(false)
+  lastValue     Float?
+  lastCheckedAt DateTime?
+  lastFiredAt   DateTime?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+
+  @@index([orgId, active])
+  @@map("metric_alerts")
+}
+
+model MetricAlertEvent {
+  id        String   @id @default(cuid())
+  orgId     String
+  alertId   String
+  subject   String
+  value     Float
+  baseline  Float?
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([alertId, createdAt])
+  @@index([orgId, createdAt])
+  @@map("metric_alert_events")
+}
+
+/// A dashboard or set of metrics emailed as a PDF on a schedule.
+model ScheduledReport {
+  id          String    @id @default(cuid())
+  orgId       String
+  name        String
+  /// metrics | dashboard
+  kind        String
+  dashboardId String?
+  metricKeys  String[]  @default([])
+  /// daily | weekly | monthly
+  cadence     String
+  dayOfWeek   Int?
+  dayOfMonth  Int?
+  hourIst     Int       @default(9)
+  recipients  String[]
+  active      Boolean   @default(true)
+  nextRunAt   DateTime
+  lastSentAt  DateTime?
+  lastError   String?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  @@index([active, nextRunAt])
+  @@map("scheduled_reports")
+}
+
+/// Company, team and person goals, tracked against a metric or by check-ins.
+model Goal {
+  id           String    @id @default(cuid())
+  orgId        String
+  title        String
+  /// company | team | person
+  level        String
+  ownerId      String?
+  departmentId String?
+  metricKey    String?
+  /// higher | lower: which way is good
+  direction    String    @default("higher")
+  startValue   Float     @default(0)
+  target       Float
+  unit         String    @default("")
+  startDate    DateTime  @db.Date
+  endDate      DateTime  @db.Date
+  archivedAt   DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+
+  checkIns GoalCheckIn[]
+
+  @@index([orgId, endDate])
+  @@map("goals")
+}
+
+model GoalCheckIn {
+  id        String   @id @default(cuid())
+  goalId    String
+  value     Float
+  note      String?
+  byId      String
+  createdAt DateTime @default(now())
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId, createdAt])
+  @@map("goal_check_ins")
+}
+
+/// Mobile offline changes, applied once each (clientOpId is generated on the phone).
+model SyncOp {
+  id         String   @id @default(cuid())
+  orgId      String
+  userId     String
+  clientOpId String
+  entity     String
+  entityId   String
+  op         String
+  payload    Json
+  /// applied | merged | conflict | rejected
+  status     String
+  result     Json?
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, clientOpId])
+  @@map("sync_ops")
+}
+
+/// Expo push token for a person's phone (push notifications with quick actions).
+model PushToken {
+  id         String   @id @default(cuid())
+  orgId      String
+  userId     String
+  token      String   @unique
+  platform   String
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("push_tokens")
+}
+
+/// v21: one row per running backend process (API or worker), refreshed every 20 seconds, for System health.
+model RuntimeProcess {
+  id         String   @id
+  role       String // all | api | worker
+  host       String
+  pid        Int
+  version    String
+  startedAt  DateTime
+  lastSeenAt DateTime
+  jobs       Json     @default("[]")
+
+  @@map("runtime_processes")
+}

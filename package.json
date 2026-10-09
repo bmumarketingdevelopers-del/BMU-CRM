@@ -1,0 +1,39 @@
+{
+  "name": "bmu-hub",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "turbo run dev --filter=@bmu/web...",
+    "dev:api": "turbo run dev --filter=@bmu/api...",
+    "dev:mobile": "pnpm --filter @bmu/shared build && pnpm --filter @bmu/mobile start",
+    "build": "turbo run build",
+    "build:prod": "pnpm --filter @bmu/shared build && pnpm --filter @bmu/api build && pnpm --filter @bmu/web build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "pnpm --filter @bmu/api db:migrate",
+    "db:seed": "pnpm --filter @bmu/api db:seed",
+    "db:studio": "pnpm --filter @bmu/api db:studio",
+    "prepare-dev": "node scripts/dev.mjs --prepare-only",
+    "test:e2e": "pnpm --filter @bmu/api test:e2e",
+    "loadtest": "node scripts/loadtest.mjs",
+    "start": "node scripts/start.mjs",
+    "start:api": "pnpm --filter @bmu/api start:api",
+    "start:worker": "pnpm --filter @bmu/api start:worker",
+    "start:web": "pnpm --filter @bmu/web start",
+    "db:deploy": "pnpm --filter @bmu/api db:deploy",
+    "env:check": "pnpm --filter @bmu/api env:check",
+    "docker:up": "docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build",
+    "docker:logs": "docker compose -f docker-compose.prod.yml --env-file .env.production logs -f --tail=200"
+  },
+  "devDependencies": {
+    "embedded-postgres": "18.4.0-beta.17",
+    "turbo": "^2.11.6"
+  }
+}

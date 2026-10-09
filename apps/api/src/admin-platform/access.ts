@@ -1,0 +1,25 @@
+import { ForbiddenException } from '@nestjs/common';
+import type { AdminPlatformAccess, Me } from '@bmu/shared';
+
+const OPS_ROLES = ['founder', 'admin', 'department_head'];
+
+export const isStaff = (me: Me) => me.type === 'staff';
+export const isFounderOrAdmin = (me: Me) => isStaff(me) && me.roles.some((r) => r === 'founder' || r === 'admin');
+
+/** Operations edits (SOPs, checklists, gate and SLA rules): Founder, Admin or department heads with edit rights. */
+export function canEditOperations(me: Me) {
+  const rule = me.permissions.sop_checklists_flow_templates?.rule ?? 'none';
+  return isStaff(me) && me.roles.some((r) => OPS_ROLES.includes(r)) && (rule === 'full' || rule.startsWith('edit'));
+}
+
+export const accessFor = (me: Me): AdminPlatformAccess => ({ operations: canEditOperations(me), platform: isFounderOrAdmin(me) });
+
+export function assertStaff(me: Me) {
+  if (!isStaff(me)) throw new ForbiddenException('Team accounts only');
+}
+export function assertOperations(me: Me) {
+  if (!canEditOperations(me)) throw new ForbiddenException('Only Founder, Admin or department heads can change this');
+}
+export function assertPlatform(me: Me) {
+  if (!isFounderOrAdmin(me)) throw new ForbiddenException('Only the Founder or an Admin can do this');
+}

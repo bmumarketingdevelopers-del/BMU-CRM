@@ -1,0 +1,392 @@
+{
+  "meta": {
+    "name": "BMU Hub — Architecture v2 (Next Generation)",
+    "version": "2.0-draft",
+    "date": "2026-10-04",
+    "status": "Draft for review. Nothing is built until the owner says 'build'.",
+    "builds_on": "BMU Hub v12 (Dashboard Studio). Everything that works today keeps working; v2 is added in phases, each shipped as its own runnable zip.",
+    "applies_to": ["website", "team_app", "client_app", "admin_panel", "creator_portal", "ios_app", "android_app", "public_api"],
+    "one_line_goal": "Turn BMU Hub from a CRM people update into an agency operating system that runs itself: it plans the work, does the routine parts with AI, warns before things go wrong, and lets clients see and approve everything live."
+  },
+
+  "what_100x_means": {
+    "principle": "Measured by time saved and problems caught, not by number of screens.",
+    "targets": [
+      {"area": "Routine admin", "today": "People update statuses, chase approvals and write follow-ups by hand", "target": "80% of routine updates, reminders, follow-ups and status reports done by agents and workflows, a person only approves"},
+      {"area": "Speed", "today": "Pages load on request, refresh to see changes", "target": "Every screen live (changes appear for everyone in under 1 second), first page load under 1.5 s, any search under 200 ms"},
+      {"area": "Seeing problems early", "today": "Dashboards show what already happened", "target": "Forecasts for revenue, capacity, churn risk and deadline slips 2–6 weeks ahead, with a suggested fix"},
+      {"area": "Client experience", "today": "Clients see requests, invoices and reports", "target": "Clients review creatives with pinned comments, approve in one tap, see live campaign results and pay online, on web and phone"},
+      {"area": "Creative production", "today": "Files are attachments on tasks", "target": "Full asset library with versions, proofing, brand kits, a content calendar that publishes to social platforms and pulls back results"},
+      {"area": "Money", "today": "Invoices and payments recorded", "target": "Quote → invoice → GST e-invoice → payment link → auto reminders → reconciled, with profit per client, project and person"},
+      {"area": "Customisation", "today": "Dashboards editable (v12)", "target": "Fields, forms, pipelines, workflows, roles, dashboards and client portal branding all editable without code"},
+      {"area": "Reach", "today": "Web plus basic mobile", "target": "Mobile apps at full parity and working offline, WhatsApp as a first-class channel, public API and webhooks"}
+    ]
+  },
+
+  "baseline_v12": {
+    "stack": "TypeScript monorepo (pnpm). Next.js 16 web, Expo SDK 57 mobile, NestJS 12 API, Prisma 7 + PostgreSQL, packages/shared for types, validation, permissions and API client.",
+    "already_built": [
+      "Lead → proposal → client journey with 5 gates",
+      "Engagements, production board, specialist and manager workspaces",
+      "Requests desk with SLAs, approvals, messages",
+      "Billing and finance basics",
+      "Automations (v9), analytics and explore (v9–v10), AI copilot (v10)",
+      "Actions everywhere: add, assign, reassign, move, archive (v11)",
+      "Dashboard Studio: edit built-ins, build custom dashboards for chosen people (v12)",
+      "Audit log, role and specialty permissions, IST-aware periods"
+    ],
+    "limits_to_fix": [
+      "Modules call each other directly, so adding features means touching many places",
+      "No live updates: screens need refresh",
+      "Automations are simple if-this-then-that with no waiting, branching or retries",
+      "AI copilot answers questions but cannot safely take actions on its own",
+      "Search is per screen, not one search across everything",
+      "Files have no versions, proofing or library",
+      "Analytics run on live tables, so heavy reports will slow the app as data grows",
+      "Mobile needs a connection for everything",
+      "No outside integrations (ads, social, WhatsApp, payments, accounting)"
+    ]
+  },
+
+  "architecture_principles": [
+    "Modular monolith first: one API process with strict module boundaries, so it stays easy to run on one laptop; any module can be split into its own service later without rewriting.",
+    "Everything is an event: every change writes a domain event; workflows, AI agents, notifications, search, analytics and live updates all listen to events instead of being called directly.",
+    "One action system: every change (from a person, a workflow, an AI agent or the public API) goes through the same Action layer from v11, so permissions, validation, audit and undo are identical everywhere.",
+    "Shared rules: types, validation, permission policies and metric definitions live in packages/shared and are used by web, mobile, API and agents alike.",
+    "AI proposes, people approve: agents can do anything a person can, but risky actions wait for approval and every agent step is logged and reversible.",
+    "Local first for the owner: 'pnpm install' then 'pnpm dev' must keep working on Windows with only Postgres. Redis, object storage, vector search and the Python service are optional in development, with built-in fallbacks.",
+    "Light-only, minimal design matching bmumarketing.in. No dark mode.",
+    "India first: IST everywhere, INR and GST, DPDP Act 2023 compliance, data hosted in India (ap-south-1 / Mumbai) in production."
+  ],
+
+  "system_layers": {
+    "1_experience": "Next.js web (team, client, admin, creator, website), Expo mobile apps, WhatsApp, email, public API.",
+    "2_gateway": "NestJS HTTP API + WebSocket gateway, auth, rate limits, API keys.",
+    "3_actions": "Action layer (v11) extended: every write is a typed Action with policy check, validation, audit entry, domain event and undo record.",
+    "4_domains": "Sell, Clients, Deliver, Production, Service, Finance, People, Creators, Assets, Content, Knowledge, Org.",
+    "5_platform_services": "Event bus, workflow engine, agent runtime, search index, notification router, file service, metric layer, integrations hub, custom fields.",
+    "6_data": "PostgreSQL (main, with row-level security), read models, analytics schema, pgvector, object storage, Redis (cache, queues, presence).",
+    "7_intelligence": "Python service (optional, phase 7) for forecasting, anomaly detection and heavy analytics, called through the event bus."
+  },
+
+  "core_platform": {
+    "event_bus": {
+      "what": "Every committed change publishes a domain event such as lead.created, engagement.phase_changed, task.overdue, invoice.paid, asset.approved.",
+      "how": {
+        "outbox": "Event rows are written in the same database transaction as the change (DomainEvent table), so no event is ever lost.",
+        "dispatcher": "Background worker reads the outbox and delivers to subscribers. Uses BullMQ on Redis when available; falls back to an in-process Postgres poller (LISTEN/NOTIFY) when Redis is not running.",
+        "subscribers": ["workflow_engine", "agent_runtime", "notifications", "search_indexer", "realtime_gateway", "read_models", "analytics_loader", "webhooks_out", "integrations"],
+        "delivery": "At-least-once with idempotency keys; failed deliveries retry with backoff and land in a dead-letter list visible in Admin → System health."
+      },
+      "event_shape": {"id": "uuid", "orgId": "string", "type": "dot.case string", "entity": "string", "entityId": "string", "actor": {"kind": "user|agent|workflow|api|system", "id": "string"}, "payload": "json (before/after for changes)", "occurredAt": "timestamp", "correlationId": "string (links a chain of events back to the first action)"},
+      "catalogue": "Event types and payload schemas defined in packages/shared/src/events/ with zod, so producers and consumers can't drift."
+    },
+    "action_layer_v2": {
+      "extends": "v11 actions",
+      "adds": [
+        "Undo: every action stores an inverse; users get a 10-second 'Undo' toast and admins can roll back any action from the audit log",
+        "Bulk actions: any action can run on a selection (up to 5,000 rows) as a background job with progress",
+        "Dry run: workflows and agents can preview what an action would change before doing it",
+        "Actor types: user, agent, workflow, api_key, system — all audited the same way",
+        "Action catalogue exposed to the command palette, workflows, AI agents and the public API from one definition"
+      ]
+    },
+    "read_models": {
+      "what": "Fast pre-computed views (client 360 summary, team workload, pipeline totals, SLA board) updated by events instead of computed on every page load.",
+      "storage": "Postgres tables prefixed rm_, rebuilt from events on demand (Admin → System → Rebuild views)."
+    },
+    "multi_tenancy": {
+      "today": "orgId on every row, checked in code",
+      "v2": "Postgres row-level security keyed on orgId as a second safety net; per-org settings, branding, custom domain for the client portal; ready to host other agencies later (white-label) without code changes."
+    },
+    "custom_fields_and_objects": {
+      "what": "Admins add fields to Leads, Clients, Engagements, Tasks, Requests, Creators, Assets; and create new record types (for example 'Shoot', 'Influencer campaign').",
+      "field_types": ["text", "long_text", "number", "currency_inr", "percent", "date", "date_time", "select", "multi_select", "person", "client", "file", "url", "phone", "email", "checkbox", "formula", "rollup", "relation"],
+      "storage": "Typed JSONB column customFields per record, plus a CustomFieldDef table; indexed fields get generated columns for fast filtering.",
+      "used_by": "Forms, list filters, boards, dashboards, workflows, AI agents, exports, public API"
+    },
+    "form_builder": {
+      "what": "Drag-and-drop forms for lead capture (website), client briefs, request intake, creator onboarding, feedback surveys.",
+      "features": ["conditional questions", "file uploads", "prefill from link", "spam protection", "creates records through the action layer", "embeddable on bmumarketing.in"]
+    },
+    "pipeline_builder": "Admins edit lead stages, engagement phases, request statuses and production steps (names, order, required fields per stage, SLA per stage) instead of them being fixed in code. The existing 5 lead gates become the default template."
+  },
+
+  "realtime_and_collaboration": {
+    "live_updates": {
+      "how": "NestJS WebSocket gateway (socket.io, Redis adapter when available). Clients subscribe to rooms (org, client, engagement, record, user). Events from the bus are pushed to the right rooms after a permission check.",
+      "client_side": "TanStack Query caches on web and mobile are patched from socket messages, so lists, boards and dashboards update without refresh.",
+      "fallback": "If the socket drops, the app polls every 20 s and shows a small 'Reconnecting' badge."
+    },
+    "presence": "Avatars of who is viewing a record, 'typing' in threads, soft lock warning when two people edit the same field.",
+    "collaborative_documents": {
+      "what": "Briefs, proposals, scripts, meeting notes and SOPs as live documents several people edit at once.",
+      "how": "Yjs (CRDT) over the WebSocket gateway, stored in Postgres; comments, mentions, version history, convert selection into a task.",
+      "editor": "Tiptap rich text with blocks for tables, checklists, images, embeds of records."
+    },
+    "threads_v2": "Every record has one conversation thread mixing internal notes, client messages (clearly marked), emails, WhatsApp messages and system events; mentions, reactions, read receipts, pinned decisions."
+  },
+
+  "workflow_engine": {
+    "replaces": "v9 automations (existing rules migrated automatically)",
+    "what": "Visual builder where admins draw a flow: when something happens → check conditions → do steps → wait → branch → ask a person → continue.",
+    "triggers": ["any domain event", "schedule (cron, IST)", "date field reached (for example 7 days before renewal)", "form submitted", "incoming webhook", "incoming email or WhatsApp", "manual button on a record", "metric threshold crossed"],
+    "steps": ["run any action from the catalogue", "if/else and switch branches", "wait for time or until a condition", "wait for approval (person or role, with escalation)", "send message (in-app, email, WhatsApp, push)", "ask an AI agent (with structured output)", "call webhook or integration", "loop over records", "set variable", "start another workflow"],
+    "execution": {
+      "durability": "Each run is a WorkflowRun with WorkflowStep rows; state survives restarts; timers stored in the database and fired by the scheduler.",
+      "safety": ["dry run against real data before publishing", "versioned flows (runs finish on the version they started on)", "rate and loop limits", "per-step retries with backoff", "kill switch per flow and globally"],
+      "visibility": "Run history per flow and per record ('why did this happen?') with each step's input and output."
+    },
+    "templates": [
+      "New lead: score with AI, assign by round-robin within specialty, send WhatsApp welcome, create follow-up task",
+      "Proposal sent: remind after 3 days, escalate to founder after 7",
+      "Client approved creative: move task to Scheduled, notify specialist, add to content calendar",
+      "Invoice overdue: polite reminder day 1, firm reminder day 7, call task for AM day 14, pause work flag day 30",
+      "SLA at risk: alert owner at 75% of time, manager at 100%",
+      "Renewal in 30 days: health check, AI draft of renewal proposal, meeting task for AM",
+      "Person offboarded: reassign all open work by rules from v11"
+    ]
+  },
+
+  "ai_agent_layer": {
+    "evolves": "v10 AI copilot",
+    "model_provider": "Anthropic Claude via the official SDK, models configurable in Admin → AI (default to the latest capable model for agents and a fast model for classification). Provider wrapper so it can be swapped.",
+    "runtime": {
+      "tools": "Agents use the same action catalogue as people (via the action layer), plus read tools (search, record fetch, metric query). Permissions are those of the person or role the agent acts for, never more.",
+      "approval_policy": "Each action marked auto (safe: drafts, tags, internal notes), confirm (needs a person: anything sent to a client, money, deletion, reassigning people) or never (agents can't do it).",
+      "memory": "Per-client and per-org knowledge from documents, threads, briefs and past work, stored as embeddings in pgvector, with source links on every answer.",
+      "runs": "AgentRun and AgentStep tables: every thought summary, tool call, cost and result logged; any agent change can be undone.",
+      "limits": "Monthly AI budget per org and per agent, rate limits, prompt-injection guard on all outside text (emails, client messages, web pages), PII redaction where not needed.",
+      "quality": "Eval sets per agent run in CI; thumbs up/down feedback from users stored and reviewed."
+    },
+    "agents": [
+      {"name": "Sales assistant", "does": "Scores and enriches new leads, drafts first replies and follow-ups, books discovery calls, drafts proposals from the catalogue and past wins, flags stalled deals."},
+      {"name": "Account manager assistant", "does": "Weekly client status report draft, renewal and upsell suggestions, churn-risk alerts with reasons, meeting prep and meeting notes to tasks."},
+      {"name": "Producer", "does": "Breaks a brief into tasks with owners and deadlines based on capacity, chases overdue work, rebalances when someone is overloaded or on leave."},
+      {"name": "Request triage", "does": "Reads incoming client requests (portal, email, WhatsApp), classifies, sets priority and SLA, routes to the right specialist, drafts the acknowledgement."},
+      {"name": "Finance collector", "does": "Matches payments to invoices, drafts reminders, flags unbilled work and scope creep."},
+      {"name": "Creative reviewer", "does": "Checks creatives against the client brand kit (colours, logo, tone, spelling) and platform specs before they go to the client."},
+      {"name": "Analyst", "does": "Answers questions in plain English with charts ('which clients grew fastest this quarter?'), explains dashboard changes, writes the monthly founder report."}
+    ],
+    "surfaces": ["copilot side panel on every screen", "command palette (Ctrl/Cmd+K) natural-language actions", "'Ask AI' button on records", "agent inbox: list of proposals waiting for approval with approve/edit/reject", "WhatsApp and email (internal users)"]
+  },
+
+  "search_and_knowledge": {
+    "universal_search": {
+      "what": "One search box (and Ctrl/Cmd+K) across leads, clients, people, tasks, requests, files, messages, documents, invoices.",
+      "how": "Postgres full-text (tsvector) plus trigram for typos, plus pgvector for meaning-based search; index kept fresh by the event bus; results filtered by the viewer's permissions.",
+      "features": ["filters by type, client, owner, date", "recent and pinned", "search inside PDFs and documents", "jump to action ('reassign...', 'new task for...')"]
+    },
+    "knowledge_base": "Internal wiki (SOPs, playbooks, brand guidelines per client) built on collaborative documents; AI answers cite it; client-visible articles in the portal help centre."
+  },
+
+  "creative_and_content": {
+    "asset_library": {
+      "what": "Digital asset manager for every image, video, design file, document and logo, organised by client, campaign and tags.",
+      "storage": "S3-compatible object storage (Cloudflare R2 or AWS S3 Mumbai) with signed URLs; local disk fallback in development.",
+      "features": ["versions with compare side-by-side", "automatic thumbnails and video previews", "AI tags and search by what's in the image", "usage rights and expiry for creator content", "share links with expiry and password", "large uploads resumable (up to 5 GB)"]
+    },
+    "proofing": {
+      "what": "Review and approval for creatives.",
+      "features": ["pin comments on an exact spot of an image or exact second of a video", "draw on the frame", "version-to-version comment carry-over", "multi-step approval (internal → client)", "approve or request changes in one tap from the portal, email or WhatsApp", "approval certificate stored for disputes"]
+    },
+    "brand_kits": "Per client: logos, colours, fonts, tone of voice, do and don't list, competitor list. Used by the creative reviewer agent and shown to specialists in their workspace.",
+    "content_calendar": {
+      "what": "Plan, approve, schedule and publish posts per client across platforms.",
+      "publishing": "Instagram, Facebook (Meta Graph API), LinkedIn, YouTube, X; schedule in IST; client approval required before publish (configurable).",
+      "results": "Pulls reach, engagement, clicks and spend back onto each post and into analytics."
+    },
+    "creator_portal_v2": "Influencer and freelancer directory with rates, past performance, contracts, deliverable uploads into proofing, payouts tracked in finance."
+  },
+
+  "client_portal_v2": {
+    "branding": "Client portal on a custom domain (for example hub.bmumarketing.in), BMU logo and colours, light-only design.",
+    "features": [
+      "Live project timeline and what is waiting on the client",
+      "Proofing and one-tap approvals",
+      "Live campaign and social results with plain-English AI summary",
+      "Requests with SLA countdown and live status",
+      "Invoices, pay online (UPI, card, net banking), download GST invoices and statements",
+      "Shared files and brand kit",
+      "Meeting booking with the account manager",
+      "Monthly report (auto-generated, reviewed by AM before it is shared)",
+      "Multiple client users with their own roles (owner, approver, viewer, finance)"
+    ],
+    "client_dashboard": "Built on v12 Dashboard Studio; the AM picks the widgets each client sees."
+  },
+
+  "finance_v2": {
+    "flow": "Proposal → quote → contract (e-sign) → invoice schedule → GST e-invoice → payment link → reminders → payment reconciled → revenue recognised.",
+    "features": [
+      "Retainers, milestone and one-off billing; auto invoices on schedule",
+      "GST: CGST/SGST/IGST, HSN/SAC codes, e-invoicing IRN and QR via a GSP, TDS tracking",
+      "Payment links and auto-reconciliation via Razorpay (webhooks)",
+      "Expenses and vendor bills (creators, ad spend pass-through)",
+      "Time tracking (timer, timesheets, from mobile) feeding cost",
+      "Profitability per client, engagement, service and person (revenue minus time cost minus expenses)",
+      "Cash-flow forecast from invoice schedule and payment history",
+      "Export or sync to Zoho Books / Tally"
+    ]
+  },
+
+  "people_and_capacity": {
+    "capacity_planning": "Each person's weekly hours, leave and holidays (India calendar); tasks carry estimates; a workload heatmap shows who is over or under booked for the next 6 weeks.",
+    "resource_booking": "Drag people onto projects by week; producer agent suggests the best available specialist by skill, load and past quality.",
+    "performance": "Per-person on-time rate, revisions per deliverable, client ratings, utilisation; private to the person and their managers.",
+    "hr_light": "Leave requests and approval, onboarding checklists, documents, org chart (v11 tree)."
+  },
+
+  "analytics_v2": {
+    "metric_layer": {
+      "what": "Every number (MRR, pipeline value, win rate, on-time %, SLA breach %, utilisation, profit margin, NPS) defined once in packages/shared/src/metrics/ with its formula, filters and who may see it.",
+      "used_by": "Dashboards (v12 widgets), reports, AI analyst, client portal, public API — so the same metric always shows the same number."
+    },
+    "analytics_store": "Nightly and event-driven loads into an analytics schema in Postgres (star schema: facts for revenue, tasks, requests, time, posts; dimensions for client, person, service, date in IST). Heavy reports read from here, never from live tables.",
+    "forecasting": {
+      "service": "Python (FastAPI) service, optional, added in phase 7; reads the analytics schema; results written back as forecast tables.",
+      "models": ["revenue and cash forecast", "pipeline win probability per deal", "client churn risk", "deadline slip risk per task and project", "capacity shortfall per specialty"],
+      "fallback": "Simple statistical forecasts in TypeScript when the Python service is not running."
+    },
+    "anomaly_alerts": "Automatic alerts when a metric moves unusually (for example a client's engagement drops 40%, or SLA breaches double).",
+    "scheduled_reports": "Any dashboard or report emailed or sent on WhatsApp as PDF on a schedule.",
+    "goals_okrs": "Company, team and person goals linked to metrics with progress shown on dashboards."
+  },
+
+  "integrations_hub": {
+    "model": "Each integration is a connector module with OAuth connect, sync jobs, incoming webhooks and actions/triggers exposed to workflows and agents. Admin → Integrations shows status, last sync and errors.",
+    "connectors_priority_1": ["Google Workspace (login, Gmail, Calendar, Drive)", "WhatsApp Business Cloud API", "Razorpay", "Meta (Instagram, Facebook, Ads)", "Google Ads and GA4"],
+    "connectors_priority_2": ["LinkedIn", "YouTube", "Zoho Books / Tally export", "Slack", "Zoom / Google Meet recordings", "e-sign (Leegality or Digio)", "GST e-invoicing GSP"],
+    "public_api": "Versioned REST API (/v1) documented with OpenAPI, API keys with scopes, rate limits, generated TypeScript SDK from the shared client.",
+    "webhooks_out": "Subscribe external URLs to any domain event; signed payloads, retries, delivery log.",
+    "zapier_make": "Generic app built on the public API and webhooks."
+  },
+
+  "communications": {
+    "unified_inbox": "Email (Gmail sync) and WhatsApp conversations linked to the right lead or client automatically; reply from the Hub; templates with variables; AI-drafted replies.",
+    "notifications_v2": {
+      "router": "One notification service listening to events; per-user preferences per type and channel (in-app, push, email, WhatsApp); quiet hours in IST; daily digest option.",
+      "smart": "Bundles related alerts, suppresses noise, raises priority for client-facing and money items."
+    },
+    "meetings": "Calendar sync, booking pages, meeting records with AI notes, action items turned into tasks."
+  },
+
+  "mobile_v2": {
+    "parity": "Everything a team member, manager or client can do on web can be done in the app, with screens designed for phones.",
+    "offline_first": "Local SQLite database (expo-sqlite) with a sync engine: read anything recently viewed offline, make changes offline, sync with conflict rules when back online.",
+    "mobile_specific": ["push notifications with quick actions (approve, reply, snooze)", "camera and screen-recording upload straight into proofing", "voice note to task with AI transcription", "time tracking timer", "home-screen widgets for My Day", "biometric login"],
+    "release": "Expo EAS builds for App Store and Play Store, over-the-air updates for fixes."
+  },
+
+  "security_and_compliance": {
+    "auth": ["Google sign-in and email magic link", "passkeys and TOTP two-factor (required for Founder, Admin, Finance)", "session list with sign-out everywhere", "SSO-ready (SAML/OIDC) for future white-label clients"],
+    "permissions_v2": {
+      "model": "Role- and attribute-based policy engine in packages/shared: who (role, specialty, team, client relationship) × what (record type, field) × action × condition (own, team, assigned client, amount limit).",
+      "field_level": "Hide or make read-only sensitive fields (rates, salaries, margins) per role.",
+      "admin_ui": "Permission editor with a 'view as this person' preview."
+    },
+    "data_protection": ["encryption at rest (managed Postgres, object storage) and in transit (TLS)", "secrets in environment/secret manager, never in code", "immutable, tamper-evident audit log (hash chained)", "daily backups with point-in-time restore, tested monthly", "rate limiting and bot protection on public forms and login"],
+    "dpdp_act_2023": ["consent records for leads and client users", "privacy notice and purpose per data type", "data export and deletion requests workflow with deadlines", "data retention rules per record type", "breach notification runbook", "data hosted in India"]
+  },
+
+  "performance_and_reliability": {
+    "slos": {"api_p95_ms": 300, "page_first_load_s": 1.5, "search_p95_ms": 200, "live_update_s": 1, "uptime": "99.9%"},
+    "techniques": ["read models and caching (Redis, with in-memory fallback)", "cursor pagination and virtualised lists for 100k+ rows", "React Server Components and streaming on web", "background jobs for anything over 1 s", "database indexes reviewed from slow query log", "partitioned activity, audit and event tables by month"],
+    "observability": "OpenTelemetry traces and metrics, structured logs, Sentry for errors on web, mobile and API, Admin → System health page (queues, dead letters, integrations, AI spend, job failures).",
+    "feature_flags": "Per org, role or person, so new features can be switched on gradually and off instantly."
+  },
+
+  "developer_and_delivery": {
+    "repo": "Same pnpm monorepo. New packages: packages/events, packages/metrics, packages/policies (or folders inside packages/shared), packages/ui (shared design tokens and components for web and mobile).",
+    "local_run": "Still 'pnpm install' then 'pnpm dev'. Optional 'pnpm dev:full' starts Redis, MinIO (storage) and the Python service with Docker if installed. The app detects what is running and uses fallbacks otherwise.",
+    "testing": ["unit tests for shared rules", "API e2e on a fresh database (as today)", "browser journeys for every flow (as today, extended per phase)", "workflow and agent evals", "load test script for the SLO targets"],
+    "ci_cd": "GitHub Actions once GitHub is connected: checks on every change, preview deploys, one-click production deploy with database migration and rollback.",
+    "hosting_production": "Docker images; API and web on a managed platform in Mumbai region; managed Postgres with replicas; Redis; R2/S3; CDN for assets."
+  },
+
+  "data_model_additions": {
+    "platform": ["DomainEvent", "EventDelivery", "UndoRecord", "BulkJob", "FeatureFlag", "CustomFieldDef", "CustomObjectDef", "CustomRecord", "FormDef", "FormSubmission", "PipelineDef", "PipelineStage"],
+    "workflow": ["WorkflowDef", "WorkflowVersion", "WorkflowRun", "WorkflowStep", "WorkflowTimer"],
+    "ai": ["Agent", "AgentRun", "AgentStep", "AgentProposal", "KnowledgeChunk (pgvector)", "AiUsage", "AiFeedback"],
+    "collaboration": ["Document", "DocumentUpdate (Yjs)", "DocumentVersion", "Comment", "Presence (Redis only)"],
+    "creative": ["Asset", "AssetVersion", "AssetCollection", "ProofRound", "ProofComment", "Approval", "BrandKit", "ContentPost", "ContentChannel", "PostMetric"],
+    "finance": ["Quote", "Contract", "InvoiceSchedule", "EInvoice", "PaymentLink", "Payment", "Expense", "VendorBill", "TimeEntry"],
+    "people": ["CapacityPlan", "Leave", "Holiday", "Booking", "Goal", "GoalCheckIn"],
+    "comms": ["Conversation", "ConversationMessage", "Channel (email/whatsapp)", "MessageTemplate", "NotificationPreference", "Meeting"],
+    "integrations": ["Integration", "IntegrationAccount", "SyncJob", "ApiKey", "WebhookSubscription", "WebhookDelivery"],
+    "compliance": ["Consent", "DataRequest", "RetentionRule"],
+    "analytics": ["schema analytics.* facts and dimensions", "Forecast", "MetricAlert", "ScheduledReport"]
+  },
+
+  "build_phases": [
+    {
+      "version": "v13",
+      "name": "Foundation: events, live updates, undo, universal search",
+      "scope": ["DomainEvent outbox and dispatcher (Postgres fallback, Redis optional)", "action layer v2 with undo and bulk actions", "WebSocket gateway and live updates on boards, lists, dashboards, threads", "presence avatars", "universal search with Ctrl/Cmd+K across all records", "System health page", "feature flags"],
+      "acceptance": ["a change made in one browser appears in another within 1 s without refresh", "every v11 action can be undone within 10 s", "bulk reassign of 500 tasks completes with progress and is audited", "search finds a record by partial or misspelt name in under 200 ms on seed data", "all v12 tests and journeys still pass"]
+    },
+    {
+      "version": "v14",
+      "name": "Workflow engine and no-code customisation",
+      "scope": ["visual workflow builder with triggers, conditions, waits, approvals, branches", "migrate v9 automations into workflows", "custom fields on core records", "form builder with website embed", "pipeline builder for lead stages, engagement phases, request statuses", "workflow templates listed above"],
+      "acceptance": ["overdue-invoice flow runs its day 1/7/14 steps with a simulated clock", "a run survives an API restart mid-wait", "a custom field added by admin is filterable, usable in a dashboard widget and in a workflow condition", "website form creates a lead and starts the new-lead flow"]
+    },
+    {
+      "version": "v15",
+      "name": "AI agents",
+      "scope": ["agent runtime using the action catalogue with approval policy", "pgvector knowledge memory (falls back to keyword search if pgvector is missing)", "agent inbox", "Sales assistant, Request triage, Producer and Analyst agents first; others after", "AI budget, logs, undo, evals"],
+      "acceptance": ["no agent can perform an action its acting person could not", "anything client-facing or money-related waits in the agent inbox", "every agent answer that uses knowledge shows its sources", "agent eval suite passes in CI", "an agent change can be undone from the run log"]
+    },
+    {
+      "version": "v16",
+      "name": "Creative studio: assets, proofing, brand kits, content calendar",
+      "scope": ["asset library with versions and object storage (local disk fallback)", "image and video proofing with pinned comments", "internal then client approval rounds", "brand kits", "content calendar with scheduling", "creative reviewer agent"],
+      "acceptance": ["a client pins a comment at 0:12 of a video and the specialist sees it live on that frame", "a new version carries open comments over", "approved posts appear on the calendar and cannot be published without approval"]
+    },
+    {
+      "version": "v17",
+      "name": "Client portal 2.0 and communications",
+      "scope": ["branded portal with live timeline, approvals, results, requests, invoices", "client user roles", "unified inbox with Gmail and WhatsApp", "notification router with preferences and digests", "collaborative documents for briefs and proposals", "meeting booking and AI notes"],
+      "acceptance": ["client approves a creative from a WhatsApp link in one tap and the task moves on", "an inbound WhatsApp from a known number lands on the right client thread", "two people edit the same brief at once without losing text"]
+    },
+    {
+      "version": "v18",
+      "name": "Finance 2.0 and capacity",
+      "scope": ["quotes, contracts, invoice schedules", "GST e-invoice and Razorpay payment links with auto reconciliation", "expenses, vendor bills, time tracking", "profitability views", "capacity planning, leave, holidays, workload heatmap, resource booking", "Finance collector agent"],
+      "acceptance": ["a Razorpay test payment marks the invoice paid and posts to the client thread", "profit per client matches a hand calculation on seed data", "producer agent refuses to book someone on approved leave"]
+    },
+    {
+      "version": "v19",
+      "name": "Integrations, publishing and public API",
+      "scope": ["integrations hub", "Meta, LinkedIn, YouTube publishing and metrics", "Google Ads, Meta Ads and GA4 results in client dashboards", "public REST API v1 with keys and OpenAPI docs", "outgoing webhooks", "Zoho Books / Tally export"],
+      "acceptance": ["a scheduled post publishes to a test account and its metrics appear the next day", "an API key limited to read leads cannot create one", "webhook deliveries are signed and retried"]
+    },
+    {
+      "version": "v20",
+      "name": "Intelligence, mobile parity and hardening",
+      "scope": ["metric layer and analytics schema", "Python forecasting service (optional) with TypeScript fallback", "anomaly alerts, scheduled reports, goals", "offline-first mobile with full parity and push quick actions", "passkeys and 2FA, field-level permissions, permission editor", "DPDP tools, row-level security, hash-chained audit", "load tests against the SLOs"],
+      "acceptance": ["revenue forecast and churn risk show on the founder dashboard with reasons", "a task edited offline on the phone syncs correctly when back online", "a viewer without rights never sees a hidden field via web, app, API, search or AI", "SLO targets met in the load test"]
+    }
+  ],
+
+  "migration_and_compatibility": {
+    "rule": "Each phase is additive. Existing screens, URLs, data and tests keep working; old features are switched to the new engine behind a feature flag, then the old path is removed one version later.",
+    "data": "Prisma migrations only, never destructive in the same release that introduces a replacement; backfill jobs for events, search index and read models run on first start.",
+    "user_run_steps": "Unchanged for every phase: unzip, cd into the folder, pnpm install, pnpm dev, open http://localhost:3000. Each zip ships with RUN_GUIDE.md."
+  },
+
+  "non_goals_for_v2": [
+    "Splitting into many microservices (not needed at this size; the modular design keeps the option open)",
+    "Dark mode",
+    "Building our own ad platform or social network features",
+    "Replacing accounting software (we sync to Zoho Books / Tally instead)"
+  ],
+
+  "decisions_taken": [
+    {"decision": "Modular monolith with an outbox event bus", "why": "Gives the benefits of events (decoupling, AI and workflows listening) while staying one process the owner can run with pnpm dev."},
+    {"decision": "Postgres for search, vectors, read models and analytics", "why": "One database to run and back up; good enough far beyond current scale; heavy pieces can move out later."},
+    {"decision": "Redis, object storage and Python are optional in development", "why": "The owner runs on Windows without Docker; everything must work with only Postgres."},
+    {"decision": "AI acts only through the action layer", "why": "Same permissions, audit and undo as people, so AI can't do anything unsafe or untraceable."},
+    {"decision": "Yjs for live documents, socket.io for live updates", "why": "Proven, TypeScript-native, works on web and React Native."},
+    {"decision": "Build order v13 → v20 as listed", "why": "Events and live updates first because workflows, agents, search, notifications and analytics all depend on them."}
+  ]
+}

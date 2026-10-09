@@ -1,0 +1,8 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "Start database (Docker)", "type": "shell", "command": "pnpm db:up", "problemMatcher": [] },
+    { "label": "Run website + API", "type": "shell", "command": "pnpm dev", "isBackground": true, "problemMatcher": [] },
+    { "label": "Run mobile app (Expo)", "type": "shell", "command": "pnpm dev:mobile", "isBackground": true, "problemMatcher": [] }
+  ]
+}
