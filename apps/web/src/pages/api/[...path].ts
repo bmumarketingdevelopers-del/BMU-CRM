@@ -82,7 +82,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       throw e;
     });
   const finished = new Promise<void>((done) => res.once("close", () => done()));
-  await (await nest)(req, res);
+  try {
+    // Loading the file, then (on the first request) starting NestJS, which checks the settings first.
+    await (await nest)(req, res);
+  } catch (e) {
+    // Say why: start-up messages name settings, never their values.
+    console.error("BMU Hub API failed to start:", e);
+    if (!res.headersSent) res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ statusCode: 500, message: `The API could not start: ${(e as Error)?.message ?? e}` }));
+    return;
+  }
   // Keep the function running until NestJS has finished answering (live-update streams stay open for a while).
   await finished;
 }
