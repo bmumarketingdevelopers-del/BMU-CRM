@@ -16,7 +16,7 @@ import { BlockedDialog } from "@/components/actions/tasks/task-dialogs";
 import { TaskRowMenu } from "@/components/actions/tasks/task-menu";
 import { RecurringList, TemplateWizard } from "@/components/actions/tasks/template-wizard";
 
-type Filters = { q: string; scope: "mine" | "team"; show: "open" | "drafts" | "archived"; ownerId: string; clientId: string; departmentId: string; status: string; from: string; to: string; tag: string };
+type Filters = { q: string; scope: "mine" | "team"; show: "open" | "completed" | "drafts" | "archived"; ownerId: string; clientId: string; departmentId: string; status: string; from: string; to: string; tag: string };
 const EMPTY: Filters = { q: "", scope: "mine", show: "open", ownerId: "", clientId: "", departmentId: "", status: "", from: "", to: "", tag: "" };
 const day = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 const statusTone = (s: string) => (s === "done" ? "green" : s === "blocked" ? "red" : s === "waiting" ? "amber" : s === "in_progress" ? "dark" : "neutral");
@@ -68,6 +68,7 @@ export function TasksWorkspace() {
       tag: filters.tag || undefined,
       archived: filters.show === "archived" ? "1" : undefined,
       drafts: filters.show === "drafts" ? "1" : undefined,
+      completed: filters.show === "completed" ? "1" : undefined,
     }),
     [filters],
   );
@@ -152,6 +153,10 @@ export function TasksWorkspace() {
         <button type="button" className={toggle(filters.scope === "team")} onClick={() => set({ scope: "team" })}>
           Everything I can see
         </button>
+        {/* Completed work stays findable at any age (newest first); Mine / Everything I can see still apply. */}
+        <button type="button" className={toggle(filters.show === "completed")} aria-pressed={filters.show === "completed"} onClick={() => set({ show: filters.show === "completed" ? "open" : "completed" })}>
+          Completed
+        </button>
         <span className="hidden w-2 sm:inline" />
         <button type="button" className={toggle(layout === "board")} onClick={() => setLayoutSaved("board")}>
           Board
@@ -182,6 +187,7 @@ export function TasksWorkspace() {
         <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2 lg:grid-cols-4">
           <select className={selectCls} value={filters.show} onChange={(e) => set({ show: e.target.value as Filters["show"] })} aria-label="Show">
             <option value="open">Open and recent</option>
+            <option value="completed">Completed (all time)</option>
             <option value="drafts">Drafts</option>
             <option value="archived">Archived</option>
           </select>

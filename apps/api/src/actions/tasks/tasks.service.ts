@@ -232,6 +232,7 @@ export class TasksActionsService implements OnModuleInit {
     const and: Prisma.TaskWhereInput[] = [q.scope === 'mine' ? { orgId: me.orgId, ownerId: me.id } : await this.access.visibleWhere(me)];
     if (q.archived === '1') and.push({ archivedAt: { not: null } });
     else if (q.drafts === '1') and.push({ isDraft: true, archivedAt: null });
+    else if (q.completed === '1') and.push({ archivedAt: null, isDraft: false, status: 'done' });
     else {
       and.push({ archivedAt: null, isDraft: false });
       and.push({ OR: [{ status: { notIn: ['done', 'cancelled'] } }, { completedAt: { gte: new Date(Date.now() - 30 * DAY_MS) } }] });
@@ -244,7 +245,9 @@ export class TasksActionsService implements OnModuleInit {
     if (q.from) and.push({ deadline: { gte: new Date(`${q.from}T00:00:00+05:30`) } });
     if (q.to) and.push({ deadline: { lt: new Date(new Date(`${q.to}T00:00:00+05:30`).getTime() + DAY_MS) } });
     if (q.tag) and.push({ id: { in: (await this.prisma.tagLink.findMany({ where: { orgId: me.orgId, targetType: 'task', tag: { name: q.tag } }, select: { targetId: true } })).map((l) => l.targetId) } });
-    const rows = await this.prisma.task.findMany({ where: { AND: and }, include: taskDetailInclude, orderBy: [{ deadline: { sort: 'asc', nulls: 'last' } }, { sort: 'asc' }], take: 500 });
+    // Completed: most recently finished first. Otherwise by deadline.
+    const orderBy: Prisma.TaskOrderByWithRelationInput[] = q.completed === '1' ? [{ completedAt: { sort: 'desc', nulls: 'last' } }] : [{ deadline: { sort: 'asc', nulls: 'last' } }, { sort: 'asc' }];
+    const rows = await this.prisma.task.findMany({ where: { AND: and }, include: taskDetailInclude, orderBy, take: 500 });
     return this.rows(c, rows);
   }
 

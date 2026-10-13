@@ -489,6 +489,8 @@ export type CoreTaskQuery = {
   to?: string;
   archived?: "1";
   drafts?: "1";
+  /** Every completed task, however long ago (newest first). "Open and recent" only keeps the last 30 days. */
+  completed?: "1";
   tag?: string;
 };
 
