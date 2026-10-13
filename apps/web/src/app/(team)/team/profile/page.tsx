@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { LEAVE_TYPES, craftSpecialtyLabel, leaveTypeLabels, type LeaveType, type MyProfile } from "@bmu/shared";
+import { LEAVE_TYPES, craftSpecialtyLabel, leaveTypeLabels, roleLabel, type LeaveType, type MyProfile } from "@bmu/shared";
 import { NotificationPrefsPanel } from "@/components/service/notification-prefs";
 import { SecurityPanels } from "@/components/security/security-panel";
 import { DataTable, Empty, Grid, KeyValues, Meter, Panel, StatRow, StatTile } from "@/components/dash";
@@ -136,7 +136,7 @@ function DetailsPanel({ p, onSaved }: { p: MyProfile; onSaved: () => void }) {
             { k: "Department", v: p.user.department ?? "—" },
             ...(p.user.team ? [{ k: "Team", v: p.user.team }] : []),
             { k: "Manager", v: p.user.manager?.name ?? "—" },
-            { k: "Role", v: p.user.roles.join(", ") || "—" },
+            { k: "Role", v: p.user.roles.map(roleLabel).join(" + ") || "—" },
             ...(p.user.specialty ? [{ k: "Specialty", v: craftSpecialtyLabel(p.user.specialty) }] : []),
           ]}
         />

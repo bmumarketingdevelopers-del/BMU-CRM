@@ -1,4 +1,4 @@
-import { APP_VERSION } from "@bmu/shared";
+import { APP_VERSION, roleLabel } from "@bmu/shared";
 import type { Me } from "@bmu/shared";
 import { Copilot } from "./ai/copilot";
 import { Logo } from "./logo";
@@ -48,7 +48,7 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
         <SideNav sections={nav} />
         <div className="hidden border-t border-border px-5 py-4 text-sm md:block">
           <p className="font-medium">{me.name}</p>
-          <p className="text-xs text-ink-muted">{me.clientOrg ? me.clientOrg.name : me.roles.join(", ").replaceAll("_", " ")}</p>
+          <p className="text-xs text-ink-muted">{me.clientOrg ? me.clientOrg.name : me.roles.map(roleLabel).join(" + ")}</p>
           <div className="flex items-center gap-3">
             <a href="/security" className="mt-2 text-xs text-ink-muted underline hover:text-ink">
               Sign-in security

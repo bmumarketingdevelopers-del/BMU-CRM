@@ -2,7 +2,7 @@
 
 // v20 anomaly alerts: watch a metric (for the company, every client, or one client) and notify people when it moves.
 import { useState } from "react";
-import { ALERT_CONDITIONS, METRICS, alertConditionLabels, describeAlert, metricAlertSchema, type MetricAlertInput, type MetricAlertView } from "@bmu/shared";
+import { ALERT_CONDITIONS, METRICS, alertConditionLabels, describeAlert, metricAlertSchema, roleLabel, type MetricAlertInput, type MetricAlertView } from "@bmu/shared";
 import { Panel } from "@/components/dash";
 import { Badge, Button, Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -99,7 +99,7 @@ function AlertRow({ a, canEdit, onEdit, onChange }: { a: MetricAlertView; canEdi
         <span className="font-medium">{a.name}</span> {a.builtIn && <Badge>Built in</Badge>} {!a.active && <Badge>Off</Badge>}
         <p className="text-ink-muted">{a.summary}</p>
         <p className="text-xs text-ink-muted">
-          Tells {a.roles.map((r) => r.replaceAll("_", " ")).join(", ") || "chosen people"}
+          Tells {a.roles.map(roleLabel).join(", ") || "chosen people"}
           {a.lastCheckedAt ? ` · last checked ${when.format(new Date(a.lastCheckedAt))}` : ""}
           {a.lastFiredAt ? ` · last fired ${when.format(new Date(a.lastFiredAt))}` : ""}
         </p>

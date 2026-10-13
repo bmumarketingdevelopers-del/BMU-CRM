@@ -114,7 +114,7 @@ export type TeamTimeCategory = (typeof TEAM_TIME_CATEGORIES)[number];
 export const TEAM_TIME_CATEGORY_LABELS: Record<TeamTimeCategory, string> = {
   task: "Client task",
   internal: "Internal work",
-  admin: "Branch Manager",
+  admin: "Admin",
   meeting: "Meetings",
   training: "Training",
 };

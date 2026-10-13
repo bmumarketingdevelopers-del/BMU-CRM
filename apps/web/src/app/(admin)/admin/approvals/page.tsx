@@ -16,7 +16,8 @@ export default async function AdminApprovalsPage() {
         <h2 className="mb-2 text-sm font-semibold">Needs you</h2>
         <ApprovalsList box="mine" emptyText="Nothing is waiting for your decision." />
       </section>
-      <ApprovalsList box="all" title="All requests" status="pending" emptyText="No requests match." />
+      {/* Opens on every status, newest first, so decided requests (who approved what, and when) show as history. */}
+      <ApprovalsList box="all" title="All requests" subtitle="Every request and its outcome, newest first. Filter by status." emptyText="No requests match." />
     </>
   );
 }

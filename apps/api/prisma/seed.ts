@@ -37,9 +37,20 @@ import { seedCreative } from './seed/creative.js';
 import { seedComms } from './seed/comms.js';
 import { seedFinance } from './seed/finance.js';
 
-// Demo people, clients and history are added in development. A live database (NODE_ENV=production, or SEED_DEMO=0)
-// gets only the organisation, departments, roles and permissions, the catalogue, templates, settings and the owner login.
-const DEMO = process.env.SEED_DEMO ? process.env.SEED_DEMO !== '0' : process.env.NODE_ENV !== 'production';
+// Demo people, clients and history are added in development, on a database on this computer only. A live database
+// (NODE_ENV=production, SEED_DEMO=0, or any database that is not on localhost, e.g. Supabase) gets only the
+// organisation, departments, roles and permissions, the catalogue, templates, settings and the owner login.
+// SEED_DEMO=1 forces demo data even on a remote database (never do that on the live one).
+const dbHost = (() => {
+  try {
+    return new URL(process.env.DATABASE_URL ?? '').hostname;
+  } catch {
+    return '';
+  }
+})();
+const LOCAL_DB = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(dbHost);
+const DEMO = process.env.SEED_DEMO ? process.env.SEED_DEMO === '1' : process.env.NODE_ENV !== 'production' && LOCAL_DB;
+if (!DEMO && !LOCAL_DB && process.env.SEED_DEMO !== '0') console.log(`Database at ${dbHost} is not on this computer: no demo data is added.`);
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),

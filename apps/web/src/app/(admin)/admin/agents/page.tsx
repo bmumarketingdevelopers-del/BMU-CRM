@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { agentPolicyLabels, formatINR, type AgentAskResult, type AgentEvalResult, type AgentKey, type AgentsOverview, type AgentView } from "@bmu/shared";
+import { agentPolicyLabels, formatINR, roleLabel, type AgentAskResult, type AgentEvalResult, type AgentKey, type AgentsOverview, type AgentView } from "@bmu/shared";
 import { AiText } from "@/components/ai/ai-text";
 import { RunsTable } from "@/components/agents/agent-run";
 import { Panel, StatRow, StatTile } from "@/components/dash";
@@ -171,7 +171,7 @@ function AgentCard({ a, people, busy, act }: { a: AgentView; people: AgentsOverv
             <option value="">Nobody (agent can&apos;t act)</option>
             {people.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} · {p.roles.map((r) => r.replaceAll("_", " ")).join(", ")}
+                {p.name} · {p.roles.map(roleLabel).join(" + ")}
               </option>
             ))}
           </Select>

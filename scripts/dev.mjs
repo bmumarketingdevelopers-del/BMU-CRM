@@ -132,9 +132,14 @@ async function stopDb() {
 try {
   say("Updating database tables...");
   run("pnpm --filter @bmu/api exec prisma migrate deploy");
-  say("Loading BMU data...");
   run("pnpm --filter @bmu/shared build");
-  run("pnpm --filter @bmu/api exec prisma db seed");
+  // Sample data is only for a database on this computer. A remote one (Supabase) is the live data: never seed it here.
+  if (isLocalDb) {
+    say("Loading BMU data...");
+    run("pnpm --filter @bmu/api exec prisma db seed");
+  } else {
+    say(`Not loading sample data: the database at ${dbUrl.hostname} is not on this computer (it is your live data).`);
+  }
 } catch {
   await stopDb();
   fail("Setup failed. Copy the red lines above and send them to Claude.");
