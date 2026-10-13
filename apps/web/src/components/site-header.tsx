@@ -2,10 +2,9 @@ import Link from "next/link";
 import { Logo } from "./logo";
 
 const nav = [
-  { href: "/services", label: "Services" },
-  { href: "/#products", label: "Products" },
+  // Services live on the main BMU Marketing website.
+  { href: "https://bmumarketing.in/services", label: "Services" },
   { href: "/#industries", label: "Industries" },
-  { href: "/package-builder", label: "Pricing" },
   { href: "/sign-in", label: "Sign in" },
 ];
 
