@@ -113,7 +113,7 @@ function DetailsPanel({ p, onSaved }: { p: MyProfile; onSaved: () => void }) {
         <form onSubmit={save} className="grid gap-3">
           <label className="text-sm">
             <span className="text-ink-muted">Name</span>
-            <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} readOnly={!canRename} title={canRename ? undefined : "Ask HR or an Admin to change your name"} />
+            <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} required minLength={2} readOnly={!canRename} title={canRename ? undefined : "Ask HR or a Branch Manager to change your name"} />
           </label>
           <label className="text-sm">
             <span className="text-ink-muted">Mobile number</span>

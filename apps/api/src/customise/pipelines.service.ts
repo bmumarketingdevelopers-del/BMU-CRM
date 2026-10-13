@@ -63,7 +63,7 @@ export class PipelinesService {
   }
 
   async update(me: Me, kind: string, raw: unknown, ip?: string): Promise<PipelineConfigView> {
-    if (!isFoundingAdmin(me)) throw new ForbiddenException('Only the Founder and Admins can change pipelines');
+    if (!isFoundingAdmin(me)) throw new ForbiddenException('Only the Founder and Branch Managers can change pipelines');
     if (!(PIPELINE_KINDS as readonly string[]).includes(kind)) throw new BadRequestException('Unknown pipeline');
     const k = kind as PipelineKind;
     const input = parse(pipelineUpdateSchema, raw);
@@ -90,7 +90,7 @@ export class PipelinesService {
   }
 
   async reset(me: Me, kind: string, ip?: string): Promise<PipelineConfigView> {
-    if (!isFoundingAdmin(me)) throw new ForbiddenException('Only the Founder and Admins can change pipelines');
+    if (!isFoundingAdmin(me)) throw new ForbiddenException('Only the Founder and Branch Managers can change pipelines');
     if (!(PIPELINE_KINDS as readonly string[]).includes(kind)) throw new BadRequestException('Unknown pipeline');
     await this.prisma.pipelineConfig.deleteMany({ where: { orgId: me.orgId, kind } });
     this.cache.delete(`${me.orgId}:${kind}`);

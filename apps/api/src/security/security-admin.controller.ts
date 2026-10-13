@@ -29,7 +29,7 @@ export class SecurityAdminController {
   ) {}
 
   private assertAdmin(me: Me) {
-    if (me.type !== 'staff' || !me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only the Founder or an Admin can open this');
+    if (me.type !== 'staff' || !me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only the Founder or a Branch Manager can open this');
   }
 
   // ---------------------------------------------------------------------------------------------- field access

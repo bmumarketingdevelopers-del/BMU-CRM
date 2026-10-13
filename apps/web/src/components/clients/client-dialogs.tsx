@@ -286,7 +286,7 @@ export function InviteUserDrawer({ client, open, onClose, onDone }: { client: Cl
           <input id="iu-phone" type="tel" className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} />
         </Field>
       </div>
-      <Field label="Client role" required htmlFor="iu-role" hint={role === "client_owner" && client.users.some((u) => u.role === "client_owner") ? "A new Owner needs the existing Owner (or an Admin) to confirm." : clientRoleLabels[role].can}>
+      <Field label="Client role" required htmlFor="iu-role" hint={role === "client_owner" && client.users.some((u) => u.role === "client_owner") ? "A new Owner needs the existing Owner (or a Branch Manager) to confirm." : clientRoleLabels[role].can}>
         <select id="iu-role" className={inputCls} value={role} onChange={(e) => setRole(e.target.value as ClientTeamRole)}>
           {CLIENT_TEAM_ROLES.map((r) => (
             <option key={r} value={r}>
@@ -474,7 +474,7 @@ export function OffboardDialog({ client, open, onClose, onDone }: { client: Clie
   }
   return (
     <ActionDialog open={open} title={`Offboard ${client.name}`} onClose={onClose} testId="offboard-dialog" footer={<><button type="button" className={`${primary} bg-red`} disabled={busy || reason.trim().length < 3} onClick={save}>Start offboarding</button><button type="button" className={cancel} onClick={onClose}>Cancel</button></>}>
-      <p>An Admin approves first. Then you work through the checklist (dues, final files, access, permissions, final report, pending work, contract) and the client confirms receipt. Their users keep read-only access for 90 days.</p>
+      <p>A Branch Manager approves first. Then you work through the checklist (dues, final files, access, permissions, final report, pending work, contract) and the client confirms receipt. Their users keep read-only access for 90 days.</p>
       <Field label="Reason" required htmlFor="ob-reason">
         <TextArea id="ob-reason" className="min-h-16" value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>

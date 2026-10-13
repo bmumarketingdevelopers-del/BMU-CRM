@@ -35,10 +35,10 @@ export const canManageAutomations = (me: Me) => me.type === 'staff' && me.roles.
 export const canViewAutomations = (me: Me) => me.type === 'staff' && me.roles.some((r) => VIEWERS.includes(r));
 
 function assertView(me: Me) {
-  if (!canViewAutomations(me)) throw new ForbiddenException('Automations are for Founder, Admin, department heads, the AM Lead and Finance');
+  if (!canViewAutomations(me)) throw new ForbiddenException('Automations are for Founder, Branch Manager, department heads, the AM Lead and Finance');
 }
 function assertManage(me: Me) {
-  if (!canManageAutomations(me)) throw new ForbiddenException('Only the Founder and Admins can change automations');
+  if (!canManageAutomations(me)) throw new ForbiddenException('Only the Founder and Branch Managers can change automations');
 }
 
 const snapshot = (r: AutomationRule) => ({ name: r.name, enabled: r.enabled, trigger: r.trigger, triggerArgs: r.triggerArgs, conditions: r.conditions, actions: r.actions });

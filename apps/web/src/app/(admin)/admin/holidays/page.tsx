@@ -75,7 +75,7 @@ function Editor({ data, onSaved }: { data: SettingsView; onSaved: (v: SettingsVi
     <div className="space-y-6">
       <ErrorNote>{error}</ErrorNote>
       {saved && <p className="border border-green bg-green/10 px-4 py-2 text-sm">{saved}. Saved and logged.</p>}
-      {!canHolidays && <p className="text-sm text-ink-muted">You can view the calendar. Only the Founder or Admin can change it.</p>}
+      {!canHolidays && <p className="text-sm text-ink-muted">You can view the calendar. Only the Founder or Branch Manager can change it.</p>}
 
       <StatRow>
         <StatTile label="Next holiday" value={next ? fmtDate(next.date) : "None"} hint={next?.name} tone={next ? "good" : "default"} />

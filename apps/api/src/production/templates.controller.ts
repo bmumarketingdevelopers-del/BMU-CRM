@@ -18,14 +18,14 @@ export class TemplatesController {
     private readonly approvals: ApprovalsService,
   ) {}
 
-  /** v11 ops: department heads' edits are drafts an Admin publishes (approval handlers in ops-admin). */
+  /** v11 ops: department heads' edits are drafts a Branch Manager publishes (approval handlers in ops-admin). */
   private isHead(me: Me) {
     return !me.roles.some((r) => ['founder', 'admin'].includes(r));
   }
 
   private canEdit(me: Me) {
     const rule = me.permissions.sop_checklists_flow_templates?.rule ?? 'none';
-    if (me.type !== 'staff' || !(rule === 'full' || rule.startsWith('edit'))) throw new ForbiddenException('Only Founder, Admin or department heads can edit templates');
+    if (me.type !== 'staff' || !(rule === 'full' || rule.startsWith('edit'))) throw new ForbiddenException('Only Founder, Branch Manager or department heads can edit templates');
   }
 
   private async latestFlows(orgId: string) {

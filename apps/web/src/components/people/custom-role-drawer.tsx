@@ -2,7 +2,7 @@
 
 /**
  * CustomRoleDrawer: "New custom role" on Roles & Permissions. Clone an existing team role, name it, and adjust the
- * scope per capability. The Founder's roles are created straight away; an Admin's go to the Founder for approval.
+ * scope per capability. The Founder's roles are created straight away; a Branch Manager's go to the Founder for approval.
  */
 import { useState } from "react";
 import {

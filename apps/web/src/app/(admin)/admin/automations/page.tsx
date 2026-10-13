@@ -85,7 +85,7 @@ function Overview({ data, reload }: { data: AutomationOverview; reload: () => vo
         New: <Link href="/admin/workflows" className="font-medium underline">Workflows</Link> do everything rules do, plus waits, checks with two paths and approvals. You can move these rules into workflows from the Workflows page.
       </p>
       {note && <p className={`mb-6 border px-4 py-3 text-sm ${note.tone === "ok" ? "border-green bg-green/10" : "border-red bg-red/10"}`}>{note.text}</p>}
-      {!data.canManage && <p className="mb-6 border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">You can see the rules and what they did. Only the Founder and Admins can change them.</p>}
+      {!data.canManage && <p className="mb-6 border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">You can see the rules and what they did. Only the Founder and Branch Managers can change them.</p>}
 
       <div className="space-y-8">
         <StatRow cols={4}>

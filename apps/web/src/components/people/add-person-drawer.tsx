@@ -4,7 +4,7 @@
  * AddPersonDrawer: "+ New → Person", "+ Add person" on any hierarchy node and "+ Add" on Admin → Users.
  * Required: full name, mobile, email, role(s) with a permission preview, department, team/pod (when the department
  * has teams), reporting manager, branch, joining date, employment type. Then the onboarding checklist choice and the
- * invite (SMS + email). Department Heads' adds go to an Admin for approval.
+ * invite (SMS + email). Department Heads' adds go to a Branch Manager for approval.
  *
  * Prefill keys: departmentId, teamId, managerId, branchId.
  */
@@ -72,7 +72,7 @@ const initial = (p: NewDrawerProps["prefill"] = {}): Values => ({
 function resolvePlacement(x: Values, opts: PeopleOptions | undefined): Values {
   if (!opts) return x;
   const d = opts.departments.find((y) => y.id === x.departmentId);
-  if (!d) return x.departmentId || !opts.me.departmentId || !opts.can.addNeedsApproval ? x : resolvePlacement({ ...x, departmentId: opts.me.departmentId }, opts);
+  if (!d) return x;
   const t = d.teams.find((y) => y.id === x.teamId) ?? (d.teams.length === 1 && !x.teamId ? d.teams[0] : undefined);
   return { ...x, branchId: d.branchId, teamId: t?.id ?? "", managerId: x.managerId || t?.leadId || d.headId || "" };
 }
@@ -94,7 +94,6 @@ export function AddPersonDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
   const roles = opts?.roles ?? [];
   const chosenRoles = roles.filter((r) => r.id === v.roleId || v.extraRoleIds.includes(r.id));
   const perms = useMemo(() => Object.entries(peopleMergePermissions(chosenRoles)).filter(([, s]) => s !== "none"), [chosenRoles]);
-  const needsFounder = chosenRoles.some((r) => r.needsApproval);
   const staffInBranch = opts?.staff ?? [];
 
   function validate() {
@@ -157,10 +156,10 @@ export function AddPersonDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
       saving={saving}
       error={error ?? optsError}
       allowAnother
-      saveLabel={opts?.can.addNeedsApproval || needsFounder ? "Send for approval" : v.sendInvite ? "Add and invite" : "Add person"}
+      saveLabel={opts?.can.addNeedsApproval ? "Send for approval" : v.sendInvite ? "Add and invite" : "Add person"}
       banner={draft.banner}
       testId="add-person-drawer"
-      footerNote={opts?.can.addNeedsApproval ? "You are a Department Head: an Admin approves before the person is added." : needsFounder ? "Joining as Admin needs the Founder's approval." : v.sendInvite ? "They get an SMS and an email with a link to sign in. Status: Invited." : null}
+      footerNote={opts?.can.addNeedsApproval ? "A Founder or the HR Department Head approves before the person is added and invited." : v.sendInvite ? "They get an SMS and an email with a link to sign in. Status: Invited." : null}
       more={
         <>
           <Field label="Specialty" hint="Picks their specialist dashboard (optional)">
@@ -205,7 +204,6 @@ export function AddPersonDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
               {roles.map((r) => (
                 <option key={r.id} value={r.id} disabled={!r.assignable} title={r.whyNot ?? undefined}>
                   {r.name}
-                  {r.needsApproval ? " (Founder approves)" : ""}
                   {!r.assignable ? " (not allowed)" : ""}
                 </option>
               ))}
@@ -246,7 +244,7 @@ export function AddPersonDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
                     {opts.departments
                       .filter((d) => d.branchId === b.id)
                       .map((d) => (
-                        <option key={d.id} value={d.id} disabled={opts.can.addNeedsApproval && d.id !== opts.me.departmentId}>
+                        <option key={d.id} value={d.id}>
                           {d.name}
                         </option>
                       ))}

@@ -109,7 +109,7 @@ export class PersonImport implements OnModuleInit {
         else {
           const p = rolePolicy(me, role.baseRole, 'add');
           if (!p.ok) errors.push(p.whyNot ?? `You can't give the ${role.name} role`);
-          else if (p.needsFounder) errors.push(`${role.name}: add Admins one by one (the Founder approves)`);
+          else if (p.needsFounder) errors.push(`${role.name}: add Branch Managers one by one (the Founder approves)`);
         }
       });
       if (raw.branch && !r.branch) errors.push(`Unknown branch "${raw.branch}"`);

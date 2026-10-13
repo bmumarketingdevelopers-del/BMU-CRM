@@ -166,7 +166,7 @@ export class AgentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private assertAdmin(me: Me) {
-    if (!isAdmin(me)) throw new ForbiddenException('AI agents are set up by the Founder and Admins');
+    if (!isAdmin(me)) throw new ForbiddenException('AI agents are set up by the Founder and Branch Managers');
   }
 
   private async agentRow(orgId: string, key: string) {
@@ -606,7 +606,7 @@ export class AgentsService implements OnModuleInit, OnModuleDestroy {
   async ask(me: Me, question: string): Promise<AgentAskResult> {
     if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
     const a = await this.agentRow(me.orgId, 'analyst');
-    if (!a.enabled) throw new BadRequestException('The Analyst is switched off. A Founder or Admin can switch it on in Command Centre → Agents.');
+    if (!a.enabled) throw new BadRequestException('The Analyst is switched off. A Founder or Branch Manager can switch it on in Command Centre → Agents.');
     const run = await this.execute(a, { trigger: 'ask', subject: { type: 'Question', id: 'ask', label: question.slice(0, 120) }, startedBy: me, actingOverride: me, question });
     if (run.status === 'failed') throw new BadRequestException(run.error ?? 'The Analyst could not answer');
     return { runId: run.id, mode: run.mode as AiMode, text: run.answer ?? '', citations: (run.citations ?? []) as AiCitation[], notice: run.notice };

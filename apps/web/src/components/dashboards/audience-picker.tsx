@@ -90,7 +90,7 @@ export function AudiencePicker({ value, onChange, studio }: { value: DashboardAu
           </Field>
         </>
       )}
-      <p className="text-xs text-ink-muted">The Founder and Admins can always open it. Everyone sees only the numbers their role allows: people outside the Command Centre see their own numbers.</p>
+      <p className="text-xs text-ink-muted">The Founder and Branch Managers can always open it. Everyone sees only the numbers their role allows: people outside the Command Centre see their own numbers.</p>
     </div>
   );
 }

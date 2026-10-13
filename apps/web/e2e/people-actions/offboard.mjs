@@ -1,18 +1,20 @@
-// v11 people journey: offboarding. An Admin starts offboarding from the Users list; it can't finish while the person
+// v11 people journey: offboarding. A Branch Manager starts offboarding from the Users list; it can't finish while the person
 // owns open work (blockers listed), the work moves through the reassign engine, the checklist (assets, access) is
-// ticked, then the final confirmation. HR's confirmation goes to an Admin. Someone whose last day has passed loses
+// ticked, then the final confirmation. HR's confirmation goes to a Branch Manager. Someone whose last day has passed loses
 // sign-in and shows under "Former" on the tree.
 // BASE_URL=http://localhost:3000 node apps/web/e2e/people-actions/offboard.mjs
 import { BASE, apiCall, as, check, cleanUp, dayAhead, done, go, journeyEmail, journeyPhone, launch, noErrors, shot, stamp, toast } from "./lib.mjs";
 
 const browser = await launch();
 const admin = await as(browser, "admin@bmu.demo");
+// Only the Founder or HR add people, so the leavers are added by the Founder.
+const founder = await as(browser, "founder@bmu.demo");
 await go(admin, "/admin/users");
 const opts = (await apiCall(admin, "GET", "/people-actions/options")).body;
 const design = opts.departments.find((d) => d.name === "Creative / Design");
 const producerRole = opts.roles.find((r) => r.baseRole === "producer");
 const add = async (tag, n) => {
-  const r = await apiCall(admin, "POST", "/people-actions/people", { name: `Journey Leaver ${tag} ${stamp}`, phone: journeyPhone(n), email: journeyEmail(`leaver-${tag}`), roleIds: [producerRole.id], departmentId: design.id, teamId: design.teams[0]?.id ?? null, managerId: design.headId, branchId: design.branchId, joiningDate: dayAhead(0), employmentType: "full_time", sendInvite: false });
+  const r = await apiCall(founder, "POST", "/people-actions/people", { name: `Journey Leaver ${tag} ${stamp}`, phone: journeyPhone(n), email: journeyEmail(`leaver-${tag}`), roleIds: [producerRole.id], departmentId: design.id, teamId: design.teams[0]?.id ?? null, managerId: design.headId, branchId: design.branchId, joiningDate: dayAhead(0), employmentType: "full_time", sendInvite: false });
   // They accepted the invite (only active people can own work).
   await apiCall(admin, "PATCH", `/org/users/${r.body.id}`, { status: "active" });
   return r.body.id;
@@ -69,7 +71,7 @@ const person = (await apiCall(admin, "GET", `/people-actions/people/${leaverId}`
 check(person.leftAt === null && person.status !== "suspended", "last day is today: they can still sign in until the end of the day");
 noErrors(admin, "admin offboarding");
 
-console.log("4. HR's confirmation goes to an Admin; past last day → Former");
+console.log("4. HR's confirmation goes to a Branch Manager; past last day → Former");
 const pastId = await add("b", 12);
 const hr = await as(browser, "hr@bmu.demo");
 const yesterday = new Date(Date.now() + 5.5 * 3600_000 - 86_400_000).toISOString().slice(0, 10);
@@ -78,7 +80,7 @@ check(started.status < 300, `HR starts offboarding (${started.status} ${JSON.str
 const proc2 = (await apiCall(hr, "GET", `/team-flows/people/${started.body.processId}`)).body;
 for (const i of proc2.items.filter((x) => !x.done && !x.auto)) await apiCall(hr, "POST", `/team-flows/people/${started.body.processId}/tick`, { key: i.key, done: true });
 const hrConfirm = await apiCall(hr, "POST", `/people-actions/people/${pastId}/offboard/confirm`);
-check(hrConfirm.body.outcome === "approval", "HR's final confirmation becomes an approval for an Admin");
+check(hrConfirm.body.outcome === "approval", "HR's final confirmation becomes an approval for a Branch Manager");
 const appr = await apiCall(admin, "POST", `/actions/approvals/${hrConfirm.body.approval.id}/decide`, { decision: "approve" });
 check(appr.status === 201 || appr.status === 200, "Admin approves");
 await apiCall(admin, "POST", "/people-actions/jobs/run");

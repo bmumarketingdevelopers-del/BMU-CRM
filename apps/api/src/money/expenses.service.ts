@@ -113,7 +113,7 @@ export class ExpensesService {
   async create(me: Me, body: unknown, ip?: string) {
     if (me.type !== 'staff') throw new ForbiddenException('Team only');
     const input = parse(expenseSchema, body);
-    if (input.kind === 'vendor_bill' && !canWriteFinance(me)) throw new ForbiddenException('Only Founder, Admin and Finance add vendor bills');
+    if (input.kind === 'vendor_bill' && !canWriteFinance(me)) throw new ForbiddenException('Only Founder, Branch Manager and Finance add vendor bills');
     const clientOrgId = await this.checkLinks(me, input.clientOrgId, input.engagementId);
     if (input.date > todayIst()) throw new BadRequestException('The date cannot be in the future');
     const e = await this.prisma.expense.create({

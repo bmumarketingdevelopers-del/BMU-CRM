@@ -12,7 +12,7 @@ export const hierarchyData = {
     {
       "rank": 2,
       "id": "admin",
-      "name": "Admin / Director",
+      "name": "Branch Manager",
       "reports_to": "founder",
       "scope": "assigned branch(es)",
       "can_manage": "users, departments, clients, settings within branch; cannot change Founder or tenant billing"

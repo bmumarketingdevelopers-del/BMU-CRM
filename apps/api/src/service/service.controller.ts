@@ -118,7 +118,7 @@ export class ServiceController {
 
   @Get('outbox')
   async outbox(@CurrentUser() me: Me, @Query('status') status?: string, @Query('kind') kind?: string, @Query('q') q?: string): Promise<ServiceOutboxView> {
-    if (!isFounderAdmin(me)) throw new ForbiddenException('The outbox is for Founder and Admin');
+    if (!isFounderAdmin(me)) throw new ForbiddenException('The outbox is for Founder and Branch Manager');
     const base: Prisma.EmailOutboxWhereInput = { OR: [{ orgId: me.orgId }, { orgId: null }] };
     const where: Prisma.EmailOutboxWhereInput = {
       AND: [
@@ -144,7 +144,7 @@ export class ServiceController {
   }
 
   private async outboxRow(me: Me, id: string) {
-    if (!isFounderAdmin(me)) throw new ForbiddenException('The outbox is for Founder and Admin');
+    if (!isFounderAdmin(me)) throw new ForbiddenException('The outbox is for Founder and Branch Manager');
     const r = await this.prisma.emailOutbox.findFirst({ where: { id, OR: [{ orgId: me.orgId }, { orgId: null }] } });
     if (!r) throw new NotFoundException('Email not found');
     return r;

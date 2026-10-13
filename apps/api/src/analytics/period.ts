@@ -36,9 +36,9 @@ export function resolvePeriod(from?: string, to?: string, now = new Date()): Res
 
 export const inRange = (d: Date | null | undefined, r: Range) => !!d && d >= r.start && d < r.end;
 
-/** Money analytics are for Founder, Admin and Finance (same rule as the Revenue and Collections dashboards). */
+/** Money analytics are for Founder, Branch Manager and Finance (same rule as the Revenue and Collections dashboards). */
 export function assertSalesMoney(me: Me) {
-  if (!canSeeMoney(me)) throw new ForbiddenException('Sales and money analytics are for Founder, Admin and Finance');
+  if (!canSeeMoney(me)) throw new ForbiddenException('Sales and money analytics are for Founder, Branch Manager and Finance');
 }
 
 /** The funnel is also open to whoever manages the whole sales pipeline; money columns stay hidden for them. */
@@ -46,7 +46,7 @@ export function canSeeFunnel(me: Me) {
   return canSeeMoney(me) || (me.type === 'staff' && me.permissions.leads_pipeline?.scope === 'all');
 }
 export function assertFunnel(me: Me) {
-  if (!canSeeFunnel(me)) throw new ForbiddenException('The sales funnel is for Founder, Admin, Finance and sales managers');
+  if (!canSeeFunnel(me)) throw new ForbiddenException('The sales funnel is for Founder, Branch Manager, Finance and sales managers');
 }
 
 export const pct = (part: number, whole: number) => (whole ? Math.round((part / whole) * 1000) / 10 : null);

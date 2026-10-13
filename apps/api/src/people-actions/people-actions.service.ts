@@ -48,7 +48,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { appUrl, EmailService } from '../service/email.service.js';
 import { PeopleService } from '../team-flows/people.service.js';
 import { OffboardingService } from './offboarding.service.js';
-import { assertPeopleReader, isFA, isFounder, isHR, peopleCan, rolePolicy, staffOnly, visiblePeopleWhere } from './people-access.js';
+import { approvesNewPeople, assertPeopleReader, isFA, isFounder, isHR, peopleCan, rolePolicy, staffOnly, visiblePeopleWhere } from './people-access.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
 
 const userInclude = {
@@ -92,11 +92,10 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
       action: 'person.add',
       label: 'Add a person to the team',
       href: () => '/admin/users',
+      approvers: (me) => approvesNewPeople(me),
       apply: async ({ approver, requester, req }) => {
+        if (!approvesNewPeople(approver)) throw new ForbiddenException('Only a Founder or the HR Department Head can approve a new person');
         const input = peopleAddPersonSchema.parse((req.payload as { input: unknown }).input);
-        const needsFounder = (req.payload as { needsFounder?: boolean }).needsFounder;
-        if (needsFounder && !isFounder(approver)) throw new ForbiddenException('Only the Founder can approve someone joining as Admin');
-        if (!isFA(approver)) throw new ForbiddenException('Only an Admin can approve adding a person');
         return { userId: await this.createPerson(approver, input, undefined, requester) };
       },
     });
@@ -105,14 +104,14 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
       label: 'Move a person to another department',
       href: (r) => `/admin/users/${r.targetId}`,
       apply: async ({ approver, requester, req }) => {
-        if (!isFA(approver)) throw new ForbiddenException('Only an Admin can approve a move between departments');
+        if (!isFA(approver)) throw new ForbiddenException('Only a Branch Manager can approve a move between departments');
         const input = peopleMoveSchema.parse((req.payload as { input: unknown }).input);
         return this.move(approver, req.targetId, input, undefined, { approved: true, requestedBy: requester, approvalId: req.id });
       },
     });
     this.registry.registerApprovalHandler({
       action: 'person.role',
-      label: 'Change a role (Admin level)',
+      label: 'Change a role (Branch Manager level)',
       href: (r) => `/admin/users/${r.targetId}`,
       apply: async ({ approver, requester, req }) => {
         if (!isFounder(approver)) throw new ForbiddenException('Only the Founder can approve this role change');
@@ -358,10 +357,9 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
 
   private async validateAdd(me: Me, input: ReturnType<typeof peopleAddPersonSchema.parse>) {
     const can = peopleCan(me);
-    if (!can.addPerson) throw new ForbiddenException('Only the Founder, an Admin, HR or a Department Head can add people');
+    if (!can.addPerson) throw new ForbiddenException('Only the Founder or HR can add people');
     const dept = await this.prisma.department.findFirst({ where: { id: input.departmentId, orgId: me.orgId, deletedAt: null }, include: { teams: { where: { deletedAt: null } }, branch: true } });
     if (!dept) throw new BadRequestException('Pick a department');
-    if (can.addNeedsApproval && !(await this.people.isHeadOf(me, dept.id))) throw new ForbiddenException('Department heads can add people to their own department only');
     if (dept.branchId !== input.branchId) throw new BadRequestException(`${dept.name} belongs to the ${dept.branch.name} branch. Pick that branch or another department.`);
     if (dept.teams.length && !input.teamId) throw new BadRequestException(`Pick a team or pod in ${dept.name}`);
     if (input.teamId && !dept.teams.some((t) => t.id === input.teamId)) throw new BadRequestException(`That team is not part of ${dept.name}`);
@@ -369,11 +367,9 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
     if (!manager) throw new BadRequestException('Pick who they report to (an active team member)');
     const roles = await this.prisma.role.findMany({ where: { id: { in: input.roleIds }, orgId: me.orgId } });
     if (roles.length !== new Set(input.roleIds).size) throw new BadRequestException('Unknown role');
-    let needsFounder = false;
     for (const r of roles) {
       const p = rolePolicy(me, r.baseRole, 'add');
       if (!p.ok) throw new ForbiddenException(p.whyNot ?? "You can't give that role");
-      needsFounder ||= p.needsFounder;
     }
     if (input.onboarding.buddyId) {
       const buddy = await this.prisma.user.findFirst({ where: { id: input.onboarding.buddyId, orgId: me.orgId, type: 'staff', deletedAt: null, status: 'active' } });
@@ -385,15 +381,19 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
     if (clash) throw new ConflictException(`Possible duplicate: ${clash.name}${clash.deletedAt ? ' (removed earlier)' : ''} already uses that ${clash.email === email ? 'email' : 'mobile number'}. Open their profile instead.`);
     const pending = await this.prisma.approvalRequest.findFirst({ where: { orgId: me.orgId, action: 'person.add', targetId: email, status: 'pending' } });
     if (pending) throw new ConflictException(`Adding ${input.name} is already waiting for approval`);
-    return { dept, manager, roles, needsFounder, email, phone };
+    return { dept, manager, roles, email, phone };
   }
 
   async add(me: Me, raw: PeopleAddPerson, ip?: string): Promise<PeopleMutationResult> {
     staffOnly(me);
     const input = peopleAddPersonSchema.parse(raw);
     const v = await this.validateAdd(me, input);
-    const can = peopleCan(me);
-    if (can.addNeedsApproval || v.needsFounder) {
+    if (!approvesNewPeople(me)) {
+      // Other HR members: nothing is created or sent until a Founder or the HR Department Head approves.
+      const hrHead = await this.prisma.user.findFirst({
+        where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: 'active', AND: [{ roles: { some: { role: { baseRole: 'hr_ops' } } } }, { roles: { some: { role: { baseRole: 'department_head' } } } }] },
+        select: { id: true },
+      });
       const req = await this.approvals.create(
         me,
         {
@@ -401,10 +401,10 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
           targetType: 'person_invite',
           targetId: v.email,
           summary: `Add ${input.name} to ${v.dept.name} as ${v.roles.map((r) => r.name).join(' + ')}`,
-          payload: { input, needsFounder: v.needsFounder },
-          reason: input.note ?? (v.needsFounder ? 'Joining as Admin needs the Founder' : 'Department Head adding to own department'),
-          approverId: null,
-          approverRoles: v.needsFounder ? ['founder'] : ['admin'],
+          payload: { input },
+          reason: input.note ?? 'New people added by HR are approved by a Founder or the HR Department Head',
+          approverId: hrHead?.id ?? null,
+          approverRoles: ['founder'],
           diff: [
             { field: 'Name', before: null, after: input.name },
             { field: 'Role', before: null, after: v.roles.map((r) => r.name).join(' + ') },
@@ -415,7 +415,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
         },
         ip,
       );
-      return { ok: true, id: null, outcome: 'approval', message: `Sent to ${v.needsFounder ? 'the Founder' : 'an Admin'} for approval`, approval: { id: req.id, summary: req.summary }, undo: null };
+      return { ok: true, id: null, outcome: 'approval', message: 'Sent to a Founder or the HR Department Head for approval', approval: { id: req.id, summary: req.summary }, undo: null };
     }
     const id = await this.createPerson(me, input, ip);
     return { ok: true, id, outcome: 'applied', message: `${input.name} added and invited`, approval: null, undo: null };
@@ -518,7 +518,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async resendInvite(me: Me, id: string): Promise<PeopleMutationResult> {
-    if (!peopleCan(me).edit) throw new ForbiddenException('Only the Founder, an Admin or HR can resend invites');
+    if (!peopleCan(me).edit) throw new ForbiddenException('Only the Founder, a Branch Manager or HR can resend invites');
     const u = await this.person(me, id, { visible: true });
     if (u.status !== 'invited') throw new BadRequestException(`${u.name} has already signed in`);
     await this.sendInvite(me, id);
@@ -532,7 +532,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
     staffOnly(me);
     const self = id === me.id;
     const can = peopleCan(me);
-    if (!self && !can.edit) throw new ForbiddenException('Only the Founder, an Admin or HR can edit people. Role, department and manager changes use Change role and Move.');
+    if (!self && !can.edit) throw new ForbiddenException('Only the Founder, a Branch Manager or HR can edit people. Role, department and manager changes use Change role and Move.');
     const u = await this.person(me, id, { visible: !self });
     if (!can.edit && self) {
       const extra = Object.keys(input).filter((k) => !['email', 'phone', 'photoUrl'].includes(k) && input[k as keyof PeopleEditPerson] !== undefined);
@@ -570,11 +570,11 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
   private async planMove(me: Me, id: string, input: ReturnType<typeof peopleMoveSchema.parse>, opts: { approved?: boolean } = {}) {
     staffOnly(me);
     const can = peopleCan(me);
-    if (!can.move) throw new ForbiddenException('Only the Founder, an Admin or the Department Head can move people');
+    if (!can.move) throw new ForbiddenException('Only the Founder, a Branch Manager or the Department Head can move people');
     const u = await this.person(me, id);
     if (u.leftAt || u.status === 'suspended') throw new BadRequestException(`${u.name} is not an active team member`);
     if (u.roles.some((r) => r.role.baseRole === 'founder') && !isFounder(me)) throw new ForbiddenException('Only the Founder can move the Founder');
-    if (id === me.id && !isFA(me)) throw new ForbiddenException('Ask an Admin to move you');
+    if (id === me.id && !isFA(me)) throw new ForbiddenException('Ask a Branch Manager to move you');
     const dept = await this.prisma.department.findFirst({ where: { id: input.departmentId, orgId: me.orgId, deletedAt: null }, include: { teams: { where: { deletedAt: null } }, branch: true } });
     if (!dept) throw new BadRequestException('Pick a department');
     const team = input.teamId ? dept.teams.find((t) => t.id === input.teamId) : null;
@@ -594,10 +594,10 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
     let blocked: string | null = null;
     let needsApproval: PeopleMovePreview['needsApproval'] = null;
     if (!isFA(me)) {
-      // Department heads move people within their own department; anything across departments goes to an Admin.
+      // Department heads move people within their own department; anything across departments goes to a Branch Manager.
       const ownsFrom = u.departmentId ? await this.people.isHeadOf(me, u.departmentId) : false;
-      if (!ownsFrom) blocked = `${u.name} is not in your department. Ask an Admin to move them.`;
-      else if (cross && !opts.approved) needsApproval = { approver: 'an Admin', why: `Moving ${u.name} from ${u.department?.name ?? 'no department'} to ${dept.name} crosses departments` };
+      if (!ownsFrom) blocked = `${u.name} is not in your department. Ask a Branch Manager to move them.`;
+      else if (cross && !opts.approved) needsApproval = { approver: 'a Branch Manager', why: `Moving ${u.name} from ${u.department?.name ?? 'no department'} to ${dept.name} crosses departments` };
     }
     const nothing = u.departmentId === dept.id && (u.teamId ?? null) === (team?.id ?? null) && (u.managerId ?? null) === (manager?.id ?? null);
     if (nothing && !blocked) blocked = 'Nothing changes: pick a new team, department or manager';
@@ -697,7 +697,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
         },
         ip,
       );
-      return { ok: true, id, outcome: 'approval', message: 'Sent to an Admin for approval (the move crosses departments)', approval: { id: req.id, summary: req.summary }, undo: null };
+      return { ok: true, id, outcome: 'approval', message: 'Sent to a Branch Manager for approval (the move crosses departments)', approval: { id: req.id, summary: req.summary }, undo: null };
     }
     if (preview.scheduled) {
       const s = await this.prisma.peopleScheduledChange.create({ data: { orgId: me.orgId, userId: id, kind: 'move', payload: plan.payload, effectiveDate: dbDay(input.effectiveDate), reason: input.reason, byId: opts.requestedBy?.id ?? me.id, approvalRequestId: opts.approvalId ?? null } });
@@ -734,7 +734,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
 
   private async planRole(me: Me, id: string, input: PeopleChangeRole, opts: { approved?: boolean } = {}) {
     staffOnly(me);
-    if (!peopleCan(me).changeRole) throw new ForbiddenException(isHR(me) ? 'HR can edit people data, not roles' : 'Only the Founder or an Admin can change roles');
+    if (!peopleCan(me).changeRole) throw new ForbiddenException(isHR(me) ? 'HR can edit people data, not roles' : 'Only the Founder or a Branch Manager can change roles');
     const u = await this.person(me, id);
     if (id === me.id) throw new ForbiddenException("You can't change your own role. Ask the Founder.");
     if (u.leftAt) throw new BadRequestException(`${u.name} has left`);
@@ -767,7 +767,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
         after: ordered.map((r) => r.name),
         diff: peoplePermissionDiff(before, after).filter((l) => l.change !== 'same'),
         scheduled: input.effectiveDate > t,
-        needsApproval: needsFounder && !opts.approved && !blocked ? { approver: 'the Founder', why: 'Admin-level role changes need the Founder' } : null,
+        needsApproval: needsFounder && !opts.approved && !blocked ? { approver: 'the Founder', why: 'Branch Manager-level role changes need the Founder' } : null,
         blocked,
       } satisfies PeopleRolePreview,
     };
@@ -827,7 +827,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
     const s = await this.prisma.peopleScheduledChange.findFirst({ where: { id: changeId, orgId: me.orgId } });
     if (!s) throw new NotFoundException('Scheduled change not found');
     if (s.status !== 'scheduled') throw new BadRequestException(`This change is already ${s.status}`);
-    if (!isFA(me) && s.byId !== me.id) throw new ForbiddenException('Only an Admin or the person who scheduled it can cancel it');
+    if (!isFA(me) && s.byId !== me.id) throw new ForbiddenException('Only a Branch Manager or the person who scheduled it can cancel it');
     await this.prisma.peopleScheduledChange.update({ where: { id: changeId }, data: { status: 'cancelled' } });
     await this.audit.log(me, 'user.scheduled_change_cancelled', 'User', s.userId, { kind: s.kind, effectiveDate: dayStr(s.effectiveDate) }, null, ip);
     return { ok: true, id: s.userId, outcome: 'applied', message: 'Scheduled change cancelled', approval: null, undo: null };
@@ -864,7 +864,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
 
   async createUnit(me: Me, input: PeopleCreateUnit, ip?: string): Promise<PeopleMutationResult> {
     staffOnly(me);
-    if (!peopleCan(me).addUnit) throw new ForbiddenException('Only the Founder or an Admin can create branches, departments and teams');
+    if (!peopleCan(me).addUnit) throw new ForbiddenException('Only the Founder or a Branch Manager can create branches, departments and teams');
     const staff = async (uid: string, label: string) => {
       const u = await this.prisma.user.findFirst({ where: { id: uid, orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null }, select: { id: true, name: true } });
       if (!u) throw new BadRequestException(`Pick an active ${label}`);
@@ -927,7 +927,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async validatePod(me: Me, input: { name: string; amUserId: string; strategistUserId: string; producerIds: string[]; clientIds: string[] }, podId?: string) {
-    if (!peopleCan(me).addPod) throw new ForbiddenException('Only the Founder, an Admin or the AM Lead can manage client pods');
+    if (!peopleCan(me).addPod) throw new ForbiddenException('Only the Founder, a Branch Manager or the AM Lead can manage client pods');
     const ids = [...new Set([input.amUserId, input.strategistUserId, ...input.producerIds])];
     const users = await this.prisma.user.findMany({ where: { id: { in: ids }, orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null }, include: { roles: { include: { role: { select: { baseRole: true } } } } } });
     const u = (id: string) => users.find((x) => x.id === id);
@@ -968,7 +968,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
 
   async removePod(me: Me, id: string, ip?: string): Promise<PeopleMutationResult> {
     staffOnly(me);
-    if (!peopleCan(me).addPod) throw new ForbiddenException('Only the Founder, an Admin or the AM Lead can manage client pods');
+    if (!peopleCan(me).addPod) throw new ForbiddenException('Only the Founder, a Branch Manager or the AM Lead can manage client pods');
     const pod = await this.prisma.clientPod.findFirst({ where: { id, orgId: me.orgId, deletedAt: null } });
     if (!pod) throw new NotFoundException('Pod not found');
     await this.prisma.clientPod.update({ where: { id }, data: { deletedAt: new Date() } });
@@ -977,12 +977,12 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
   }
 
   // ---------------------------------------------------------------------------
-  // Custom role (clone + scopes; an Admin's new role needs the Founder)
+  // Custom role (clone + scopes; a Branch Manager's new role needs the Founder)
 
   async customRole(me: Me, raw: PeopleCustomRole, ip?: string, approved = false): Promise<PeopleMutationResult> {
     staffOnly(me);
     const input = peopleCustomRoleSchema.parse(raw);
-    if (!peopleCan(me).customRole) throw new ForbiddenException('Only the Founder or an Admin can create roles');
+    if (!peopleCan(me).customRole) throw new ForbiddenException('Only the Founder or a Branch Manager can create roles');
     const base = await this.prisma.role.findFirst({ where: { id: input.cloneFromRoleId, orgId: me.orgId }, include: { permissions: true } });
     if (!base) throw new BadRequestException('Pick the role to start from');
     if (base.baseRole === 'founder' || base.baseRole.startsWith('client_')) throw new BadRequestException('Start from a team role other than Founder');
@@ -1002,7 +1002,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
           targetId: `new:${input.name.toLowerCase()}`,
           summary: `New role "${input.name}" based on ${base.name}`,
           payload: { input },
-          reason: 'New custom role created by an Admin',
+          reason: 'New custom role created by a Branch Manager',
           approverId: null,
           approverRoles: ['founder'],
           diff: perms

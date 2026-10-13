@@ -43,7 +43,7 @@ export class OpsAdminService implements OnModuleInit {
       if (section === 'holidays' || section === 'workingHours') await this.recalculate(me, section);
     });
 
-    // Department heads save drafts; an Admin publishes them.
+    // Department heads save drafts; a Branch Manager publishes them.
     this.registry.registerApprovalHandler({
       action: 'sop.publish',
       label: 'Publish SOP',
@@ -120,7 +120,7 @@ export class OpsAdminService implements OnModuleInit {
   // Integrations (org level)
 
   private assertAdmin(me: Me) {
-    if (me.type !== 'staff' || !isFounderAdmin(me)) throw new ForbiddenException('Only the Founder or an Admin connects integrations');
+    if (me.type !== 'staff' || !isFounderAdmin(me)) throw new ForbiddenException('Only the Founder or a Branch Manager connects integrations');
   }
 
   private configured(key: string, accountingTool: string) {

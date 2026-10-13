@@ -164,7 +164,7 @@ try {
     check((await founder.getByTestId("edit-cell").count()) >= 4, `${n} editor shows its sections`);
   }
 
-  console.log("8. Forbidden: only the Founder and Admins change dashboards");
+  console.log("8. Forbidden: only the Founder and Branch Managers change dashboards");
   const am = await newPage(browser);
   await signIn(am, "am@bmu.demo");
   check((await apiCall(am, "GET", "/dashboards")).status === 403, "an Account Manager cannot open the Studio");

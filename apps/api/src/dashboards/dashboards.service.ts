@@ -41,7 +41,7 @@ const EMPTY_AUDIENCE: DashboardAudience = { everyone: false, roles: [], specialt
 
 export const canEditDashboards = (me: Me) => me.type === 'staff' && me.roles.some((r) => STUDIO_ROLES.includes(r));
 function assertStudio(me: Me) {
-  if (!canEditDashboards(me)) throw new ForbiddenException('Only the Founder and Admins can change dashboards');
+  if (!canEditDashboards(me)) throw new ForbiddenException('Only the Founder and Branch Managers can change dashboards');
 }
 
 const roleLabels: Record<string, string> = Object.fromEntries(hierarchyData.team_roles.map((r) => [r.id, r.name.replace(/ \(.*\)$/, '')]));
@@ -170,7 +170,7 @@ export class DashboardsService {
     };
   }
 
-  /** Custom dashboards this person can open (Founder and Admin see every one). */
+  /** Custom dashboards this person can open (Founder and Branch Manager see every one). */
   private async visibleCustom(me: Me) {
     if (me.type !== 'staff') return [];
     const rows = await this.prisma.dashboard.findMany({ where: { orgId: me.orgId, builtin: null, archivedAt: null }, orderBy: { name: 'asc' } });

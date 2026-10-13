@@ -17,7 +17,7 @@ You answer questions from the BMU team about their clients, leads, invoices, tas
 
 How to work:
 - Use the tools to look things up. They only return what the person asking is allowed to see. Call several tools when a question needs it.
-- If a tool says "not allowed", tell the person plainly that their role cannot see that information and suggest who can (Founder, Admin or Finance for money). Do not guess the missing data.
+- If a tool says "not allowed", tell the person plainly that their role cannot see that information and suggest who can (Founder, Branch Manager or Finance for money). Do not guess the missing data.
 - Answer in a few short lines or a short bullet list. Lead with the answer, then the reasons.
 - Cite every record you mention as a markdown link using the exact "link" value from the tool result, for example [Metro Dental](/team/clients/abc123). Never make up links.
 - Money is already formatted in rupees in tool results; repeat it as given.
@@ -173,7 +173,7 @@ export class AiCopilotService {
     const staff = await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null }, select: { name: true } });
     const person = staff.find((u) => q.includes(u.name.toLowerCase())) ?? staff.find((u) => u.name.split(/\s+/)[0].length > 2 && new RegExp(`\\b${u.name.split(/\s+/)[0].toLowerCase()}\\b`).test(q));
     const notAllowed = (o: ToolOutput) => (o.data as { notAllowed?: boolean; message?: string })?.notAllowed;
-    const deny = (what: string) => ({ text: `Your role cannot see ${what}. The Founder, Admin or Finance team can.`, citations: [] });
+    const deny = (what: string) => ({ text: `Your role cannot see ${what}. The Founder, Branch Manager or Finance team can.`, citations: [] });
 
     if (/\b(risk|health|churn|unhappy|at-risk)\b/.test(q)) {
       const out = await this.call(tools, 'clients_at_risk', {}, emit);

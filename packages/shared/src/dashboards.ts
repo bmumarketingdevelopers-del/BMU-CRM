@@ -83,7 +83,7 @@ export const dashboardListInfo: Record<DashboardListSource, { label: string; hin
   late_requests: { label: "Requests past reply time", hint: "Still waiting for a reply after the target", href: "/team/requests" },
   new_leads: { label: "New leads to contact", hint: "All for sales leaders, the viewer's own for sales executives", href: "/team/leads" },
   follow_ups_due: { label: "Lead follow-ups due", hint: "Follow-ups due today or earlier", href: "/team/leads" },
-  overdue_invoices: { label: "Overdue invoices", hint: "Founder, Admin and Finance only", href: "/admin/collections", money: true },
+  overdue_invoices: { label: "Overdue invoices", hint: "Founder, Branch Manager and Finance only", href: "/admin/collections", money: true },
 };
 export type DashboardListRow = { id: string; title: string; meta?: string; href: string; badge?: { label: string; tone: "red" | "amber" | "green" | "grey" } };
 export type DashboardListResult = { source: DashboardListSource; label: string; href: string; rows: DashboardListRow[]; total: number };
@@ -111,7 +111,7 @@ export const DASHBOARD_BUILTINS: Record<DashboardBuiltinKey, DashboardBuiltinDef
   command_centre: {
     name: "Weekly Review",
     where: "Command Centre home",
-    who: "Founder, Admin, Finance, AM lead and department heads",
+    who: "Founder, Branch Manager, Finance, AM lead and department heads",
     surface: "admin",
     path: "/admin",
     sections: [
@@ -130,7 +130,7 @@ export const DASHBOARD_BUILTINS: Record<DashboardBuiltinKey, DashboardBuiltinDef
   scorecard: {
     name: "Scorecard",
     where: "Command Centre → Analytics → Scorecard",
-    who: "Founder, Admin and Finance",
+    who: "Founder, Branch Manager and Finance",
     surface: "admin",
     path: "/admin/analytics",
     sections: [
@@ -377,7 +377,7 @@ export type DashboardView = {
   archived: boolean;
   updatedAt: string;
   updatedBy: string | null;
-  /** Founder and Admin can open this in the Studio. */
+  /** Founder and Branch Manager can open this in the Studio. */
   canEdit: boolean;
 };
 
@@ -420,7 +420,7 @@ export function dashboardAudienceText(a: DashboardAudience | null, names: { role
     ...a.specialties.map((s) => names.specialties[s] ?? s),
     ...(a.userIds.length > 3 ? [`${a.userIds.length} people`] : a.userIds.map((u) => names.people[u] ?? "Someone")),
   ];
-  return parts.length ? parts.join(", ") : "Nobody yet (only Founder and Admin)";
+  return parts.length ? parts.join(", ") : "Nobody yet (only Founder and Branch Manager)";
 }
 
 // ---------------------------------------------------------------------------

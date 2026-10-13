@@ -75,7 +75,8 @@ export class ApprovalsService {
     });
     await this.audit.log(me, 'approval.requested', this.entity(input.targetType), input.targetId, null, { approvalId: req.id, action: input.action, summary: input.summary, approverId }, ip);
     const handler = this.registry.approvalHandlers.get(input.action)!;
-    const recipients = approverId ? [approverId] : await this.roleHolders(me.orgId, approverRoles);
+    // A named approver and approver roles can both be set (e.g. the HR Department Head and the Founders): tell all of them.
+    const recipients = [...new Set([...(approverId ? [approverId] : []), ...(approverRoles.length ? await this.roleHolders(me.orgId, approverRoles) : [])])].filter((id) => id !== me.id);
     await this.notifications.notify(me.orgId, recipients, {
       kind: 'approval_needed',
       title: `${me.name} needs your approval: ${input.summary}`,
@@ -93,8 +94,10 @@ export class ApprovalsService {
 
   private canDecide(me: Me, r: ApprovalRow) {
     if (r.status !== 'pending' || r.requestedById === me.id) return false;
+    const only = this.registry.approvalHandlers.get(r.action)?.approvers;
+    if (only) return only(me, r);
     if (r.approverId === me.id) return true;
-    if (!r.approverId && hasRole(me, ...r.approverRoles)) return true;
+    if (hasRole(me, ...r.approverRoles)) return true;
     return isAdmin(me);
   }
 
@@ -140,9 +143,9 @@ export class ApprovalsService {
       if (!isAdmin(me) && !hasRole(me, 'am_lead', 'department_head')) throw new ForbiddenException('The approvals queue is for founders, admins, AM leads and department heads');
       where = { orgId: me.orgId };
       // Department heads and AM leads see what is theirs to decide plus what their people asked for.
-      if (!isAdmin(me)) where = { orgId: me.orgId, OR: [{ approverId: me.id }, { approverId: null, approverRoles: { hasSome: me.roles } }, { requestedById: me.id }] };
+      if (!isAdmin(me)) where = { orgId: me.orgId, OR: [{ approverId: me.id }, { approverRoles: { hasSome: me.roles } }, { requestedById: me.id }] };
     } else if (box === 'requested') where = { orgId: me.orgId, requestedById: me.id };
-    else where = { orgId: me.orgId, status: 'pending', requestedById: { not: me.id }, OR: [{ approverId: me.id }, { approverId: null, approverRoles: { hasSome: me.roles } }] };
+    else where = { orgId: me.orgId, status: 'pending', requestedById: { not: me.id }, OR: [{ approverId: me.id }, { approverRoles: { hasSome: me.roles } }] };
     if (status && status !== 'any') where = { AND: [where, { status }] };
     const rows = await this.prisma.approvalRequest.findMany({ where, orderBy: [{ createdAt: 'desc' }], take: 200 });
     return this.view(me, rows);
@@ -151,7 +154,7 @@ export class ApprovalsService {
   async count(me: Me) {
     if (me.type !== 'staff') return { pending: 0 };
     const pending = await this.prisma.approvalRequest.count({
-      where: { orgId: me.orgId, status: 'pending', expiresAt: { gt: new Date() }, requestedById: { not: me.id }, OR: [{ approverId: me.id }, { approverId: null, approverRoles: { hasSome: me.roles } }] },
+      where: { orgId: me.orgId, status: 'pending', expiresAt: { gt: new Date() }, requestedById: { not: me.id }, OR: [{ approverId: me.id }, { approverRoles: { hasSome: me.roles } }] },
     });
     return { pending };
   }

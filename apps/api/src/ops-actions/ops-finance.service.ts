@@ -1,6 +1,6 @@
 // v11 ops: finance actions. Manual invoice (service lines with GST, pass-through lines for ad spend / creator fees
-// at cost), drafts, offline payment with proof, due-date extension (> 7 days needs Admin approval) and creator payout
-// proposals (the UGC coordinator proposes, Finance approves). Credit notes with Admin approval live in FinanceService.
+// at cost), drafts, offline payment with proof, due-date extension (> 7 days needs Branch Manager approval) and creator payout
+// proposals (the UGC coordinator proposes, Finance approves). Credit notes with Branch Manager approval live in FinanceService.
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import {
   financialYear,
@@ -71,7 +71,7 @@ export class OpsFinanceService implements OnModuleInit {
   }
 
   private assertFinance(me: Me) {
-    if (!opsCanFinance(me)) throw new ForbiddenException('Only Founder, Admin and Finance can do this');
+    if (!opsCanFinance(me)) throw new ForbiddenException('Only Founder, Branch Manager and Finance can do this');
   }
 
   // -------------------------------------------------------------------------
@@ -208,7 +208,7 @@ export class OpsFinanceService implements OnModuleInit {
         },
         ip,
       );
-      return { applied: false, approvalId: req.id, message: `More than ${OPS_DUE_EXTENSION_FREE_DAYS} days: sent to an Admin for approval` };
+      return { applied: false, approvalId: req.id, message: `More than ${OPS_DUE_EXTENSION_FREE_DAYS} days: sent to a Branch Manager for approval` };
     }
     const r = await this.applyDueDate(me, id, input.dueDate, input.reason, ip);
     return { applied: true, approvalId: null, message: r.message, undo: r.undo };

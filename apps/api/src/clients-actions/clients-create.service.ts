@@ -222,7 +222,7 @@ export class ClientsCreateService implements OnModuleInit {
 
   async create(me: Me, body: unknown, ip?: string, opts: { source?: 'manual' | 'lead' | 'import'; leadId?: string; allowSalesManagerOnly?: boolean } = {}): Promise<ClientsCreateResult> {
     assertStaff(me);
-    if (!clientsCanAdd(me)) throw new ForbiddenException('Only the Founder, Admin, Sales Manager or AM Lead can add clients');
+    if (!clientsCanAdd(me)) throw new ForbiddenException('Only the Founder, Branch Manager, Sales Manager or AM Lead can add clients');
     const parsed = clientsCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Check the form');
     const input = parsed.data;
@@ -440,8 +440,8 @@ export class ClientsCreateService implements OnModuleInit {
   }
 
   /**
-   * Creates client users. An Owner invited by someone who is not an Admin/Founder, on an account that already has an
-   * Owner, waits for the existing Owner or an Admin to confirm (returned as `pending`).
+   * Creates client users. An Owner invited by someone who is not an Branch Manager/Founder, on an account that already has an
+   * Owner, waits for the existing Owner or a Branch Manager to confirm (returned as `pending`).
    */
   async createInvitesTx(tx: Tx, me: Me, clientOrgId: string, invites: ClientsInvite[], opts: { creating?: boolean } = {}) {
     const created: { id: string; name: string; role: ClientTeamRole }[] = [];
@@ -486,7 +486,7 @@ export class ClientsCreateService implements OnModuleInit {
         targetId: `${clientOrgId}:${ref}`,
         summary: `Make ${i.name} an Owner of ${clientName}`,
         payload: { clientOrgId, invite: i },
-        reason: `Invited by ${me.name}. An existing Owner or an Admin must confirm a new Owner.`,
+        reason: `Invited by ${me.name}. An existing Owner or a Branch Manager must confirm a new Owner.`,
         approverId: null,
         approverRoles: ['admin', 'founder'],
         diff: [{ field: 'Owner', before: null, after: i.name }],
@@ -534,7 +534,7 @@ export class ClientsCreateService implements OnModuleInit {
    * Uses the lead's contact; the payment goes to Finance to confirm (the work waits at Gate 1 until then).
    */
   async createClientFromLead(me: Me, leadId: string, input: ClientsFromLead, ip?: string): Promise<ClientsCreateResult> {
-    if (!hasRole(me, 'sales_manager', 'founder', 'admin')) throw new ForbiddenException('Only a Sales Manager (or Admin) can convert a lead to a client by hand');
+    if (!hasRole(me, 'sales_manager', 'founder', 'admin')) throw new ForbiddenException('Only a Sales Manager (or Branch Manager) can convert a lead to a client by hand');
     const lead = await this.prisma.lead.findFirst({ where: { id: leadId, orgId: me.orgId, deletedAt: null } });
     if (!lead) throw new NotFoundException('Lead not found');
     if (await this.prisma.clientOrg.findUnique({ where: { leadId } })) throw new BadRequestException('This lead is already a client');

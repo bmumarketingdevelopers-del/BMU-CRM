@@ -28,7 +28,7 @@ export default function WorkflowDetailPage() {
               </Link>
             }
           />
-          {!options.canManage && <WorkflowHint>Read only. Only the Founder and Admins can change workflows, but you can test this one against current data.</WorkflowHint>}
+          {!options.canManage && <WorkflowHint>Read only. Only the Founder and Branch Managers can change workflows, but you can test this one against current data.</WorkflowHint>}
           {wf.movedFromRule && <WorkflowHint>This workflow was moved over from Automations. Its earlier history is in the runs below.</WorkflowHint>}
           <WorkflowBuilder key={wf.id} initial={wf} options={options} onSaved={state.reload} />
           <Panel

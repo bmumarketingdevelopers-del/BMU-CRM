@@ -257,7 +257,7 @@ export class InboxService {
   }
 
   async simulate(me: Me, body: unknown) {
-    if (!this.canSimulate(me)) throw new ForbiddenException('Only in development, for Founder and Admin');
+    if (!this.canSimulate(me)) throw new ForbiddenException('Only in development, for Founder and Branch Manager');
     const input = parse(inboxSimulateSchema, body);
     const r = await this.receive({ orgId: me.orgId, channel: input.channel, from: input.from, name: input.name, subject: input.subject, body: input.body, externalId: null });
     if (!r) throw new BadRequestException('Already received');

@@ -74,7 +74,7 @@ function Editor({ view, config, reload }: { view: PipelinesView; config: Pipelin
 
   return (
     <Panel title={pipelineKindLabels[kind].label} subtitle={pipelineKindLabels[kind].hint} flush>
-      {readOnly && <p className="mx-5 mt-4 border border-border bg-canvas/60 px-3 py-2 text-sm text-ink-muted">Only the Founder and Admins can change pipelines.</p>}
+      {readOnly && <p className="mx-5 mt-4 border border-border bg-canvas/60 px-3 py-2 text-sm text-ink-muted">Only the Founder and Branch Managers can change pipelines.</p>}
       <fieldset disabled={readOnly}>
         <ol className="divide-y divide-border" data-testid="pipeline-stages">
           {stages.map((s, i) => (

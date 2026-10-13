@@ -57,7 +57,7 @@ export class IntegrationsService {
       const scope = await clientScope(this.prisma, me);
       return scope === 'all' ? 'all' : scope;
     }
-    throw new ForbiddenException('Only Founders, Admins and Account Managers can manage connected accounts');
+    throw new ForbiddenException('Only Founders, Branch Managers and Account Managers can manage connected accounts');
   }
 
   private async assertManage(me: Me, clientOrgId: string | null) {

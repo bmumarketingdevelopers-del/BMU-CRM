@@ -68,7 +68,7 @@ export default function PeopleProcessPage({ params }: { params: Promise<{ id: st
                   Mark complete
                 </Button>
               ) : (
-                // v11 people: offboarding ends with the final confirmation (blocked while they own open work; an Admin confirms).
+                // v11 people: offboarding ends with the final confirmation (blocked while they own open work; a Branch Manager confirms).
                 <Button
                   disabled={busy}
                   onClick={() =>

@@ -108,7 +108,7 @@ export function trendWords(now: number | null, prev: number | null, unit = '') {
 const TEAM_ROLES = ['founder', 'admin', 'department_head', 'am_lead'];
 
 export function assertTeamReader(me: Me) {
-  if (!(me.type === 'staff' && me.roles.some((r) => TEAM_ROLES.includes(r)))) throw new ForbiddenException('Team performance is for the Founder, Admin, department heads and the AM lead');
+  if (!(me.type === 'staff' && me.roles.some((r) => TEAM_ROLES.includes(r)))) throw new ForbiddenException('Team performance is for the Founder, Branch Manager, department heads and the AM lead');
 }
 export function assertOpsReader(me: Me) {
   if (!canReadCommand(me)) throw new ForbiddenException('Operations analytics are for the Command Centre team');

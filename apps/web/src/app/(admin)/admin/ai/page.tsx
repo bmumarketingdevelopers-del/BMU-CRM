@@ -173,7 +173,7 @@ function SettingsForm({ initial, canEdit, onSaved }: { initial: AiSettings; canE
   }
 
   return (
-    <Panel title="Settings" subtitle="Only the Founder and Admins can change these.">
+    <Panel title="Settings" subtitle="Only the Founder and Branch Managers can change these.">
       <fieldset disabled={!canEdit || busy} className="space-y-5">
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" className="mt-1" checked={s.enabled} onChange={(e) => set({ enabled: e.target.checked })} />

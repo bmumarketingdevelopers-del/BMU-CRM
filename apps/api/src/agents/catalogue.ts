@@ -35,7 +35,7 @@ export type ActionImpl = {
   required: string[];
   /** Fields the person deciding may edit in the Agent Inbox. */
   fields?: (input: Record<string, unknown>, ctx: ActCtx) => Promise<AgentProposalField[]>;
-  /** Besides the Founder and Admins, who may decide the proposal (always includes the acting person). */
+  /** Besides the Founder and Branch Managers, who may decide the proposal (always includes the acting person). */
   deciders?: (input: Record<string, unknown>, ctx: ActCtx) => Promise<(string | null | undefined)[]>;
   describe: (input: Record<string, unknown>, ctx: ActCtx) => Promise<ActDescribe>;
   /** Throws (403/404/400) when this person may not do it. Runs before anything changes. */
@@ -444,7 +444,7 @@ export const ACTIONS: Record<AgentAction, ActionImpl> = {
       return { title: `Remind ${inv?.clientOrg?.name ?? 'the client'} about ${inv?.number ?? 'an invoice'} (${formatINR(inv?.balancePaise ?? 0)} due${inv?.daysOverdue ? `, ${inv.daysOverdue} days late` : ''})`, summary: String(i.note), link: `/admin/finance/invoices/${String(i.invoiceId)}`, target: { type: 'Invoice', id: String(i.invoiceId) } };
     },
     check: async (i, ctx) => {
-      if (!canWriteFinance(ctx.me)) throw new ForbiddenException('Only Founder, Admin and Finance send payment reminders');
+      if (!canWriteFinance(ctx.me)) throw new ForbiddenException('Only Founder, Branch Manager and Finance send payment reminders');
       const [inv] = await loadLedger(get(ctx.ref, PrismaService), ctx.me.orgId, { id: String(i.invoiceId) });
       if (!inv) throw new NotFoundException('Invoice not found');
       if (inv.balancePaise <= 0) throw new BadRequestException('Nothing is due on this invoice');
@@ -468,7 +468,7 @@ export const ACTIONS: Record<AgentAction, ActionImpl> = {
       return { title: `Match ${formatINR(u?.amountPaise ?? 0)} (${u?.ref ?? 'payment'}) to ${inv?.number ?? 'an invoice'}${inv?.clientOrg ? ` (${inv.clientOrg.name})` : ''}`, summary: String(i.reason), link: '/admin/finance/reconcile', target: { type: 'UnmatchedPayment', id: String(i.unmatchedId) } };
     },
     check: async (i, ctx) => {
-      if (!canWriteFinance(ctx.me)) throw new ForbiddenException('Only Founder, Admin and Finance match payments');
+      if (!canWriteFinance(ctx.me)) throw new ForbiddenException('Only Founder, Branch Manager and Finance match payments');
       const prisma = get(ctx.ref, PrismaService);
       const u = await prisma.unmatchedPayment.findFirst({ where: { id: String(i.unmatchedId), orgId: ctx.me.orgId } });
       if (!u) throw new NotFoundException('Payment not found');

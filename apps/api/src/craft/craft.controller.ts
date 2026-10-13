@@ -47,7 +47,7 @@ export class CraftController {
     return this.craft.dashboard(me, { userId, from, to });
   }
 
-  /** Founder, Admin, AM Lead (everyone) and Department Heads (their department). */
+  /** Founder, Branch Manager, AM Lead (everyone) and Department Heads (their department). */
   @Get('specialists')
   specialists(@CurrentUser() me: Me) {
     return this.craft.specialists(me);

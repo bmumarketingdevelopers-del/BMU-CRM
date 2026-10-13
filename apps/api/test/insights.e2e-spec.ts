@@ -103,7 +103,7 @@ describe('Command Centre dashboards', () => {
     expect(d.body.attention.overdueInvoices).toBeNull();
   });
 
-  it('revenue and collections are for Founder, Admin and Finance only', async () => {
+  it('revenue and collections are for Founder, Branch Manager and Finance only', async () => {
     await http().get('/insights/revenue').set(as('design.head')).expect(403);
     await http().get('/insights/collections').set(as('am')).expect(403);
     await http().get('/insights/revenue').set(as('owner')).expect(403);
@@ -133,7 +133,7 @@ describe('Command Centre dashboards', () => {
 });
 
 describe('finance desk', () => {
-  it('only Founder, Admin and Finance can open it; others get 403', async () => {
+  it('only Founder, Branch Manager and Finance can open it; others get 403', async () => {
     await http().get('/finance/invoices').set(as('am')).expect(403);
     await http().get('/finance/invoices').set(as('owner')).expect(403);
     await http().get('/finance/payments').set(as('design.head')).expect(403);
@@ -173,7 +173,7 @@ describe('finance desk', () => {
 
   it('issues numbered credit notes with GST and never more than the invoice total', async () => {
     await http().post('/finance/credit-notes').set(as('am')).send({ invoiceId: openId, amountPaise: 10_000, reason: 'Goodwill credit' }).expect(403);
-    // v11: Finance's credit notes wait for an Admin; the note is issued on approval.
+    // v11: Finance's credit notes wait for a Branch Manager; the note is issued on approval.
     const req = await http().post('/finance/credit-notes').set(as('finance')).send({ invoiceId: openId, amountPaise: 50_000, reason: 'One post dropped' }).expect(201);
     expect(req.body.pending).toBe(true);
     expect(await prisma.creditNote.count({ where: { invoiceId: openId } })).toBe(0);

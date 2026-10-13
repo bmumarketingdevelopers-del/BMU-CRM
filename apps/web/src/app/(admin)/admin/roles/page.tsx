@@ -35,7 +35,7 @@ export default function RolesPage() {
   const roles = useLoad(() => api.org.roles());
   const [error, setError] = useState<string>();
   const [audience, setAudience] = useState<"team" | "client">("team");
-  // v11 people: custom roles are made by cloning a role and adjusting scopes; an Admin's go to the Founder.
+  // v11 people: custom roles are made by cloning a role and adjusting scopes; a Branch Manager's go to the Founder.
   const { me } = useActions();
   const [custom, setCustom] = useState<{ from?: RoleWithPermissions } | null>(
     null,

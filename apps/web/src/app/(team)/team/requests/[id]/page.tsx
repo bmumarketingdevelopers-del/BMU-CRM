@@ -225,7 +225,7 @@ export default function TeamRequestPage({ params }: { params: Promise<{ id: stri
                     <Input type="number" min={1} max={100} value={qty} onChange={(e) => setQty(Number(e.target.value) || 1)} className="w-20" aria-label="Quantity" />
                     <Input value={timeline} onChange={(e) => setTimeline(e.target.value)} placeholder="Timeline, e.g. 3 working days" />
                   </div>
-                  {r.can.quoteCustom && <Input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Or a custom amount in ₹ (Founder/Admin)" inputMode="decimal" />}
+                  {r.can.quoteCustom && <Input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Or a custom amount in ₹ (Founder/Branch Manager)" inputMode="decimal" />}
                   {pick && !custom && <p className="text-xs text-ink-muted">Quote: {formatINR(pick.pricePaise! * qty)} + GST</p>}
                   <Button
                     disabled={busy || timeline.trim().length < 2 || (!addOnId && !custom)}

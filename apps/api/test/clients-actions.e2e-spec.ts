@@ -1,7 +1,7 @@
 // v11 clients: add a client by hand (no lead) with duplicate check, offline payment confirmed by Finance and the
 // payment gate; migrated clients with their current gate; edit with field-level rights; client users (AM-invited
 // Owner needs the Owner's confirmation); brands; AM reassignment seen by the client; add service / change tier
-// quotes; pause with AM Lead approval; offboarding with Admin approval and read-only access; health; import; lead
+// quotes; pause with AM Lead approval; offboarding with Branch Manager approval and read-only access; health; import; lead
 // conversion; and the request actions (raise on behalf, reassign, custom quote limit, convert to tasks, internal
 // approval). Forbidden roles get 403 with a plain-English message.
 import 'dotenv/config';
@@ -118,10 +118,10 @@ afterAll(async () => {
 });
 
 describe('add_client: who may add, validation and duplicates', () => {
-  it('refuses roles outside Founder, Admin, Sales Manager and AM Lead', async () => {
+  it('refuses roles outside Founder, Branch Manager, Sales Manager and AM Lead', async () => {
     for (const who of ['am', 'design', 'finance']) {
       const r = await http().post('/clients-actions').set(as(who)).send(base('Nope')).expect(code(403));
-      expect(r.body.message).toMatch(/Founder|Admin|Sales Manager|AM Lead/);
+      expect(r.body.message).toMatch(/Founder|Branch Manager|Sales Manager|AM Lead/);
     }
   });
 
@@ -444,7 +444,7 @@ describe('requests: raise on behalf, reassign, custom quote, convert, internal a
     expect((await prisma.task.findUniqueOrThrow({ where: { id: c.body.taskIds[0] } })).flowStep).toBe(`request:${ids.req}`);
   });
 
-  it('custom-priced add-on: above the limit goes to an Admin first, below is sent', async () => {
+  it('custom-priced add-on: above the limit goes to a Branch Manager first, below is sent', async () => {
     const big = await http().post('/clients-actions/requests').set(as('am')).send({ engagementId: ids.manualEng, type: 'new_scope', description: tag('Full brand film') }).expect(code(201));
     const r = await http().post(`/clients-actions/requests/${big.body.id}/custom-quote`).set(as('am')).send({ amountPaise: 9_000_000, timeline: '3 weeks', item: 'Brand film' }).expect(code(200));
     expect(r.body.approval.id).toBeTruthy();

@@ -44,7 +44,7 @@ export class FlagsService {
   }
 
   async set(me: Me, key: FeatureFlagKey, input: FeatureFlagUpdate, ip?: string) {
-    if (!me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only Founders and Admins change feature flags');
+    if (!me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only Founders and Branch Managers change feature flags');
     const before = (await this.rows(me.orgId)).find((r) => r.key === key);
     await this.prisma.featureFlag.upsert({
       where: { orgId_key: { orgId: me.orgId, key } },

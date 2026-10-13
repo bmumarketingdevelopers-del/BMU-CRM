@@ -20,7 +20,7 @@ export default function NewWorkflowPage() {
           </Link>
         }
       />
-      <WithData state={state}>{(options) => (options.canManage ? <WorkflowBuilder options={options} /> : <WorkflowHint>Only the Founder and Admins can create workflows.</WorkflowHint>)}</WithData>
+      <WithData state={state}>{(options) => (options.canManage ? <WorkflowBuilder options={options} /> : <WorkflowHint>Only the Founder and Branch Managers can create workflows.</WorkflowHint>)}</WithData>
     </>
   );
 }

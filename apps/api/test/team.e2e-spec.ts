@@ -97,11 +97,11 @@ describe('sign in', () => {
 describe('users, roles and permissions', () => {
   let invitedId: string;
 
-  it('lets HR invite a team member who can then sign in', async () => {
+  it('the Founder invites a team member who can then sign in; other HR members use Add person (approval)', async () => {
     const producerRole = await role('producer');
-    await http().post('/org/users').set(as('hr')).send({ name: 'Invited Person', email: mail('invited'), roleId: (await role('admin')).id }).expect(403);
-    await http().post('/org/users').set(as('hr')).send({ name: 'Bad Phone', phone: '12345', roleId: producerRole.id }).expect(400);
-    const r = await http().post('/org/users').set(as('hr')).send({ name: 'Invited Person', email: mail('invited'), roleId: producerRole.id, managerId: await userId('design.head@bmu.demo') }).expect(201);
+    await http().post('/org/users').set(as('hr')).send({ name: 'Invited Person', email: mail('invited'), roleId: producerRole.id }).expect(403);
+    await http().post('/org/users').set(as('founder')).send({ name: 'Bad Phone', phone: '12345', roleId: producerRole.id }).expect(400);
+    const r = await http().post('/org/users').set(as('founder')).send({ name: 'Invited Person', email: mail('invited'), roleId: producerRole.id, managerId: await userId('design.head@bmu.demo') }).expect(201);
     invitedId = r.body.id;
     expect(r.body.status).toBe('invited');
     tokens.invited = await signIn(mail('invited'));
@@ -261,13 +261,14 @@ describe('onboarding and offboarding', () => {
   let processId: string;
   let sopId: string;
 
-  it('HR starts onboarding a new hire with SOPs to read; the hire acknowledges them', async () => {
+  it('a new hire is onboarded with SOPs to read (by the Founder: other HR members add people through approval); the hire acknowledges them', async () => {
     const sop = await prisma.sOP.findFirstOrThrow({ where: { orgId, status: 'published' } });
     sopId = sop.id;
     await http().post('/team-flows/people/onboarding').set(as('producer')).send({ newHire: { name: 'Nope', email: mail('nope'), roleId: (await role('producer')).id } }).expect(403);
+    await http().post('/team-flows/people/onboarding').set(as('hr')).send({ newHire: { name: 'Nope', email: mail('nope2'), roleId: (await role('producer')).id } }).expect(403);
     const r = await http()
       .post('/team-flows/people/onboarding')
-      .set(as('hr'))
+      .set(as('founder'))
       .send({ newHire: { name: `New Hire ${stamp}`, email: mail('hire'), roleId: (await role('producer')).id }, buddyId: await userId('producer@bmu.demo'), sopIds: [sop.id] })
       .expect(201);
     processId = r.body.id;

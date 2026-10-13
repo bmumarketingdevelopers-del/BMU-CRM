@@ -309,7 +309,7 @@ describe('finance', () => {
     expect(p.recordedById).toBe(ids.finance);
   });
 
-  it('due date: reason required; up to 7 days applies; more needs an Admin', async () => {
+  it('due date: reason required; up to 7 days applies; more needs a Branch Manager', async () => {
     const inv = await prisma.invoice.findUniqueOrThrow({ where: { id: ids.invoice } });
     const plus = (d: number) => new Date(inv.dueDate.getTime() + d * 86_400_000 + 5.5 * 3_600_000).toISOString().slice(0, 10);
     await http().post(`/ops/finance/invoices/${ids.invoice}/due-date`).set(as('finance')).send({ dueDate: plus(3) }).expect(400);
@@ -463,7 +463,7 @@ describe('files', () => {
     await http().get(`/files/${ids.file}?download=1`).set(as('client')).expect(200);
   });
 
-  it('share link: AM or Admin, expiry required, optional password checked on the public page', async () => {
+  it('share link: AM or Branch Manager, expiry required, optional password checked on the public page', async () => {
     await http().post(`/ops/files/${ids.file}/shares`).set(as('head')).send({ expiresInDays: 7 }).expect(403);
     await http().post(`/ops/files/${ids.file}/shares`).set(as('am')).send({}).expect(400);
     const s = await http().post(`/ops/files/${ids.file}/shares`).set(as('am')).send({ expiresInDays: 7, password: 'sun123' }).expect(201);
@@ -576,11 +576,11 @@ describe('admin configuration', () => {
     await http().put('/settings/holidays').set(as('am')).send(all.holidays).expect(403);
   });
 
-  it('department heads draft SOPs and templates; an Admin publishes them', async () => {
+  it('department heads draft SOPs and templates; a Branch Manager publishes them', async () => {
     const dept = (await prisma.user.findUniqueOrThrow({ where: { id: ids.head } })).departmentId!;
     const s = await http().post('/admin-platform/sops').set(as('head')).send({ title: `Head SOP ${stamp}`, body: 'Step one, step two, step three.', departmentId: dept, status: 'published' }).expect(201);
     expect(s.body.status).toBe('draft');
-    expect(s.body.notice).toMatch(/Admin/);
+    expect(s.body.notice).toMatch(/Branch Manager/);
     const req = await prisma.approvalRequest.findFirstOrThrow({ where: { action: 'sop.publish', targetId: s.body.id, status: 'pending' } });
     await decide('admin', req.id);
     expect((await prisma.sOP.findUniqueOrThrow({ where: { id: s.body.id } })).status).toBe('published');

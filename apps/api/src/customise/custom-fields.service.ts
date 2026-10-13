@@ -33,7 +33,7 @@ const assertStaff = (me: Me) => {
   if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
 };
 const assertAdmin = (me: Me) => {
-  if (!isFoundingAdmin(me)) throw new ForbiddenException('Only the Founder and Admins can change custom fields');
+  if (!isFoundingAdmin(me)) throw new ForbiddenException('Only the Founder and Branch Managers can change custom fields');
 };
 export const isCustomEntity = (v: string): v is CustomFieldEntity => (CUSTOM_FIELD_ENTITIES as readonly string[]).includes(v);
 

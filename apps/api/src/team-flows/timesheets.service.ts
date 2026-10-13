@@ -33,7 +33,7 @@ export class TimesheetsService {
     return mondayOf(raw ?? istDate(new Date()));
   }
 
-  /** Whether `me` approves this person's timesheets: their manager, their department head, or HR/Admin/Founder. */
+  /** Whether `me` approves this person's timesheets: their manager, their department head, or HR/Branch Manager/Founder. */
   private async approverOf(me: Me, user: { id: string; managerId: string | null; departmentId: string | null }) {
     if (!isStaff(me) || me.id === user.id) return false;
     if (isHrApprover(me) || user.managerId === me.id) return true;

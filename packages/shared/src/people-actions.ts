@@ -196,8 +196,9 @@ export type PeopleOptions = {
   me: { id: string; departmentId: string | null };
 };
 export type PeopleCan = {
+  /** The Founder and HR only. */
   addPerson: boolean;
-  /** Department heads: adds go to an Admin for approval. */
+  /** HR members other than the HR Department Head: adds wait for a Founder or the HR Department Head. */
   addNeedsApproval: boolean;
   addUnit: boolean;
   addPod: boolean;

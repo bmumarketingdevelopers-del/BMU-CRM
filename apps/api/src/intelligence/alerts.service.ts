@@ -105,7 +105,7 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async create(me: Me, body: unknown, ip?: string) {
-    if (!this.canEdit(me)) throw new ForbiddenException('Only the Founder or an Admin can set up alerts');
+    if (!this.canEdit(me)) throw new ForbiddenException('Only the Founder or a Branch Manager can set up alerts');
     const input = parse(metricAlertSchema, body);
     await this.metrics.assertCanSee(me, input.metricKey);
     const a = await this.prisma.metricAlert.create({ data: { orgId: me.orgId, ...input, clientOrgId: input.scope === 'client' ? input.clientOrgId : null, createdById: me.id } });
@@ -114,7 +114,7 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async update(me: Me, id: string, body: unknown, ip?: string) {
-    if (!this.canEdit(me)) throw new ForbiddenException('Only the Founder or an Admin can change alerts');
+    if (!this.canEdit(me)) throw new ForbiddenException('Only the Founder or a Branch Manager can change alerts');
     const before = await this.prisma.metricAlert.findFirst({ where: { id, orgId: me.orgId } });
     if (!before) throw new NotFoundException('Alert not found');
     const input = parse(metricAlertSchema, { ...before, clientOrgId: before.clientOrgId, ...(body as object) });
@@ -124,7 +124,7 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async remove(me: Me, id: string, ip?: string) {
-    if (!this.canEdit(me)) throw new ForbiddenException('Only the Founder or an Admin can delete alerts');
+    if (!this.canEdit(me)) throw new ForbiddenException('Only the Founder or a Branch Manager can delete alerts');
     const a = await this.prisma.metricAlert.findFirst({ where: { id, orgId: me.orgId } });
     if (!a) throw new NotFoundException('Alert not found');
     if (a.builtIn) throw new ForbiddenException('Built-in alerts can be switched off but not deleted');

@@ -20,10 +20,10 @@ export class SopsController {
     private readonly approvals: ApprovalsService,
   ) {}
 
-  /** v11 ops: department heads write drafts; publishing goes to an Admin for approval (approval handler in ops-admin). */
+  /** v11 ops: department heads write drafts; publishing goes to a Branch Manager for approval (approval handler in ops-admin). */
   private async askToPublish(me: Me, sopId: string, content: { title: string; body: string; departmentId: string }, ip?: string) {
     await this.approvals.create(me, { action: 'sop.publish', targetType: 'sop', targetId: sopId, summary: `Publish SOP "${content.title}"`, payload: content, reason: 'Department draft ready to publish', approverId: null, approverRoles: ['admin'] }, ip);
-    return 'Sent to an Admin to publish';
+    return 'Sent to a Branch Manager to publish';
   }
 
   /** Department ids this user may write SOPs in; null = all. */
@@ -138,7 +138,7 @@ export class SopsController {
     await this.assertDepartment(me, before.departmentId, editable);
     if (input.departmentId !== before.departmentId) await this.assertDepartment(me, input.departmentId, editable);
     if (!isFounderOrAdmin(me) && (before.status === 'published' || input.status === 'published')) {
-      // A live SOP stays as it is until an Admin approves the department head's change.
+      // A live SOP stays as it is until a Branch Manager approves the department head's change.
       if (before.status !== 'published') await this.prisma.sOP.update({ where: { id }, data: { title: input.title, body: input.body, departmentId: input.departmentId } });
       const notice = await this.askToPublish(me, id, { title: input.title, body: input.body, departmentId: input.departmentId }, ip);
       const cur = await this.prisma.sOP.findUniqueOrThrow({ where: { id }, include: { department: { select: { id: true, name: true } } } });

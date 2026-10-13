@@ -1,6 +1,6 @@
 // v19 outgoing webhooks. Every audited action is a domain event (v13 bus); subscriptions whose event list matches
 // get a delivery row. A dispatcher sends them as signed JSON POSTs and retries failures after 1 min, 5 min, 30 min,
-// 2 h, 6 h and 12 h; after 7 tries the delivery is "dead" (Founder and Admin are told when a URL starts failing).
+// 2 h, 6 h and 12 h; after 7 tries the delivery is "dead" (Founder and Branch Manager are told when a URL starts failing).
 // Signature: X-BMU-Signature = "sha256=" + hex HMAC-SHA256(secret, `${X-BMU-Timestamp}.${raw body}`).
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -74,7 +74,7 @@ export class WebhooksService implements OnModuleInit, OnModuleDestroy {
   }
 
   private assertAdmin(me: Me) {
-    if (me.type !== 'staff' || !hasRole(me, 'founder', 'admin')) throw new ForbiddenException('Only Founders and Admins can manage API keys and webhooks');
+    if (me.type !== 'staff' || !hasRole(me, 'founder', 'admin')) throw new ForbiddenException('Only Founders and Branch Managers can manage API keys and webhooks');
   }
 
   // ------------------------------------------------------------------------------------------------ queueing

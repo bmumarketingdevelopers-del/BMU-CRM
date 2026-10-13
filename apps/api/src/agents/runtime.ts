@@ -230,7 +230,7 @@ export class AgentRuntime {
     if (!step) throw new NotFoundException('Step not found');
     if (!step.undo) throw new BadRequestException('There is nothing to undo for this step');
     if (step.undoneAt) throw new BadRequestException('Already undone');
-    if (!(await this.canUndo(me, run, step))) throw new ForbiddenException('Only the Founder, Admins, the person the agent acts for, or the person who approved it can undo this');
+    if (!(await this.canUndo(me, run, step))) throw new ForbiddenException('Only the Founder, Branch Managers, the person the agent acts for, or the person who approved it can undo this');
     const claimed = await this.prisma.agentStep.updateMany({ where: { id: step.id, undoneAt: null }, data: { undoneAt: new Date(), undoneById: me.id } });
     if (!claimed.count) throw new BadRequestException('Already undone');
     await this.restore(step.undo as unknown as UndoRow[]);
@@ -243,7 +243,7 @@ export class AgentRuntime {
     if (!run) throw new NotFoundException('Run not found');
     const todo = (await this.prisma.agentStep.findMany({ where: { runId, undoneAt: null }, orderBy: { seq: 'desc' } })).filter((s) => s.undo !== null);
     if (!todo.length) throw new BadRequestException('There is nothing left to undo in this run');
-    for (const s of todo) if (!(await this.canUndo(me, run, s))) throw new ForbiddenException('Only the Founder, Admins, the person the agent acts for, or the person who approved it can undo this');
+    for (const s of todo) if (!(await this.canUndo(me, run, s))) throw new ForbiddenException('Only the Founder, Branch Managers, the person the agent acts for, or the person who approved it can undo this');
     for (const s of todo) {
       const claimed = await this.prisma.agentStep.updateMany({ where: { id: s.id, undoneAt: null }, data: { undoneAt: new Date(), undoneById: me.id } });
       if (claimed.count) await this.restore(s.undo as unknown as UndoRow[]);

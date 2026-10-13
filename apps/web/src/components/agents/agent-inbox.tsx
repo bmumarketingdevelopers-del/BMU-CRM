@@ -152,7 +152,7 @@ function Proposal({ p, runHref, onDone }: { p: AgentProposalView; runHref: (id: 
                 </Button>
               </>
             )}
-            {p.status === "pending" && !p.canDecide && <span className="text-xs text-ink-muted">Waiting for {p.actingFor ?? "the right person"} or an Admin.</span>}
+            {p.status === "pending" && !p.canDecide && <span className="text-xs text-ink-muted">Waiting for {p.actingFor ?? "the right person"} or a Branch Manager.</span>}
             {p.decidedBy && (
               <span className="text-xs text-ink-muted">
                 {p.status === "approved" ? "Approved" : "Rejected"} by {p.decidedBy} · {fmtWhen(p.decidedAt)}

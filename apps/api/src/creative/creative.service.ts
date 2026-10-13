@@ -135,7 +135,7 @@ export class CreativeService implements OnModuleInit, OnModuleDestroy {
     return this.settings(me);
   }
 
-  /** Founder, Admin, AM Lead or the client's AM decide whether BMU may approve posts for this client. */
+  /** Founder, Branch Manager, AM Lead or the client's AM decide whether BMU may approve posts for this client. */
   async setPublishRule(me: Me, clientOrgId: string, body: unknown, ip?: string) {
     const input = parse(publishRuleSchema, body);
     const c = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId, deletedAt: null } });
@@ -281,7 +281,7 @@ export class CreativeService implements OnModuleInit, OnModuleDestroy {
   }
 
   async runTimers(me: Me) {
-    if (!hasRole(me, 'founder', 'admin')) throw new ForbiddenException('Founder and Admins only');
+    if (!hasRole(me, 'founder', 'admin')) throw new ForbiddenException('Founder and Branch Managers only');
     return this.tick(new Date(), me.orgId);
   }
 }

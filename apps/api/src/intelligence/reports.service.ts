@@ -112,7 +112,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   async update(me: Me, id: string, body: unknown, ip?: string) {
     this.assertReader(me);
     const before = await this.one(me, id);
-    if (before.createdById !== me.id && !me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only the person who set it up (or the Founder / an Admin) can change it');
+    if (before.createdById !== me.id && !me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only the person who set it up (or the Founder / a Branch Manager) can change it');
     const input = parse(scheduledReportSchema, { ...before, ...(body as object) });
     await this.validate(me, input);
     const r = await this.prisma.scheduledReport.update({
@@ -126,7 +126,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   async remove(me: Me, id: string, ip?: string) {
     this.assertReader(me);
     const r = await this.one(me, id);
-    if (r.createdById !== me.id && !me.roles.some((x) => x === 'founder' || x === 'admin')) throw new ForbiddenException('Only the person who set it up (or the Founder / an Admin) can delete it');
+    if (r.createdById !== me.id && !me.roles.some((x) => x === 'founder' || x === 'admin')) throw new ForbiddenException('Only the person who set it up (or the Founder / a Branch Manager) can delete it');
     await this.prisma.scheduledReport.delete({ where: { id } });
     await this.audit.log(me, 'report.deleted', 'ScheduledReport', id, r, undefined, ip);
     return { ok: true as const };

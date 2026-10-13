@@ -12,7 +12,7 @@ export class FlowsController {
     private readonly journeys: JourneyService,
   ) {}
 
-  /** Founder, Admin, AM Lead and Department Heads. */
+  /** Founder, Branch Manager, AM Lead and Department Heads. */
   @Get('map')
   map(@CurrentUser() me: Me, @Query('from') from?: string, @Query('to') to?: string): Promise<FlowMap> {
     return this.flows.map(me, from, to);
@@ -36,7 +36,7 @@ export class FlowsController {
     return this.journeys.journey(me, id);
   }
 
-  /** Founder and Admin only. */
+  /** Founder and Branch Manager only. */
   @Get('pulse')
   pulse(@CurrentUser() me: Me): Promise<FlowPulse> {
     return this.flows.pulse(me);

@@ -31,7 +31,7 @@ export function widgetLabel(w: DashboardWidget, host?: DashboardBuiltinKey | nul
 
 export const widgetKind = (w: DashboardWidget) => dashboardWidgetTypeLabels[w.type];
 
-/** Money widgets only show numbers to the Founder, Admin and Finance. */
+/** Money widgets only show numbers to the Founder, Branch Manager and Finance. */
 export const isMoneyWidget = (w: DashboardWidget) =>
   ((w.type === "kpi" || w.type === "chart") && opsMetricInfo[w.metric].money) ||
   (w.type === "list" && !!dashboardListInfo[w.source].money) ||

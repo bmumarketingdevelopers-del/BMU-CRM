@@ -1,5 +1,5 @@
 // v20: each person's own sign-in security (Profile → Security): two-factor, passkeys and signed-in devices, plus
-// "sign this person out everywhere" for Founder and Admin.
+// "sign this person out everywhere" for Founder and Branch Manager.
 import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { z } from 'zod';
 import { passkeyNameSchema, totpCodeSchema, type Me } from '@bmu/shared';
@@ -86,11 +86,11 @@ export class SecurityController {
     return r;
   }
 
-  /** Founder and Admin: sign a person out of every device (lost phone, someone leaving). */
+  /** Founder and Branch Manager: sign a person out of every device (lost phone, someone leaving). */
   @Post('users/:id/sign-out')
   @HttpCode(200)
   async signOutUser(@CurrentUser() me: Me, @Param('id') id: string, @ClientIp() ip?: string) {
-    if (!me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only the Founder or an Admin can do this');
+    if (!me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only the Founder or a Branch Manager can do this');
     const user = await this.prisma.user.findFirst({ where: { id, orgId: me.orgId } });
     if (!user) throw new ForbiddenException('Person not found');
     const r = await this.sessions.revokeAll(id);

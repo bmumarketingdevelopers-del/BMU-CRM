@@ -264,7 +264,7 @@ function LeaveList({ rows, decide }: { rows: LeaveRow[]; decide: (l: LeaveRow, d
   return (
     <Panel
       title="Leave requests"
-      subtitle="The manager decides first. Leave over 3 working days then needs HR (HR, Admin or the Founder can decide at any stage). The person is notified."
+      subtitle="The manager decides first. Leave over 3 working days then needs HR (HR, Branch Manager or the Founder can decide at any stage). The person is notified."
       action={<Tabs value={show} onChange={setShow} options={[{ value: "pending", label: "Waiting" }, { value: "all", label: "All" }]} />}
       flush
     >

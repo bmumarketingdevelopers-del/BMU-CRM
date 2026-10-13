@@ -270,7 +270,7 @@ export class CapacityService {
   }
 
   async setWeeklyHours(me: Me, userId: string, body: unknown, ip?: string) {
-    if (!hasRole(me, 'founder', 'admin', 'hr_ops', 'department_head')) throw new ForbiddenException('Founder, Admin, HR and department heads set working hours');
+    if (!hasRole(me, 'founder', 'admin', 'hr_ops', 'department_head')) throw new ForbiddenException('Founder, Branch Manager, HR and department heads set working hours');
     const { weeklyHours } = parse(weeklyHoursSchema, body);
     const u = await this.prisma.user.findFirst({ where: { id: userId, orgId: me.orgId, type: 'staff' }, select: { weeklyHours: true } });
     if (!u) throw new NotFoundException('Person not found');

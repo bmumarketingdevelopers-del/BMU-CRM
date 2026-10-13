@@ -77,7 +77,7 @@ describe('who may read sales analytics', () => {
     }
   });
 
-  it('account managers cannot see money; Founder, Admin and Finance can', async () => {
+  it('account managers cannot see money; Founder, Branch Manager and Finance can', async () => {
     await http().get('/analytics/scorecard').set(as('am')).expect(403);
     await http().get('/analytics/profitability').set(as('am')).expect(403);
     for (const p of PAGES) await http().get(`/analytics/${p}`).set(as('finance')).expect(200);
@@ -171,7 +171,7 @@ describe('profitability', () => {
 });
 
 describe('settings editors', () => {
-  it('validates forecast and cost rates, and only Founder, Admin and Finance may change them', async () => {
+  it('validates forecast and cost rates, and only Founder, Branch Manager and Finance may change them', async () => {
     const before = (await http().get('/settings').set(as('founder')).expect(200)).body;
     await http().put('/settings/forecast').set(as('finance')).send({ stageProbabilityPct: { new: 150 }, monthlyTargetPaise: 100 }).expect(400);
     await http().put('/settings/forecast').set(as('finance')).send({ stageProbabilityPct: { new: 5 }, monthlyTargetPaise: -1 }).expect(400);

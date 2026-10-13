@@ -337,7 +337,7 @@ export class RequestsService implements OnModuleInit {
           if (!input.addOnId) throw new BadRequestException('Pick an add-on from the price list');
           const addOn = await this.prisma.addOn.findFirst({ where: { id: input.addOnId, orgId: r.orgId, priceBook: { status: 'active' } } });
           if (!addOn) throw new BadRequestException('Unknown add-on');
-          if (!addOn.pricePaise) throw new BadRequestException('This add-on is custom-quoted: ask the Founder or an Admin to price it');
+          if (!addOn.pricePaise) throw new BadRequestException('This add-on is custom-quoted: ask the Founder or a Branch Manager to price it');
           amount = addOn.pricePaise * input.quantity;
           data.addOnId = addOn.id;
         }

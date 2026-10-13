@@ -94,7 +94,7 @@ function Editor({ initial, canEdit, info }: { initial: Tenant; canEdit: boolean;
               ]}
             />
           ) : (
-            <p className="text-sm text-ink-muted">Plan details are visible to the Founder and Admins.</p>
+            <p className="text-sm text-ink-muted">Plan details are visible to the Founder and Branch Managers.</p>
           )}
         </Panel>
       </div>

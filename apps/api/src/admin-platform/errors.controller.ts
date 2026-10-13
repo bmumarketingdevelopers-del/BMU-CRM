@@ -69,7 +69,7 @@ export class ErrorsController {
 
   @Put(':id')
   async update(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string): Promise<ErrorLogView> {
-    if (!canEdit(me)) throw new ForbiddenException('Only Founder, Admin or department heads can edit error log entries');
+    if (!canEdit(me)) throw new ForbiddenException('Only Founder, Branch Manager or department heads can edit error log entries');
     const input = parse(errorLogInputSchema, body);
     const before = await this.prisma.errorLog.findFirst({ where: { id, orgId: me.orgId } });
     if (!before) throw new NotFoundException('Entry not found');

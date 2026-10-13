@@ -37,14 +37,14 @@ export class OffboardingService implements OnModuleInit {
       label: 'Confirm offboarding',
       href: (r) => `/admin/users/${r.targetId}`,
       apply: async ({ approver, req }) => {
-        if (!isFA(approver)) throw new ForbiddenException('Only an Admin can confirm offboarding');
+        if (!isFA(approver)) throw new ForbiddenException('Only a Branch Manager can confirm offboarding');
         return this.finish(approver, (req.payload as { processId: string }).processId);
       },
     });
     // The v10 checklist's "Complete" button follows the same blocking rules.
     this.team.offboardGuard = async (me, row) => {
       await this.assertNothingOpen(row.orgId, row.userId);
-      if (!isFA(me)) throw new BadRequestException('An Admin gives the final confirmation. Use "Confirm offboarding" on the person to send it to an Admin.');
+      if (!isFA(me)) throw new BadRequestException('A Branch Manager gives the final confirmation. Use "Confirm offboarding" on the person to send it to a Branch Manager.');
     };
   }
 
@@ -103,7 +103,7 @@ export class OffboardingService implements OnModuleInit {
 
   async status(me: Me, userId: string): Promise<PeopleOffboardingStatus> {
     staffOnly(me);
-    if (!peopleCan(me).offboard && !peopleCan(me).reassignWork) throw new ForbiddenException('Only HR, an Admin or the Founder can see offboarding');
+    if (!peopleCan(me).offboard && !peopleCan(me).reassignWork) throw new ForbiddenException('Only HR, a Branch Manager or the Founder can see offboarding');
     const u = await this.user(me, userId);
     await this.team.suspendDueLeavers(me.orgId);
     const row = await this.prisma.peopleProcess.findFirst({ where: { userId, kind: 'offboarding', status: { in: ['open', 'done'] } }, orderBy: { createdAt: 'desc' } });
@@ -112,7 +112,7 @@ export class OffboardingService implements OnModuleInit {
     const pendingItems = items.filter((i) => !i.done && i.key !== 'access_suspended' && !i.key.startsWith('reassign_')).map((i) => i.label);
     const blockers = [...(open.total ? [`Still owns ${this.describe(open).join(', ')}`] : []), ...(pendingItems.length ? [`${pendingItems.length} checklist item${pendingItems.length > 1 ? 's' : ''} open`] : [])];
     const pendingApproval = row ? await this.prisma.approvalRequest.findFirst({ where: { orgId: me.orgId, action: 'person.offboard', targetId: userId, status: 'pending' } }) : null;
-    if (pendingApproval) blockers.push('Waiting for an Admin to confirm');
+    if (pendingApproval) blockers.push('Waiting for a Branch Manager to confirm');
     return {
       person: { id: u.id, name: u.name },
       processId: row?.id ?? null,
@@ -128,7 +128,7 @@ export class OffboardingService implements OnModuleInit {
 
   async start(me: Me, userId: string, input: PeopleOffboard, ip?: string): Promise<PeopleOffboardingStatus> {
     staffOnly(me);
-    if (!peopleCan(me).offboard) throw new ForbiddenException('Only HR, an Admin or the Founder can offboard people');
+    if (!peopleCan(me).offboard) throw new ForbiddenException('Only HR, a Branch Manager or the Founder can offboard people');
     const u = await this.user(me, userId);
     if (u.leftAt) throw new BadRequestException(`${u.name} has already left`);
     const p = await this.team.startOffboarding(me, { userId, lastDay: input.lastDay, note: [input.reason, input.note].filter(Boolean).join(' · ') }, ip);
@@ -146,7 +146,7 @@ export class OffboardingService implements OnModuleInit {
   /** Hands over what the engine doesn't move: approvals waiting on them, and their creator briefs. */
   async handover(me: Me, userId: string, input: { kind: 'approvals' | 'briefs'; toUserId: string }, ip?: string): Promise<PeopleOffboardingStatus> {
     staffOnly(me);
-    if (!peopleCan(me).offboard) throw new ForbiddenException('Only HR, an Admin or the Founder can hand over work');
+    if (!peopleCan(me).offboard) throw new ForbiddenException('Only HR, a Branch Manager or the Founder can hand over work');
     const u = await this.user(me, userId);
     const to = await this.user(me, input.toUserId);
     if (to.id === u.id) throw new BadRequestException('Pick someone other than the person leaving');
@@ -166,10 +166,10 @@ export class OffboardingService implements OnModuleInit {
     return this.status(me, userId);
   }
 
-  /** Finish offboarding: blocked while anything is open; HR's request goes to an Admin for the final confirmation. */
+  /** Finish offboarding: blocked while anything is open; HR's request goes to a Branch Manager for the final confirmation. */
   async confirm(me: Me, userId: string, ip?: string) {
     staffOnly(me);
-    if (!peopleCan(me).offboard) throw new ForbiddenException('Only HR, an Admin or the Founder can finish offboarding');
+    if (!peopleCan(me).offboard) throw new ForbiddenException('Only HR, a Branch Manager or the Founder can finish offboarding');
     const u = await this.user(me, userId);
     const row = await this.prisma.peopleProcess.findFirst({ where: { userId, kind: 'offboarding', status: 'open' }, orderBy: { createdAt: 'desc' } });
     if (!row) throw new BadRequestException(`Start offboarding ${u.name} first`);
@@ -192,7 +192,7 @@ export class OffboardingService implements OnModuleInit {
         },
         ip,
       );
-      return { ok: true as const, id: userId, outcome: 'approval' as const, message: 'Sent to an Admin for the final confirmation', approval: { id: req.id, summary: req.summary }, undo: null };
+      return { ok: true as const, id: userId, outcome: 'approval' as const, message: 'Sent to a Branch Manager for the final confirmation', approval: { id: req.id, summary: req.summary }, undo: null };
     }
     await this.finish(me, row.id, ip);
     return { ok: true as const, id: userId, outcome: 'applied' as const, message: `Offboarding of ${u.name} confirmed`, approval: null, undo: null };

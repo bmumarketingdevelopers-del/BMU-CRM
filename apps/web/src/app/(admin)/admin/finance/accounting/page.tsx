@@ -119,7 +119,7 @@ function Body({ initial, canEdit }: { initial: Accounting; canEdit: boolean }) {
           </p>
         </form>
       </Panel>
-      <Panel className="min-w-0" title="Accounting software" subtitle={canEdit ? "Where your accountant keeps the books" : "Only Founder, Admin and Finance can change this"}>
+      <Panel className="min-w-0" title="Accounting software" subtitle={canEdit ? "Where your accountant keeps the books" : "Only Founder, Branch Manager and Finance can change this"}>
         <form onSubmit={saveTool} className="space-y-4">
           <Field label="Software">
             <Select value={tool} onChange={(e) => setTool(e.target.value as Accounting["tool"])} disabled={!canEdit} className="w-full !py-2">

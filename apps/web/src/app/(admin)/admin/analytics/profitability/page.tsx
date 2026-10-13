@@ -27,7 +27,7 @@ type SortKey = "name" | "revenuePaise" | "collectedPaise" | "hours" | "costPaise
 const ROLE_LABELS: Record<string, string> = {
   default: "Everyone else (default)",
   founder: "Founder",
-  admin: "Admin",
+  admin: "Branch Manager",
   account_manager: "Account manager",
   am_lead: "AM lead",
   strategist: "Strategist",
@@ -178,7 +178,7 @@ function CostEditor({ d, onSaved }: { d: SalesProfitabilityView; onSaved: () => 
   }
 
   return (
-    <Panel title="Hourly cost of the team" subtitle={d.canEdit ? "What one hour of each role costs us (salary and benefits), plus an overhead for rent, tools and admin." : "Only Founder, Admin and Finance can change these."}>
+    <Panel title="Hourly cost of the team" subtitle={d.canEdit ? "What one hour of each role costs us (salary and benefits), plus an overhead for rent, tools and admin." : "Only Founder, Branch Manager and Finance can change these."}>
       <form onSubmit={save} className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {keys.map((k) => (

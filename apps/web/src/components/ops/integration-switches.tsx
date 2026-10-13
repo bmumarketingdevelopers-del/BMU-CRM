@@ -25,7 +25,7 @@ export function IntegrationSwitches() {
     <section className="mb-6 border border-border bg-surface-raised" data-testid="integration-switches">
       <header className="border-b border-border px-5 py-3">
         <h2 className="text-[15px] font-semibold">Connect or disconnect</h2>
-        <p className="text-sm text-ink-muted">Founders and Admins only. A service can be connected once its keys are on the server.</p>
+        <p className="text-sm text-ink-muted">Founders and Branch Managers only. A service can be connected once its keys are on the server.</p>
       </header>
       {msg && <p className={`border-b border-border px-5 py-2 text-sm ${msg.bad ? "text-red" : ""}`} role="status">{msg.text}</p>}
       {!list.data ? (

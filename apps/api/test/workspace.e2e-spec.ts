@@ -174,7 +174,7 @@ describe('profile and leave', () => {
     const u = await prisma.user.findFirstOrThrow({ where: { email: `ws.staff.${stamp}@example.com` } });
     expect(u.phone).toBe(`+91${digits}`);
     await http().patch('/workspace/me').set(as('staff')).send({ name: 'L', phone: '' }).expect(400);
-    // Team members can't rename themselves (HR or an Admin does that).
+    // Team members can't rename themselves (HR or a Branch Manager does that).
     await http().patch('/workspace/me').set(as('staff')).send({ name: 'Someone Else', phone: '' }).expect(403);
   });
 });

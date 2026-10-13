@@ -9,7 +9,7 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
   const isClientTeam = me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager", "finance"].includes(r));
   const canQc = (me.permissions.qc_pass_fail?.scope ?? "none") !== "none";
   const isAdmin = me.roles.some((r) => ["founder", "admin", "department_head", "finance", "hr_ops", "am_lead"].includes(r));
-  // v12: Dashboards shows when the Studio has shared one with this person (Founder and Admin always see it).
+  // v12: Dashboards shows when the Studio has shared one with this person (Founder and Branch Manager always see it).
   const isStudio = me.roles.some((r) => r === "founder" || r === "admin");
   const dashboards = isStudio ? [] : await (await serverApi()).dashboards.mine().catch(() => []);
   const nav: NavSection[] = [

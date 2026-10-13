@@ -69,7 +69,7 @@ check(checkout.json.mode === "test" || checkout.json.mode === "razorpay", `check
 const left = detail.totalPaise - part;
 const net = Math.floor((left * 100) / 118);
 const cn = await apiCall(finance, "POST", "/finance/credit-notes", { invoiceId: invId, amountPaise: net, reason: `Goodwill discount [${stamp}]` });
-// v11: a credit note raised by Finance waits for an Admin's approval.
+// v11: a credit note raised by Finance waits for a Branch Manager's approval.
 check(cn.status === 201 && (cn.json.number || cn.json.approvalId), `credit note ${cn.json.number ?? "sent for approval"}`);
 if (cn.json.approvalId) {
   const ok = await apiCall(admin, "POST", `/actions/approvals/${cn.json.approvalId}/decide`, { decision: "approve" });

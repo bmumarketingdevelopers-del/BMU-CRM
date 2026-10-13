@@ -121,7 +121,7 @@ describe('compiled program', () => {
 });
 
 describe('permissions and validation', () => {
-  it('lets leads read but only the Founder and Admins change workflows', async () => {
+  it('lets leads read but only the Founder and Branch Managers change workflows', async () => {
     await http().get('/workflows/overview').set(as('producer')).expect(403);
     const ov = await http().get('/workflows/overview').set(as('amLead')).expect(200);
     expect(ov.body.canManage).toBe(false);

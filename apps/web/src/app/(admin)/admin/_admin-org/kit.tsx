@@ -40,7 +40,7 @@ export const gateLabel = (g: string) => {
 export const BILLING: Record<string, string> = { monthly: "Monthly", one_time: "One-time", per_unit: "Per unit" };
 export const ROLE_LABEL: Record<string, string> = {
   founder: "Founder",
-  admin: "Admin",
+  admin: "Branch Manager",
   department_head: "Department head",
   sales_manager: "Sales manager",
   sales_executive: "Sales executive",

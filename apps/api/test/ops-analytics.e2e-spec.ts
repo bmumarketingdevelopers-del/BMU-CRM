@@ -203,7 +203,7 @@ describe('report builder', () => {
     await http().post('/ops-analytics/explore').set(as('founder')).send({ metric: 'leads', dimension: 'month', from: '2026-03-01', to: '2026-02-01' }).expect(400);
   });
 
-  it('money metrics are for Founder, Admin and Finance only', async () => {
+  it('money metrics are for Founder, Branch Manager and Finance only', async () => {
     const cfg = { metric: 'revenue_collected', dimension: 'month', from: window.from, to: window.to, chart: 'columns' };
     await http().post('/ops-analytics/explore').set(as('head')).send(cfg).expect(403);
     await http().post('/ops-analytics/explore').set(as('amLead')).send(cfg).expect(403);

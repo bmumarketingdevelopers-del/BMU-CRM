@@ -43,7 +43,7 @@ export class OpsExploreService {
   ) {}
 
   private assertMetricAllowed(me: Me, config: OpsExploreConfig) {
-    if (opsMetricInfo[config.metric].money && !canSeeMoney(me)) throw new ForbiddenException('Money reports are for the Founder, Admin and Finance');
+    if (opsMetricInfo[config.metric].money && !canSeeMoney(me)) throw new ForbiddenException('Money reports are for the Founder, Branch Manager and Finance');
   }
 
   async explore(me: Me, body: unknown): Promise<OpsExploreResult> {
@@ -304,7 +304,7 @@ export class OpsExploreService {
     const row = await this.loadVisible(me, id);
     const v = this.view(row, me, '');
     if (!v) throw new NotFoundException('Report not found');
-    if (opsMetricInfo[v.config.metric].money && !canSeeMoney(me)) throw new ForbiddenException('Money reports are for the Founder, Admin and Finance');
+    if (opsMetricInfo[v.config.metric].money && !canSeeMoney(me)) throw new ForbiddenException('Money reports are for the Founder, Branch Manager and Finance');
     const owner = await this.prisma.user.findUnique({ where: { id: row.userId }, select: { name: true } });
     return { ...v, owner: owner?.name ?? 'Someone' };
   }

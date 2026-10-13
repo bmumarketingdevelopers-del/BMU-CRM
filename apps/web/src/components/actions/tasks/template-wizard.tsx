@@ -74,7 +74,7 @@ export function TemplateWizard({ open, onClose, onDone, engagementId: initialEng
           ))}
         </select>
       </Field>
-      {opts && !opts.templates.length && <p className="text-xs text-ink-muted">No templates yet. Admins add them in Command Centre → Templates.</p>}
+      {opts && !opts.templates.length && <p className="text-xs text-ink-muted">No templates yet. Branch Managers add them in Command Centre → Templates.</p>}
       <Field label="Client engagement" hint="Leave empty for internal work.">
         <select className={inputCls} value={engagementId} onChange={(e) => setEngagementId(e.target.value)} aria-label="Client engagement">
           <option value="">Internal</option>

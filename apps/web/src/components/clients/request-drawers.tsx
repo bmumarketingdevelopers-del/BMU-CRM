@@ -4,7 +4,7 @@
  * Request actions for the team (spec requests_approvals):
  * - RaiseRequestDrawer: "+ New → Request" and Client 360 "+ Add request": the AM raises a request on the client's behalf.
  * - ConvertToTasksDrawer: an approved (and paid) request → tasks, from a matching template when there is one.
- * - CustomQuoteDialog: a custom-priced add-on quote; above the limit it goes to an Admin first.
+ * - CustomQuoteDialog: a custom-priced add-on quote; above the limit it goes to a Branch Manager first.
  * - InternalApprovalDrawer: ask any colleague to approve something by a date ("+ New → Approval request").
  */
 import { useEffect, useMemo, useState } from "react";
@@ -196,7 +196,7 @@ export function CustomQuoteDialog({ requestId, open, onClose, onDone }: { reques
       footer={
         <>
           <button type="button" disabled={busy || !item.trim() || !paise || !timeline.trim()} onClick={send} className="bg-charcoal px-4 py-2 text-sm font-medium text-ivory disabled:opacity-40">
-            {paise > CLIENTS_ADDON_CUSTOM_LIMIT_PAISE ? "Send to Admin for approval" : "Send quote"}
+            {paise > CLIENTS_ADDON_CUSTOM_LIMIT_PAISE ? "Send to a Branch Manager for approval" : "Send quote"}
           </button>
           <button type="button" onClick={onClose} className="ml-auto px-3 py-2 text-sm text-ink-muted">
             Cancel
@@ -218,7 +218,7 @@ export function CustomQuoteDialog({ requestId, open, onClose, onDone }: { reques
       <Field label="Message to the client" htmlFor="cq-msg">
         <TextArea id="cq-msg" className="min-h-16" value={message} onChange={(e) => setMessage(e.target.value)} />
       </Field>
-      <p className="text-xs text-ink-muted">Custom prices above {formatINR(CLIENTS_ADDON_CUSTOM_LIMIT_PAISE)} need an Admin&apos;s approval before the client sees them.</p>
+      <p className="text-xs text-ink-muted">Custom prices above {formatINR(CLIENTS_ADDON_CUSTOM_LIMIT_PAISE)} need a Branch Manager&apos;s approval before the client sees them.</p>
       {error && <p className="border border-red bg-red/10 px-3 py-2 text-sm" role="alert">{error}</p>}
     </ActionDialog>
   );

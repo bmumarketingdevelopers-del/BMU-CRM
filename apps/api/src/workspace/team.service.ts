@@ -513,9 +513,9 @@ export class TeamWorkspaceService {
   /** Any signed-in person can update their own name and mobile number. */
   async updateMe(me: Me, input: UpdateMe, ip?: string) {
     const before = await this.prisma.user.findUniqueOrThrow({ where: { id: me.id }, select: { name: true, phone: true } });
-    // v11 actions spec: team members edit only their own contact details; name changes go through HR or an Admin.
+    // v11 actions spec: team members edit only their own contact details; name changes go through HR or a Branch Manager.
     const canRename = me.type !== 'staff' || me.roles.some((r) => ['founder', 'admin', 'hr_ops'].includes(r));
-    if (!canRename && input.name.trim() !== before.name) throw new ForbiddenException('Ask HR or an Admin to change your name. You can change your mobile number here.');
+    if (!canRename && input.name.trim() !== before.name) throw new ForbiddenException('Ask HR or a Branch Manager to change your name. You can change your mobile number here.');
     const phone = input.phone === undefined ? undefined : input.phone ? normaliseIdentifier(input.phone) : null;
     try {
       await this.prisma.user.update({ where: { id: me.id }, data: { name: input.name, ...(phone !== undefined ? { phone } : {}) } });

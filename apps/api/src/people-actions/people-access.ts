@@ -1,6 +1,6 @@
 // v11 people: who may do which hierarchy action (spec actions.organisation_hierarchy + approval_matrix).
 import { ForbiddenException } from '@nestjs/common';
-import { peopleTopRank, peopleRoleRank, type Me, type PeopleCan } from '@bmu/shared';
+import { type Me, type PeopleCan } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 
@@ -16,13 +16,29 @@ export const isFA = (me: Me) => has(me, 'founder', 'admin');
 export const isHR = (me: Me) => has(me, 'hr_ops') && capable(me);
 export const isDH = (me: Me) => has(me, 'department_head') && capable(me);
 
+/**
+ * Who may add people (create team accounts): the Founder and HR only. Every way of adding someone checks this:
+ * Add person, bulk import, the older invite form and "new hire" onboarding. Branch Managers and Department Heads ask
+ * HR or the Founder.
+ */
+export const canAddPeople = (me: Me) => (isFounder(me) && capable(me)) || isHR(me);
+
+/** The HR Department Head: someone with both the HR / Ops and the Department Head roles. */
+export const isHrHead = (me: Me) => isHR(me) && has(me, 'department_head');
+
+/**
+ * Who may approve a new person, and who adds without approval: a Founder or the HR Department Head. Other HR members'
+ * additions wait for one of them (through Add person only: the other ways of adding someone are for these two).
+ */
+export const approvesNewPeople = (me: Me) => (isFounder(me) && capable(me)) || isHrHead(me);
+
 export function peopleCan(me: Me): PeopleCan {
   const fa = isFA(me) && capable(me);
   const hr = isHR(me);
   const dh = isDH(me);
   return {
-    addPerson: fa || hr || dh,
-    addNeedsApproval: dh && !fa && !hr,
+    addPerson: canAddPeople(me),
+    addNeedsApproval: canAddPeople(me) && !approvesNewPeople(me),
     addUnit: fa,
     addPod: fa || has(me, 'am_lead'),
     move: fa || dh,
@@ -30,20 +46,20 @@ export function peopleCan(me: Me): PeopleCan {
     offboard: fa || hr,
     reassignWork: fa || dh || has(me, 'am_lead'),
     customRole: fa,
-    import: fa || hr,
+    import: approvesNewPeople(me),
     edit: fa || hr,
   };
 }
 
-/** Hierarchy screens: Founder, Admin, HR and Department Heads (who see their own department's people). */
+/** Hierarchy screens: Founder, Branch Manager, HR and Department Heads (who see their own department's people). */
 export function assertPeopleReader(me: Me) {
   staffOnly(me);
   if (!(has(me, 'founder', 'admin', 'hr_ops', 'department_head') && capable(me)) && !has(me, 'am_lead')) throw new ForbiddenException("You don't have access to the organisation");
 }
 
 /**
- * Can `me` give someone this base role? Founder: anyone. Admin: ranks below Admin; the Admin role needs the Founder.
- * HR (adding only): never Founder, Admin or client roles. Department Head (adding only, own dept): ranks below them.
+ * Can `me` give someone this base role? Founder: anyone. Admin: ranks below Admin; the Branch Manager role needs the Founder.
+ * HR (adding only): never Founder, Branch Manager or client roles.
  * Rule: the person granting must be at least one rank above the new role.
  */
 export function rolePolicy(me: Me, baseRole: string, mode: 'add' | 'change'): { ok: boolean; needsFounder: boolean; whyNot: string | null } {
@@ -54,14 +70,9 @@ export function rolePolicy(me: Me, baseRole: string, mode: 'add' | 'change'): { 
     if (baseRole === 'admin') return { ok: true, needsFounder: true, whyNot: null };
     return { ok: true, needsFounder: false, whyNot: null };
   }
-  if (mode === 'change') return { ok: false, needsFounder: false, whyNot: 'Only the Founder or an Admin can change roles' };
+  if (mode === 'change') return { ok: false, needsFounder: false, whyNot: 'Only the Founder or a Branch Manager can change roles' };
   if (has(me, 'hr_ops')) {
-    if (baseRole === 'admin') return { ok: false, needsFounder: false, whyNot: 'HR cannot add someone as Founder or Admin' };
-    return { ok: true, needsFounder: false, whyNot: null };
-  }
-  if (has(me, 'department_head')) {
-    const rank = peopleRoleRank(baseRole);
-    if (rank <= peopleTopRank(['department_head']) + 1) return { ok: false, needsFounder: false, whyNot: 'Department heads can add people below them only' };
+    if (baseRole === 'admin') return { ok: false, needsFounder: false, whyNot: 'HR cannot add someone as Founder or Branch Manager' };
     return { ok: true, needsFounder: false, whyNot: null };
   }
   return { ok: false, needsFounder: false, whyNot: "You can't give roles" };

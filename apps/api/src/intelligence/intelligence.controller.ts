@@ -78,7 +78,7 @@ export class IntelligenceController {
   @Post('alerts/check')
   @HttpCode(200)
   async checkAlerts(@CurrentUser() me: Me) {
-    if (!me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only the Founder or an Admin can run the alert check');
+    if (!me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('Only the Founder or a Branch Manager can run the alert check');
     return { fired: await this.alerts.check(me.orgId) };
   }
 

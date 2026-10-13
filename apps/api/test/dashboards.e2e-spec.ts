@@ -59,7 +59,7 @@ describe('Studio list and permissions', () => {
     expect(r.body.roles.some((x: { id: string }) => x.id === 'sales_executive')).toBe(true);
   });
 
-  it('only the Founder and Admins can open the Studio or change a dashboard', async () => {
+  it('only the Founder and Branch Managers can open the Studio or change a dashboard', async () => {
     for (const who of ['am', 'finance', 'sales', 'producer', 'client']) await http().get('/dashboards').set(as(who)).expect(403);
     const d = await builtin('my_day');
     await http().patch(`/dashboards/${d.id}`).set(as('am')).send({ layout: [] }).expect(403);

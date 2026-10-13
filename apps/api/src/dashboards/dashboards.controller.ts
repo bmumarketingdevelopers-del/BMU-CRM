@@ -4,7 +4,7 @@ import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { DashboardDataService } from './dashboard-data.service.js';
 import { DashboardsService } from './dashboards.service.js';
 
-/** v12 Dashboard Studio. Editing is for the Founder and Admins; widget data is scoped to whoever is looking. */
+/** v12 Dashboard Studio. Editing is for the Founder and Branch Managers; widget data is scoped to whoever is looking. */
 @Controller('dashboards')
 export class DashboardsController {
   constructor(

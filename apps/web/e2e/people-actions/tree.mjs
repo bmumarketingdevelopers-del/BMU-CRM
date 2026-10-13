@@ -1,4 +1,4 @@
-// v11 people journey: the Hierarchy Tree. An Admin adds a person from a team node in under 60 seconds (pre-filled
+// v11 people journey: the Hierarchy Tree. A Branch Manager adds a person from a team node in under 60 seconds (pre-filled
 // department, team and manager, permission preview, invite), drags someone onto another team (Move dialog with the
 // access preview, effective date and reason), opens the profile drawer (Change role diff) and toggles load / leave.
 // On a phone (390px) the tree fits and Move works from the drawer.
@@ -6,7 +6,14 @@
 import { BASE, apiCall, as, check, cleanUp, done, go, journeyEmail, journeyPhone, launch, noErrors, noSideScroll, pick, shot, stamp, toast } from "./lib.mjs";
 
 const browser = await launch();
-const admin = await as(browser, "admin@bmu.demo");
+// Only the Founder or HR add people, so this journey (which adds one from the tree) signs in as the Founder.
+const admin = await as(browser, "founder@bmu.demo");
+
+console.log("0. A Branch Manager sees the tree but no Add person buttons");
+const branchManager = await as(browser, "admin@bmu.demo");
+await go(branchManager, "/admin/hierarchy");
+await branchManager.locator('[data-node^="department:"]').first().waitFor({ timeout: 20000 });
+check((await branchManager.locator("[data-add-person]").count()) === 0, "no Add person for a Branch Manager");
 
 console.log("1. Tree loads with nodes, add buttons and toggles");
 await go(admin, "/admin/hierarchy");

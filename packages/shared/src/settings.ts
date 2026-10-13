@@ -154,7 +154,7 @@ export const settingsDefaults: AllSettings = {
     features: { copilot: true, sales: true, delivery: true, clientService: true, management: true, automations: true, clientPortal: true, agents: true },
   },
   fieldAccess: {},
-  // Two-factor is required for these roles once someone turns it on (Founder, Admin and Finance recommended).
+  // Two-factor is required for these roles once someone turns it on (Founder, Branch Manager and Finance recommended).
   security: { require2faRoles: [], sessionDays: 30 },
   tenant: { name: "BMU Marketing", supportEmail: "hello@bmumarketing.in", supportPhone: "", website: "https://bmumarketing.in", address: "Bengaluru, Karnataka", dataRetentionDays: 730 },
 };

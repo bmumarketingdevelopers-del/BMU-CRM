@@ -68,7 +68,7 @@ function IssueForm({ view, done }: { view: CreditNotesView; done: () => void }) 
     setOk(null);
     try {
       const r = await api.finance.issueCreditNote({ invoiceId, amountPaise: paise, reason });
-      setOk(r.pending ? (r.message ?? "Sent to an Admin to approve") : `Credit note ${r.number} issued`);
+      setOk(r.pending ? (r.message ?? "Sent to a Branch Manager to approve") : `Credit note ${r.number} issued`);
       setAmount("");
       setReason("");
       setInvoiceId("");

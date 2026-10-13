@@ -206,7 +206,7 @@ describe('Public API v1', () => {
   let readKey = '';
   let writeKey = '';
 
-  it('only Founder and Admin make keys; the key is shown once and stored hashed', async () => {
+  it('only Founder and Branch Manager make keys; the key is shown once and stored hashed', async () => {
     await http().post('/developer/keys').set(as('am')).send({ name: 'Nope', scopes: ['leads:read'] }).expect(403);
     const r = (await http().post('/developer/keys').set(as('founder')).send({ name: 'Read leads only', scopes: ['leads:read'] }).expect(201)).body as ApiKeyCreated;
     readKey = r.key;

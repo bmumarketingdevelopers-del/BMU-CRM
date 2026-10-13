@@ -35,7 +35,7 @@ export class ClientsTargets implements OnModuleInit {
         return rows.map((c): ReassignItem => ({ id: c.id, title: c.name, ownerId: c.amUserId, deadline: null, status: c.archivedAt ? 'archived' : 'active', inProgress: true, clientOrgId: c.id, amId: null, hours: 0, href: `/team/clients/${c.id}` }));
       },
       assertCanReassign: async (me) => {
-        if (!isClientLead(me)) throw new ForbiddenException("Only an AM Lead, Admin or the Founder can change a client's account manager");
+        if (!isClientLead(me)) throw new ForbiddenException("Only an AM Lead, Branch Manager or the Founder can change a client's account manager");
       },
       eligibility: async () => ({ where: { roles: { some: { role: { baseRole: { in: AM_BASE_ROLES } } } } } }),
       snapshot: async (items) => {

@@ -1,6 +1,6 @@
 // v11 ops journey: communication and admin configuration. Start a project discussion, message → request, + New →
 // Note on a lead, + New → Announcement (founder only), WhatsApp approval status on notification templates,
-// integrations connect / disconnect panel, a department head's SOP going to an Admin, and forbidden roles.
+// integrations connect / disconnect panel, a department head's SOP going to a Branch Manager, and forbidden roles.
 // BASE_URL=http://localhost:3000 node apps/web/e2e/ops-actions/comms-admin.mjs
 import { as, apiCall, check, done, go, launch, noErrors, noSideScroll, shot, stamp, toast } from "./lib.mjs";
 
@@ -89,13 +89,13 @@ const dis = await apiCall(admin, "POST", "/ops/admin/integrations/razorpay/disco
 check(dis.status === 400, `disconnect needs a reason (${dis.status})`);
 noErrors(admin, "admin");
 
-console.log("5. Department head's SOP goes to an Admin to publish");
+console.log("5. Department head's SOP goes to a Branch Manager to publish");
 const head = await as(browser, "design.head@bmu.demo");
 const meta = (await apiCall(head, "GET", "/admin-platform/sops/meta")).body;
 const dept = meta.editableDepartmentIds?.[0];
 if (dept) {
   const r = await apiCall(head, "POST", "/admin-platform/sops", { title: `Journey SOP ${stamp}`, departmentId: dept, body: "# Steps\n1. Check the brief\n2. Export at 1080px", status: "published" });
-  check(r.status < 300 && /Admin/i.test(r.body.notice ?? ""), `SOP saved as a draft and sent to an Admin (${r.body.notice ?? r.status})`);
+  check(r.status < 300 && /Admin/i.test(r.body.notice ?? ""), `SOP saved as a draft and sent to a Branch Manager (${r.body.notice ?? r.status})`);
 } else check(true, "department head has no editable department (skipped)");
 const h1 = await apiCall(head, "POST", "/ops/admin/integrations/email/connect");
 check(h1.status === 403, `department head cannot connect integrations (${h1.status})`);

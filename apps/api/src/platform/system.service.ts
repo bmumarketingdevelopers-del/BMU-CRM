@@ -1,5 +1,5 @@
 // v13 foundation: Command Centre → System health. Database, event bus, live connections, search index, background
-// jobs and feature flags on one page, for the Founder and Admins.
+// jobs and feature flags on one page, for the Founder and Branch Managers.
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { hostname } from 'node:os';
 import { APP_VERSION, type Me, type SystemHealth, type SystemJobStat, type SystemProcess } from '@bmu/shared';
@@ -34,7 +34,7 @@ export function jobsSummary(processes: SystemProcess[]): SystemHealth['jobs'] {
 }
 
 export function assertSystemAdmin(me: Me) {
-  if (me.type !== 'staff' || !me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('System health is for Founders and Admins');
+  if (me.type !== 'staff' || !me.roles.some((r) => r === 'founder' || r === 'admin')) throw new ForbiddenException('System health is for Founders and Branch Managers');
 }
 
 @Injectable()

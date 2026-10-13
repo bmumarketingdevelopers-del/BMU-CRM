@@ -419,7 +419,7 @@ function BulkDialog({ kind, people, opts, onClose, onDone }: { kind: "move" | "a
               </select>
             </Field>
           )}
-          <p className="text-xs text-ink-muted">Open work stays with each person. Moves across departments may need an Admin&apos;s approval.</p>
+          <p className="text-xs text-ink-muted">Open work stays with each person. Moves across departments may need a Branch Manager&apos;s approval.</p>
         </>
       ) : (
         <Field label="Role to add" required htmlFor="bulk-role" hint="Added as a secondary role; their main role stays.">

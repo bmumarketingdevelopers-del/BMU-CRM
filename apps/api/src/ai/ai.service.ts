@@ -96,8 +96,8 @@ export class AiService {
     if (who.me?.type === 'creator') throw new AiOffError('AI Copilot is not available in the creator portal');
     if (who.me?.type === 'client' && group !== 'clientPortal') throw new AiOffError('This assistant is for the BMU team');
     if (who.me?.type === 'staff' && group === 'clientPortal') throw new AiOffError('This assistant is for client accounts');
-    if (!s.enabled) throw new AiOffError('AI Copilot is switched off for your organisation. A Founder or Admin can turn it on in Command Centre → AI Copilot.');
-    if (!s.features[group]) throw new AiOffError(`This AI feature is switched off. A Founder or Admin can turn it on in Command Centre → AI Copilot.`);
+    if (!s.enabled) throw new AiOffError('AI Copilot is switched off for your organisation. A Founder or Branch Manager can turn it on in Command Centre → AI Copilot.');
+    if (!s.features[group]) throw new AiOffError(`This AI feature is switched off. A Founder or Branch Manager can turn it on in Command Centre → AI Copilot.`);
     return s;
   }
 
@@ -114,9 +114,9 @@ export class AiService {
     if (!this.connected()) return { notice: AI_BASIC_NOTICE, status: 'basic' };
     const spend = await this.monthSpend(who.orgId);
     if (s.monthlyBudgetPaise > 0 && spend.costPaise >= s.monthlyBudgetPaise)
-      return { notice: `This month's AI budget (${formatINR(s.monthlyBudgetPaise)}) is used up, so these are basic suggestions. A Founder or Admin can raise it in Command Centre → AI Copilot.`, status: 'blocked' };
+      return { notice: `This month's AI budget (${formatINR(s.monthlyBudgetPaise)}) is used up, so these are basic suggestions. A Founder or Branch Manager can raise it in Command Centre → AI Copilot.`, status: 'blocked' };
     if (s.monthlyTokenCap > 0 && spend.tokens >= s.monthlyTokenCap)
-      return { notice: `This month's AI token limit is used up, so these are basic suggestions. A Founder or Admin can raise it in Command Centre → AI Copilot.`, status: 'blocked' };
+      return { notice: `This month's AI token limit is used up, so these are basic suggestions. A Founder or Branch Manager can raise it in Command Centre → AI Copilot.`, status: 'blocked' };
     if (who.userId) {
       const recent = await this.prisma.aiLog.count({ where: { userId: who.userId, mode: 'ai', createdAt: { gte: new Date(Date.now() - HOUR) } } });
       if (recent >= s.perUserPerHour) return { notice: `You have used your ${s.perUserPerHour} AI answers for this hour, so these are basic suggestions. Try again a little later.`, status: 'blocked' };
@@ -212,7 +212,7 @@ export class AiService {
   // Command Centre → AI Copilot
 
   private assertManager(me: Me) {
-    if (!this.canManage(me)) throw new ForbiddenException('AI Copilot settings are for the Founder and Admins');
+    if (!this.canManage(me)) throw new ForbiddenException('AI Copilot settings are for the Founder and Branch Managers');
   }
 
   async usage(me: Me): Promise<AiUsageView> {

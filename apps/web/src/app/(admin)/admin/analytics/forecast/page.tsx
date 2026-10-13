@@ -222,7 +222,7 @@ function TargetsEditor({ d, onSaved }: { d: SalesForecastView; onSaved: () => vo
 
   return (
     <div id="targets">
-      <Panel title="Targets and win chances" subtitle={d.canEdit ? "Used by this forecast and the Scorecard. Founder, Admin and Finance can change them." : "Only Founder, Admin and Finance can change these."}>
+      <Panel title="Targets and win chances" subtitle={d.canEdit ? "Used by this forecast and the Scorecard. Founder, Branch Manager and Finance can change them." : "Only Founder, Branch Manager and Finance can change these."}>
         <form onSubmit={save} className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <Field label="Monthly revenue target (₹)" hint="before GST">

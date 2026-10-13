@@ -184,7 +184,7 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
     },
     {
       name: 'find_invoices',
-      description: 'Invoices with amounts owed. Only Founder, Admin and Finance may see invoices; others get "not allowed".',
+      description: 'Invoices with amounts owed. Only Founder, Branch Manager and Finance may see invoices; others get "not allowed".',
       schema: z.object({ client: z.string().optional(), status: z.string().optional() }),
       properties: { client: str('Part of the client name'), status: str('overdue, issued, partially_paid, paid or all (default: anything still owed)') },
       status: 'Looking up invoices…',

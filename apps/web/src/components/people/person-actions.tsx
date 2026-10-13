@@ -7,8 +7,8 @@
  *   <RowMenu items={personMenuItems(person, can, pa.open, openBulkReassign)} />
  *   {pa.dialogs}
  * Move: new position, effective date, reason, access preview (gains / loses), open work keep or reassign through the
- * engine; cross-department moves by a Department Head go to an Admin. Change role: main + secondary roles, the
- * permission diff, effective date, reason; Admin-level changes go to the Founder. Offboard: last day + reason, then the
+ * engine; cross-department moves by a Department Head go to a Branch Manager. Change role: main + secondary roles, the
+ * permission diff, effective date, reason; Branch Manager-level changes go to the Founder. Offboard: last day + reason, then the
  * blocking checklist (everything they own), handover, and the final confirmation.
  */
 import { useEffect, useState } from "react";
@@ -440,7 +440,7 @@ function OffboardDialog({ person, onClose, onDone }: { person: PersonLite; onClo
               title={status?.blockers.join(" · ")}
               onClick={() => run(async () => { const r = await api.peopleActions.confirmOffboarding(person.id); notify(r.message); onDone(); })}
             >
-              {status?.confirmNeedsAdmin ? "Send to Admin to confirm" : "Confirm offboarding"}
+              {status?.confirmNeedsAdmin ? "Send to a Branch Manager to confirm" : "Confirm offboarding"}
             </button>
             <button type="button" className={`ml-auto ${ghost}`} onClick={onDone}>
               Close
@@ -537,7 +537,7 @@ function OffboardDialog({ person, onClose, onDone }: { person: PersonLite; onClo
               {status.pendingItems.length > 4 ? "…" : ""}
             </p>
           )}
-          {status.blockers.length === 0 && status.status === "open" && <p className="border border-green bg-green/10 px-3 py-2 text-xs">Everything is handed over. {status.confirmNeedsAdmin ? "Send it to an Admin for the final confirmation." : "Confirm to finish."}</p>}
+          {status.blockers.length === 0 && status.status === "open" && <p className="border border-green bg-green/10 px-3 py-2 text-xs">Everything is handed over. {status.confirmNeedsAdmin ? "Send it to a Branch Manager for the final confirmation." : "Confirm to finish."}</p>}
         </>
       )}
       {error && <p role="alert" className="border border-red bg-red/10 px-3 py-2">{error}</p>}

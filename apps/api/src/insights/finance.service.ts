@@ -51,7 +51,7 @@ export class FinanceService implements OnModuleInit {
     private readonly registry: ActionsRegistry,
   ) {}
 
-  /** v11 ops: credit notes need Admin approval (approval_matrix); Founders and Admins issue them directly. */
+  /** v11 ops: credit notes need Branch Manager approval (approval_matrix); Founders and Branch Managers issue them directly. */
   onModuleInit() {
     this.registry.registerApprovalHandler({
       action: 'invoice.credit_note',
@@ -245,7 +245,7 @@ export class FinanceService implements OnModuleInit {
 
   /**
    * Amount is before GST; GST is added at the organisation rate. Total can't exceed what is left to credit.
-   * v11 ops: Finance's credit notes go to an Admin for approval first (the note is created on approval).
+   * v11 ops: Finance's credit notes go to a Branch Manager for approval first (the note is created on approval).
    */
   async issueCreditNote(me: Me, body: unknown, ip?: string): Promise<{ id: string | null; number: string | null; pending: boolean; approvalId: string | null; message: string }> {
     assertFinanceWrite(me);
@@ -270,7 +270,7 @@ export class FinanceService implements OnModuleInit {
       },
       ip,
     );
-    return { id: null, number: null, pending: true, approvalId: req.id, message: 'Sent to an Admin for approval. The credit note is issued once they approve.' };
+    return { id: null, number: null, pending: true, approvalId: req.id, message: 'Sent to a Branch Manager for approval. The credit note is issued once they approve.' };
   }
 
   private async checkCreditNote(me: Me, input: CreateCreditNote) {

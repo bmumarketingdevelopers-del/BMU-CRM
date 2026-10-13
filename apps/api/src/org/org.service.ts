@@ -12,6 +12,7 @@ import {
 import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { approvesNewPeople, canAddPeople } from '../people-actions/people-access.js';
 
 const userInclude = { roles: { include: { role: true } } } as const;
 type UserWithRoles = Prisma.UserGetPayload<{ include: typeof userInclude }>;
@@ -102,19 +103,21 @@ export class OrgService {
     if (role.baseRole === 'founder' && !me.roles.includes('founder')) {
       throw new ForbiddenException('Only the Founder can grant the Founder role');
     }
-    // v11 people: making someone an Admin needs the Founder (approval_matrix); the Change role action asks for it.
+    // v11 people: making someone a Branch Manager needs the Founder (approval_matrix); the Change role action asks for it.
     if (role.baseRole === 'admin' && !me.roles.includes('founder') && !me.roles.includes('hr_ops')) {
-      throw new ForbiddenException("Making someone an Admin needs the Founder's approval. Use Change role on the person.");
+      throw new ForbiddenException("Making someone a Branch Manager needs the Founder's approval. Use Change role on the person.");
     }
     if (this.access(me).rule === 'people data only') {
       // HR invites new team members with their starting role, but cannot change roles afterwards or hand out leadership roles.
       if (!inviting) throw new ForbiddenException('HR can edit people data, not roles');
-      if (['founder', 'admin'].includes(role.baseRole) || role.baseRole.startsWith('client_')) throw new ForbiddenException('HR cannot invite someone as Founder or Admin');
+      if (['founder', 'admin'].includes(role.baseRole) || role.baseRole.startsWith('client_')) throw new ForbiddenException('HR cannot invite someone as Founder or Branch Manager');
     }
     return role;
   }
 
   async invite(me: Me, input: InviteUser, ip?: string): Promise<OrgUser> {
+    if (!canAddPeople(me)) throw new ForbiddenException('Only the Founder or HR can add people');
+    if (!approvesNewPeople(me)) throw new ForbiddenException('Your new people need approval: use Add person, and a Founder or the HR Department Head approves');
     this.assertCanEdit(me);
     await this.assertRoleAssignable(me, input.roleId, true);
     if (input.phone && !/^(\+?91)?[6-9]\d{9}$/.test(input.phone.replace(/[\s-]/g, ''))) throw new BadRequestException('Enter a 10-digit Indian mobile number');

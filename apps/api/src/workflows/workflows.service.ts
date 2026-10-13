@@ -44,10 +44,10 @@ const DAY = 86_400_000;
 const ACTIVE = ['running', 'waiting', 'waiting_approval'];
 
 function assertView(me: Me) {
-  if (!canViewAutomations(me)) throw new ForbiddenException('Workflows are for Founder, Admin, department heads, the AM Lead and Finance');
+  if (!canViewAutomations(me)) throw new ForbiddenException('Workflows are for Founder, Branch Manager, department heads, the AM Lead and Finance');
 }
 function assertManage(me: Me) {
-  if (!canManageAutomations(me)) throw new ForbiddenException('Only the Founder and Admins can change workflows');
+  if (!canManageAutomations(me)) throw new ForbiddenException('Only the Founder and Branch Managers can change workflows');
 }
 
 const snapshot = (w: WorkflowDef) => ({ name: w.name, enabled: w.enabled, trigger: w.trigger, triggerArgs: w.triggerArgs, start: w.start, steps: w.steps, version: w.versionNumber });
@@ -217,7 +217,7 @@ export class WorkflowsService {
   }
 
   async whatsappQueue(me: Me): Promise<WhatsAppQueueRow[]> {
-    if (!isFoundingAdmin(me)) throw new ForbiddenException('The WhatsApp queue is for the Founder and Admins');
+    if (!isFoundingAdmin(me)) throw new ForbiddenException('The WhatsApp queue is for the Founder and Branch Managers');
     const rows = await this.prisma.whatsAppMessage.findMany({ where: { orgId: me.orgId }, orderBy: { createdAt: 'desc' }, take: 200 });
     const base: Record<string, string> = { Lead: '/team/leads/', Engagement: '/team/projects/', Request: '/team/requests/' };
     return rows.map((r) => ({ id: r.id, toName: r.toName, toPhone: r.toPhone, body: r.body, status: r.status, link: r.entity && r.entityId && base[r.entity] ? `${base[r.entity]}${r.entityId}` : null, source: r.source, createdAt: r.createdAt.toISOString() }));

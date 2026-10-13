@@ -72,7 +72,7 @@ export class CatalogueController {
   @RequireCapability('catalogue_pricing_engine')
   async setTierPrice(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string): Promise<CatalogueAdmin> {
     if (me.permissions.catalogue_pricing_engine?.rule !== 'full') {
-      throw new ForbiddenException('Admins can propose price changes; only the Founder can apply them');
+      throw new ForbiddenException('Branch Managers can propose price changes; only the Founder can apply them');
     }
     const { serviceKey, tier, priceRupees } = parse(setTierPriceSchema, body);
     const book = await this.catalogue.activeBook(me.orgId);
@@ -93,7 +93,7 @@ export class CatalogueController {
   }
 
   private assertPriceSetter(me: Me) {
-    if (me.permissions.catalogue_pricing_engine?.rule !== 'full') throw new ForbiddenException('Admins can propose price changes; only the Founder can apply them');
+    if (me.permissions.catalogue_pricing_engine?.rule !== 'full') throw new ForbiddenException('Branch Managers can propose price changes; only the Founder can apply them');
   }
 
   /** Bundle saving %: a new price book version. */

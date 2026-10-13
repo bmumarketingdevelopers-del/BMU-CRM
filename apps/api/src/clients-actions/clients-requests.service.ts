@@ -1,4 +1,4 @@
-// v11 clients (requests_approvals): raise a request on behalf of a client, custom-priced add-on quotes with an Admin
+// v11 clients (requests_approvals): raise a request on behalf of a client, custom-priced add-on quotes with a Branch Manager
 // limit, convert an approved (and paid) request into tasks (template when one matches), and internal approvals.
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import {
@@ -48,7 +48,7 @@ export class ClientsRequestsService implements OnModuleInit {
       label: 'Custom add-on price above the limit',
       href: (r) => `/team/requests/${r.targetId}`,
       apply: async ({ approver, requester, req }) => {
-        if (!isAdmin(approver)) throw new ForbiddenException('Only an Admin can approve a custom price above the limit');
+        if (!isAdmin(approver)) throw new ForbiddenException('Only a Branch Manager can approve a custom price above the limit');
         return this.sendCustomQuote(requester ?? approver, req.targetId, req.payload as ClientsCustomQuote, approver);
       },
     });
@@ -117,11 +117,11 @@ export class ClientsRequestsService implements OnModuleInit {
   }
 
   // -------------------------------------------------------------------------
-  // quote_addon: custom price, Admin approval above the limit
+  // quote_addon: custom price, Branch Manager approval above the limit
 
   async customQuote(me: Me, id: string, input: ClientsCustomQuote, ip?: string) {
     const r = await this.requestFor(me, id);
-    if (!(isClientLead(me) || r.engagement.amId === me.id)) throw new ForbiddenException("Only the client's Account Manager or an Admin can quote");
+    if (!(isClientLead(me) || r.engagement.amId === me.id)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can quote");
     if (['approved', 'paid', 'in_progress', 'done', 'declined'].includes(r.status)) throw new BadRequestException(`This request is already ${r.status.replace(/_/g, ' ')}`);
     if (input.amountPaise > CLIENTS_ADDON_CUSTOM_LIMIT_PAISE && !isAdmin(me)) {
       const req = await this.approvals.create(
@@ -129,7 +129,7 @@ export class ClientsRequestsService implements OnModuleInit {
         { action: 'clients.custom_quote', targetType: 'request', targetId: r.id, summary: `Custom price ${formatINR(input.amountPaise)} for ${r.engagement.clientOrg.name}: ${input.item}`, payload: input, reason: `Above the ${formatINR(CLIENTS_ADDON_CUSTOM_LIMIT_PAISE)} limit for custom prices`, approverId: null, approverRoles: ['admin'], diff: [{ field: 'Quote', before: null, after: `${formatINR(input.amountPaise)} + GST · ${input.timeline}` }] },
         ip,
       );
-      return { ok: true as const, message: `Above ${formatINR(CLIENTS_ADDON_CUSTOM_LIMIT_PAISE)}: sent to an Admin for approval first`, approval: { id: req.id, summary: req.summary } };
+      return { ok: true as const, message: `Above ${formatINR(CLIENTS_ADDON_CUSTOM_LIMIT_PAISE)}: sent to a Branch Manager for approval first`, approval: { id: req.id, summary: req.summary } };
     }
     await this.sendCustomQuote(me, r.id, input, me, ip);
     return { ok: true as const, message: 'Quote sent to the client', approval: null };

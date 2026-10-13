@@ -90,6 +90,8 @@ export interface ApprovalHandler {
   /** What the approver must provide when approving. */
   approveNeeds?: 'none' | 'assignee';
   href?(req: ApprovalRow): string | null;
+  /** Who may decide this kind of request. When set, it replaces the default rule (named approver, approver roles, or any Founder / Branch Manager). */
+  approvers?(me: Me, req: ApprovalRow): boolean;
   apply(ctx: { approver: Me; requester: Me | null; req: ApprovalRow; input?: Record<string, unknown> }): Promise<unknown>;
   onReject?(ctx: { approver: Me; req: ApprovalRow }): Promise<void>;
 }

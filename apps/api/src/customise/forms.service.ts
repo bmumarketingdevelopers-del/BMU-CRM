@@ -46,7 +46,7 @@ export class FormsService {
   ) {}
 
   private assertManage(me: Me) {
-    if (!canManageForms(me)) throw new ForbiddenException('Forms are managed by the Founder, Admins and sales managers');
+    if (!canManageForms(me)) throw new ForbiddenException('Forms are managed by the Founder, Branch Managers and sales managers');
   }
 
   private fields = (f: FormDef) => (Array.isArray(f.fields) ? (f.fields as FormField[]) : []);

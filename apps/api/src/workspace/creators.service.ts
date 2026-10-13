@@ -59,7 +59,7 @@ export class CreatorsService {
   }
 
   assertManager(me: Me) {
-    if (!this.isManager(me)) throw new ForbiddenException('Only Founders, Admins and Account Managers manage creators');
+    if (!this.isManager(me)) throw new ForbiddenException('Only Founders, Branch Managers and Account Managers manage creators');
   }
 
   async creatorFor(me: Me) {

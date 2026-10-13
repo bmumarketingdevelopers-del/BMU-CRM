@@ -216,7 +216,7 @@ export class OpsCommsService {
   // Announcements
 
   private assertAnnounce(me: Me) {
-    if (!opsCanAnnounce(me)) throw new ForbiddenException('Only Founders and Admins send announcements');
+    if (!opsCanAnnounce(me)) throw new ForbiddenException('Only Founders and Branch Managers send announcements');
   }
 
   private async audience(orgId: string, audience: string, segment?: string | null): Promise<string[]> {

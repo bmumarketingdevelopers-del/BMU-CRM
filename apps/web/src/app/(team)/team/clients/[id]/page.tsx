@@ -395,7 +395,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
             )}
           </Panel>
           {d && d.pendingInvites.length > 0 && (
-            <Panel title="Waiting for the Owner to confirm" subtitle="Owners invited by the Account Manager need the client's Owner or an Admin to confirm" flush>
+            <Panel title="Waiting for the Owner to confirm" subtitle="Owners invited by the Account Manager need the client's Owner or a Branch Manager to confirm" flush>
               <ul className="divide-y divide-border">
                 {d.pendingInvites.map((p) => (
                   <li key={p.approvalId} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">

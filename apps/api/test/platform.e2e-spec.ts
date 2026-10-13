@@ -183,7 +183,7 @@ describe('Presence', () => {
 });
 
 describe('Feature flags', () => {
-  it('only Founders and Admins change them', async () => {
+  it('only Founders and Branch Managers change them', async () => {
     await api().patch('/system/flags/presence').set(as('sales')).send({ enabled: false }).expect(403);
     await api().get('/system/flags/all').set(as('sales')).expect(403);
     await api().patch('/system/flags/nope').set(as('founder')).send({ enabled: false }).expect(404);
@@ -256,7 +256,7 @@ describe('Smart search', () => {
 });
 
 describe('System health', () => {
-  it('shows the bus, live connections, search and flags to Founders and Admins only', async () => {
+  it('shows the bus, live connections, search and flags to Founders and Branch Managers only', async () => {
     await openStream('admin');
     const h = (await api().get('/system/health').set(as('admin')).expect(200)).body;
     expect(h.database.ok).toBe(true);

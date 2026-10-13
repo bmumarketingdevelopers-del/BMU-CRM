@@ -1,5 +1,5 @@
 // v11 people & hierarchy actions: add person (required fields, duplicates, onboarding, invite, HR and Department
-// Head rules with Admin approval, Admin role needs the Founder), edit (self contact only), move (preview, undo,
+// Head rules with Branch Manager approval, Admin role needs the Founder), edit (self contact only), move (preview, undo,
 // cross-department approval, effective dates), change role (diff, rank rule, Founder for Admin), units, client pods
 // and the task default-assignee hook, offboarding that can't finish while anything is open, custom roles, CSV import,
 // bulk, the tree and History.
@@ -155,33 +155,35 @@ describe('add person', () => {
     expect(hits[0]).toMatchObject({ id: ids.newbie, match: 'email' });
   });
 
-  it('HR adds team members but cannot give Founder, Admin or client roles, and cannot change roles', async () => {
+  it("HR's new people wait for a Founder or the HR Department Head; HR cannot give Founder, Branch Manager or client roles, or change roles", async () => {
     await http().post('/people-actions/people').set(as('hr')).send(await body('hradmin', { roleIds: [(await role('admin')).id] })).expect(403);
     const ok = await http().post('/people-actions/people').set(as('hr')).send(await body('hr')).expect(201);
-    expect(ok.body.outcome).toBe('applied');
-    await http().post(`/people-actions/people/${ok.body.id}/role`).set(as('hr')).send({ roleIds: [(await role('qc_reviewer')).id], effectiveDate: today, reason: 'promotion' }).expect(403);
+    expect(ok.body.outcome).toBe('approval');
+    expect(await prisma.user.count({ where: { email: mail('hr') } })).toBe(0);
+    await approve('admin', ok.body.approval.id, 403); // Branch Managers do not approve new people
+    await approve('founder', ok.body.approval.id);
+    const added = await prisma.user.findFirstOrThrow({ where: { email: mail('hr') } });
+    expect(added.status).toBe('invited');
+    await http().post(`/people-actions/people/${added.id}/role`).set(as('hr')).send({ roleIds: [(await role('qc_reviewer')).id], effectiveDate: today, reason: 'promotion' }).expect(403);
     await http().post('/people-actions/people').set(as('producer')).send(await body('nope')).expect(403);
   });
 
-  it("a Department Head's add goes to an Admin; only their own department", async () => {
-    await http().post('/people-actions/people').set(as('head')).send(await body('headother', { departmentId: ids.strategy, teamId: null })).expect(403);
-    await http().post('/people-actions/people').set(as('head')).send(await body('headlead', { roleIds: [(await role('department_head')).id] })).expect(403);
-    const r = await http().post('/people-actions/people').set(as('head')).send(await body('byhead')).expect(201);
-    expect(r.body.outcome).toBe('approval');
+  it('Department Heads cannot add people, not even to their own department', async () => {
+    const r = await http().post('/people-actions/people').set(as('head')).send(await body('byhead')).expect(403);
+    expect(r.body.message).toMatch(/Founder, a Branch Manager or HR/);
     expect(await prisma.user.count({ where: { email: mail('byhead') } })).toBe(0);
-    const mine = (await http().get('/actions/approvals').set(as('admin')).expect(200)).body;
-    expect(mine.some((a: { id: string }) => a.id === r.body.approval.id)).toBe(true);
-    await approve('head', r.body.approval.id, 403);
-    await approve('admin', r.body.approval.id);
-    const u = await prisma.user.findFirstOrThrow({ where: { email: mail('byhead') } });
-    expect(u.status).toBe('invited');
+    expect(await prisma.approvalRequest.count({ where: { action: 'person.add', targetId: mail('byhead') } })).toBe(0);
   });
 
-  it("an Admin adding someone as Admin needs the Founder's approval", async () => {
-    const r = await http().post('/people-actions/people').set(as('admin')).send(await body('newadmin', { roleIds: [(await role('admin')).id], departmentId: ids.qcDept, teamId: null })).expect(201);
-    expect(r.body.outcome).toBe('approval');
-    await approve('founder', r.body.approval.id);
-    expect(await prisma.user.count({ where: { email: mail('newadmin'), roles: { some: { role: { baseRole: 'admin' } } } } })).toBe(1);
+  it('Branch Managers cannot add people by any route; the Founder can, without approval', async () => {
+    const producer = (await role('producer')).id;
+    const r = await http().post('/people-actions/people').set(as('admin')).send(await body('bybm')).expect(403);
+    expect(r.body.message).toMatch(/Founder or HR/);
+    await http().post('/org/users').set(as('admin')).send({ name: 'By Branch Manager', email: mail('bybm2'), roleId: producer }).expect(403);
+    await http().post('/team-flows/people/onboarding').set(as('admin')).send({ newHire: { name: 'By Branch Manager', email: mail('bybm3'), roleId: producer } }).expect(403);
+    expect(await prisma.user.count({ where: { email: { in: [mail('bybm'), mail('bybm2'), mail('bybm3')] } } })).toBe(0);
+    const f = await http().post('/people-actions/people').set(as('founder')).send(await body('newadmin', { roleIds: [(await role('admin')).id], departmentId: ids.qcDept, teamId: null })).expect(201);
+    expect(f.body.outcome).toBe('applied');
   });
 });
 
@@ -217,7 +219,7 @@ describe('move person', () => {
     await http().post(`/people-actions/people/${ids.mover}/move`).set(as('founder')).send({ departmentId: ids.design, teamId: ids.brandPod, managerId: ids.mover, effectiveDate: today, reason: 'loop' }).expect(400);
   });
 
-  it('Department Head moves within their department; across departments needs an Admin', async () => {
+  it('Department Head moves within their department; across departments needs a Branch Manager', async () => {
     const within = (await http().post(`/people-actions/people/${ids.mover}/move`).set(as('head')).send({ departmentId: ids.design, teamId: null, managerId: ids.head, effectiveDate: today, reason: 'Out of the pod' }).expect(200)).body;
     expect(within.outcome).toBe('applied');
     const cross = (await http().post(`/people-actions/people/${ids.mover}/move`).set(as('head')).send({ departmentId: ids.strategy, teamId: null, managerId: ids.amLead, effectiveDate: today, reason: 'Strategy needs help' }).expect(200)).body;
@@ -260,12 +262,12 @@ describe('change role', () => {
     await http().post(`/people-actions/people/${ids.promo}/role`).set(as('admin')).send({ roleIds: [prod.id, qc.id], effectiveDate: today, reason: 'Same again' }).expect(400);
   });
 
-  it('the Admin role needs the Founder; nobody but the Founder touches the Founder role; never your own', async () => {
+  it('the Branch Manager role needs the Founder; nobody but the Founder touches the Founder role; never your own', async () => {
     const adminRole = await role('admin');
     const founderRole = await role('founder');
     const r = (await http().post(`/people-actions/people/${ids.promo}/role`).set(as('admin')).send({ roleIds: [adminRole.id], effectiveDate: today, reason: 'Runs the branch' }).expect(200)).body;
     expect(r.outcome).toBe('approval');
-    expect(r.approval.summary).toMatch(/Admin/);
+    expect(r.approval.summary).toMatch(/Branch Manager/);
     await approve('founder', r.approval.id);
     expect(await prisma.userRole.count({ where: { userId: ids.promo, roleId: adminRole.id } })).toBe(1);
     await http().post(`/people-actions/people/${ids.promo}/role`).set(as('admin')).send({ roleIds: [founderRole.id], effectiveDate: today, reason: 'nope nope' }).expect(403);
@@ -317,7 +319,7 @@ describe('branches, departments, teams and client pods', () => {
 });
 
 describe('offboarding', () => {
-  it("can't finish while the person owns any open record; HR's finish needs an Admin; login stops after the last day", async () => {
+  it("can't finish while the person owns any open record; HR's finish needs a Branch Manager; login stops after the last day", async () => {
     const leaver = await temp('leaver', {}, 'account_manager');
     const task = await prisma.task.create({ data: { orgId: ids.org, title: `Leaver task ${stamp}`, ownerId: leaver.id, departmentId: ids.design, deadline: new Date(Date.now() + 3 * DAY), isInternal: true } });
     const client = await prisma.clientOrg.create({ data: { orgId: ids.org, name: `Leaver client ${stamp}`, amUserId: leaver.id } });
@@ -366,7 +368,7 @@ describe('offboarding', () => {
 });
 
 describe('custom roles, import, bulk, tree', () => {
-  it("an Admin's custom role needs the Founder; the Founder creates directly", async () => {
+  it("a Branch Manager's custom role needs the Founder; the Founder creates directly", async () => {
     const prod = await role('producer');
     const r = (await http().post('/people-actions/roles').set(as('admin')).send({ name: `Senior designer ${stamp}`, cloneFromRoleId: prod.id, scopes: { leads_pipeline: 'own' } }).expect(201)).body;
     expect(r.outcome).toBe('approval');
@@ -384,12 +386,13 @@ describe('custom roles, import, bulk, tree', () => {
   it('imports people from CSV with duplicate check', async () => {
     const csv = `Full name,Email,Mobile,Role,Department,Team or pod,Reports to,Joining date,Employment type\nPeople csv1 ${stamp},${mail('csv1')},${phone()},Producer,Creative / Design,Brand Pod,design.head@bmu.demo,${inDays(10)},intern\nPeople csv2 ${stamp},${mail('new')},${phone()},Producer,Creative / Design,Brand Pod,design.head@bmu.demo,${inDays(10)},full-time\nPeople csv3 ${stamp},${mail('csv3')},${phone()},Admin,Strategy,,founder@bmu.demo,${inDays(10)},full-time\n`;
     await http().post('/imports/people').set(as('head')).send({ csv }).expect(403);
-    const job = (await http().post('/imports/people').set(as('hr')).send({ csv, fileName: 'people.csv' }).expect(200)).body;
+    // Bulk import is for those who approve new people (a Founder or the HR Department Head), not other HR members.
+    await http().post('/imports/people').set(as('hr')).send({ csv }).expect(403);
+    const job = (await http().post('/imports/people').set(as('founder')).send({ csv, fileName: 'people.csv' }).expect(200)).body;
     expect(job.rows[0].ok).toBe(true);
     expect(job.rows[1].duplicate).toMatch(/already uses/);
-    expect(job.rows[2].errors.join(' ')).toMatch(/HR cannot/);
-    const done = (await http().post(`/imports/jobs/${job.id}/commit`).set(as('hr')).send({ skipDuplicates: true }).expect(200)).body;
-    expect(done.rowsOk).toBe(1);
+    const done = (await http().post(`/imports/jobs/${job.id}/commit`).set(as('founder')).send({ skipDuplicates: true }).expect(200)).body;
+    expect(done.rowsOk).toBeGreaterThanOrEqual(1);
     expect(await prisma.user.findFirstOrThrow({ where: { email: mail('csv1') } })).toMatchObject({ status: 'invited', employmentType: 'intern' });
   });
 

@@ -11,7 +11,7 @@ const salesRange = (r: SalesRange = {}) => {
   return s ? `?${s}` : "";
 };
 
-/** v9 sales & money analytics (Founder, Admin, Finance). */
+/** v9 sales & money analytics (Founder, Branch Manager, Finance). */
 export const analyticsApi = (t: Transport) => ({
   analytics: {
     scorecard: (r?: SalesRange) => t.get<SalesScorecardView>(`/analytics/scorecard${salesRange(r)}`),

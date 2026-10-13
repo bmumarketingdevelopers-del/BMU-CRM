@@ -387,7 +387,7 @@ export class OpsFilesService implements OnModuleInit {
 
   private async assertShare(me: Me, id: string) {
     const f = await this.staffFile(me, id);
-    if (!hasRole(me, 'founder', 'admin') && !(await this.canManageClient(me, f))) throw new ForbiddenException('Only the Account Manager or an Admin can share files outside BMU');
+    if (!hasRole(me, 'founder', 'admin') && !(await this.canManageClient(me, f))) throw new ForbiddenException('Only the Account Manager or a Branch Manager can share files outside BMU');
     if (f.archivedAt) throw new BadRequestException('Restore the file first');
     if (f.kind === 'link') throw new BadRequestException('This is already a link');
     return f;

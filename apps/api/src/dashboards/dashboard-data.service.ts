@@ -245,7 +245,7 @@ export class DashboardDataService {
         };
       }
       case 'overdue_invoices': {
-        if (!canReadFinance(me)) throw new ForbiddenException('Invoices are for the Founder, Admin and Finance');
+        if (!canReadFinance(me)) throw new ForbiddenException('Invoices are for the Founder, Branch Manager and Finance');
         const open = await this.prisma.invoice.findMany({
           where: { orgId, status: { in: ['issued', 'partially_paid', 'overdue'] }, dueDate: { lt: now } },
           select: { id: true, number: true, totalPaise: true, dueDate: true, clientOrg: { select: { name: true } }, payments: { select: { amountPaise: true } } },

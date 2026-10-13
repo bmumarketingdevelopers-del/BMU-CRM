@@ -43,7 +43,7 @@ export class InsightsController {
   }
 }
 
-/** Finance desk: Founder, Admin and Finance (invoices_payments). */
+/** Finance desk: Founder, Branch Manager and Finance (invoices_payments). */
 @Controller('finance')
 export class FinanceController {
   constructor(private readonly finance: FinanceService) {}

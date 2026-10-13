@@ -93,7 +93,7 @@ export class SessionsService {
     return { ok: true as const };
   }
 
-  /** Signs out every device except (optionally) this one. Admins can do it for someone else (lost phone, leaver). */
+  /** Signs out every device except (optionally) this one. Branch Managers can do it for someone else (lost phone, leaver). */
   async revokeAll(userId: string, keep?: string) {
     const rows = await this.prisma.userSession.findMany({ where: { userId, revokedAt: null, ...(keep ? { id: { not: keep } } : {}) }, select: { id: true } });
     await this.prisma.userSession.updateMany({ where: { id: { in: rows.map((r) => r.id) } }, data: { revokedAt: new Date() } });

@@ -49,7 +49,7 @@ export class AgentEvals {
   ) {}
 
   async run(me: Me): Promise<AgentEvalResult> {
-    if (!isAdmin(me)) throw new ForbiddenException('Safety checks are for the Founder and Admins');
+    if (!isAdmin(me)) throw new ForbiddenException('Safety checks are for the Founder and Branch Managers');
     const orgId = me.orgId;
     const stamp = `${Date.now()}`;
     const label = `Safety check ${stamp}`;

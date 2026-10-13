@@ -11,9 +11,9 @@ const hasAny = (roles: string[], allowed: readonly string[]) => roles.some((r) =
 
 // ------------------------------------------------------------------ Who may do what
 
-/** add_client: Founder, Admin, Sales Manager, AM Lead. */
+/** add_client: Founder, Branch Manager, Sales Manager, AM Lead. */
 export const CLIENTS_ADD_ROLES = ["founder", "admin", "sales_manager", "am_lead"] as const;
-/** assign_reassign_am: AM Lead, Admin, Founder. */
+/** assign_reassign_am: AM Lead, Branch Manager, Founder. */
 export const CLIENTS_AM_ROLES = ["founder", "admin", "am_lead"] as const;
 /** cancel / offboard client: Admin, AM Lead (Admin approves). */
 export const CLIENTS_OFFBOARD_ROLES = ["founder", "admin", "am_lead"] as const;
@@ -225,7 +225,7 @@ export const clientsOffboardTickSchema = z.object({ key: z.enum(CLIENTS_OFFBOARD
 /** requested (waiting for Admin) → in_progress (checklist) → awaiting_client (client confirms receipt) → closed. */
 export type ClientsOffboardStatus = "requested" | "in_progress" | "awaiting_client" | "closed";
 export const clientsOffboardStatusLabels: Record<ClientsOffboardStatus, string> = {
-  requested: "Waiting for Admin approval",
+  requested: "Waiting for Branch Manager approval",
   in_progress: "Offboarding: checklist in progress",
   awaiting_client: "Waiting for the client to confirm receipt",
   closed: "Offboarded",
@@ -251,7 +251,7 @@ export type ClientsBulk = z.input<typeof clientsBulkSchema>;
 
 // ------------------------------------------------------------------ Requests
 
-/** Above this, an AM's custom-priced add-on quote goes to an Admin first (quote_addon). */
+/** Above this, an AM's custom-priced add-on quote goes to a Branch Manager first (quote_addon). */
 export const CLIENTS_ADDON_CUSTOM_LIMIT_PAISE = 2_500_000;
 
 export const clientsRaiseRequestSchema = z.object({

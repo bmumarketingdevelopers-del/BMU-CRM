@@ -143,7 +143,7 @@ function ErrorForm({ id, initial, readOnly, onClose, onSaved }: { id?: string; i
   ];
 
   return (
-    <Panel title={id ? (readOnly ? "Error details" : "Edit error") : "Log an error"} subtitle={readOnly ? "Only the Founder, an Admin or a department head can edit entries." : "Five quick questions. Be specific and blame the process, not people."}>
+    <Panel title={id ? (readOnly ? "Error details" : "Edit error") : "Log an error"} subtitle={readOnly ? "Only the Founder, a Branch Manager or a department head can edit entries." : "Five quick questions. Be specific and blame the process, not people."}>
       <fieldset disabled={readOnly || busy} className="space-y-4">
         <div className="grid gap-4 md:grid-cols-[1fr_220px_220px]">
           <Field label="1. What went wrong?">

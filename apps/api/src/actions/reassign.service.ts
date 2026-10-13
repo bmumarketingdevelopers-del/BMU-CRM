@@ -426,7 +426,7 @@ export class ReassignService implements OnModuleInit {
     if (isLeader(me) || hasRole(me, 'founder', 'admin')) return;
     const dept = await this.people.departmentOf(userId);
     if (hasRole(me, 'department_head') && (await this.people.isHeadOf(me, dept))) return;
-    throw new ForbiddenException('Only an Admin or the Department Head can move all of someone’s work');
+    throw new ForbiddenException('Only a Branch Manager or the Department Head can move all of someone’s work');
   }
 
   async openWork(me: Me, userId: string): Promise<CoreOpenWork> {

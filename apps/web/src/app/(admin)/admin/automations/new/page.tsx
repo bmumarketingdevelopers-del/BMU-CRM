@@ -25,7 +25,7 @@ export default function NewAutomationPage() {
           options.canManage ? (
             <RuleBuilder options={options} />
           ) : (
-            <p className="border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">Only the Founder and Admins can create automations.</p>
+            <p className="border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">Only the Founder and Branch Managers can create automations.</p>
           )
         }
       </WithData>

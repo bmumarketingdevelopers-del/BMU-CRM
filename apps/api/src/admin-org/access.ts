@@ -17,12 +17,12 @@ export function assertOrgReader(me: Me) {
   if (!(has(me, [...ORG_EDITORS, 'department_head']) && capable(me, 'users_roles_hierarchy'))) throw new ForbiddenException("You don't have access to the organisation settings");
 }
 export function assertOrgEditor(me: Me) {
-  if (!canEditOrg(me)) throw new ForbiddenException('Only the Founder, Admin or HR can change the organisation');
+  if (!canEditOrg(me)) throw new ForbiddenException('Only the Founder, Branch Manager or HR can change the organisation');
 }
 
-/** Clients screens: Founder, Admin, AM Lead. */
+/** Clients screens: Founder, Branch Manager, AM Lead. */
 export function assertClientAdmin(me: Me) {
-  if (!has(me, CLIENT_ADMINS)) throw new ForbiddenException('Only the Founder, Admin or AM Lead can do this');
+  if (!has(me, CLIENT_ADMINS)) throw new ForbiddenException('Only the Founder, Branch Manager or AM Lead can do this');
 }
 
 /** Catalogue screens: catalogue_pricing_engine. */

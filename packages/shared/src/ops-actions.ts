@@ -146,7 +146,7 @@ export const opsOfflinePaymentSchema = z.object({
 });
 export type OpsOfflinePayment = z.input<typeof opsOfflinePaymentSchema>;
 
-/** Due-date moves longer than this need Admin approval. */
+/** Due-date moves longer than this need Branch Manager approval. */
 export const OPS_DUE_EXTENSION_FREE_DAYS = 7;
 export const opsDueDateSchema = z.object({
   dueDate: z.iso.date("Pick the new due date"),

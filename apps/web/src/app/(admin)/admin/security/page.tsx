@@ -237,7 +237,7 @@ function SignInRules() {
 
   return (
     <div className="grid gap-6">
-      <Panel title="Two-step sign-in" subtitle="Roles ticked here must add an authenticator app or a passkey before they can use BMU Hub. Recommended: Founder, Admin and Finance.">
+      <Panel title="Two-step sign-in" subtitle="Roles ticked here must add an authenticator app or a passkey before they can use BMU Hub. Recommended: Founder, Branch Manager and Finance.">
         <div className="grid gap-1 sm:grid-cols-3">
           {choices.map((r) => (
             <label key={r} className="flex items-center gap-2 text-sm">

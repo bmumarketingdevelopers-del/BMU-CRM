@@ -399,7 +399,7 @@ function whoLine(d: Draft, s: DashboardStudio) {
   const roles = a.roles.map((r) => s.roles.find((x) => x.id === r)?.label ?? r);
   const specs = a.specialties.map((r) => s.specialties.find((x) => x.id === r)?.label ?? r);
   const people = a.userIds.length ? [`${a.userIds.length} named ${a.userIds.length === 1 ? "person" : "people"}`] : [];
-  const who = a.everyone ? "Everyone in the team" : [...roles, ...specs, ...people].join(", ") || "Nobody yet (only Founder and Admin)";
+  const who = a.everyone ? "Everyone in the team" : [...roles, ...specs, ...people].join(", ") || "Nobody yet (only Founder and Branch Manager)";
   const where = d.placement === "menu" ? "under Dashboards in the menu" : d.placement === "team_home" ? "as their team app home" : "as their Command Centre home";
   return `${who} · ${where}`;
 }

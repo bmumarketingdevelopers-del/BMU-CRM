@@ -16,6 +16,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { approvesNewPeople, canAddPeople } from '../people-actions/people-access.js';
 import { canManagePeople, canReadPeople, dbDay, dayStr, hasRole, isStaff } from './access.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
 
@@ -252,14 +253,16 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
   }
 
   async startOnboarding(me: Me, input: TeamStartOnboarding, ip?: string): Promise<TeamPeopleProcess> {
-    if (!canManagePeople(me)) throw new ForbiddenException('Only HR, Admin or the Founder can start onboarding');
+    if (!canManagePeople(me)) throw new ForbiddenException('Only HR, Branch Manager or the Founder can start onboarding');
     let userId = input.userId;
     if (input.newHire) {
+      if (!canAddPeople(me)) throw new ForbiddenException('Only the Founder or HR can add people');
+      if (!approvesNewPeople(me)) throw new ForbiddenException('Your new people need approval: use Add person, and a Founder or the HR Department Head approves');
       const nh = input.newHire;
       const role = await this.prisma.role.findFirst({ where: { id: nh.roleId, orgId: me.orgId } });
       if (!role || role.baseRole.startsWith('client_')) throw new BadRequestException('Choose a team role');
       if (role.baseRole === 'founder' && !me.roles.includes('founder')) throw new ForbiddenException('Only the Founder can grant the Founder role');
-      if (role.baseRole === 'admin' && !hasRole(me, 'founder', 'admin')) throw new ForbiddenException('HR cannot add someone as Admin');
+      if (role.baseRole === 'admin' && !hasRole(me, 'founder', 'admin')) throw new ForbiddenException('HR cannot add someone as Branch Manager');
       const email = nh.email ? normaliseIdentifier(nh.email) : null;
       const phone = nh.phone ? normaliseIdentifier(nh.phone) : null;
       const clash = await this.prisma.user.findFirst({ where: { orgId: me.orgId, OR: [...(email ? [{ email }] : []), ...(phone ? [{ phone }] : [])] } });
@@ -315,7 +318,7 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
   }
 
   async startOffboarding(me: Me, input: TeamStartOffboarding, ip?: string): Promise<TeamPeopleProcess> {
-    if (!canManagePeople(me)) throw new ForbiddenException('Only HR, Admin or the Founder can start offboarding');
+    if (!canManagePeople(me)) throw new ForbiddenException('Only HR, Branch Manager or the Founder can start offboarding');
     const user = await this.staff(me, input.userId);
     if (user.id === me.id) throw new BadRequestException('You cannot offboard yourself');
     const founder = await this.prisma.userRole.findFirst({ where: { userId: user.id, role: { baseRole: 'founder' } } });
@@ -339,7 +342,7 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async editable(me: Me, id: string) {
-    if (!canManagePeople(me)) throw new ForbiddenException('Only HR, Admin or the Founder can change this checklist');
+    if (!canManagePeople(me)) throw new ForbiddenException('Only HR, Branch Manager or the Founder can change this checklist');
     const row = await this.prisma.peopleProcess.findFirst({ where: { id, orgId: me.orgId } });
     if (!row) throw new NotFoundException('Checklist not found');
     if (row.status !== 'open') throw new ConflictException(`This checklist is ${row.status}`);

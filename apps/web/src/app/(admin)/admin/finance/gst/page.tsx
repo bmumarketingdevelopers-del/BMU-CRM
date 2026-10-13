@@ -98,7 +98,7 @@ function GstForm({ value, canEdit }: { value: Gst; canEdit: boolean }) {
     }
   }
   return (
-    <Panel className="min-w-0" title="GST settings" subtitle={canEdit ? "Printed on every invoice and credit note" : "Only Founder, Admin and Finance can change these"}>
+    <Panel className="min-w-0" title="GST settings" subtitle={canEdit ? "Printed on every invoice and credit note" : "Only Founder, Branch Manager and Finance can change these"}>
       <form onSubmit={save}>
         <fieldset disabled={!canEdit || busy} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="GSTIN">

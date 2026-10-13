@@ -101,7 +101,7 @@ function Editor({ data, onSaved }: { data: SettingsView; onSaved: (v: SettingsVi
               </Button>
             </>
           ) : (
-            <p className="text-sm text-ink-muted">Only the Founder or Admin can change templates.</p>
+            <p className="text-sm text-ink-muted">Only the Founder or Branch Manager can change templates.</p>
           )}
         </div>
       </Panel>

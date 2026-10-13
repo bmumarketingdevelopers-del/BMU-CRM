@@ -79,7 +79,7 @@ function Overview({ data, reload }: { data: WorkflowOverview; reload: () => void
         }
       />
       {note && <p className={`mb-6 border px-4 py-3 text-sm ${note.tone === "ok" ? "border-green bg-green/10" : "border-red bg-red/10"}`}>{note.text}</p>}
-      {!data.canManage && <p className="mb-6 border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">You can see the workflows and what they did. Only the Founder and Admins can change them.</p>}
+      {!data.canManage && <p className="mb-6 border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">You can see the workflows and what they did. Only the Founder and Branch Managers can change them.</p>}
       {data.canManage && data.automationsToMove > 0 && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border border-amber bg-amber/10 px-4 py-3 text-sm">
           <span>

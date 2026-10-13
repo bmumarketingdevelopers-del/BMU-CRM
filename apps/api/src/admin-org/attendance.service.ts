@@ -258,7 +258,7 @@ export class AttendanceService {
     const requester = await this.prisma.user.findUniqueOrThrow({ where: { id: l.userId }, select: { id: true, name: true, managerId: true } });
     if (l.status !== 'pending') throw new ConflictException(`This leave was already ${l.status}`);
     if (!this.canDecide(me, requester, l.stage)) {
-      throw new ForbiddenException(l.stage === 'hr' ? 'This leave is waiting for HR. Only HR, Admin or the Founder can decide it now.' : 'Only HR, Admin, the Founder or their manager can decide this leave');
+      throw new ForbiddenException(l.stage === 'hr' ? 'This leave is waiting for HR. Only HR, Branch Manager or the Founder can decide it now.' : 'Only HR, Branch Manager, the Founder or their manager can decide this leave');
     }
     const cal = await this.calendar(me.orgId);
     const days = this.workingDays(l.from, l.to, cal);

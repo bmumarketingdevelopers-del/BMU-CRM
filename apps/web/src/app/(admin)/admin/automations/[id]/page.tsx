@@ -26,7 +26,7 @@ export default function AutomationDetailPage() {
               </Link>
             }
           />
-          {!options.canManage && <p className="mb-6 border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">Read only. Only the Founder and Admins can change automations, but you can test this rule against current data.</p>}
+          {!options.canManage && <p className="mb-6 border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">Read only. Only the Founder and Branch Managers can change automations, but you can test this rule against current data.</p>}
           <RuleBuilder key={rule.id} initial={rule} options={options} onSaved={state.reload} />
           <Panel
             title="This rule's history"

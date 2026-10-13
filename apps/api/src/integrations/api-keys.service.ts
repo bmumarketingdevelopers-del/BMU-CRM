@@ -1,4 +1,4 @@
-// v19: managing public API keys (Founder and Admin). The full key is shown once; only its hash is kept.
+// v19: managing public API keys (Founder and Branch Manager). The full key is shown once; only its hash is kept.
 import { ForbiddenException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { apiKeyCreateSchema, type ApiKeyCreated, type ApiKeyView, type ApiScope, type Me } from '@bmu/shared';
 import type { ApiKey } from '../generated/prisma/client.js';
@@ -16,7 +16,7 @@ export class ApiKeysService {
   ) {}
 
   private assertAdmin(me: Me) {
-    if (me.type !== 'staff' || !hasRole(me, 'founder', 'admin')) throw new ForbiddenException('Only Founders and Admins can manage API keys and webhooks');
+    if (me.type !== 'staff' || !hasRole(me, 'founder', 'admin')) throw new ForbiddenException('Only Founders and Branch Managers can manage API keys and webhooks');
   }
 
   private async views(rows: ApiKey[]): Promise<ApiKeyView[]> {

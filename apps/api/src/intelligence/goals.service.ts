@@ -134,7 +134,7 @@ export class GoalsService {
     const input = parse(goalSchema, body);
     const ownerId = input.level === 'person' ? (input.ownerId ?? me.id) : null;
     const departmentId = input.level === 'team' ? (input.departmentId ?? null) : null;
-    if (!(await this.canEdit(me, { level: input.level, ownerId, departmentId }))) throw new ForbiddenException(input.level === 'company' ? 'Only the Founder or an Admin can set company goals' : 'You can set goals for yourself, or for your team if you lead it');
+    if (!(await this.canEdit(me, { level: input.level, ownerId, departmentId }))) throw new ForbiddenException(input.level === 'company' ? 'Only the Founder or a Branch Manager can set company goals' : 'You can set goals for yourself, or for your team if you lead it');
     if (input.metricKey) await this.metrics.assertCanSee(me, input.metricKey);
     const g = await this.prisma.goal.create({
       data: { orgId: me.orgId, title: input.title, level: input.level, ownerId, departmentId, metricKey: input.metricKey ?? null, direction: input.direction, startValue: input.startValue, target: input.target, unit: input.unit, startDate: new Date(`${input.startDate}T00:00:00Z`), endDate: new Date(`${input.endDate}T00:00:00Z`), createdById: me.id },
@@ -162,7 +162,7 @@ export class GoalsService {
       return this.one(me, id);
     }
     const input = parse(goalSchema, { ...before, startDate: isoOf(before.startDate), endDate: isoOf(before.endDate), ...(body as object) });
-    if (input.level !== before.level && !this.isAdmin(me)) throw new ForbiddenException('Only the Founder or an Admin can change what a goal is for');
+    if (input.level !== before.level && !this.isAdmin(me)) throw new ForbiddenException('Only the Founder or a Branch Manager can change what a goal is for');
     const g = await this.prisma.goal.update({
       where: { id },
       data: { title: input.title, direction: input.direction, startValue: input.startValue, target: input.target, unit: input.unit, metricKey: input.metricKey ?? null, startDate: new Date(`${input.startDate}T00:00:00Z`), endDate: new Date(`${input.endDate}T00:00:00Z`) },

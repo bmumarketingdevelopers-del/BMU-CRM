@@ -1,6 +1,6 @@
 "use client";
 
-// v12 Dashboard Studio: "+ New → Dashboard" for the Founder and Admins.
+// v12 Dashboard Studio: "+ New → Dashboard" for the Founder and Branch Managers.
 import { NewDashboardDrawer } from "@/components/dashboards/new-dashboard-drawer";
 import type { NewEntry } from "../new-registry";
 

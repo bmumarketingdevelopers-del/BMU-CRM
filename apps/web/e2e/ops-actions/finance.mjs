@@ -1,6 +1,6 @@
 // v11 ops journey: finance. + New invoice with service and pass-through lines (GST on service only), save as draft and
-// issue, the invoices list (row menu, bulk bar, export), due-date change (≤ 7 days applies; more goes to an Admin),
-// offline payment that needs proof, a credit note that waits for Admin approval, and forbidden roles.
+// issue, the invoices list (row menu, bulk bar, export), due-date change (≤ 7 days applies; more goes to a Branch Manager),
+// offline payment that needs proof, a credit note that waits for Branch Manager approval, and forbidden roles.
 // BASE_URL=http://localhost:3000 node apps/web/e2e/ops-actions/finance.mjs
 import { writeFileSync } from "node:fs";
 import { as, apiCall, check, dayAhead, done, go, launch, noErrors, noSideScroll, shot, SHOTS, stamp } from "./lib.mjs";
@@ -42,7 +42,7 @@ check(await fin.getByRole("button", { name: /Export/ }).first().isVisible(), "ex
 await fin.getByLabel(`Select ${draft.number}`).check();
 check(await fin.getByTestId("bulk-bar").getByRole("button", { name: "Send reminders" }).isVisible(), "bulk reminders offered");
 
-console.log("3. Due date: 3 days applies, 20 days needs an Admin");
+console.log("3. Due date: 3 days applies, 20 days needs a Branch Manager");
 await go(fin, `/admin/finance/invoices/${draft.id}`);
 await fin.getByRole("button", { name: "Change due date" }).click();
 let dlg = fin.getByTestId("due-date-dialog");
@@ -60,9 +60,9 @@ await fin.getByRole("button", { name: "Change due date" }).click();
 dlg = fin.getByTestId("due-date-dialog");
 await dlg.getByLabel("New due date").fill(plus(due0, 25));
 await dlg.getByLabel("Reason").fill("Waiting for their new financial year");
-await dlg.getByRole("button", { name: "Ask an Admin" }).click();
+await dlg.getByRole("button", { name: "Ask a Branch Manager" }).click();
 await dlg.waitFor({ state: "detached", timeout: 15000 });
-check(/Admin/i.test(await fin.getByRole("status").first().innerText()), "long move sent to an Admin");
+check(/Admin/i.test(await fin.getByRole("status").first().innerText()), "long move sent to a Branch Manager");
 const still = (await apiCall(fin, "GET", `/finance/invoices/${draft.id}`)).body;
 check(still.dueDate.slice(0, 10) === plus(due0, 3), "due date unchanged until approved");
 
@@ -81,9 +81,9 @@ check(paid.paidPaise === 500_000, "part payment recorded with proof");
 const noProof = await apiCall(fin, "POST", `/ops/finance/invoices/${draft.id}/offline-payment`, { amountPaise: 1000, method: "upi", ref: `X${stamp}`, at: dayAhead(0) });
 check(noProof.status === 400, `API refuses an offline payment without proof (${noProof.status})`);
 
-console.log("5. Credit note waits for Admin approval");
+console.log("5. Credit note waits for Branch Manager approval");
 const cn = await apiCall(fin, "POST", "/finance/credit-notes", { invoiceId: draft.id, amountPaise: 100_000, reason: "One reel dropped" });
-check(cn.status < 300 && (cn.body.pending || cn.body.approvalId), `credit note by Finance goes to an Admin (${cn.status})`);
+check(cn.status < 300 && (cn.body.pending || cn.body.approvalId), `credit note by Finance goes to a Branch Manager (${cn.status})`);
 await shot(fin, "finance-02-detail");
 noErrors(fin, "finance");
 

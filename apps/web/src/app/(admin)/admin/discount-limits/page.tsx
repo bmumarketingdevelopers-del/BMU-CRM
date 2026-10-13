@@ -126,7 +126,7 @@ function LimitsEditor({ data, onSaved }: { data: SettingsView; onSaved: (v: Sett
           Save limits
         </Button>
       ) : (
-        <p className="mt-6 text-sm text-ink-muted">Only the Founder or Admin can change limits.</p>
+        <p className="mt-6 text-sm text-ink-muted">Only the Founder or Branch Manager can change limits.</p>
       )}
     </Panel>
   );

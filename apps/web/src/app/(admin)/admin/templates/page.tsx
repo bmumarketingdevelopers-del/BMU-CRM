@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { useActionsMaybe } from "@/components/actions/actions-provider";
 
-/** Founders and Admins publish straight away; department heads' saves go to an Admin to approve (v11). */
+/** Founders and Branch Managers publish straight away; department heads' saves go to a Branch Manager to approve (v11). */
 function useCanPublish() {
   const me = useActionsMaybe()?.me;
   return !me || me.roles.some((r) => r === "founder" || r === "admin");
@@ -67,7 +67,7 @@ function FlowEditor({ flow }: { flow: FlowTemplateView }) {
     try {
       const saved = await api.templates.saveFlow(flow.key, { name, department, deliverableTypes: types, steps });
       setVersion(saved.find((f) => f.key === flow.key)?.version ?? version);
-      setMsg({ ok: true, text: canPublish ? "Saved as a new version." : "Sent to an Admin to publish. The current version stays live until then." });
+      setMsg({ ok: true, text: canPublish ? "Saved as a new version." : "Sent to a Branch Manager to publish. The current version stays live until then." });
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
     }
@@ -189,7 +189,7 @@ function QcEditor({ list }: { list: QcTemplateView }) {
     try {
       const saved = await api.templates.saveQc(list.key, { name, items: items.split("\n").map((s) => s.trim()).filter(Boolean) });
       setVersion(saved.find((c) => c.key === list.key)?.version ?? version);
-      setMsg({ ok: true, text: canPublish ? "Saved." : "Sent to an Admin to publish. The current version stays live until then." });
+      setMsg({ ok: true, text: canPublish ? "Saved." : "Sent to a Branch Manager to publish. The current version stays live until then." });
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
     }

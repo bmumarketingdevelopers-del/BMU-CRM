@@ -42,7 +42,7 @@ export function Message({ msg }: { msg: Msg }) {
 export function ReadOnlyNote({ who }: { who: "operations" | "platform" }) {
   return (
     <p className="mb-6 border border-border bg-canvas/60 px-4 py-3 text-sm text-ink-muted">
-      You can view these settings. {who === "platform" ? "Only the Founder or an Admin can change them." : "Only the Founder, an Admin or a department head can change them."}
+      You can view these settings. {who === "platform" ? "Only the Founder or a Branch Manager can change them." : "Only the Founder, a Branch Manager or a department head can change them."}
     </p>
   );
 }

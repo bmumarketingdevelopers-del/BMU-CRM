@@ -1,5 +1,5 @@
 // Default requirement checklist per service (modules.requirements in the spec).
-// Admins will edit these as ChecklistTemplates; this is the starting set.
+// Branch Managers will edit these as ChecklistTemplates; this is the starting set.
 const VIDEO_LIKE = ['smm', 'smm_brands', 'smm_influencers', 'personal_branding', 'video_editing', 'business_video_shoot', 'podcast_shoot', 'ugc_content', 'ugc_ads', 'ugc_outsourcing', 'ugc_promotions'];
 const NEEDS_ACCESS: Record<string, string> = {
   digital_marketing: 'Meta Business Manager and Google Ads access',

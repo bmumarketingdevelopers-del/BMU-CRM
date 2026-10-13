@@ -27,7 +27,7 @@ const FA = ['founder', 'admin'];
 type Contact = { name?: string; email?: string; phone?: string; company?: string };
 
 export const assertDpdp = (me: Me) => {
-  if (me.type !== 'staff' || !me.roles.some((r) => FA.includes(r))) throw new ForbiddenException('Only the Founder or an Admin can manage data-protection requests');
+  if (me.type !== 'staff' || !me.roles.some((r) => FA.includes(r))) throw new ForbiddenException('Only the Founder or a Branch Manager can manage data-protection requests');
 };
 
 @Injectable()

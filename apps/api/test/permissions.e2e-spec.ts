@@ -119,7 +119,7 @@ describe('users_roles_hierarchy', () => {
 });
 
 describe('audit_log', () => {
-  it('is hidden from everyone but Founder and Admin', async () => {
+  it('is hidden from everyone but Founder and Branch Manager', async () => {
     await request(app.getHttpServer()).get('/audit').set(as('founder')).expect(200);
     await request(app.getHttpServer()).get('/audit').set(as('sales')).expect(403);
   });

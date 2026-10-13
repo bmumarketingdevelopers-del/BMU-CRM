@@ -64,7 +64,7 @@ check(admin.url().includes("tab=history"), "History tab has its own link");
 await shot(admin, "users-04-history");
 noErrors(admin, "users");
 
-console.log("4. Custom role: an Admin's goes to the Founder");
+console.log("4. Custom role: a Branch Manager's goes to the Founder");
 await go(admin, "/admin/roles");
 await admin.getByRole("button", { name: "New custom role" }).click();
 const cr = admin.getByTestId("custom-role-drawer");

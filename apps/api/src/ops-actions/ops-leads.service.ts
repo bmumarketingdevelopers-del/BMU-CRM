@@ -153,7 +153,7 @@ export class OpsLeadsService implements OnModuleInit {
 
   /** What the Add lead drawer needs: who can own leads and whether this person may pick the owner. */
   async addOptions(me: Me) {
-    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Admins and account managers (referrals) can add leads');
+    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Branch Managers and account managers (referrals) can add leads');
     const team = await this.salesTeam(me.orgId);
     const next = await this.nextOwner(me.orgId);
     return {
@@ -185,7 +185,7 @@ export class OpsLeadsService implements OnModuleInit {
   // Add lead
 
   async create(me: Me, body: unknown, ip?: string): Promise<OpsLeadCreated> {
-    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Admins and account managers (referrals) can add leads');
+    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Branch Managers and account managers (referrals) can add leads');
     const input = parse(opsLeadCreateSchema, body);
     const referralOnly = opsLeadReferralOnly(me);
     if (referralOnly && input.source !== 'referral') throw new ForbiddenException('Account managers can add referrals only. Set the source to Referral.');
