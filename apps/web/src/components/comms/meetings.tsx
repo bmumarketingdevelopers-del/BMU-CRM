@@ -318,7 +318,7 @@ function GoogleCalendarCard({ status, onChange, onError }: { status: CalendarCon
 }
 
 /** Pick team members to invite (searchable). */
-function PeoplePicker({ value, onChange }: { value: string[]; onChange: (ids: string[]) => void }) {
+export function PeoplePicker({ value, onChange }: { value: string[]; onChange: (ids: string[]) => void }) {
   const people = useLoad(() => api.meetings.people(), { live: false });
   const [q, setQ] = useState("");
   const all = useMemo(() => people.data ?? [], [people.data]);
