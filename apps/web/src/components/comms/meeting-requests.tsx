@@ -3,9 +3,12 @@
 // v23 meeting requests: the client asks for a meeting (date, time in any time zone, length, what it is about), the
 // Client Manager brings in a department and/or the Founder, they accept or ask for another time the same day, the
 // Client Manager fixes it, and the Department Head adds team members while the Branch Manager joins or ignores.
+// v23 Google Meet: when the Client Manager has connected Google Calendar, fixing the meeting creates the Meet link and
+// Google sends the invitations; pasting a link by hand stays as the fallback.
 import { useState } from "react";
 import {
   MEETING_PARTICIPANT_ROLE_LABELS,
+  meetingResponseLabels,
   timeZoneList,
   zonedDay,
   zonedLabel,
@@ -78,18 +81,26 @@ export function ParticipantList({ m, team }: { m: MeetingView; team: boolean }) 
           {team && <Badge tone={STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>}
           {team && p.proposedStartAt && <span className="text-ink-muted">suggests {zonedLabel(p.proposedStartAt, IST_ZONE)} IST</span>}
           {team && p.note && <span className="text-ink-muted">“{p.note}”</span>}
+          {p.googleResponse && p.googleResponse !== "needsAction" && <span className={`text-ink-muted ${p.googleResponse === "accepted" ? "text-green" : p.googleResponse === "declined" ? "text-red" : ""}`}>Google Calendar: {meetingResponseLabels[p.googleResponse]}</span>}
         </li>
       ))}
     </ul>
   );
 }
 
+/** Opens the call in a new tab (Google Meet works in any browser, no Google account needed). */
+export function JoinButton({ url }: { url: string }) {
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block bg-green px-3 py-1.5 text-sm font-semibold text-charcoal hover:opacity-90" data-testid="join-link">
+      {/^https:\/\/meet\.google\.com\//i.test(url) ? "Join Google Meet" : "Join meeting"}
+    </a>
+  );
+}
+
 function JoinLine({ m }: { m: MeetingView }) {
   if (m.status !== "booked") return null;
   return m.joinUrl ? (
-    <a href={m.joinUrl} target="_blank" rel="noreferrer" className="text-xs font-medium underline" data-testid="join-link">
-      Join meeting
-    </a>
+    <JoinButton url={m.joinUrl} />
   ) : (
     <span className="text-xs text-ink-muted">Your meeting is scheduled. The link will be shared before the call.</span>
   );
@@ -325,7 +336,7 @@ function ArrangePanel({ m, onChanged }: { m: MeetingView; onChanged: () => void 
           </Button>
         </div>
         {moved && <p className="mt-1 text-xs text-ink-muted">The client gets an apology with the new time ({zonedLabel(newStart, m.timeZone)} their time).</p>}
-        <p className="mt-1 text-xs text-ink-muted">Once everyone has accepted and the meeting is fixed, you send the meeting link to everyone in one click.</p>
+        <p className="mt-1 text-xs text-ink-muted">Once it is fixed, the Google Meet link is created and Google sends the invitations (when your Google Calendar is connected). Otherwise you send a meeting link to everyone in one click.</p>
       </div>
       {note}
     </div>
@@ -340,7 +351,7 @@ export function FixedMeetingActions({ m, onChanged }: { m: MeetingView; onChange
   return (
     <div className="mb-3 space-y-2">
       {m.can.shareLink && <ShareLink m={m} onChanged={onChanged} />}
-      <JoinLine m={m} />
+      {!m.joinUrl && <JoinLine m={m} />}
       <ParticipantList m={m} team />
       {m.can.join && mine && (
         <div className="flex flex-wrap items-center gap-2" data-testid="branch-join">
@@ -369,7 +380,9 @@ function ShareLink({ m, onChanged }: { m: MeetingView; onChanged: () => void }) 
   ];
   return (
     <div className="space-y-2 border border-border bg-canvas/30 p-3" data-testid="share-link">
-      <p className="text-xs font-medium">{m.joinUrl ? "Meeting link sent. Change it and send again if needed." : "Everyone has accepted. Send the meeting link."}</p>
+      <p className="text-xs font-medium">
+        {m.google?.synced ? "Google Meet link created and invitations sent by Google Calendar. Paste a different link only to replace it." : m.joinUrl ? "Meeting link sent. Change it and send again if needed." : "Everyone has accepted. Send the meeting link."}
+      </p>
       <div className="flex flex-wrap items-center gap-2">
         <Input className="min-w-64 flex-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://meet.google.com/abc-defg-hij" aria-label="Meeting link" />
         <Button

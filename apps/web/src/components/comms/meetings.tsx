@@ -2,13 +2,15 @@
 
 // v17 meetings: free-slot picker (client portal and public link), the team's meetings with notes, summary and
 // action items that become tasks, and booking page settings.
+// v23 Google Meet: each person connects their Google Calendar once; fixed meetings they host get a Meet link and Google
+// sends the invitations. The client's people and guests are listed with their replies.
 import Link from "next/link";
-import { useState } from "react";
-import type { BookingPageView, BookingSlots, MeetingList, MeetingView } from "@bmu/shared";
+import { useEffect, useMemo, useState } from "react";
+import { meetingResponseLabels, type BookingPageView, type BookingSlots, type CalendarConnectionView, type MeetingList, type MeetingView } from "@bmu/shared";
 import { Badge, Button, Card, Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
-import { ClientMeetingRow, ClientRequestForm, FixedMeetingActions, FounderMeetingRequest, TeamRequestCard, teamTime } from "./meeting-requests";
+import { ClientMeetingRow, ClientRequestForm, FixedMeetingActions, FounderMeetingRequest, JoinButton, TeamRequestCard, teamTime } from "./meeting-requests";
 
 const IST = { timeZone: "Asia/Kolkata" } as const;
 export const dayLabel = new Intl.DateTimeFormat("en-IN", { ...IST, weekday: "short", day: "numeric", month: "short" });
@@ -42,6 +44,23 @@ export function SlotPicker({ slots, value, onChange }: { slots: BookingSlots; va
   );
 }
 
+/** The client's people and guests invited, with their Google Calendar reply. */
+export function Attendees({ m }: { m: MeetingView }) {
+  if (!m.attendees.length) return null;
+  return (
+    <p className="mt-0.5 text-xs text-ink-muted" data-testid="meeting-attendees">
+      Invited:{" "}
+      {m.attendees.map((a, i) => (
+        <span key={`${a.name}-${i}`}>
+          {i ? ", " : ""}
+          {a.name}
+          <span className={a.response === "accepted" ? "text-green" : a.response === "declined" ? "text-red" : ""}> ({meetingResponseLabels[a.response]})</span>
+        </span>
+      ))}
+    </p>
+  );
+}
+
 function MeetingRow({ m, team, onOpen, onCancel }: { m: MeetingView; team: boolean; onOpen?: () => void; onCancel?: () => void }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 text-sm" data-testid="meeting-row">
@@ -49,10 +68,15 @@ function MeetingRow({ m, team, onOpen, onCancel }: { m: MeetingView; team: boole
         <p className="font-medium">{m.title}</p>
         <p className="text-xs text-ink-muted">
           {team && m.timeZone !== "Asia/Kolkata" ? teamTime(m.startAt, m.timeZone) : whenLabel(m.startAt)} · {team ? (m.client?.name ?? (m.lead ? `Lead: ${m.lead.name}` : (m.guest.name ?? "Internal"))) : `with ${m.host.name}`}
+          {team ? ` · host ${m.host.name}` : ""}
+          {m.location ? ` · ${m.location}` : ""}
           {m.agenda ? ` · ${m.agenda}` : ""}
         </p>
+        <Attendees m={m} />
+        {team && m.status === "booked" && m.google?.error && <p className="mt-0.5 text-xs text-amber">Google Meet: {m.google.error}</p>}
       </div>
       <div className="flex items-center gap-2">
+        {m.status === "booked" && m.joinUrl && <JoinButton url={m.joinUrl} />}
         {m.status !== "booked" && <Badge tone={m.status === "done" ? "green" : "neutral"}>{m.status === "done" ? "Held" : "Cancelled"}</Badge>}
         {m.bookedVia !== "team" && team && <Badge>{m.bookedVia === "client" ? "Asked by client" : m.bookedVia === "founder" ? "Asked by Founder" : "Booking link"}</Badge>}
         {onOpen && (
@@ -74,14 +98,27 @@ function MeetingRow({ m, team, onOpen, onCancel }: { m: MeetingView; team: boole
 
 export function TeamMeetings({ isFounder = false }: { isFounder?: boolean }) {
   const list = useLoad(() => api.meetings.list(), { live: ["Meeting", "MeetingParticipant"] });
+  const google = useLoad(() => api.meetings.google(), { live: false });
   const [open, setOpen] = useState<string | null>(null);
-  const [error, setError] = useState<string>();
+  // Back from Google sign-in: ?calendar=connected or ?calendarError=… (read once, then removed from the address).
+  const [error, setError] = useState<string | undefined>(() => {
+    const e = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("calendarError");
+    return e ? `Google Calendar was not connected: ${e}` : undefined;
+  });
+  const [notice] = useState<string | undefined>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("calendar") === "connected" ? "Google Calendar connected. Meetings you host now get a Google Meet link when they are fixed, and Google sends the invitations." : undefined,
+  );
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.has("calendar") || q.has("calendarError")) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   if (!list.data) return <LoadState loading={list.loading} error={list.error} />;
   const d = list.data;
-  const cancel = (id: string) => window.confirm("Cancel this meeting? The guest is told by email.") && api.meetings.cancel(id).then(list.reload).catch((e: Error) => setError(e.message));
+  const cancel = (id: string) => window.confirm("Cancel this meeting? Everyone invited is told.") && api.meetings.cancel(id).then(list.reload).catch((e: Error) => setError(e.message));
   return (
     <>
       <PageTitle title="Meetings" subtitle="Meeting requests from clients to arrange or confirm, meetings you are in, and calls from your booking link. Write notes after the call and turn action items into tasks." />
+      {notice && <p className="mb-4 border border-green bg-green/10 px-3 py-2 text-sm">{notice}</p>}
       {error && <p className="mb-4 border border-red bg-red/10 px-3 py-2 text-sm">{error}</p>}
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div>
@@ -125,8 +162,9 @@ export function TeamMeetings({ isFounder = false }: { isFounder?: boolean }) {
           </div>
         </div>
         <div className="space-y-6">
+          <GoogleCalendarCard status={google.data} onChange={google.reload} onError={setError} />
           {isFounder && <FounderMeetingRequest onSaved={list.reload} />}
-          <AddMeeting onSaved={list.reload} />
+          <AddMeeting onSaved={list.reload} google={google.data} />
           {d.booking && <BookingSettings initial={d.booking} />}
         </div>
       </div>
@@ -239,7 +277,88 @@ function MeetingNotes({ m, onSaved }: { m: MeetingView; onSaved: () => void }) {
   );
 }
 
-function AddMeeting({ onSaved }: { onSaved: () => void }) {
+/** My Google Calendar connection: meetings I host get a Google Meet link when it is connected. */
+function GoogleCalendarCard({ status, onChange, onError }: { status: CalendarConnectionView | undefined; onChange: () => void; onError: (m: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  if (!status) return null;
+  const connect = () => {
+    setBusy(true);
+    api.meetings
+      .googleConnect()
+      .then((r) => window.location.assign(r.url))
+      .catch((e: Error) => {
+        onError(e.message);
+        setBusy(false);
+      });
+  };
+  return (
+    <Card>
+      <h2 className="mb-1 font-semibold">Google Meet</h2>
+      {!status.available ? (
+        <p className="text-sm text-ink-muted">Google Calendar is not set up on the server yet. Ask a Founder to add the Google settings, then connect here.</p>
+      ) : status.connected ? (
+        <div className="space-y-2 text-sm" data-testid="google-connected">
+          <p>
+            Connected to <strong>{status.email}</strong>. Meetings you host get a Google Meet link when they are fixed, and Google sends the invitations.
+          </p>
+          <Button variant="ghost" disabled={busy} onClick={() => window.confirm("Disconnect Google Calendar? New meetings will have no Meet link.") && api.meetings.googleDisconnect().then(onChange, (e: Error) => onError(e.message))}>
+            Disconnect
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2 text-sm">
+          <p className="text-ink-muted">{status.status === "error" ? `Google Calendar stopped working${status.error ? `: ${status.error}` : ""}. Connect it again.` : "Connect your Google Workspace calendar once: meetings you host then get a Google Meet link automatically, and invitations go out from Google."}</p>
+          <Button disabled={busy} onClick={connect} data-testid="google-connect">
+            {busy ? "Opening Google…" : status.status === "error" ? "Reconnect Google Calendar" : "Connect Google Calendar"}
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/** Pick team members to invite (searchable). */
+function PeoplePicker({ value, onChange }: { value: string[]; onChange: (ids: string[]) => void }) {
+  const people = useLoad(() => api.meetings.people(), { live: false });
+  const [q, setQ] = useState("");
+  const all = useMemo(() => people.data ?? [], [people.data]);
+  const shown = useMemo(() => all.filter((p) => !value.includes(p.id) && `${p.name} ${p.department ?? ""}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8), [all, value, q]);
+  return (
+    <div data-testid="people-picker">
+      {!!value.length && (
+        <div className="mb-1 flex flex-wrap gap-1">
+          {value.map((id) => (
+            <button key={id} type="button" onClick={() => onChange(value.filter((x) => x !== id))} className="border border-border px-2 py-0.5 text-xs" aria-label={`Remove ${all.find((p) => p.id === id)?.name ?? "person"}`}>
+              {all.find((p) => p.id === id)?.name ?? "…"} ×
+            </button>
+          ))}
+        </div>
+      )}
+      <Input placeholder="Invite team members (type a name)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Invite team members" />
+      {q.trim() && (
+        <div className="border border-t-0 border-border">
+          {shown.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="block w-full px-2 py-1 text-left text-xs hover:bg-canvas"
+              onClick={() => {
+                onChange([...value, p.id]);
+                setQ("");
+              }}
+            >
+              {p.name}
+              {p.department ? <span className="text-ink-muted"> · {p.department}</span> : null}
+            </button>
+          ))}
+          {!shown.length && <p className="px-2 py-1 text-xs text-ink-muted">No one found.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddMeeting({ onSaved, google }: { onSaved: () => void; google: CalendarConnectionView | undefined }) {
   const clients = useLoad(() => api.clients.list().catch(() => []), { live: false });
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
@@ -247,7 +366,11 @@ function AddMeeting({ onSaved }: { onSaved: () => void }) {
   const [duration, setDuration] = useState(30);
   const [clientOrgId, setClientOrgId] = useState("");
   const [location, setLocation] = useState("");
+  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
+  const [meet, setMeet] = useState(true);
   const [error, setError] = useState<string>();
+  const [done, setDone] = useState<string>();
+  const canMeet = !!google?.connected;
   return (
     <Card>
       <h2 className="mb-3 font-semibold">Add a meeting</h2>
@@ -272,16 +395,28 @@ function AddMeeting({ onSaved }: { onSaved: () => void }) {
             </option>
           ))}
         </Select>
-        <Input placeholder="Where (Google Meet link, office…)" value={location} onChange={(e) => setLocation(e.target.value)} aria-label="Location" />
+        {clientOrgId && <p className="text-xs text-ink-muted">The client&apos;s people with a portal login are invited too.</p>}
+        <PeoplePicker value={attendeeIds} onChange={setAttendeeIds} />
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={canMeet && meet} disabled={!canMeet} onChange={(e) => setMeet(e.target.checked)} data-testid="add-meet" />
+          Add a Google Meet link
+          {!canMeet && <span className="text-xs text-ink-muted">(connect Google Calendar first)</span>}
+        </label>
+        <Input placeholder={canMeet && meet ? "Where (optional: office address, if in person too)" : "Where (office, or a meeting link)"} value={location} onChange={(e) => setLocation(e.target.value)} aria-label="Location" />
         {error && <p className="text-xs text-red">{error}</p>}
+        {done && <p className="text-xs text-green">{done}</p>}
         <Button
           disabled={title.trim().length < 2 || !date}
           onClick={() =>
             api.meetings
-              .create({ title: title.trim(), startAt: new Date(`${date}T${time}:00+05:30`).toISOString(), durationMin: duration, clientOrgId: clientOrgId || null, location: location || undefined })
-              .then(() => {
+              .create({ title: title.trim(), startAt: new Date(`${date}T${time}:00+05:30`).toISOString(), durationMin: duration, clientOrgId: clientOrgId || null, location: location || undefined, attendeeIds, addMeet: canMeet && meet })
+              .then((m) => {
+                const invited = m.participants.length + m.attendees.length;
                 setTitle("");
+                setAttendeeIds([]);
+                setLocation("");
                 setError(undefined);
+                setDone(m.google?.synced ? `Added with a Google Meet link. Google sent the invitations to ${invited} ${invited === 1 ? "person" : "people"}.` : m.google?.error && canMeet && meet ? `Added, but without a Meet link: ${m.google.error}` : `Added.${invited ? " Everyone invited has been told." : ""}`);
                 onSaved();
               })
               .catch((e: Error) => setError(e.message))
@@ -418,9 +553,16 @@ export function NextMeetingCard({ list }: { list: MeetingList & { am: { name: st
     <div className="border border-border p-4 text-sm" data-testid="next-meeting">
       <p className="text-xs uppercase tracking-wide text-ink-muted">Next call</p>
       {next ? (
-        <p className="mt-1 font-medium">
-          {whenLabel(next.startAt)} with {next.host.name}
-        </p>
+        <>
+          <p className="mt-1 font-medium">
+            {whenLabel(next.startAt)} with {next.host.name}
+          </p>
+          {next.joinUrl && (
+            <p className="mt-2">
+              <JoinButton url={next.joinUrl} />
+            </p>
+          )}
+        </>
       ) : (
         <p className="mt-1">No call booked.</p>
       )}

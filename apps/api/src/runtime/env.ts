@@ -47,6 +47,7 @@ export function checkEnv(env: NodeJS.ProcessEnv = process.env): EnvReport {
     { name: 'WhatsApp', on: set('WHATSAPP_TOKEN') && set('WHATSAPP_PHONE_ID') },
     { name: 'Forecast service (Python)', on: set('FORECAST_URL') },
     { name: 'File storage (Supabase)', on: set('SUPABASE_URL') && set('SUPABASE_SECRET_KEY') },
+    { name: 'Google Meet (Google Calendar)', on: set('GOOGLE_CLIENT_ID') && set('GOOGLE_CLIENT_SECRET') },
   ];
   return { errors, warnings, optional };
 }

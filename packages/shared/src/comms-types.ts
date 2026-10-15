@@ -205,6 +205,8 @@ export type MeetingParticipantView = {
   /** A new time the same day, when status is "reschedule". */
   proposedStartAt: string | null;
   note: string | null;
+  /** v23 Google Meet: their reply to the Google Calendar invitation, when the meeting is in Google Calendar. */
+  googleResponse: MeetingAttendeeResponse | null;
 };
 
 export const MEETING_PARTICIPANT_ROLE_LABELS: Record<MeetingParticipantRole, string> = {
@@ -232,6 +234,7 @@ export type MeetingView = {
   /** The client's time zone (IANA). */
   timeZone: string;
   department: { id: string; name: string } | null;
+  /** The meeting link: the Google Meet link Google created, or one the Client Manager pasted. */
   joinUrl: string | null;
   /** Set when the fixed time differs from the time first asked for. */
   rescheduledAt: string | null;
@@ -241,6 +244,10 @@ export type MeetingView = {
   notes: string | null;
   summary: string | null;
   actionItems: { text: string; taskId: string | null }[];
+  /** v23 Google Meet: the client's people and guests invited, with their Google Calendar reply. Clients see no emails. */
+  attendees: MeetingAttendeeView[];
+  /** v23 (team only): whether the meeting is in the host's Google Calendar, and why not when it should be. */
+  google: { synced: boolean; error: string | null } | null;
   can: {
     edit: boolean;
     cancel: boolean;
@@ -256,6 +263,24 @@ export type MeetingView = {
     shareLink: boolean;
   };
 };
+
+export const MEETING_ATTENDEE_RESPONSES = ["needsAction", "accepted", "declined", "tentative"] as const;
+export type MeetingAttendeeResponse = (typeof MEETING_ATTENDEE_RESPONSES)[number];
+export const meetingResponseLabels: Record<MeetingAttendeeResponse, string> = { needsAction: "Invited", accepted: "Accepted", declined: "Declined", tentative: "Maybe" };
+export type MeetingAttendeeView = { name: string; email: string | null; kind: "client" | "guest"; response: MeetingAttendeeResponse };
+
+/** v23: the signed-in person's Google Calendar connection (meetings they host get a Google Meet link when connected). */
+export type CalendarConnectionView = {
+  /** Google sign-in is set up on the server (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / INTEGRATIONS_KEY). */
+  available: boolean;
+  connected: boolean;
+  email: string | null;
+  status: "connected" | "error" | "disconnected" | null;
+  error: string | null;
+};
+
+/** v23: team members who can be invited to a meeting. */
+export type MeetingPerson = { id: string; name: string; department: string | null };
 
 export type MeetingList = {
   /** Requests still being arranged (requested / awaiting). */
@@ -371,8 +396,12 @@ export const meetingCreateSchema = z.object({
   leadId: z.string().nullable().optional(),
   agenda: z.string().trim().max(1000).optional(),
   location: z.string().trim().max(300).optional(),
+  /** v23: team members to invite (the client's people are invited when a client is picked). */
+  attendeeIds: z.array(z.string().min(1)).max(30).optional(),
+  /** v23: create a Google Meet link in the host's Google Calendar (needs a connected calendar). */
+  addMeet: z.boolean().optional(),
 });
-export type MeetingCreate = z.infer<typeof meetingCreateSchema>;
+export type MeetingCreate = z.input<typeof meetingCreateSchema>;
 
 export const meetingNotesSchema = z.object({
   notes: z.string().max(50_000).optional(),

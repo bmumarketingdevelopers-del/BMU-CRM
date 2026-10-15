@@ -77,6 +77,24 @@ completes, the work moves on, and the round records `via: whatsapp`.
   `Action: …`, `X will …`), a summary the client can see, action items, **Make tasks** (owner = host; the client's
   active project when there is one; due in 2 days) and **Save and mark held** (logged on the lead when linked).
 
+### v23 Google Meet (`integrations/google-calendar.ts`)
+
+- Each person connects their own Google Workspace calendar once (**Meetings → Connect Google Calendar**). Scopes:
+  `openid`, `email`, `calendar.events`. The sign-in returns through `/integrations/oauth/callback` (state `k: 'calendar'`),
+  so the Google OAuth client needs one redirect URI. Tokens are sealed with `INTEGRATIONS_KEY` in `calendar_connections`.
+- When a meeting the host hosts becomes **booked** (a client request the Client Manager fixes, a meeting the team adds
+  with **Add a Google Meet link**, a portal or booking-link call) it becomes an event in the host's Google Calendar with
+  a Meet link, saved in `joinUrl`; Google emails the invitations (`sendUpdates=all`). Invited: team participants who
+  are not "ignored" and the client's people / guest (`meeting_attendees`: the person who asked, else every client user).
+- Team members added later (Department Head, the team form) are added to the event and a Branch Manager who ignores is
+  removed; replies already given are kept. Cancelling cancels the event. Replies are read every 15 minutes
+  (`comms.meeting_replies`) into `meeting_attendees.response` and `meeting_participants.googleResponse`.
+- Never blocks the meeting: without a connected calendar (or when Google refuses) the reason is in `googleError`, the
+  team sees it, and the Client Manager can still paste a link (**Send link to everyone**), which also replaces a Meet link.
+- Setup: Google Calendar API on, consent screen **Internal**, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+  `INTEGRATIONS_KEY`, `API_PUBLIC_URL`. Migrations `20261014090000_v23_google_meet`, `20261015090000_v23_google_meet_merge`.
+  Tests: `test/google-meet.e2e-spec.ts` (fake Google), `src/integrations/google-calendar.spec.ts`.
+
 ## Notification router (`notifications.service.ts`, `comms/notification-router.ts`)
 
 - Per alert type each person chooses in-app, email and (v17) WhatsApp (needs a phone number on their profile).

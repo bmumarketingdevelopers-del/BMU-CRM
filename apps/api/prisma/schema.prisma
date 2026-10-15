@@ -2995,7 +2995,8 @@ model Meeting {
   timeZone     String    @default("Asia/Kolkata")
   /// v23: department the Client Manager brought in (its head confirms, then adds team members)
   departmentId String?
-  /// v23: video-call link (Google Meet later); null = "Your meeting is scheduled" only
+  /// v23: video-call link: the Google Meet link Google created, or one the Client Manager pasted; null = "Your
+  /// meeting is scheduled" only
   joinUrl      String?
   /// v23: when the fixed time moved away from what the client asked for (client gets an apology)
   rescheduledAt DateTime?
@@ -3005,10 +3006,17 @@ model Meeting {
   actionItems Json      @default("[]")
   cancelledAt DateTime?
   reminderAt  DateTime?
+  /// v23 Google Meet: the Google Calendar event (in the host's calendar) that carries the Meet link
+  googleEventId String?
+  /// v23: whose connected calendar holds the event (normally the host)
+  googleUserId  String?
+  /// v23: why the Google event could not be created or changed (shown to the team)
+  googleError   String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   participants MeetingParticipant[]
+  attendees    MeetingAttendee[]
 
   @@index([hostId, startAt])
   @@index([clientOrgId, startAt])
@@ -3027,6 +3035,8 @@ model MeetingParticipant {
   proposedStartAt DateTime?
   note            String?
   respondedAt     DateTime?
+  /// v23 Google Meet: their reply to the Google Calendar invitation (needsAction | accepted | declined | tentative)
+  googleResponse  String?
   createdAt       DateTime  @default(now())
 
   meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
@@ -3034,6 +3044,48 @@ model MeetingParticipant {
   @@unique([meetingId, userId])
   @@index([userId, status])
   @@map("meeting_participants")
+}
+
+/// v23 Google Meet: people outside the team invited to a meeting (the client's people and guests) with their reply
+/// as Google Calendar reports it. Team members are MeetingParticipant rows.
+model MeetingAttendee {
+  id        String   @id @default(cuid())
+  meetingId String
+  /// The client user, when the person has a portal login
+  userId    String?
+  email     String
+  name      String
+  /// client | guest
+  kind      String
+  /// needsAction | accepted | declined | tentative
+  response  String   @default("needsAction")
+  createdAt DateTime @default(now())
+  meeting   Meeting  @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, email])
+  @@index([userId])
+  @@map("meeting_attendees")
+}
+
+/// v23: one person's Google Calendar connection, used to create Google Meet links for the meetings they host.
+/// Tokens are encrypted with INTEGRATIONS_KEY and never sent to the browser.
+model CalendarConnection {
+  id             String    @id @default(cuid())
+  orgId          String
+  userId         String    @unique
+  provider       String    @default("google")
+  /// The Google account it is connected to
+  email          String
+  tokenEnc       String?
+  refreshEnc     String?
+  tokenExpiresAt DateTime?
+  /// connected | error | disconnected
+  status         String    @default("connected")
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("calendar_connections")
 }
 
 // ---------------------------------------------------------------------------

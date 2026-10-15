@@ -25,6 +25,7 @@ import { clientScope, hasRole, inScope, isLeadership } from '../creative/scope.j
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { seal, signToken, unseal, verifyToken } from './crypto.js';
+import { finishCalendarConnect, type CalendarOAuthState } from './google-calendar.js';
 import { loginFor, missingEnv, type AccountCtx } from './providers/index.js';
 
 const DAY = 86_400_000;
@@ -214,7 +215,10 @@ export class IntegrationsService {
   /** The provider sends the person back here. Returns where to send the browser next. */
   async oauthCallback(q: { code?: string; state?: string; error?: string; error_description?: string }): Promise<string> {
     const back = (params: Record<string, string>) => `${appUrl()}/admin/integrations?${new URLSearchParams(params)}`;
-    const st = verifyToken<OAuthState>(q.state);
+    const raw = verifyToken<OAuthState | CalendarOAuthState>(q.state);
+    // v23: a person connecting their own Google Calendar (Google Meet links) shares this return address.
+    if (raw && 'k' in raw && raw.k === 'calendar') return this.calendarCallback(raw, q);
+    const st = raw as OAuthState | null;
     if (!st) return back({ error: 'The sign-in link expired. Press Connect again.' });
     if (q.error || !q.code) return back({ error: q.error_description ?? q.error ?? 'Sign-in was cancelled' });
     try {
@@ -233,6 +237,20 @@ export class IntegrationsService {
     } catch (e) {
       this.log.warn(`OAuth ${st.p} failed: ${(e as Error).message}`);
       return back({ error: (e as Error).message.slice(0, 300) });
+    }
+  }
+
+  /** v23: finishes connecting a person's Google Calendar and sends them back to Meetings. */
+  private async calendarCallback(st: CalendarOAuthState, q: { code?: string; error?: string; error_description?: string }): Promise<string> {
+    const back = (params: Record<string, string>) => `${appUrl()}/team/meetings?${new URLSearchParams(params)}`;
+    if (q.error || !q.code) return back({ calendarError: q.error_description ?? q.error ?? 'Google sign-in was cancelled' });
+    try {
+      const email = await finishCalendarConnect(this.prisma, st, q.code, `${apiPublicUrl()}/integrations/oauth/callback`);
+      await this.audit.logSystem(st.o, 'calendar.connected', 'User', st.u, { provider: 'google', email });
+      return back({ calendar: 'connected' });
+    } catch (e) {
+      this.log.warn(`Google Calendar connect failed: ${(e as Error).message}`);
+      return back({ calendarError: (e as Error).message.slice(0, 300) });
     }
   }
 

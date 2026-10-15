@@ -34,6 +34,29 @@ export class MeetingsController {
     return this.meetings.arrangeOptions(me);
   }
 
+  // v23 Google Meet: invitable people and my Google Calendar connection.
+  @Get('meetings/people')
+  people(@CurrentUser() me: Me) {
+    return this.meetings.people(me);
+  }
+
+  @Get('meetings/google')
+  google(@CurrentUser() me: Me) {
+    return this.meetings.googleStatus(me);
+  }
+
+  @Post('meetings/google/connect')
+  @HttpCode(200)
+  googleConnect(@CurrentUser() me: Me) {
+    return this.meetings.googleConnect(me);
+  }
+
+  @Post('meetings/google/disconnect')
+  @HttpCode(200)
+  googleDisconnect(@CurrentUser() me: Me, @ClientIp() ip?: string) {
+    return this.meetings.googleDisconnect(me, ip);
+  }
+
   @Post('meetings/founder-request')
   founderRequest(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.meetings.founderRequest(me, body, ip);
