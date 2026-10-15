@@ -135,11 +135,11 @@ try {
   await finance.getByText("has not been shared with you").waitFor();
   check(true, "finance cannot open a dashboard not made for them");
 
-  console.log("6. Edit the client home: add a note, hide the Account Manager panel");
+  console.log("6. Edit the client home: add a note, hide the Client Manager panel");
   await openEditorFor(founder, "Client home");
   const ch = (await apiCall(founder, "GET", "/dashboards/builtin/client_home")).body;
   cleanup.reset.add(ch.id);
-  await founder.getByRole("button", { name: "Hide Your Account Manager" }).click();
+  await founder.getByRole("button", { name: "Hide Your Client Manager" }).click();
   await founder.getByTestId("add-widget").click();
   const lib = founder.getByTestId("widget-library");
   check((await lib.getByRole("button", { name: "Numbers", exact: true }).count()) === 0, "no team numbers offered for the client home");
@@ -155,7 +155,7 @@ try {
   await signIn(client, "client@sunrise.demo");
   await client.goto(`${BASE}/client`);
   await client.getByText(`We are closed 1 to 3 November ${stamp}`).waitFor();
-  check((await client.getByText("Your Account Manager").count()) === 0, "client home: note shown, Account Manager panel hidden");
+  check((await client.getByText("Your Client Manager").count()) === 0, "client home: note shown, Client Manager panel hidden");
   await shot(client, "dash-client-home");
 
   console.log("7. Every built-in editor opens with a live preview");
@@ -167,11 +167,11 @@ try {
   console.log("8. Forbidden: only the Founder and Branch Managers change dashboards");
   const am = await newPage(browser);
   await signIn(am, "am@bmu.demo");
-  check((await apiCall(am, "GET", "/dashboards")).status === 403, "an Account Manager cannot open the Studio");
-  check((await apiCall(am, "PATCH", `/dashboards/${wr.id}`, { layout: [] })).status === 403, "an Account Manager cannot change a dashboard");
+  check((await apiCall(am, "GET", "/dashboards")).status === 403, "a Client Manager cannot open the Studio");
+  check((await apiCall(am, "PATCH", `/dashboards/${wr.id}`, { layout: [] })).status === 403, "a Client Manager cannot change a dashboard");
   check((await apiCall(sales, "POST", "/dashboards", { name: "x" })).status === 403, "a sales executive cannot create one");
   await am.goto(`${BASE}/team`);
-  check((await am.getByTestId("customise-dashboard").count()) === 0, "no Customise link for an Account Manager");
+  check((await am.getByTestId("customise-dashboard").count()) === 0, "no Customise link for a Client Manager");
 
   console.log("9. Phone width");
   const phone = await newPage(browser, { mobile: true });

@@ -153,7 +153,7 @@ export class OpsLeadsService implements OnModuleInit {
 
   /** What the Add lead drawer needs: who can own leads and whether this person may pick the owner. */
   async addOptions(me: Me) {
-    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Branch Managers and account managers (referrals) can add leads');
+    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Branch Managers and client managers (referrals) can add leads');
     const team = await this.salesTeam(me.orgId);
     const next = await this.nextOwner(me.orgId);
     return {
@@ -185,10 +185,10 @@ export class OpsLeadsService implements OnModuleInit {
   // Add lead
 
   async create(me: Me, body: unknown, ip?: string): Promise<OpsLeadCreated> {
-    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Branch Managers and account managers (referrals) can add leads');
+    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Branch Managers and client managers (referrals) can add leads');
     const input = parse(opsLeadCreateSchema, body);
     const referralOnly = opsLeadReferralOnly(me);
-    if (referralOnly && input.source !== 'referral') throw new ForbiddenException('Account managers can add referrals only. Set the source to Referral.');
+    if (referralOnly && input.source !== 'referral') throw new ForbiddenException('Client managers can add referrals only. Set the source to Referral.');
     const unknown = input.serviceIds.filter((k) => !catalogue.some((s) => s.id === k));
     if (unknown.length) throw new BadRequestException(`Unknown service: ${unknown.join(', ')}`);
     const dupes = await this.duplicates(me, { phone: input.phone, email: input.email || undefined, company: input.company });
@@ -196,7 +196,7 @@ export class OpsLeadsService implements OnModuleInit {
       throw new ConflictException({ message: `Possible duplicate: ${dupes[0].name} (${dupes[0].stage}${dupes[0].owner ? `, owned by ${dupes[0].owner}` : ''}) has the same ${dupes[0].matchedOn.join(' and ')}. Open it, or choose Continue to add anyway.`, duplicates: dupes });
     }
     // Owner: a manager picks anyone (or auto); a sales executive owns what they add unless they choose auto;
-    // referrals from account managers are always auto-assigned.
+    // referrals from client managers are always auto-assigned.
     let owner: { id: string; name: string } | null = null;
     const wantAuto = !input.ownerId || input.ownerId === 'auto' || referralOnly;
     if (!wantAuto) {

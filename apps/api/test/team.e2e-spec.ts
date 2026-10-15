@@ -297,7 +297,7 @@ describe('onboarding and offboarding', () => {
 
   it('offboarding hands over tasks, clients and leads, then suspends access on the last day', async () => {
     const amRole = await role('account_manager');
-    const leaver = await prisma.user.create({ data: { orgId, type: 'staff', name: `Leaving AM ${stamp}`, email: mail('leaver'), status: 'active', roles: { create: { roleId: amRole.id } } } });
+    const leaver = await prisma.user.create({ data: { orgId, type: 'staff', name: `Leaving CM ${stamp}`, email: mail('leaver'), status: 'active', roles: { create: { roleId: amRole.id } } } });
     tokens.leaver = await signIn(mail('leaver'));
     const task = await prisma.task.create({ data: { orgId, title: `Leaver task ${stamp}`, ownerId: leaver.id, deadline: new Date(Date.now() + 2 * DAY) } });
     const client = await prisma.clientOrg.create({ data: { orgId, name: `Leaver Client ${stamp}`, amUserId: leaver.id } });
@@ -435,7 +435,7 @@ describe('catalogue versions', () => {
 });
 
 describe('creator brief to payout', () => {
-  it('AM briefs → creator accepts → submits → revision → approve → finance pays with TDS → creator sees it', async () => {
+  it('CM briefs → creator accepts → submits → revision → approve → finance pays with TDS → creator sees it', async () => {
     const creator = await prisma.creator.findFirstOrThrow({ where: { user: { email: 'creator@bmu.demo' } } });
     const brief = await http().post('/workspace/briefs').set(as('am')).send({ creatorId: creator.id, title: `Reel ${stamp}`, brief: 'One 30 second reel for the launch.', deliverables: ['1 reel'], feeRupees: 5000 }).expect(201);
     const id = brief.body.id;

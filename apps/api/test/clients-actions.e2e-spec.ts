@@ -1,7 +1,7 @@
 // v11 clients: add a client by hand (no lead) with duplicate check, offline payment confirmed by Finance and the
-// payment gate; migrated clients with their current gate; edit with field-level rights; client users (AM-invited
-// Owner needs the Owner's confirmation); brands; AM reassignment seen by the client; add service / change tier
-// quotes; pause with AM Lead approval; offboarding with Branch Manager approval and read-only access; health; import; lead
+// payment gate; migrated clients with their current gate; edit with field-level rights; client users (CM-invited
+// Owner needs the Owner's confirmation); brands; CM reassignment seen by the client; add service / change tier
+// quotes; pause with CM Lead approval; offboarding with Branch Manager approval and read-only access; health; import; lead
 // conversion; and the request actions (raise on behalf, reassign, custom quote limit, convert to tasks, internal
 // approval). Forbidden roles get 403 with a plain-English message.
 import 'dotenv/config';
@@ -118,10 +118,10 @@ afterAll(async () => {
 });
 
 describe('add_client: who may add, validation and duplicates', () => {
-  it('refuses roles outside Founder, Branch Manager, Sales Manager and AM Lead', async () => {
+  it('refuses roles outside Founder, Branch Manager, Sales Manager and CM Lead', async () => {
     for (const who of ['am', 'design', 'finance']) {
       const r = await http().post('/clients-actions').set(as(who)).send(base('Nope')).expect(code(403));
-      expect(r.body.message).toMatch(/Founder|Branch Manager|Sales Manager|AM Lead/);
+      expect(r.body.message).toMatch(/Founder|Branch Manager|Sales Manager|CM Lead/);
     }
   });
 
@@ -160,7 +160,7 @@ describe('add_client: who may add, validation and duplicates', () => {
     expect(eng.paymentPending).toBe(true);
     expect(eng.currentGate).toBe('G1');
     expect(await prisma.clientBrand.count({ where: { clientOrgId: ids.manual } })).toBe(1);
-    // Notified: AM, AM Lead, Finance.
+    // Notified: CM, CM Lead, Finance.
     for (const who of ['am', 'lead']) expect(await prisma.notification.count({ where: { userId: ids[who], link: { contains: ids.manual } } })).toBeGreaterThan(0);
     expect(await prisma.notification.count({ where: { userId: ids.finance, title: { contains: 'confirm the offline payment' }, createdAt: { gt: new Date(Date.now() - 60_000) } } })).toBeGreaterThan(0);
     // Welcome in the client's thread, and the handover note is internal.
@@ -172,7 +172,7 @@ describe('add_client: who may add, validation and duplicates', () => {
     const rcd = await http().post(`/engagements/${ids.manualEng}/rcd`).set(as('am')).send({});
     expect(rcd.status).toBeGreaterThanOrEqual(400);
     expect(JSON.stringify(rcd.body)).toMatch(/first payment/i);
-    // AM can't confirm the payment; Finance can.
+    // CM can't confirm the payment; Finance can.
     await decide('am', r.approval.id, 'approve', 403);
     await decide('finance', r.approval.id);
     expect((await prisma.engagement.findUniqueOrThrow({ where: { id: ids.manualEng } })).paymentPending).toBe(false);
@@ -212,7 +212,7 @@ describe('add_client: who may add, validation and duplicates', () => {
     expect((await prisma.clientOrg.findUniqueOrThrow({ where: { id: ids.online } })).paymentStatus).toBe('confirmed');
   });
 
-  it('suggests AMs by load and industry', async () => {
+  it('suggests CMs by load and industry', async () => {
     const r = await http().get('/clients-actions/am-suggest?industry=Restaurants%20%26%20cafes').set(as('lead')).expect(code(200));
     expect(r.body.length).toBeGreaterThan(0);
     expect(r.body.filter((a: { suggested: boolean }) => a.suggested).length).toBe(1);
@@ -254,7 +254,7 @@ describe('migrated client', () => {
     expect(inv.status).toBe('paid');
   });
 
-  it('lets the AM move a migrated service gate (with reason), never a new one', async () => {
+  it('lets the CM move a migrated service gate (with reason), never a new one', async () => {
     await http().post(`/clients-actions/engagements/${ids.migratedEng}/gate`).set(as('design')).send({ gate: 'G4', reason: 'Drafts out' }).expect(code(403));
     await http().post(`/clients-actions/engagements/${ids.migratedEng}/gate`).set(as('am')).send({ gate: 'G4', reason: 'Drafts with the client' }).expect(code(200));
     expect((await prisma.engagement.findUniqueOrThrow({ where: { id: ids.migratedEng } })).currentGate).toBe('G4');
@@ -266,7 +266,7 @@ describe('migrated client', () => {
 });
 
 describe('edit_client: field-level rights', () => {
-  it('AM changes contact only, Finance billing only, Admin everything; others are refused', async () => {
+  it('CM changes contact only, Finance billing only, Admin everything; others are refused', async () => {
     const no = await http().patch(`/clients-actions/${ids.manual}`).set(as('am')).send({ contactName: 'Kavya Rao', billingName: 'Hijack LLP' }).expect(code(403));
     expect(no.body.message).toMatch(/can't change billing name/);
     const a = await http().patch(`/clients-actions/${ids.manual}`).set(as('am')).send({ contactName: 'Kavya Rao' }).expect(code(200));
@@ -282,7 +282,7 @@ describe('edit_client: field-level rights', () => {
     await http().patch(`/clients-actions/${ids.manual}`).set(as('am2')).send({ contactName: 'X Y' }).expect(code(403));
   });
 
-  it('the client Owner edits their own contact and the AM is notified', async () => {
+  it('the client Owner edits their own contact and the CM is notified', async () => {
     tokens.manualOwner = await signIn(ids.manualOwnerEmail);
     const before = await prisma.notification.count({ where: { userId: ids.am, kind: 'client_updated' } });
     const r = await http().patch('/client-actions/contact').set(as('manualOwner')).send({ contactName: 'Kavya R', contactPhone: '9876543210', contactEmail: `kavya.${stamp}@example.com` }).expect(code(200));
@@ -292,7 +292,7 @@ describe('edit_client: field-level rights', () => {
 });
 
 describe('client users and brands', () => {
-  it('AM invites a viewer straight away; an AM-invited Owner waits for the Owner to confirm', async () => {
+  it('CM invites a viewer straight away; a CM-invited Owner waits for the Owner to confirm', async () => {
     const v = await http().post(`/clients-actions/${ids.manual}/users`).set(as('am')).send({ name: 'Aroma Viewer', email: `aroma.viewer.${stamp}@example.com`, role: 'client_viewer' }).expect(code(201));
     expect(v.body.users.some((u: { email: string }) => u.email === `aroma.viewer.${stamp}@example.com`)).toBe(true);
     const o = await http().post(`/clients-actions/${ids.manual}/users`).set(as('am')).send({ name: 'Second Owner', email: `aroma.owner2.${stamp}@example.com`, role: 'client_owner' }).expect(code(201));
@@ -307,7 +307,7 @@ describe('client users and brands', () => {
     await http().post(`/clients-actions/${ids.manual}/users`).set(as('design')).send({ name: 'X', email: `x.${stamp}@example.com`, role: 'client_viewer' }).expect(code(403));
   });
 
-  it('AM and the client Owner add brands/locations', async () => {
+  it('CM and the client Owner add brands/locations', async () => {
     const b = await http().post(`/clients-actions/${ids.manual}/brands`).set(as('am')).send({ name: 'Aroma HSR', address: 'HSR Layout, Bengaluru' }).expect(code(201));
     expect(b.body.brands.length).toBe(3);
     const c = await http().post('/client-actions/brands').set(as('manualOwner')).send({ name: 'Aroma Whitefield', address: 'ITPL Road, Bengaluru' }).expect(code(201));
@@ -316,8 +316,8 @@ describe('client users and brands', () => {
   });
 });
 
-describe('reassign the Account Manager', () => {
-  it('only AM Lead / Admin; handover note required; client gets an intro; old AM keeps 7 days of read access', async () => {
+describe('reassign the Client Manager', () => {
+  it('only CM Lead / Admin; handover note required; client gets an intro; old CM keeps 7 days of read access', async () => {
     await http().post('/actions/reassign/client_am/apply').set(as('am')).send({ ids: [ids.online], toUserId: ids.am2, reason: 'overload', handoverNote: 'x' }).expect(code(403));
     const noNote = await http().post('/actions/reassign/client_am/apply').set(as('lead')).send({ ids: [ids.online], toUserId: ids.am2, reason: 'overload' }).expect(code(400));
     expect(noNote.body.message).toMatch(/handover/i);
@@ -326,11 +326,11 @@ describe('reassign the Account Manager', () => {
     const c = await prisma.clientOrg.findUniqueOrThrow({ where: { id: ids.online } });
     expect(c.amUserId).toBe(ids.am2);
     expect((await prisma.engagement.findUniqueOrThrow({ where: { id: ids.onlineEng } })).amId).toBe(ids.am2);
-    // The client sees the new AM's introduction in their thread.
+    // The client sees the new CM's introduction in their thread.
     const t = await http().get('/client/thread').set(as('onlineOwner')).expect(code(200));
-    expect(t.body.messages.some((m: { body: string; internal: boolean }) => /your new account manager/.test(m.body) && !m.internal)).toBe(true);
+    expect(t.body.messages.some((m: { body: string; internal: boolean }) => /your new client manager/.test(m.body) && !m.internal)).toBe(true);
     expect(t.body.messages.some((m: { body: string }) => /Prefers calls/.test(m.body))).toBe(false);
-    // Old AM: read for 7 days, no changes.
+    // Old CM: read for 7 days, no changes.
     const old = await http().get(`/clients-actions/${ids.online}`).set(as('am')).expect(code(200));
     expect(old.body.readOnlyAccess).toBe(true);
     expect(old.body.amHistory[0].to).toBeTruthy();
@@ -341,7 +341,7 @@ describe('reassign the Account Manager', () => {
 });
 
 describe('add_engagement and change_tier quotes', () => {
-  it('AM quotes a new service; the Owner approves and pays; onboarding opens for it', async () => {
+  it('CM quotes a new service; the Owner approves and pays; onboarding opens for it', async () => {
     await http().post(`/clients-actions/${ids.manual}/quotes`).set(as('design')).send({ kind: 'add_service', serviceId: ids.monthly2, tier: 'starter', startMonth: month() }).expect(code(403));
     const q = await http().post(`/clients-actions/${ids.manual}/quotes`).set(as('am')).send({ kind: 'add_service', serviceId: ids.monthly2, tier: 'starter', startMonth: month() }).expect(code(201));
     const quote = q.body.quotes[0];
@@ -357,7 +357,7 @@ describe('add_engagement and change_tier quotes', () => {
     expect(e.serviceId).toBe(ids.monthly2);
   });
 
-  it('client asks for a downgrade from next cycle: AM sends, Owner approves, AM Lead is told', async () => {
+  it('client asks for a downgrade from next cycle: CM sends, Owner approves, CM Lead is told', async () => {
     const r = await http().post('/client-actions/quotes').set(as('manualOwner')).send({ kind: 'change_tier', engagementId: ids.manualEng, tier: 'starter', effective: 'next_cycle' }).expect(code(201));
     const q = r.body.quotes.find((x: { status: string; kind: string }) => x.kind === 'change_tier' && x.status === 'requested');
     expect(q).toBeTruthy();
@@ -372,7 +372,7 @@ describe('add_engagement and change_tier quotes', () => {
 });
 
 describe('pause_engagement', () => {
-  it('AM asks, AM Lead approves; tasks wait and clocks stop; resume restores', async () => {
+  it('CM asks, CM Lead approves; tasks wait and clocks stop; resume restores', async () => {
     const r = await http().post(`/clients-actions/engagements/${ids.manualEng}/pause`).set(as('am')).send({ reason: 'Owner travelling', until: dayAhead(10) }).expect(code(200));
     expect(r.body.approval.id).toBeTruthy();
     await decide('am', r.body.approval.id, 'approve', 403);
@@ -389,7 +389,7 @@ describe('pause_engagement', () => {
 });
 
 describe('health override', () => {
-  it('needs a reason; red tells the AM Leads', async () => {
+  it('needs a reason; red tells the CM Leads', async () => {
     await http().post(`/clients-actions/${ids.manual}/health`).set(as('am')).send({ status: 'red' }).expect(code(400));
     const before = await prisma.notification.count({ where: { userId: ids.lead } });
     const r = await http().post(`/clients-actions/${ids.manual}/health`).set(as('am')).send({ status: 'red', reason: 'Owner unhappy with reels' }).expect(code(200));
@@ -401,7 +401,7 @@ describe('health override', () => {
 });
 
 describe('requests: raise on behalf, reassign, custom quote, convert, internal approval', () => {
-  it('AM raises a request for the client; the client deciders see it', async () => {
+  it('CM raises a request for the client; the client deciders see it', async () => {
     await http().post('/clients-actions/requests').set(as('design')).send({ engagementId: ids.manualEng, type: 'change', description: 'Change the menu reel' }).expect(code(403));
     const r = await http().post('/clients-actions/requests').set(as('am')).send({ engagementId: ids.manualEng, type: 'change', description: tag('Change the menu reel'), neededBy: dayAhead(5), links: ['https://example.com/brief'] }).expect(code(201));
     ids.req = r.body.id;
@@ -470,7 +470,7 @@ describe('requests: raise on behalf, reassign, custom quote, convert, internal a
 });
 
 describe('lists, bulk and import', () => {
-  it('lists with filters, scopes AMs to their clients, refuses designers', async () => {
+  it('lists with filters, scopes CMs to their clients, refuses designers', async () => {
     const all = await http().get('/clients-actions/list?status=active').set(as('lead')).expect(code(200));
     expect(all.body.some((c: { id: string }) => c.id === ids.manual)).toBe(true);
     const mine = await http().get('/clients-actions/list').set(as('am2')).expect(code(200));
@@ -479,7 +479,7 @@ describe('lists, bulk and import', () => {
     await http().get('/clients-actions/list').set(as('design')).expect(code(403));
   });
 
-  it('bulk tags and archives with a reason (undo available); AMs cannot archive', async () => {
+  it('bulk tags and archives with a reason (undo available); CMs cannot archive', async () => {
     const extra = await create('lead', base('Bulk One'));
     await http().post('/clients-actions/bulk').set(as('am')).send({ ids: [extra.client.id], action: 'archive', reason: 'Duplicate entry' }).expect(code(403));
     await http().post('/clients-actions/bulk').set(as('lead')).send({ ids: [extra.client.id], action: 'tag', tag: `vip-${tail}` }).expect(code(200));
@@ -493,7 +493,7 @@ describe('lists, bulk and import', () => {
   });
 
   it('imports clients from CSV', async () => {
-    const csv = ['Business name,Contact name,Contact phone,Contact email,Industry,Billing name,Billing address,Branch,GSTIN,Account manager', `${tag('Imported Cafe')},Ravi K,${phone()},ravi.${stamp}@example.com,Restaurants & cafes,Imported Cafe LLP,"5 Brigade Road, Bengaluru",Bengaluru,,am@bmu.demo`, `${tag('Broken')},,,,,,,,BADGST,`].join('\n');
+    const csv = ['Business name,Contact name,Contact phone,Contact email,Industry,Billing name,Billing address,Branch,GSTIN,Client manager', `${tag('Imported Cafe')},Ravi K,${phone()},ravi.${stamp}@example.com,Restaurants & cafes,Imported Cafe LLP,"5 Brigade Road, Bengaluru",Bengaluru,,am@bmu.demo`, `${tag('Broken')},,,,,,,,BADGST,`].join('\n');
     await http().post('/imports/clients').set(as('am')).send({ csv }).expect(code(403));
     const p = await http().post('/imports/clients').set(as('lead')).send({ csv, fileName: `clients-${stamp}.csv` }).expect(code(200));
     expect(p.body.rowsTotal).toBe(2);
@@ -524,7 +524,7 @@ describe('createClientFromLead (for the leads area)', () => {
 });
 
 describe('offboarding', () => {
-  it('AM Lead asks, Admin approves, checklist, client confirms, users read-only', async () => {
+  it('CM Lead asks, Admin approves, checklist, client confirms, users read-only', async () => {
     await http().post(`/clients-actions/${ids.manual}/offboard`).set(as('am')).send({ reason: 'Budget cut', lastCycle: month() }).expect(code(403));
     const r = await http().post(`/clients-actions/${ids.manual}/offboard`).set(as('lead')).send({ reason: 'Budget cut', lastCycle: month() }).expect(code(200));
     expect(r.body.approval.id).toBeTruthy();

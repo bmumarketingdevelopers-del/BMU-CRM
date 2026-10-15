@@ -153,7 +153,7 @@ export class OpsCommsService {
       },
     });
     await this.audit.log(me, 'thread.started', 'ClientOrg', client.id, undefined, { threadId: t.id, kind: input.kind, title: input.title, participants: people.length }, ip);
-    // Project threads also tell the client's AM; internal discussions tell the people added.
+    // Project threads also tell the client's CM; internal discussions tell the people added.
     const notifyIds = input.kind === 'project' ? [...people.map((p) => p.id), client.amUserId] : people.map((p) => p.id);
     await this.notifications.notify(
       me.orgId,
@@ -181,7 +181,7 @@ export class OpsCommsService {
     const input = parse(opsMessageToRequestSchema, body);
     const msg = await this.prisma.message.findFirst({ where: { id: input.messageId, orgId: me.orgId }, include: { thread: true } });
     if (!msg) throw new NotFoundException('Message not found');
-    // The person must see that thread (client threads: AM / leadership; ops threads: as above).
+    // The person must see that thread (client threads: CM / leadership; ops threads: as above).
     const visible = OPS_TYPES.includes(msg.thread.type)
       ? await this.prisma.thread.findFirst({ where: { AND: [{ id: msg.threadId }, await this.visibleWhere(me)] }, select: { id: true } })
       : await this.prisma.thread.findFirst({ where: { AND: [{ id: msg.threadId }, await threadScope(me)] }, select: { id: true } });
@@ -190,7 +190,7 @@ export class OpsCommsService {
     if (existing) throw new BadRequestException('A request was already created from this message');
     const eng = await this.prisma.engagement.findFirst({ where: { id: input.engagementId, clientOrgId: msg.thread.clientOrgId, deletedAt: null }, include: { clientOrg: { select: { name: true } } } });
     if (!eng) throw new BadRequestException("Pick one of this client's services");
-    if (!isLeadership(me) && eng.amId !== me.id) throw new ForbiddenException("Only the client's Account Manager can log requests for this service");
+    if (!isLeadership(me) && eng.amId !== me.id) throw new ForbiddenException("Only the client's Client Manager can log requests for this service");
     const author = await this.prisma.user.findUnique({ where: { id: msg.authorId }, select: { type: true } });
     const [cal, sla] = await Promise.all([calendarFor(this.prisma, me.orgId), this.settings.get(me.orgId, 'sla')]);
     const minutes = sla.firstReplyMinutes[input.type] ?? SLA_FIRST_REPLY_MIN[input.type];

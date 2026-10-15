@@ -1,4 +1,4 @@
-// v11 clients: reassignment engine targets `client_am` (a client's account manager) and `request` (who handles a
+// v11 clients: reassignment engine targets `client_am` (a client's client manager) and `request` (who handles a
 // client request). The engine does candidates, impact, reasons, handover notes, Assignment rows (7-day read access for
 // the previous owner), audit, notifications and undo; these targets load, check and apply.
 import { ForbiddenException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
@@ -24,18 +24,18 @@ export class ClientsTargets implements OnModuleInit {
   onModuleInit() {
     this.registry.registerReassignTarget({
       type: 'client_am',
-      label: 'Client account manager',
+      label: 'Client manager',
       auditEntity: 'ClientOrg',
       load: async (me, ids) => {
         assertStaff(me);
         const rows = await this.prisma.clientOrg.findMany({ where: { id: { in: ids }, orgId: me.orgId, deletedAt: null } });
         if (rows.length !== new Set(ids).size) throw new NotFoundException('Client not found');
         if (!seesAllClients(me) && rows.some((r) => r.amUserId !== me.id)) throw new ForbiddenException("You don't have access to one of these clients");
-        // The AM seat is client-facing and always "in progress": the old AM writes a handover note.
+        // The CM seat is client-facing and always "in progress": the old CM writes a handover note.
         return rows.map((c): ReassignItem => ({ id: c.id, title: c.name, ownerId: c.amUserId, deadline: null, status: c.archivedAt ? 'archived' : 'active', inProgress: true, clientOrgId: c.id, amId: null, hours: 0, href: `/team/clients/${c.id}` }));
       },
       assertCanReassign: async (me) => {
-        if (!isClientLead(me)) throw new ForbiddenException("Only an AM Lead, Branch Manager or the Founder can change a client's account manager");
+        if (!isClientLead(me)) throw new ForbiddenException("Only a CM Lead, Branch Manager or the Founder can change a client's client manager");
       },
       eligibility: async () => ({ where: { roles: { some: { role: { baseRole: { in: AM_BASE_ROLES } } } } } }),
       snapshot: async (items) => {
@@ -71,7 +71,7 @@ export class ClientsTargets implements OnModuleInit {
         const rows = await this.prisma.request.findMany({ where: { id: { in: ids }, orgId: me.orgId }, include: { engagement: { select: { amId: true, clientOrgId: true, clientOrg: { select: { name: true } } } } } });
         if (rows.length !== new Set(ids).size) throw new NotFoundException('Request not found');
         const lead = isClientLead(me) || hasRole(me, 'finance');
-        if (!lead && rows.some((r) => r.engagement.amId !== me.id && r.assigneeId !== me.id)) throw new ForbiddenException("One of these requests belongs to another Account Manager's client");
+        if (!lead && rows.some((r) => r.engagement.amId !== me.id && r.assigneeId !== me.id)) throw new ForbiddenException("One of these requests belongs to another Client Manager's client");
         return rows.map((r): ReassignItem => ({
           id: r.id,
           title: `${r.engagement.clientOrg.name}: ${r.description.slice(0, 60)}`,
@@ -88,7 +88,7 @@ export class ClientsTargets implements OnModuleInit {
       },
       assertCanReassign: async (me, items) => {
         if (isClientLead(me)) return;
-        if (!hasRole(me, 'account_manager')) throw new ForbiddenException('Only the Account Manager or AM Lead can reassign requests');
+        if (!hasRole(me, 'account_manager')) throw new ForbiddenException('Only the Client Manager or CM Lead can reassign requests');
         if (items.some((i) => i.amId !== me.id)) throw new ForbiddenException("You can only reassign requests for your own clients");
         if (items.some((i) => !OPEN_REQUEST.includes(i.status ?? ''))) throw new ForbiddenException('Closed requests stay with whoever finished them');
       },
@@ -109,7 +109,7 @@ export class ClientsTargets implements OnModuleInit {
     this.registry.registerUndoModel('request');
   }
 
-  /** The client meets the new AM in their thread; the handover note is kept as an internal note. */
+  /** The client meets the new CM in their thread; the handover note is kept as an internal note. */
   private async introduce(me: Me, clientOrgId: string, fromId: string | null, to: { id: string; name: string }, handover: string | null) {
     const [c, am, from] = await Promise.all([
       this.prisma.clientOrg.findUnique({ where: { id: clientOrgId }, select: { name: true, orgId: true } }),
@@ -119,10 +119,10 @@ export class ClientsTargets implements OnModuleInit {
     if (!c || !am) return;
     const thread = (await this.prisma.thread.findFirst({ where: { clientOrgId, type: 'client_am' } })) ?? (await this.prisma.thread.create({ data: { orgId: c.orgId, clientOrgId, type: 'client_am' } }));
     const reach = [am.email, am.phone].filter(Boolean).join(' · ');
-    const intro = `Hello! I'm ${am.name}, your new account manager at BMU${from ? `, taking over from ${from.name}` : ''}. I have the full history of your account, so nothing changes for you. Message me here any time${reach ? ` (${reach})` : ''}.`;
+    const intro = `Hello! I'm ${am.name}, your new client manager at BMU${from ? `, taking over from ${from.name}` : ''}. I have the full history of your account, so nothing changes for you. Message me here any time${reach ? ` (${reach})` : ''}.`;
     await this.prisma.message.create({ data: { orgId: c.orgId, threadId: thread.id, authorId: to.id, body: intro } });
     if (handover) await this.prisma.message.create({ data: { orgId: c.orgId, threadId: thread.id, authorId: me.id, body: `Handover note for ${am.name}: ${handover}`, isInternal: true } });
     const deciders = await this.prisma.clientUser.findMany({ where: { clientOrgId, user: { deletedAt: null, status: { not: 'suspended' } } }, select: { userId: true } });
-    await this.notifications.notify(c.orgId, deciders.map((d) => d.userId), { kind: 'am_changed', title: `Meet ${am.name}, your new account manager`, body: intro.slice(0, 160), link: '/client/messages' });
+    await this.notifications.notify(c.orgId, deciders.map((d) => d.userId), { kind: 'am_changed', title: `Meet ${am.name}, your new client manager`, body: intro.slice(0, 160), link: '/client/messages' });
   }
 }

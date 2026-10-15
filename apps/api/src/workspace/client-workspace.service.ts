@@ -151,7 +151,7 @@ export class ClientWorkspaceService {
         return u;
       });
       await this.audit.log(me, 'client_user.invited', 'User', user.id, undefined, { clientOrgId, ...input }, ip);
-      // v11 clients: welcome message in the client thread and the AM is told.
+      // v11 clients: welcome message in the client thread and the CM is told.
       const org = await this.prisma.clientOrg.findUnique({ where: { id: clientOrgId }, select: { name: true, amUserId: true } });
       const thread = await this.prisma.thread.findFirst({ where: { clientOrgId, type: 'client_am' } });
       if (thread && org?.amUserId) await this.prisma.message.create({ data: { orgId: me.orgId, threadId: thread.id, authorId: org.amUserId, body: `Welcome to BMU, ${input.name.split(' ')[0]}! ${me.name} added you to the account. Sign in with ${input.email} to follow the work and message us here.` } });

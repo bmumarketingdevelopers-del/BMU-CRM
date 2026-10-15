@@ -109,11 +109,11 @@ export class CraftManagerService {
   // Scope
 
   /**
-   * Founder, Admin and AM Lead manage everything; a Department Head manages their department; an Account Manager or
-   * Project Manager manages the engagements they are the AM of. Everyone else (producers, clients, creators) is refused.
+   * Founder, Admin and CM Lead manage everything; a Department Head manages their department; a Client Manager or
+   * Project Manager manages the engagements they are the CM of. Everyone else (producers, clients, creators) is refused.
    */
   async scope(me: Me): Promise<Scope> {
-    if (me.type !== 'staff' || !canOpenCraftManager(me)) throw new ForbiddenException('The manager workspace is for account managers, project managers and department heads');
+    if (me.type !== 'staff' || !canOpenCraftManager(me)) throw new ForbiddenException('The manager workspace is for client managers, project managers and department heads');
     if (me.roles.some((r) => LEADS_ALL.includes(r))) return { kind: 'all', label: 'All clients and teams', departmentId: null, engagementIds: null };
     if (me.roles.includes('department_head')) {
       const self = await this.prisma.user.findUnique({ where: { id: me.id }, include: { department: { select: { name: true } } } });
@@ -155,7 +155,7 @@ export class CraftManagerService {
     let filter: Prisma.UserWhereInput;
     if (s.kind === 'department') filter = { departmentId: s.departmentId };
     else if (s.kind === 'all') filter = roleFilter;
-    // An AM's team: their reports, anyone working on their clients, every specialist and the QC reviewers.
+    // A CM's team: their reports, anyone working on their clients, every specialist and the QC reviewers.
     else filter = { OR: [{ managerId: me.id }, { id: { in: extraIds } }, { specialty: { not: null } }, { roles: { some: { role: { baseRole: 'qc_reviewer' } } } }] };
     const rows = await this.prisma.user.findMany({
       where: { ...where, ...filter, NOT: { status: 'suspended' } },
@@ -177,14 +177,14 @@ export class CraftManagerService {
     return { id: u.id, name: u.name, specialty: u.specialty, departmentId: u.departmentId, department: u.department?.name ?? null, baseRole: u.roles[0]?.role.baseRole ?? null, roles: u.roles.map((r) => r.role.baseRole) };
   }
 
-  /** The rules every assignment follows: open tasks only, QC never to the version's own uploader, client reviews to AMs. */
+  /** The rules every assignment follows: open tasks only, QC never to the version's own uploader, client reviews to CMs. */
   private checkAssignable(t: TaskRow, u: MemberRow) {
     if (!isOpen(t.status)) throw new BadRequestException(`"${t.title}" is ${t.status === 'done' ? 'already done' : 'cancelled'} and can't be reassigned`);
     if (t.kind === 'qc') {
       if (!u.roles.some((r) => QC_ROLES.includes(r))) throw new BadRequestException(`${u.name} can't do QC. Pick a QC reviewer or department head.`);
       if (t.deliverable?.versions[0]?.uploadedById === u.id) throw new BadRequestException(`${u.name} uploaded this version, so they can't QC it`);
     }
-    if (t.kind === 'client_review' && !u.roles.some((r) => REVIEW_ROLES.includes(r))) throw new BadRequestException('Client reviews go to an account manager');
+    if (t.kind === 'client_review' && !u.roles.some((r) => REVIEW_ROLES.includes(r))) throw new BadRequestException('Client reviews go to a client manager');
   }
 
   private async leaveDays(orgId: string, userIds: string[], from: Date, to: Date) {
@@ -250,7 +250,7 @@ export class CraftManagerService {
     const best = eligible.sort((a, b) => cards.get(a.id)!.loadPct - cards.get(b.id)!.loadPct || cards.get(a.id)!.open - cards.get(b.id)!.open)[0];
     if (!best || best.id === t.ownerId) return null;
     const c = cards.get(best.id)!;
-    const fit = t.kind === 'qc' ? 'QC' : t.kind === 'client_review' ? 'Account manager' : craftSpecialtyLabel(best.specialty) || 'Fits the step';
+    const fit = t.kind === 'qc' ? 'QC' : t.kind === 'client_review' ? 'Client manager' : craftSpecialtyLabel(best.specialty) || 'Fits the step';
     return { userId: best.id, name: best.name, reason: `${fit} · ${c.loadPct}% loaded this week · ${plural(c.open, 'open task')}` };
   }
 
@@ -785,7 +785,7 @@ export class CraftManagerService {
   }
 
   // -------------------------------------------------------------------------
-  // Used by the specialist dashboards: an AM may open the dashboard of anyone working on their clients.
+  // Used by the specialist dashboards: a CM may open the dashboard of anyone working on their clients.
 
   async worksForMe(me: Me, userId: string): Promise<boolean> {
     if (!me.roles.includes('account_manager') && me.specialty !== 'project_manager') return false;

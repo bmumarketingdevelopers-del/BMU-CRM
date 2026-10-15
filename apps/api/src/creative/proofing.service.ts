@@ -164,7 +164,7 @@ export class ProofingService {
     const v = await this.prisma.version.findUnique({ where: { id: l.versionId }, include: { file: true, deliverable: { include: { versions: { select: { id: true, number: true } }, cycle: { select: { engagement: { select: { clientOrgId: true, clientOrg: { select: { name: true } }, service: { select: { name: true } } } } } } } } } });
     if (!v) throw new GoneException('This version is no longer available');
     const user = await this.prisma.user.findFirst({ where: { id: l.userId, deletedAt: null, status: { not: 'suspended' } }, select: { id: true, name: true } });
-    if (!user) throw new ForbiddenException('Your account can no longer approve work. Ask your BMU Account Manager.');
+    if (!user) throw new ForbiddenException('Your account can no longer approve work. Ask your BMU Client Manager.');
     return { l, v, d: v.deliverable, user };
   }
 

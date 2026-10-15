@@ -75,7 +75,7 @@ export default function ClientHealthPage() {
                       cell: (r) => (r.reasons.length ? <ul className="space-y-0.5 text-xs text-ink-muted">{r.reasons.map((x) => <li key={x}>{x}</li>)}</ul> : <span className="text-xs text-ink-muted">Nothing to flag</span>),
                     },
                     { key: "last", header: "Last heard from", cell: (r) => <span className="whitespace-nowrap text-ink-muted">{r.lastClientActivityAt ? fmtDate(r.lastClientActivityAt) : "Never"}</span> },
-                    { key: "am", header: "Account manager", cell: (r) => r.am ?? <span className="text-ink-muted">None</span> },
+                    { key: "am", header: "Client manager", cell: (r) => r.am ?? <span className="text-ink-muted">None</span> },
                   ]}
                 />
               </Panel>

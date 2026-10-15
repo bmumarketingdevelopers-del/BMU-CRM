@@ -49,7 +49,7 @@ const ONBOARDING_BASE: TeamProcessItem[] = [
 
 const OFFBOARDING_BASE: TeamProcessItem[] = [
   item('reassign_tasks', 'Open tasks reassigned', 'handover', { auto: true }),
-  item('reassign_clients', 'Clients moved to another account manager', 'handover', { auto: true }),
+  item('reassign_clients', 'Clients moved to another client manager', 'handover', { auto: true }),
   item('reassign_leads', 'Open leads reassigned', 'handover', { auto: true }),
   // v11 people: approvals waiting on them and their creator briefs must move too; vault access and file ownership.
   item('reassign_approvals', 'Approvals waiting on them handed over', 'handover', { auto: true }),
@@ -374,7 +374,7 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
     return this.get(me, id);
   }
 
-  /** Bulk handover of the leaver's open tasks, clients (AM) or leads to one person. */
+  /** Bulk handover of the leaver's open tasks, clients (CM) or leads to one person. */
   async reassign(me: Me, id: string, input: TeamReassign, ip?: string) {
     const row = await this.editable(me, id);
     if (row.kind !== 'offboarding') throw new BadRequestException('Work is handed over from an offboarding checklist');
@@ -387,7 +387,7 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
       if (moved) await this.notifications.notify(me.orgId, [to.id], { kind: 'task_assigned', title: `${moved} task${moved > 1 ? 's' : ''} handed over to you`, link: '/team/tasks' });
     } else if (input.kind === 'clients') {
       const isAm = await this.prisma.userRole.findFirst({ where: { userId: to.id, role: { baseRole: { in: ['account_manager', 'am_lead', 'admin', 'founder'] } } } });
-      if (!isAm) throw new BadRequestException(`${to.name} is not an account manager`);
+      if (!isAm) throw new BadRequestException(`${to.name} is not a client manager`);
       const clients = await this.prisma.clientOrg.findMany({ where: { id: { in: input.ids }, orgId: me.orgId, amUserId: row.userId }, select: { id: true } });
       await this.prisma.$transaction([
         this.prisma.clientOrg.updateMany({ where: { id: { in: clients.map((c) => c.id) } }, data: { amUserId: to.id } }),

@@ -1,5 +1,5 @@
 // v11 people: offboarding as a blocking checklist. It can't finish while the person owns ANY open record (tasks,
-// clients and engagements as AM, leads, client requests on their engagements, approvals waiting on them, creator
+// clients and engagements as CM, leads, client requests on their engagements, approvals waiting on them, creator
 // briefs). HR finishes it with a final Admin confirmation; login is disabled at the end of the last day, and the
 // person moves to "Former" on the tree. Builds on the v10 checklist (team-flows PeopleService).
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
@@ -77,8 +77,8 @@ export class OffboardingService implements OnModuleInit {
   private describe(o: PeopleOpenRecords) {
     const parts: [number, string][] = [
       [o.tasks.length, 'open task'],
-      [o.clients.length, 'client (as AM)'],
-      [o.engagements.length, 'engagement (as AM)'],
+      [o.clients.length, 'client (as CM)'],
+      [o.engagements.length, 'engagement (as CM)'],
       [o.leads.length, 'open lead'],
       [o.requests.length, 'client request'],
       [o.approvals.length, 'approval waiting on them'],
@@ -133,7 +133,7 @@ export class OffboardingService implements OnModuleInit {
     if (u.leftAt) throw new BadRequestException(`${u.name} has already left`);
     const p = await this.team.startOffboarding(me, { userId, lastDay: input.lastDay, note: [input.reason, input.note].filter(Boolean).join(' · ') }, ip);
     await this.audit.log(me, 'user.offboarding_started', 'User', userId, null, { processId: p.id, lastDay: input.lastDay, reason: input.reason }, ip);
-    // Affected AMs: clients whose work this person is doing.
+    // Affected CMs: clients whose work this person is doing.
     const ams = await this.prisma.task.findMany({ where: { orgId: me.orgId, ownerId: userId, status: { in: [...OPEN_TASK] }, engagementId: { not: null } }, select: { engagementId: true }, distinct: ['engagementId'] });
     const engs = ams.length ? await this.prisma.engagement.findMany({ where: { id: { in: ams.map((a) => a.engagementId!) } }, select: { amId: true } }) : [];
     const amIds = [...new Set(engs.map((e) => e.amId).filter((x): x is string => !!x && x !== userId && x !== me.id))];

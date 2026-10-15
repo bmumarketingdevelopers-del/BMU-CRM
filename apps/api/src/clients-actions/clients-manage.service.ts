@@ -1,5 +1,5 @@
 // v11 clients: the clients list (search, filters, tags, bulk), Client 360 extras (contact, billing, brands, users,
-// quotes, approvals, offboarding), edit_client with field-level rights, add_brand_location, add_client_user (AM side
+// quotes, approvals, offboarding), edit_client with field-level rights, add_brand_location, add_client_user (CM side
 // and owner confirmation), set_client_health and archive/restore.
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import {
@@ -65,7 +65,7 @@ export class ClientsManageService implements OnModuleInit {
       auditEntity: 'ClientOrg',
       assertCan: async (me, id) => {
         await loadClient(this.prisma, me, id);
-        if (!isClientLead(me)) throw new ForbiddenException('Only the Founder, Branch Manager or AM Lead can archive clients');
+        if (!isClientLead(me)) throw new ForbiddenException('Only the Founder, Branch Manager or CM Lead can archive clients');
       },
       beforeArchive: async (me, id) => {
         const open = await this.prisma.engagement.count({ where: { clientOrgId: id, deletedAt: null, status: { notIn: ['closed', 'delivered', 'paused'] } } });
@@ -76,7 +76,7 @@ export class ClientsManageService implements OnModuleInit {
       await loadClient(this.prisma, me, id);
     });
 
-    // AM-invited Owner: the existing Owner (client app) or a Branch Manager confirms.
+    // CM-invited Owner: the existing Owner (client app) or a Branch Manager confirms.
     this.registry.registerApprovalHandler({
       action: 'clients.owner_invite',
       label: 'New client Owner needs confirmation',
@@ -166,7 +166,7 @@ export class ClientsManageService implements OnModuleInit {
       const undo = null;
       return { ok: true as const, changed: rows.length, message: `Tagged ${rows.length} client${rows.length > 1 ? 's' : ''} "${tag.name}"`, undo };
     }
-    if (!isClientLead(me)) throw new ForbiddenException('Only the Founder, Branch Manager or AM Lead can archive clients');
+    if (!isClientLead(me)) throw new ForbiddenException('Only the Founder, Branch Manager or CM Lead can archive clients');
     if (input.action === 'archive') {
       if ((input.reason ?? '').trim().length < 3) throw new BadRequestException('Give a short reason for archiving');
       const running = await this.prisma.engagement.groupBy({ by: ['clientOrgId'], where: { clientOrgId: { in: ids }, deletedAt: null, status: { notIn: ['closed', 'delivered', 'paused'] } }, _count: true });
@@ -316,7 +316,7 @@ export class ClientsManageService implements OnModuleInit {
     const asked = (Object.keys(input) as (keyof ClientsEdit)[]).filter((k) => input[k] !== undefined);
     if (!asked.length) throw new BadRequestException('Nothing to change');
     const refused = asked.filter((k) => !allowed.has(k));
-    if (refused.length === asked.length) throw new ForbiddenException(`You can't change ${refused.map((k) => clientsFieldLabels[k].toLowerCase()).join(', ')}. ${hasRole(me, 'finance') ? 'Finance edits billing fields only.' : hasRole(me, 'account_manager') ? 'Account Managers edit contact details; billing is for Finance.' : ''}`.trim());
+    if (refused.length === asked.length) throw new ForbiddenException(`You can't change ${refused.map((k) => clientsFieldLabels[k].toLowerCase()).join(', ')}. ${hasRole(me, 'finance') ? 'Finance edits billing fields only.' : hasRole(me, 'account_manager') ? 'Client Managers edit contact details; billing is for Finance.' : ''}`.trim());
     if (refused.length) throw new ForbiddenException(`You can't change ${refused.map((k) => clientsFieldLabels[k].toLowerCase()).join(', ')}`);
     if (input.branchId && !(await this.prisma.branch.findFirst({ where: { id: input.branchId, orgId: me.orgId } }))) throw new BadRequestException('Pick a branch');
     const { data, before, after } = this.applyEdit(c, input);
@@ -363,7 +363,7 @@ export class ClientsManageService implements OnModuleInit {
 
   async addBrand(me: Me, clientOrgId: string, input: ClientsBrandInput, ip?: string) {
     const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
-    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can add brands");
+    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can add brands");
     const b = await this.saveBrand(me, c.id, input, ip);
     void b;
     return this.detail(me, c.id);
@@ -379,7 +379,7 @@ export class ClientsManageService implements OnModuleInit {
 
   async removeBrand(me: Me, clientOrgId: string, brandId: string, ip?: string) {
     const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
-    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can remove brands");
+    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can remove brands");
     const b = await this.prisma.clientBrand.findFirst({ where: { id: brandId, clientOrgId: c.id, deletedAt: null } });
     if (!b) throw new NotFoundException('Brand not found');
     await this.prisma.clientBrand.update({ where: { id: b.id }, data: { deletedAt: new Date() } });
@@ -388,11 +388,11 @@ export class ClientsManageService implements OnModuleInit {
   }
 
   // -------------------------------------------------------------------------
-  // Client users (AM side: Client 360 → Users → Invite)
+  // Client users (CM side: Client 360 → Users → Invite)
 
   async invite(me: Me, clientOrgId: string, body: unknown, ip?: string) {
     const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
-    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can invite client users");
+    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can invite client users");
     if (c.readOnlyUntil || c.archivedAt) throw new BadRequestException('This client is offboarded or archived');
     const parsed = clientsInviteSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Check the form');
@@ -421,7 +421,7 @@ export class ClientsManageService implements OnModuleInit {
 
   async health(me: Me, clientOrgId: string, input: { status: string; reason: string }, ip?: string) {
     const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
-    if (!(runsClient(me, c) || hasRole(me, 'am_lead'))) throw new ForbiddenException("Only the client's Account Manager or the AM Lead can change client health");
+    if (!(runsClient(me, c) || hasRole(me, 'am_lead'))) throw new ForbiddenException("Only the client's Client Manager or the CM Lead can change client health");
     if (c.health === input.status && c.healthReason === input.reason) throw new BadRequestException('Nothing changed');
     await this.prisma.clientOrg.update({ where: { id: c.id }, data: { health: input.status, healthReason: input.reason, healthOverriddenAt: new Date(), healthOverriddenBy: me.id } });
     await this.audit.log(me, 'client.health_set', 'ClientOrg', c.id, { health: c.health, reason: c.healthReason }, { health: input.status, reason: input.reason }, ip);

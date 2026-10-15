@@ -1,7 +1,7 @@
 // Deliver journey 3, on the Sunrise demo accounts: delivery SLA and escalation, and the client approval rule.
 // - Founder runs the escalation job; design.head and am.lead get "Overdue … working days" alerts in the bell.
 // - am.lead sees "Late or at risk" and the Delivery SLA panel on the Projects board; escalated items are marked.
-// - AM and producer see "Delivery deadlines to watch" on My Day.
+// - CM and producer see "Delivery deadlines to watch" on My Day.
 // - client@sunrise.demo (owner) switches the approval rule to "The owner must approve"; approver@sunrise.demo sees the
 //   rule but cannot change it; am.lead sees the same rule on Client 360; the owner switches it back to "Any one approver".
 // - Every page is also opened at phone width without horizontal scrolling.
@@ -39,7 +39,7 @@ try {
   check(escalated.length > 0, `${escalated.length} items are marked escalated`);
   const headNotes = await api("design.head@bmu.demo").get("/notifications");
   const leadNotes = await api("am.lead@bmu.demo").get("/notifications");
-  check([...headNotes.items, ...leadNotes.items].some((n) => n.kind === "sla_escalation"), "department head / AM lead got an escalation alert");
+  check([...headNotes.items, ...leadNotes.items].some((n) => n.kind === "sla_escalation"), "department head / CM lead got an escalation alert");
   const again = await api("founder@bmu.demo").post("/deliver/sla/run");
   check(again.escalated === 0, "running the job again escalates nothing twice");
 
@@ -55,7 +55,7 @@ try {
   await page.getByRole("button", { name: /Notifications|notifications/ }).first().click().catch(() => {});
   await shot(page, "j3-am-lead-bell");
 
-  console.log("3. My Day (AM and producer)");
+  console.log("3. My Day (CM and producer)");
   for (const email of ["am@bmu.demo", "producer@bmu.demo"]) {
     const day = await api(email).get("/my-day");
     page = await as(email);

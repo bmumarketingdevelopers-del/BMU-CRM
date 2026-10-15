@@ -137,7 +137,7 @@ export default function TeamRequestPage({ params }: { params: Promise<{ id: stri
             <h2 className="font-medium">Handling</h2>
             <dl className="mt-2 grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-1 text-sm" data-testid="request-handling">
               <dt className="text-ink-muted">Assigned to</dt>
-              <dd>{r.assignee?.name ?? "Account Manager"}</dd>
+              <dd>{r.assignee?.name ?? "Client Manager"}</dd>
               {r.neededBy && (
                 <>
                   <dt className="text-ink-muted">Needed by</dt>

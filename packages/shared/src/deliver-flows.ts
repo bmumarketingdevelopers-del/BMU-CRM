@@ -152,7 +152,7 @@ export type DeliverCyclesView = {
   cycles: DeliverCycleSummary[];
   nextPeriod: string | null;
   can: { startNext: boolean };
-  /** Why the AM can't start the next month right now (plain words), if so. */
+  /** Why the CM can't start the next month right now (plain words), if so. */
   startNextBlocked: string | null;
 };
 

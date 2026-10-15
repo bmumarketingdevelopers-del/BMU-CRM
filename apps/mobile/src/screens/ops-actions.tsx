@@ -1,6 +1,6 @@
 // v11 ops: mobile uploads and the client's floating "+".
 // Team: "+" → Photo or video uploads into a client's folder. Clients: a floating "+" on every tab with Request and
-// Photo or video (lands in "From client" and tells the Account Manager). The server checks every action again.
+// Photo or video (lands in "From client" and tells the Client Manager). The server checks every action again.
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -167,7 +167,7 @@ function ClientMediaSheet({ onClose }: { onClose: (message?: string) => void }) 
   const { busy, error, setError, run } = useRun();
   return (
     <Sheet open title="Send a photo or video" onClose={() => onClose()}>
-      <Muted>It goes to your team's "From client" folder and your Account Manager is told.</Muted>
+      <Muted>It goes to your team's "From client" folder and your Client Manager is told.</Muted>
       <MediaPicker value={file} onChange={setFile} onError={setError} />
       <Input value={note} onChangeText={setNote} placeholder="Note for the team (optional)" maxLength={500} accessibilityLabel="Note for the team" />
       <ErrorText>{error}</ErrorText>

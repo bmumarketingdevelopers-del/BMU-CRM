@@ -171,7 +171,7 @@ describe('asset library', () => {
     await http().get('/assets').set(as('client')).expect(403);
   });
 
-  it('archive hides it; only the uploader, AM, heads or leadership can archive', async () => {
+  it('archive hides it; only the uploader, CM, heads or leadership can archive', async () => {
     await http().post(`/assets/${ids.asset}/archive`).set(as('producer')).expect(404); // producer has no tasks on this client yet
     await http().post(`/assets/${ids.asset}/archive`).set(as('am')).expect(200);
     const list = (await http().get('/assets').set(as('am')).expect(200)).body as AssetList;

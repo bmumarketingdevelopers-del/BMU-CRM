@@ -60,7 +60,7 @@ describe('leads_pipeline', () => {
     const me = await request(app.getHttpServer()).get('/auth/me').set(as('sales')).expect(200);
     expect(res.body.every((l: { owner: { id: string } | null }) => l.owner?.id === me.body.id)).toBe(true);
   });
-  it('producer, account manager and clients have no access', async () => {
+  it('producer, client manager and clients have no access', async () => {
     for (const who of ['producer', 'am', 'client']) await request(app.getHttpServer()).get('/leads').set(as(who)).expect(403);
   });
   it('sales executive cannot assign leads', async () => {

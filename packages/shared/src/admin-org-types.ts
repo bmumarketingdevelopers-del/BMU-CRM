@@ -88,7 +88,7 @@ export const decideLeaveSchema = z.object({ decision: z.enum(["approve", "reject
 export type DecideLeave = z.infer<typeof decideLeaveSchema>;
 
 // ---------------------------------------------------------------------------
-// Clients: engagements, AM assignment, offboarding
+// Clients: engagements, CM assignment, offboarding
 
 export type AdminEngagementRow = {
   id: string;
@@ -108,7 +108,7 @@ export type AmWorkloadView = {
   clients: { id: string; name: string; am: PersonRef | null; activeEngagements: number; health: string }[];
   canEdit: boolean;
 };
-export const reassignAmSchema = z.object({ amUserId: z.string().min(1, "Choose an account manager") });
+export const reassignAmSchema = z.object({ amUserId: z.string().min(1, "Choose a client manager") });
 
 export const OFFBOARDING_CHECKS = [
   { key: "access_returned", label: "Client access returned (logins, ad accounts, pages)" },

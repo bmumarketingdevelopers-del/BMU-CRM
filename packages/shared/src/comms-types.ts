@@ -194,26 +194,162 @@ export type BookingPageInput = z.infer<typeof bookingPageSchema>;
 /** Free slots by IST day. */
 export type BookingSlots = { host: { name: string; title: string | null }; title: string; durationMin: number; days: { day: string; slots: string[] }[] };
 
+/** v23 meeting requests: who else is in a client meeting and what they answered. */
+export type MeetingParticipantRole = "founder" | "department_head" | "branch_manager" | "member";
+export type MeetingParticipantStatus = "pending" | "accepted" | "reschedule" | "invited" | "joined" | "ignored";
+export type MeetingParticipantView = {
+  userId: string;
+  name: string;
+  role: MeetingParticipantRole;
+  status: MeetingParticipantStatus;
+  /** A new time the same day, when status is "reschedule". */
+  proposedStartAt: string | null;
+  note: string | null;
+};
+
+export const MEETING_PARTICIPANT_ROLE_LABELS: Record<MeetingParticipantRole, string> = {
+  founder: "Founder",
+  department_head: "Department Head",
+  branch_manager: "Branch Manager",
+  member: "Team member",
+};
+
 export type MeetingView = {
   id: string;
   title: string;
   startAt: string;
   endAt: string;
+  durationMin: number;
   host: { id: string; name: string };
   client: { id: string; name: string } | null;
   lead: { id: string; name: string } | null;
   guest: { name: string | null; email: string | null; phone: string | null };
   agenda: string | null;
   location: string | null;
-  status: "booked" | "cancelled" | "done";
-  bookedVia: "client" | "public" | "team";
+  /** requested: the Client Manager is arranging it · awaiting: Department Head / Founder asked to confirm · booked: fixed */
+  status: "requested" | "awaiting" | "booked" | "cancelled" | "done";
+  bookedVia: "client" | "public" | "team" | "founder";
+  /** The client's time zone (IANA). */
+  timeZone: string;
+  department: { id: string; name: string } | null;
+  joinUrl: string | null;
+  /** Set when the fixed time differs from the time first asked for. */
+  rescheduledAt: string | null;
+  participants: MeetingParticipantView[];
+  /** The viewer's own place in the meeting, when they were brought in. */
+  myRole: MeetingParticipantRole | null;
   notes: string | null;
   summary: string | null;
   actionItems: { text: string; taskId: string | null }[];
-  can: { edit: boolean; cancel: boolean };
+  can: {
+    edit: boolean;
+    cancel: boolean;
+    /** Client Manager: bring in a department and/or the Founder, or fix the time. */
+    arrange: boolean;
+    /** Department Head / Founder: accept or ask for a new time the same day. */
+    respond: boolean;
+    /** Department Head of the meeting's department: add their team members once it is fixed. */
+    addMembers: boolean;
+    /** Branch Manager: join or ignore the fixed meeting. */
+    join: boolean;
+    /** Client Manager: send the meeting link to everyone once the meeting is fixed. */
+    shareLink: boolean;
+  };
 };
 
-export type MeetingList = { upcoming: MeetingView[]; past: MeetingView[]; booking: BookingPageView | null };
+export type MeetingList = {
+  /** Requests still being arranged (requested / awaiting). */
+  requests: MeetingView[];
+  upcoming: MeetingView[];
+  past: MeetingView[];
+  booking: BookingPageView | null;
+};
+
+/** What the Client Manager can bring into a meeting. */
+export type MeetingArrangeOptions = {
+  departments: { id: string; name: string; head: { id: string; name: string } | null }[];
+  founders: { id: string; name: string }[];
+};
+
+/** v23: a client asks for a meeting at a time in their own time zone. */
+export const meetingRequestSchema = z.object({
+  startAt: z.string().datetime({ offset: true }),
+  timeZone: z.string().trim().min(1).max(64),
+  durationMin: z.number().int().min(15, "At least 15 minutes").max(180, "At most 3 hours"),
+  requirements: z.string().trim().min(10, "Tell us what the meeting is about (at least 10 characters)").max(2000),
+});
+export type MeetingRequestInput = z.infer<typeof meetingRequestSchema>;
+
+/** v23: the Founder asks a client's Client Manager to arrange a meeting with that client. */
+export const founderMeetingSchema = z.object({
+  clientOrgId: z.string().min(1, "Pick a client"),
+  startAt: z.string().datetime({ offset: true }),
+  durationMin: z.number().int().min(15).max(180),
+  requirements: z.string().trim().min(10, "What is the meeting about? (at least 10 characters)").max(2000),
+});
+export type FounderMeetingInput = z.infer<typeof founderMeetingSchema>;
+
+/** v23: the Client Manager brings in a department (its head confirms) and/or a Founder. */
+export const meetingArrangeSchema = z
+  .object({ departmentId: z.string().nullable().optional(), founderId: z.string().nullable().optional() })
+  .refine((v) => !!v.departmentId || !!v.founderId, "Pick a department or the Founder");
+export type MeetingArrangeInput = z.infer<typeof meetingArrangeSchema>;
+
+/** v23: a Department Head or Founder accepts, or asks for another time on the same day. */
+export const meetingRespondSchema = z
+  .object({ decision: z.enum(["accept", "reschedule"]), proposedStartAt: z.string().datetime({ offset: true }).optional(), note: z.string().trim().max(500).optional() })
+  .refine((v) => v.decision === "accept" || !!v.proposedStartAt, "Pick the new time");
+export type MeetingRespondInput = z.infer<typeof meetingRespondSchema>;
+
+/** v23: the Client Manager fixes the meeting, optionally at a new time (the client gets an apology). */
+export const meetingFixSchema = z.object({ startAt: z.string().datetime({ offset: true }).optional() });
+
+/** v23: once everyone accepted and the meeting is fixed, the Client Manager sends the link to everyone in one click. */
+export const meetingLinkSchema = z.object({
+  joinUrl: z
+    .string()
+    .trim()
+    .url("Paste the full link, e.g. https://meet.google.com/abc-defg-hij")
+    .max(500)
+    .refine((u) => /^https:\/\//i.test(u), "The link must start with https://"),
+});
+export type MeetingFixInput = z.infer<typeof meetingFixSchema>;
+
+export const meetingMembersSchema = z.object({ userIds: z.array(z.string().min(1)).min(1, "Pick at least one person").max(20) });
+export const meetingJoinSchema = z.object({ decision: z.enum(["join", "ignore"]) });
+
+/** Every IANA time zone the runtime knows, India first. */
+export function timeZoneList(): string[] {
+  const all = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  return ["Asia/Kolkata", ...all.filter((z) => z !== "Asia/Kolkata" && z !== "Asia/Calcutta")];
+}
+
+/** Offset of a time zone from UTC at an instant, in minutes (e.g. +330 for India). */
+export function zoneOffsetMin(timeZone: string, at: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(at);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+  return Math.round((asUtc - Math.floor(at.getTime() / 1000) * 1000) / 60_000);
+}
+
+/** A wall-clock date and time ("2026-10-20", "15:30") in a time zone, as a UTC ISO string. */
+export function zonedTimeToUtc(date: string, time: string, timeZone: string): string {
+  const guess = new Date(`${date}T${time}:00Z`);
+  let utc = guess.getTime() - zoneOffsetMin(timeZone, guess) * 60_000;
+  // Second pass settles the hour around daylight-saving changes.
+  utc = guess.getTime() - zoneOffsetMin(timeZone, new Date(utc)) * 60_000;
+  return new Date(utc).toISOString();
+}
+
+/** "Mon, 20 Oct, 3:30 pm" in a time zone. */
+export function zonedLabel(iso: string, timeZone: string): string {
+  return new Date(iso).toLocaleString("en-IN", { timeZone, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+/** The calendar day (YYYY-MM-DD) of an instant in a time zone. */
+export function zonedDay(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+}
 
 export const meetingBookSchema = z.object({
   startAt: z.string().datetime({ offset: true }),

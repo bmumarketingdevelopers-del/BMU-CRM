@@ -1,5 +1,5 @@
-// Journey (basic mode): AM triages a client request and puts a suggested reply in the reply box (not sent until they
-// click Reply). On a message thread the AM gets a suggested reply in the composer and a tone check. The Founder sees
+// Journey (basic mode): CM triages a client request and puts a suggested reply in the reply box (not sent until they
+// click Reply). On a message thread the CM gets a suggested reply in the composer and a tone check. The Founder sees
 // the weekly digest and "What stands out" notes on the Weekly Review and Scorecard, then uses Command Centre → AI
 // Copilot to switch delivery features off (panels disappear) and back on.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/ai/service-management.mjs
@@ -26,7 +26,7 @@ await rep.getByRole("button", { name: "Put in reply box" }).click();
 const boxText = await am.getByPlaceholder("Reply to the client, or add a note to send with an action").inputValue();
 check(boxText.length > 20, "suggested reply lands in the reply box");
 const afterInsert = (await apiAs(am, "GET", `/requests/${req.id}`)).body.comments.length;
-check(afterInsert === before, "nothing is sent to the client until the AM clicks Reply");
+check(afterInsert === before, "nothing is sent to the client until the CM clicks Reply");
 await shot(am, "10-request-ai");
 
 console.log("2. Message thread: suggested reply and tone");

@@ -8,6 +8,6 @@ const ROLES = ["founder", "admin", "am_lead", "department_head"];
 
 export default async function BusinessFlowMap() {
   const me = await requireMe(["staff"]);
-  if (!me.roles.some((r) => ROLES.includes(r))) return <PageTitle title="Business flow map" subtitle="This view is for the Founder, Branch Managers, the AM Lead and Department Heads." />;
+  if (!me.roles.some((r) => ROLES.includes(r))) return <PageTitle title="Business flow map" subtitle="This view is for the Founder, Branch Managers, the CM Lead and Department Heads." />;
   return <FlowMapPage />;
 }

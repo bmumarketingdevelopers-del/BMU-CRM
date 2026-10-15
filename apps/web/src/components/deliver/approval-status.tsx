@@ -9,7 +9,7 @@ const when = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", 
 
 /**
  * Who has approved and who is still needed under the client's approval rule.
- * `remind` shows a "Remind" button (AM, or a client owner/approver nudging co-approvers).
+ * `remind` shows a "Remind" button (CM, or a client owner/approver nudging co-approvers).
  */
 export function ApprovalStatusBox({ status, remind, compact = false }: { status: DeliverApprovalStatus; remind?: { target: "deliverable" | "plan"; id: string }; compact?: boolean }) {
   const [busy, setBusy] = useState(false);

@@ -6,7 +6,7 @@ import { Panel } from "@/components/dash";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
-/** "Approvals need: any one approver | the owner | every approver". Client owners edit theirs; AMs edit from Client 360. */
+/** "Approvals need: any one approver | the owner | every approver". Client owners edit theirs; CMs edit from Client 360. */
 export function ApprovalRuleCard({ clientOrgId }: { clientOrgId?: string }) {
   const loaded = useLoad(() => (clientOrgId ? api.deliver.clientApprovalSettings(clientOrgId) : api.deliver.approvalSettings()));
   const [fresh, setFresh] = useState<DeliverApprovalSettings>();

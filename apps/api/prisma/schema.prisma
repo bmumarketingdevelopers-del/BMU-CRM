@@ -2986,10 +2986,19 @@ model Meeting {
   guestPhone  String?
   agenda      String?
   location    String?
-  /// booked | cancelled | done
+  /// requested (client/founder asked, Client Manager arranging) | awaiting (Department Head / Founder asked to
+  /// confirm) | booked (fixed) | cancelled | done
   status      String    @default("booked")
-  /// client | public | team
+  /// client | public | team | founder (Founder asked the Client Manager to arrange a call with the client)
   bookedVia   String    @default("team")
+  /// v23 meeting requests: the client's time zone (IANA, e.g. "America/New_York"); times are stored in UTC
+  timeZone     String    @default("Asia/Kolkata")
+  /// v23: department the Client Manager brought in (its head confirms, then adds team members)
+  departmentId String?
+  /// v23: video-call link (Google Meet later); null = "Your meeting is scheduled" only
+  joinUrl      String?
+  /// v23: when the fixed time moved away from what the client asked for (client gets an apology)
+  rescheduledAt DateTime?
   notes       String?
   summary     String?
   /// [{ text, taskId? }]
@@ -2999,9 +3008,32 @@ model Meeting {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  participants MeetingParticipant[]
+
   @@index([hostId, startAt])
   @@index([clientOrgId, startAt])
   @@map("meetings")
+}
+
+/// v23 meeting requests: people the Client Manager brings into a client meeting and their answers.
+model MeetingParticipant {
+  id              String    @id @default(cuid())
+  meetingId       String
+  userId          String
+  /// founder | department_head | branch_manager | member
+  role            String
+  /// pending | accepted | reschedule (asked for a new time the same day) | invited | joined | ignored
+  status          String    @default("pending")
+  proposedStartAt DateTime?
+  note            String?
+  respondedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@index([userId, status])
+  @@map("meeting_participants")
 }
 
 // ---------------------------------------------------------------------------

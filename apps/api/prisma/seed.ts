@@ -36,6 +36,7 @@ import { seedTeam } from './seed/team.js';
 import { seedCreative } from './seed/creative.js';
 import { seedComms } from './seed/comms.js';
 import { seedFinance } from './seed/finance.js';
+import { sameDept } from './seed/dept-names.js';
 
 // Demo people, clients and history are added in development, on a database on this computer only. A live database
 // (NODE_ENV=production, SEED_DEMO=0, or any database that is not on localhost, e.g. Supabase) gets only the
@@ -62,8 +63,8 @@ const DEMO_STAFF: [string, string, string, string | null, string | null][] = [
   ['Asha Reddy', 'admin@bmu.demo', 'admin', 'HR / Ops', 'founder@bmu.demo'],
   ['Rahul Menon', 'sales.manager@bmu.demo', 'sales_manager', 'Sales', 'admin@bmu.demo'],
   ['Priya Shah', 'sales@bmu.demo', 'sales_executive', 'Sales', 'sales.manager@bmu.demo'],
-  ['Kiran Rao', 'am.lead@bmu.demo', 'am_lead', 'Account Management', 'admin@bmu.demo'],
-  ['Neha Iyer', 'am@bmu.demo', 'account_manager', 'Account Management', 'am.lead@bmu.demo'],
+  ['Kiran Rao', 'am.lead@bmu.demo', 'am_lead', 'Client Management', 'admin@bmu.demo'],
+  ['Neha Iyer', 'am@bmu.demo', 'account_manager', 'Client Management', 'am.lead@bmu.demo'],
   ['Rohan Gupta', 'strategist@bmu.demo', 'strategist', 'Strategy', 'am.lead@bmu.demo'],
   ['Arjun Das', 'design.head@bmu.demo', 'department_head', 'Creative / Design', 'admin@bmu.demo'],
   ['Meera Nair', 'producer@bmu.demo', 'producer', 'Creative / Design', 'design.head@bmu.demo'],
@@ -81,6 +82,12 @@ async function main() {
     (await prisma.branch.findFirst({ where: { orgId: org.id, name: 'Bengaluru HQ' } })) ??
     (await prisma.branch.create({ data: { orgId: org.id, name: 'Bengaluru HQ', city: 'Bengaluru' } }));
 
+  // "Account Management" was renamed "Client Management": rename the old row so older databases keep one department.
+  if ((DEPARTMENTS as readonly string[]).includes('Client Management')) {
+    const old = await prisma.department.findFirst({ where: { branchId: branch.id, name: 'Account Management' } });
+    const renamed = await prisma.department.findFirst({ where: { branchId: branch.id, name: 'Client Management' } });
+    if (old && !renamed) await prisma.department.update({ where: { id: old.id }, data: { name: 'Client Management' } });
+  }
   for (const name of DEPARTMENTS) {
     await prisma.department.upsert({
       where: { branchId_name: { branchId: branch.id, name } },
@@ -110,7 +117,7 @@ async function main() {
   if (DEMO) await prisma.user.updateMany({ where: { orgId: org.id, email: 'founder@bmu.marketing' }, data: { email: 'founder@bmu.demo' } });
 
   const departments = await prisma.department.findMany({ where: { branchId: branch.id } });
-  const deptId = (name: string | null) => (name ? departments.find((d) => d.name === name)?.id : undefined);
+  const deptId = (name: string | null) => (name ? departments.find((d) => sameDept(d.name, name))?.id : undefined);
   const roles = await prisma.role.findMany({ where: { orgId: org.id, isCustom: false } });
   const roleId = (base: string) => roles.find((r) => r.baseRole === base)!.id;
   const userIds = new Map<string, string>();
@@ -160,7 +167,7 @@ async function main() {
   // Department flows and QC checklists (editable under Admin → Templates).
   for (const f of DEFAULT_FLOWS) {
     if (await prisma.flowTemplate.findFirst({ where: { orgId: org.id, key: f.key } })) continue;
-    const dept = departments.find((d) => d.name === f.department) ?? departments[0];
+    const dept = departments.find((d) => sameDept(d.name, f.department)) ?? departments[0];
     await prisma.flowTemplate.create({
       data: { orgId: org.id, departmentId: dept.id, key: f.key, name: f.name, deliverableTypes: f.deliverableTypes, steps: f.steps },
     });
@@ -179,7 +186,7 @@ async function main() {
     return;
   }
 
-  const amDept = departments.find((d) => d.name === 'Account Management')!;
+  const amDept = departments.find((d) => sameDept(d.name, 'Client Management'))!;
   if (!(await prisma.team.findFirst({ where: { departmentId: amDept.id, name: 'Pod A' } }))) {
     const pod = await prisma.team.create({
       data: { orgId: org.id, departmentId: amDept.id, name: 'Pod A', leadUserId: userIds.get('am@bmu.demo') },
@@ -244,7 +251,7 @@ async function main() {
     }
   }
 
-  // Demo engagement so the demo client and AM have onboarding to try.
+  // Demo engagement so the demo client and CM have onboarding to try.
   if ((await prisma.engagement.count({ where: { clientOrgId: client.id } })) === 0) {
     const smm = await prisma.service.findFirstOrThrow({ where: { key: 'smm', priceBook: { orgId: org.id, status: 'active' } } });
     const amId = userIds.get('am@bmu.demo');

@@ -41,7 +41,7 @@ export class RequestsController {
     return this.requests.list(me);
   }
 
-  /** Priced add-ons an AM can quote from (custom amounts are Founder/Admin only). */
+  /** Priced add-ons a CM can quote from (custom amounts are Founder/Admin only). */
   @Get('add-ons')
   addOns(@CurrentUser() me: Me) {
     return this.requests.addOns(me);

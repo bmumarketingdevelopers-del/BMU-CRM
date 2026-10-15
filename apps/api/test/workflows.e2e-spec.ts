@@ -173,7 +173,7 @@ describe('overdue invoice flow on a simulated clock', () => {
     expect((await runOf(wfId)).steps).toHaveLength(3);
   });
 
-  it('day 7: still unpaid, so a firmer reminder and the AM is told', async () => {
+  it('day 7: still unpaid, so a firmer reminder and the CM is told', async () => {
     await tick(new Date(t0.getTime() + 6 * DAY + MIN), wfId);
     const run = await runOf(wfId);
     expect(run.status).toBe('waiting');

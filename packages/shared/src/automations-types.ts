@@ -70,7 +70,7 @@ export type AutomationTriggerDef = {
   fields: AutomationFieldSpec[];
   /** Placeholders available in message templates for this trigger. */
   placeholders: string[];
-  /** Which people the record has (for "notify the AM / owner / assignee"). */
+  /** Which people the record has (for "notify the CM / owner / assignee"). */
   people: AutomationPersonKey[];
   /** v14: only available in workflows (the older Automations builder hides it). */
   workflowOnly?: boolean;
@@ -78,7 +78,7 @@ export type AutomationTriggerDef = {
 
 export type AutomationPersonKey = "am" | "owner" | "assignee" | "manager" | "department_head";
 export const automationPersonLabels: Record<AutomationPersonKey, string> = {
-  am: "the client's account manager",
+  am: "the client's client manager",
   owner: "the record's owner",
   assignee: "the person assigned",
   manager: "their manager",
@@ -505,7 +505,7 @@ export const automationAiDraftLabels: Record<AutomationAiDraftKind, string> = {
 export const AUTOMATION_RECIPIENTS = ["am", "owner", "assignee", "manager", "department_head", "role", "users"] as const;
 export type AutomationRecipient = (typeof AUTOMATION_RECIPIENTS)[number];
 export const automationRecipientLabels: Record<AutomationRecipient, string> = {
-  am: "The client's account manager",
+  am: "The client's client manager",
   owner: "The record's owner",
   assignee: "The person assigned",
   manager: "Their manager",
@@ -517,7 +517,7 @@ export const automationRecipientLabels: Record<AutomationRecipient, string> = {
 export const AUTOMATION_TASK_ASSIGNEES = ["am", "owner", "assignee", "role", "user"] as const;
 export type AutomationTaskAssignee = (typeof AUTOMATION_TASK_ASSIGNEES)[number];
 export const automationTaskAssigneeLabels: Record<AutomationTaskAssignee, string> = {
-  am: "The client's account manager",
+  am: "The client's client manager",
   owner: "The record's owner",
   assignee: "The person assigned",
   role: "Least busy person with a role",
@@ -697,7 +697,7 @@ export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
   {
     key: "escalate_overdue_10d",
     name: "Escalate invoices 10 days overdue to the Founder",
-    description: "The Founder and the AM get an alert when an invoice is 10 days late.",
+    description: "The Founder and the CM get an alert when an invoice is 10 days late.",
     area: "Money",
     rule: {
       name: "Escalate invoices 10 days overdue",
@@ -749,11 +749,11 @@ export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
   },
   {
     key: "third_revision_alert",
-    name: "Alert AM when a client asks for a 3rd revision",
-    description: "The AM hears about it before extra revisions eat the margin.",
+    name: "Alert CM when a client asks for a 3rd revision",
+    description: "The CM hears about it before extra revisions eat the margin.",
     area: "Delivery",
     rule: {
-      name: "Alert AM on 3rd revision",
+      name: "Alert CM on 3rd revision",
       trigger: "deliverable_changes_requested",
       triggerArgs: { round: 3 },
       actions: [{ type: "notify", to: "am", message: "{{client}} asked for revision round {{round}} on {{title}}. Check if this is still within the included rounds." }],
@@ -761,8 +761,8 @@ export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
   },
   {
     key: "sla_missed_alert",
-    name: "Tell the AM when a request misses its reply time",
-    description: "Alerts the AM and the AM Lead when a client request goes unanswered too long.",
+    name: "Tell the CM when a request misses its reply time",
+    description: "Alerts the CM and the CM Lead when a client request goes unanswered too long.",
     area: "Client requests",
     rule: {
       name: "Request missed its reply time",
@@ -776,7 +776,7 @@ export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
   {
     key: "kickoff_on_payment",
     name: "Kick-off task when a client pays",
-    description: "The AM gets a kick-off call task as soon as money arrives.",
+    description: "The CM gets a kick-off call task as soon as money arrives.",
     area: "Money",
     rule: {
       name: "Kick-off task on payment",
@@ -788,7 +788,7 @@ export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
   {
     key: "gate5_review",
     name: "Celebrate gate 5 delivery and ask for a review",
-    description: "When final files are delivered, the AM gets a task to thank the client and ask for a review.",
+    description: "When final files are delivered, the CM gets a task to thank the client and ask for a review.",
     area: "Delivery",
     rule: {
       name: "Ask for a review after delivery",

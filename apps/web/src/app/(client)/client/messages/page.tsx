@@ -16,7 +16,7 @@ export default function ClientMessagesPage() {
     <>
       <PageTitle
         title="Messages"
-        subtitle={thread.am ? `Talk to ${thread.am}, your Account Manager. Replies come the same working day (9:30–6:30, Mon–Sat).` : "Talk to your Account Manager. Replies come the same working day."}
+        subtitle={thread.am ? `Talk to ${thread.am}, your Client Manager. Replies come the same working day (9:30–6:30, Mon–Sat).` : "Talk to your Client Manager. Replies come the same working day."}
       />
       <Chat
         thread={thread}

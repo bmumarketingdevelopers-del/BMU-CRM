@@ -13,12 +13,12 @@ type Row = Prisma.ThreadGetPayload<{ include: typeof include }>;
 export type UploadedAttachment = { path: string; originalname: string; mimetype: string; size: number };
 export const ATTACHMENT_KIND = 'message_attachment';
 
-/** Staff who see client threads: their own clients for AMs, every client for leadership. */
+/** Staff who see client threads: their own clients for CMs, every client for leadership. */
 export async function threadScope(me: Me): Promise<Prisma.ThreadWhereInput> {
   if (me.type !== 'staff') throw new ForbiddenException();
   if (isLeadership(me)) return { orgId: me.orgId };
   if (me.roles.includes('account_manager')) return { orgId: me.orgId, clientOrg: { amUserId: me.id } };
-  throw new ForbiddenException('Client threads are for Account Managers and leadership');
+  throw new ForbiddenException('Client threads are for Client Managers and leadership');
 }
 
 /**
@@ -46,7 +46,7 @@ export async function unreadByThread(prisma: PrismaService, me: Me, threadIds: s
   return out;
 }
 
-/** Total unread for the menu badge (clients: their thread; AMs: their clients; leadership: every client thread). */
+/** Total unread for the menu badge (clients: their thread; CMs: their clients; leadership: every client thread). */
 export async function unreadMessages(prisma: PrismaService, me: Me) {
   let where: Prisma.ThreadWhereInput;
   if (me.type === 'client' && me.clientOrg) where = { clientOrgId: me.clientOrg.id, type: 'client_am' };
@@ -62,7 +62,7 @@ export async function unreadMessages(prisma: PrismaService, me: Me) {
   return [...map.values()].reduce((s, n) => s + n, 0);
 }
 
-/** Client ↔ AM thread (no WhatsApp groups). Internal notes are team-only. */
+/** Client ↔ CM thread (no WhatsApp groups). Internal notes are team-only. */
 @Injectable()
 export class MessagesService {
   constructor(

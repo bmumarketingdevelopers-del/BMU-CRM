@@ -2,7 +2,7 @@
 
 /**
  * Request actions for the team (spec requests_approvals):
- * - RaiseRequestDrawer: "+ New → Request" and Client 360 "+ Add request": the AM raises a request on the client's behalf.
+ * - RaiseRequestDrawer: "+ New → Request" and Client 360 "+ Add request": the CM raises a request on the client's behalf.
  * - ConvertToTasksDrawer: an approved (and paid) request → tasks, from a matching template when there is one.
  * - CustomQuoteDialog: a custom-priced add-on quote; above the limit it goes to a Branch Manager first.
  * - InternalApprovalDrawer: ask any colleague to approve something by a date ("+ New → Approval request").

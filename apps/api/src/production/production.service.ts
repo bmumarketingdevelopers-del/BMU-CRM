@@ -91,7 +91,7 @@ export class ProductionService {
     return (await this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } }))?.departmentId ?? null;
   }
 
-  /** Tasks a staff member can see: leadership all, department heads their department, AMs their clients, everyone their own. */
+  /** Tasks a staff member can see: leadership all, department heads their department, CMs their clients, everyone their own. */
   private async taskScope(me: Me): Promise<Prisma.TaskWhereInput> {
     if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
     const base = { orgId: me.orgId };
@@ -468,7 +468,7 @@ export class ProductionService {
     const v = await this.prisma.version.findFirst({ where: { id: versionId, orgId: me.orgId }, include: { qcResults: true } });
     if (!v) throw new NotFoundException('Version not found');
     const d = await this.staffDeliverable(me, v.deliverableId);
-    if (!this.canSend(me, d)) throw new ForbiddenException("Only the client's Account Manager can send drafts");
+    if (!this.canSend(me, d)) throw new ForbiddenException("Only the client's Client Manager can send drafts");
     const lastQc = [...v.qcResults].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()).at(-1);
     if (lastQc?.result !== 'pass') throw new BadRequestException('This version needs a QC pass before the client can see it');
     if (d.versions.at(-1)?.id !== v.id) throw new BadRequestException('Only the latest version can be sent');

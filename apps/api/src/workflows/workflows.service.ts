@@ -44,7 +44,7 @@ const DAY = 86_400_000;
 const ACTIVE = ['running', 'waiting', 'waiting_approval'];
 
 function assertView(me: Me) {
-  if (!canViewAutomations(me)) throw new ForbiddenException('Workflows are for Founder, Branch Manager, department heads, the AM Lead and Finance');
+  if (!canViewAutomations(me)) throw new ForbiddenException('Workflows are for Founder, Branch Manager, department heads, the CM Lead and Finance');
 }
 function assertManage(me: Me) {
   if (!canManageAutomations(me)) throw new ForbiddenException('Only the Founder and Branch Managers can change workflows');

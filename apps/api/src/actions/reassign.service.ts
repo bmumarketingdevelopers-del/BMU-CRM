@@ -241,7 +241,7 @@ export class ReassignService implements OnModuleInit {
     const risk = rows.filter((r) => r.atRisk);
     if (risk.length) impact.push({ level: 'warning', text: `${risk.length} deadline${risk.length > 1 ? 's' : ''} at risk: ${risk.slice(0, 3).map((r) => r.title).join(', ')}${risk.length > 3 ? '…' : ''}` });
     const cf = rows.filter((r) => r.clientFacing);
-    if (cf.length) impact.push({ level: 'warning', text: `The new deadline is after the client-facing date for ${cf.map((r) => r.title).slice(0, 3).join(', ')}. The account manager will be asked to confirm and post an update in the client thread.` });
+    if (cf.length) impact.push({ level: 'warning', text: `The new deadline is after the client-facing date for ${cf.map((r) => r.title).slice(0, 3).join(', ')}. The client manager will be asked to confirm and post an update in the client thread.` });
     const deps = rows.flatMap((r) => r.dependents);
     if (deps.length) impact.push({ level: 'info', text: `${deps.length} later step${deps.length > 1 ? 's wait' : ' waits'} on this: ${deps.slice(0, 3).join(', ')}${deps.length > 3 ? '…' : ''}` });
     const needsHandover = items.some((i) => i.inProgress && i.ownerId && i.ownerId !== to.id);

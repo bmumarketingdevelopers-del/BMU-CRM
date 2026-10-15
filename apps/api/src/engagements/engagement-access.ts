@@ -5,8 +5,8 @@ import type { PrismaService } from '../prisma/prisma.service.js';
 const ALL_CLIENTS = ['founder', 'admin', 'am_lead', 'department_head'];
 
 /**
- * Engagements a staff member can see: leadership all; an Account Manager their own clients;
- * strategists and producers the clients of their pod (same team as the client's AM).
+ * Engagements a staff member can see: leadership all; a Client Manager their own clients;
+ * strategists and producers the clients of their pod (same team as the client's CM).
  */
 export async function visibleEngagementWhere(prisma: PrismaService, me: Me): Promise<Prisma.EngagementWhereInput> {
   const base: Prisma.EngagementWhereInput = { orgId: me.orgId, deletedAt: null };

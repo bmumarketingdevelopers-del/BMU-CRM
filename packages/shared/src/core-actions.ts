@@ -497,7 +497,7 @@ export type CoreTaskQuery = {
 export type CoreTaskMutation = { task: CoreTaskDetail; undo: CoreUndo | null; message?: string; approval?: { id: string; summary: string } | null };
 
 export type CoreTaskFormOptions = {
-  engagements: { id: string; client: string; clientId: string; service: string; gate: string; productionOpen: boolean; amId: string | null; departmentIds: string[]; /** v11 people: the client pod's members (producers, strategist, AM), the default assignees. */ podMemberIds?: string[] }[];
+  engagements: { id: string; client: string; clientId: string; service: string; gate: string; productionOpen: boolean; amId: string | null; departmentIds: string[]; /** v11 people: the client pod's members (producers, strategist, CM), the default assignees. */ podMemberIds?: string[] }[];
   departments: Ref[];
   deliverables: { id: string; title: string; engagementId: string }[];
   addOnRequests: { id: string; engagementId: string; description: string }[];

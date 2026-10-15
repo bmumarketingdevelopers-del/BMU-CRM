@@ -1,5 +1,6 @@
 import { DEFAULT_QC_CHECKLISTS, financialYear } from '@bmu/shared';
 import type { BillingType, EngagementStatus, InvoiceStatus, PrismaClient, Tier } from '../../src/generated/prisma/client.js';
+import { sameDept } from './dept-names.js';
 
 const DAY = 86_400_000;
 /** `days` ago at hh:00 IST. */
@@ -34,7 +35,7 @@ export async function seedInsights(prisma: PrismaClient, orgId: string) {
   if (!dm || !website || !smm || !logo) return;
   const price = (s: NonNullable<typeof dm>, tier: Tier) => s.tiers.find((t) => t.tier === tier)!.pricePaise;
   const depts = await prisma.department.findMany({ where: { orgId } });
-  const dept = (name: string) => depts.find((d) => d.name === name)?.id;
+  const dept = (name: string) => depts.find((d) => sameDept(d.name, name))?.id;
   const ownerRole = await prisma.role.findFirst({ where: { orgId, baseRole: 'client_owner', isCustom: false } });
 
   // --- Clients -------------------------------------------------------------
@@ -208,7 +209,7 @@ export async function seedInsights(prisma: PrismaClient, orgId: string) {
       { title: 'Design: Farmer spotlight', owner: producer.id, dept: 'Creative / Design', due: -1, status: 'blocked', min: 90, reason: 'Waiting for farm photos from the client' },
       { title: 'Content calendar for next month', owner: strategist?.id ?? am.id, dept: 'Strategy', due: 2, status: 'in_progress', min: 480 },
       { title: 'Competitor review', owner: strategist?.id ?? am.id, dept: 'Strategy', due: -3, min: 150 },
-      { title: 'Monthly report to client', owner: am.id, dept: 'Account Management', due: 0, status: 'in_progress', min: 240 },
+      { title: 'Monthly report to client', owner: am.id, dept: 'Client Management', due: 0, status: 'in_progress', min: 240 },
       { title: 'Ad creative review', owner: designHead?.id ?? producer.id, dept: 'Creative / Design', due: 0, status: 'done', min: 300 },
     ];
     for (const [i, t] of tasks.entries()) {

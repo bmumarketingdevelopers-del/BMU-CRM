@@ -25,7 +25,7 @@ export function PayButton({ invoiceId, amountPaise, onPaid, className = "" }: { 
       } else if (c.mode === "razorpay") {
         await payWithRazorpay(c, (r) => api.client.verifyPayment(invoiceId, r));
       } else if (c.mode === "unavailable") {
-        throw new Error("Online payment isn't set up yet. Please contact your Account Manager.");
+        throw new Error("Online payment isn't set up yet. Please contact your Client Manager.");
       }
       onPaid?.();
       router.refresh();

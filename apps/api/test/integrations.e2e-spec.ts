@@ -101,7 +101,7 @@ describe('Integrations hub', () => {
     }
   });
 
-  it('an Account Manager connects a test account only for their own client', async () => {
+  it('a Client Manager connects a test account only for their own client', async () => {
     const other = await prisma.clientOrg.findFirstOrThrow({ where: { orgId, amUserId: { not: users.am }, deletedAt: null } });
     await http().post('/integrations/test-accounts').set(as('am')).send({ provider: 'instagram', clientOrgId: other.id }).expect(403);
     const a = (await http().post('/integrations/test-accounts').set(as('am')).send({ provider: 'instagram', clientOrgId: clientId }).expect(201)).body as IntegrationAccountView;
@@ -144,7 +144,7 @@ describe('Publishing', () => {
     expect(await prisma.postMetric.count({ where: { deliverableId: id } })).toBe(1);
   });
 
-  it('failures retry, then stop and tell the AM; Retry publishes once fixed', async () => {
+  it('failures retry, then stop and tell the CM; Retry publishes once fixed', async () => {
     const id = await approvedPost(`Broken post ${stamp}`, new Date(Date.now() - 60_000), 'This one fails [fail]');
     const publisher = app.get(PublisherService, { strict: false });
     const t0 = new Date();

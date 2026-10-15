@@ -140,9 +140,9 @@ export class ApprovalsService {
     await this.expire(new Date(), me.orgId);
     let where: Prisma.ApprovalRequestWhereInput;
     if (box === 'all') {
-      if (!isAdmin(me) && !hasRole(me, 'am_lead', 'department_head')) throw new ForbiddenException('The approvals queue is for founders, admins, AM leads and department heads');
+      if (!isAdmin(me) && !hasRole(me, 'am_lead', 'department_head')) throw new ForbiddenException('The approvals queue is for founders, admins, CM leads and department heads');
       where = { orgId: me.orgId };
-      // Department heads and AM leads see what is theirs to decide plus what their people asked for.
+      // Department heads and CM leads see what is theirs to decide plus what their people asked for.
       if (!isAdmin(me)) where = { orgId: me.orgId, OR: [{ approverId: me.id }, { approverRoles: { hasSome: me.roles } }, { requestedById: me.id }] };
     } else if (box === 'requested') where = { orgId: me.orgId, requestedById: me.id };
     else where = { orgId: me.orgId, status: 'pending', requestedById: { not: me.id }, OR: [{ approverId: me.id }, { approverRoles: { hasSome: me.roles } }] };

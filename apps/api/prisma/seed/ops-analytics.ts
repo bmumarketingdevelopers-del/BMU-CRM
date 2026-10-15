@@ -1,5 +1,6 @@
 import { DEFAULT_QC_CHECKLISTS, addWorkingMinutes, financialYear, workCalendar, type WorkCalendar } from '@bmu/shared';
 import type { Prisma, PrismaClient, Tier } from '../../src/generated/prisma/client.js';
+import { sameDept } from './dept-names.js';
 
 /**
  * v9 operations analytics demo data: six months of delivery history so Team Performance, Delivery Speed,
@@ -109,7 +110,7 @@ export async function seedOpsAnalytics(prisma: PrismaClient, orgId: string) {
   const past = (d: Date) => d < now;
 
   const depts = await prisma.department.findMany({ where: { orgId }, select: { id: true, name: true, branchId: true } });
-  const dept = (name: string) => depts.find((d) => d.name === name);
+  const dept = (name: string) => depts.find((d) => sameDept(d.name, name));
   const role = (baseRole: string) => prisma.role.findFirst({ where: { orgId, baseRole, isCustom: false } });
 
   // --- Staff ---------------------------------------------------------------
@@ -382,7 +383,7 @@ export async function seedOpsAnalytics(prisma: PrismaClient, orgId: string) {
             title: `Client review: ${title}`,
             flowStep: 'client',
             ownerId: job.amId,
-            departmentId: dept('Account Management')?.id,
+            departmentId: dept('Client Management')?.id,
             deadline: dueAt,
             status: 'done',
             kind: 'client_review',
@@ -415,7 +416,7 @@ export async function seedOpsAnalytics(prisma: PrismaClient, orgId: string) {
 
     // Client requests across the week; some answered late, a few still waiting.
     const slaMin: Record<string, number> = { change: 240, new_scope: 540, urgent: 120, question: 540, billing: 540 };
-    const slowAm = job.amId !== am.id; // the AM lead is stretched thinner
+    const slowAm = job.amId !== am.id; // the CM lead is stretched thinner
     const requestCount = Math.round(job.startDays / 8);
     for (let i = 0; i < requestCount; i++) {
       const daysBack = Math.round(between(1, job.startDays - 3));
@@ -506,8 +507,8 @@ export async function seedOpsAnalytics(prisma: PrismaClient, orgId: string) {
     { id: producer.id, deptName: 'Creative / Design', titles: ['Content batch', 'Resize and export creatives', 'Brand asset clean-up'], perWeek: 4, hours: [6, 9] },
     { id: strategist.id, deptName: 'Strategy', titles: ['Content calendar', 'Competitor review', 'Monthly report'], perWeek: 4, hours: [5, 9] },
     { id: qc.id, deptName: 'QC', titles: ['QC sweep', 'Checklist review'], perWeek: 4, hours: [5, 8] },
-    { id: am.id, deptName: 'Account Management', titles: ['Client check-in call', 'Weekly status report', 'Invoice follow-up'], perWeek: 4, hours: [4, 8] },
-    ...(amLead ? [{ id: amLead.id, deptName: 'Account Management', titles: ['Client check-in call', 'Account review', 'AM team stand-up'], perWeek: 4, hours: [4, 7] as [number, number] }] : []),
+    { id: am.id, deptName: 'Client Management', titles: ['Client check-in call', 'Weekly status report', 'Invoice follow-up'], perWeek: 4, hours: [4, 8] },
+    ...(amLead ? [{ id: amLead.id, deptName: 'Client Management', titles: ['Client check-in call', 'Account review', 'CM team stand-up'], perWeek: 4, hours: [4, 7] as [number, number] }] : []),
     ...STAFF.map((s) => ({ id: staff[s.email].id, deptName: s.dept as string, titles: s.role === 'qc_reviewer' ? ['QC sweep', 'Checklist review'] : s.role === 'strategist' ? ['Content calendar', 'Campaign plan', 'Monthly report'] : ['Content batch', 'Edits from feedback', 'Asset library upkeep'], perWeek: 4, hours: [6, 9.5] as [number, number] })),
   ];
   if (!(await prisma.task.findFirst({ where: { orgId, flowStep: 'ops-demo-routine' } }))) {

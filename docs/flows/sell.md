@@ -13,7 +13,7 @@ finance, the new client and a renewing client. Journey scripts: `apps/web/e2e/se
 - **Proposals**: build from a lead (tiers, bundle, add-ons, discount), multi-step discount approval, send, client
   link, view tracking, request changes, v2, old link "superseded", expiry + extend, e-sign with designation,
   printable agreement, test payment (Razorpay path unchanged and still verifies the signature), client account,
-  AM assigned, engagements at G1, first invoice paid, welcome notification, client signs in and lands on /client.
+  CM assigned, engagements at G1, first invoice paid, welcome notification, client signs in and lands on /client.
 - **Leadership numbers**: the lead shows Won on the pipeline; Weekly Review, Sales Funnel and Revenue Forecast
   open and include the new deal.
 - **Phone width**: leads, lead detail, approvals, renewals, proposals, package builder, enquiry: no sideways scroll.
@@ -33,7 +33,7 @@ finance, the new client and a renewing client. Journey scripts: `apps/web/e2e/se
 - Sales executives could not offer any discount at all (hard 403) and the Founder was the only approver.
   Replaced with the multi-step approval below.
 - Nobody was notified about anything in the sale: discount approvals, approvals/rejections, the client opening or
-  accepting the proposal, payment, new client for the AM, or a welcome for the client. All added (bell).
+  accepting the proposal, payment, new client for the CM, or a welcome for the client. All added (bell).
 - Proposals only expired when the client happened to open the link; now swept every minute (and on read).
 - Automation notifications for leads linked to the generic leads page; they now open the lead itself.
 - Founder Pulse listed rejected discounts as "approve discount" and linked to the proposal; it now skips rejected

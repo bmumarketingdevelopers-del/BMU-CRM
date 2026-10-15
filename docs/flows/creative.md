@@ -14,8 +14,8 @@ typed in from each platform's insights.
   shares it with the client.
 - Who sees what: Founder, Admin, finance and department heads see every client; everyone else sees the clients they
   manage or have tasks for, plus BMU-wide assets (no client). Clients see only `clientVisible` assets of their own.
-  Archive is for leadership and the client's AM. Share links reuse the v11 file share links (expiry, password, views).
-- Rights: note, end date and creator. States `none / ok / expiring (≤30 days) / expired`. The timer warns the AM
+  Archive is for leadership and the client's CM. Share links reuse the v11 file share links (expiry, password, views).
+- Rights: note, end date and creator. States `none / ok / expiring (≤30 days) / expired`. The timer warns the CM
   7 days before (once, `rightsWarnedAt`).
 - AI tags (images only, needs `ANTHROPIC_API_KEY`): suggested on upload and on **Suggest tags**; search covers them.
 
@@ -62,10 +62,10 @@ record is sealed with a SHA-256 of its canonical JSON. `valid` re-checks the sea
 - Only work with an approval on record (`approvedVersionId`) can be scheduled or marked published. "Ready to schedule"
   lists only such work.
 - `ClientOrg.publishNeedsApproval` (default on). When a client switches it off (team: Content calendar → Channels and
-  publishing rules, leadership or the client's AM), leadership or the AM can **Approve for publishing** a QC-passed
+  publishing rules, leadership or the client's CM), leadership or the CM can **Approve for publishing** a QC-passed
   social post themselves; this records an approval `via: bmu` and a certificate.
 - Captions live on the deliverable. Channels per client (`ContentChannel`). Posts past their time and not published are
-  listed under **Due to post now**; the AM is notified once (`publishDueNotifiedAt`, reset on reschedule).
+  listed under **Due to post now**; the CM is notified once (`publishDueNotifiedAt`, reset on reschedule).
 - Results (`PostMetric`): reach, impressions, engagement, clicks and spend, typed in after publishing (newest wins).
   The results summary shows totals, by client and the best posts; clients see their own on their calendar.
 
@@ -85,6 +85,6 @@ post), flags files over 250 MB and lists the brand kit's don'ts. With a key it a
 
 - API: `apps/api/test/creative.e2e-spec.ts` (uploads, versions, rights, visibility, the 0:12 pin with a drawing,
   carry-over, the email link, certificates, calendar rules, results, brand kits, the reviewer in basic mode).
-- Browser: `apps/web/e2e/creative/creative.mjs` (the client pins at 0:12 and the AM sees it live on that frame,
+- Browser: `apps/web/e2e/creative/creative.mjs` (the client pins at 0:12 and the CM sees it live on that frame,
   carry-over, one-tap approval from a phone, the certificate, schedule/publish/results, both asset libraries, BMU
   sign-off).

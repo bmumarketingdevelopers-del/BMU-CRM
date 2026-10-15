@@ -42,7 +42,7 @@ async function ownerPicker(db: Db, orgId: string, amId: string | null) {
     if (pool.length === 0) return null;
     // v10 craft: keep specialists on steps that fit their job (no developer on a design step), when anyone else can take it.
     if (pool.some((u) => craftFitsStep(u.specialty, stepKey))) pool = pool.filter((u) => craftFitsStep(u.specialty, stepKey));
-    // Strategists work in the AM's pod when there is one.
+    // Strategists work in the CM's pod when there is one.
     if (role === 'strategist' && am?.teamId && pool.some((u) => u.teamId === am.teamId)) pool = pool.filter((u) => u.teamId === am.teamId);
     else if (departmentId && pool.some((u) => u.departmentId === departmentId)) pool = pool.filter((u) => u.departmentId === departmentId);
     const pick = [...pool].sort((a, b) => (load.get(a.id) ?? 0) - (load.get(b.id) ?? 0))[0];

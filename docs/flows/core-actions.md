@@ -32,7 +32,7 @@ wherever they are, without leaving the screen. This part, "core", builds two thi
   seconds with an **Undo** button.
 
 ### Tasks (`/team/tasks`)
-- Buttons at the top: **+ Add task**, **From template** (department heads, AMs, strategists), **Import** (CSV),
+- Buttons at the top: **+ Add task**, **From template** (department heads, CMs, strategists), **Import** (CSV),
   **Recurring** (see and stop recurring tasks).
 - Search, **Mine / Everything I can see**, **Board / List**, filters (owner, client or Internal, department, status
   including Overdue, due-date range, tag, Open / Drafts / Archived), **Views** (save the current filters, share them
@@ -75,7 +75,7 @@ wherever they are, without leaving the screen. This part, "core", builds two thi
   restore it later. You can also choose **Save and add another** or **Save as draft**.
 - Client tasks need the engagement at **Gate 3 or later**, or must be ticked **Pre-production** (planning or
   onboarding work).
-- **Out of scope** work without an approved add-on request is saved as a **Draft**, and the AM is told to raise an
+- **Out of scope** work without an approved add-on request is saved as a **Draft**, and the CM is told to raise an
   add-on. Once the client approves the add-on, use Activate.
 - **Producers** add tasks only for themselves, or add subtasks of their own work. They can't assign other people or
   change deadlines. Instead they **Ask for a new deadline** or press **Can't take this**, and their Department Head
@@ -86,10 +86,10 @@ wherever they are, without leaving the screen. This part, "core", builds two thi
 - A parent task can't be marked Done while any of its subtasks are open. A task waiting on another shows "Waiting"
   and can't start until the other task is Done.
 - **Blocked** needs a reason, what you are waiting for, who can unblock it and an expected date. Those people, the
-  AM and the Department Head are told.
+  CM and the Department Head are told.
 - **Done** on an ad-hoc task attached to a deliverable goes to **QC** (a QC step is created if there isn't one). It
   never goes straight to the client.
-- A deadline change needs a reason. If it moves a client-facing date, the AM is asked to post an update in the client
+- A deadline change needs a reason. If it moves a client-facing date, the CM is asked to post an update in the client
   thread. Every change is counted on the task (`deadlineChanges`) for delivery reports.
 - Archive needs a reason and also archives the task's subtasks. Restore puts everything back to its previous status.
 - **Recurring**: daily, weekly, monthly or at each cycle start, with an end date. Tasks are created 7 days ahead and
@@ -106,7 +106,7 @@ wherever they are, without leaving the screen. This part, "core", builds two thi
   hand-backs (the approver picks the new owner), new tasks for someone on leave, and anything other areas register.
 - Approve (with an optional note) or Reject (a reason is required). The change is made only when it is approved.
   Requests expire after **72 working hours**. "What I asked for" lists your own requests, and you can withdraw one.
-- The Command Centre queue shows all requests to Founders and Admins. AM Leads and Department Heads see their own
+- The Command Centre queue shows all requests to Founders and Admins. CM Leads and Department Heads see their own
   area's requests. It has a status filter.
 
 ### Mobile app
@@ -180,7 +180,7 @@ this.registry.registerUndoModel('lead');            // so Undo may restore lead 
 The engine handles the rest: the candidate list with load and leave, the impact preview, deadline handling, leave
 and capacity rules with Department Head approval, reasons, handover notes, `Assignment` rows (with 7-day read access
 for the previous owner), audit, notifications and Undo. On the web, call
-`openReassign({ type: 'lead', ids: [lead.id] })`. For records with more than one seat (an engagement's AM /
+`openReassign({ type: 'lead', ids: [lead.id] })`. For records with more than one seat (an engagement's CM /
 strategist / producer), pass `roles`. The dialog then asks which seat to change.
 
 ### 3. An approval handler

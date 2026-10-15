@@ -93,7 +93,7 @@ export class EngagementsService {
     return e;
   }
 
-  /** RCD and requirement checks: the client's AM, AM Lead or Founder (mark_rcd_gate1). */
+  /** RCD and requirement checks: the client's CM, CM Lead or Founder (mark_rcd_gate1). */
   private canManageRequirements(me: Me, e: EngagementFull) {
     const rule = me.permissions.mark_rcd_gate1?.scope ?? 'none';
     return rule === 'all' || (rule === 'own' && e.amId === me.id);
@@ -185,7 +185,7 @@ export class EngagementsService {
     const item = await this.prisma.requirementItem.findFirst({ where: { id: itemId, orgId: me.orgId }, include: { cycle: true } });
     if (!item) throw new NotFoundException('Item not found');
     const e = await this.load(me, item.cycle.engagementId);
-    if (!this.canManageRequirements(me, e)) throw new ForbiddenException("Only the client's Account Manager can update requirements");
+    if (!this.canManageRequirements(me, e)) throw new ForbiddenException("Only the client's Client Manager can update requirements");
     if (item.cycle.rcdAt) throw new BadRequestException('Requirements are locked once the project start date (RCD) is set');
     const updated = await this.prisma.requirementItem.update({
       where: { id: itemId },
@@ -206,7 +206,7 @@ export class EngagementsService {
 
   async addRequirement(me: Me, id: string, label: string, type: string, ip?: string) {
     const e = await this.load(me, id);
-    if (!this.canManageRequirements(me, e)) throw new ForbiddenException("Only the client's Account Manager can add requirements");
+    if (!this.canManageRequirements(me, e)) throw new ForbiddenException("Only the client's Client Manager can add requirements");
     const cycle = e.cycles[0];
     if (!cycle || cycle.rcdAt) throw new BadRequestException('Requirements are locked once the project start date (RCD) is set');
     const item = await this.prisma.requirementItem.create({ data: { orgId: me.orgId, cycleId: cycle.id, label, type, ownerId: me.id } });
@@ -220,7 +220,7 @@ export class EngagementsService {
    */
   async markRcd(me: Me, id: string, ip?: string) {
     const e = await this.load(me, id);
-    if (!this.canManageRequirements(me, e)) throw new ForbiddenException("Only the client's Account Manager or above can set the project start date");
+    if (!this.canManageRequirements(me, e)) throw new ForbiddenException("Only the client's Client Manager or above can set the project start date");
     const cycle = e.cycles[0];
     if (!cycle) throw new BadRequestException('No active cycle');
     if (cycle.rcdAt) throw new BadRequestException('RCD is already set');
@@ -235,7 +235,7 @@ export class EngagementsService {
     const { planDeadlineWorkingDays } = await this.settings.get(me.orgId, 'gateRules');
     const planningDue = addWorkingDays(now, planDeadlineWorkingDays, holidays);
 
-    // Strategist in the AM's pod owns planning; falls back to the AM.
+    // Strategist in the CM's pod owns planning; falls back to the CM.
     const am = e.amId ? await this.prisma.user.findUnique({ where: { id: e.amId }, select: { teamId: true } }) : null;
     const strategist = am?.teamId
       ? await this.prisma.user.findFirst({ where: { teamId: am.teamId, status: 'active', roles: { some: { role: { baseRole: 'strategist' } } } } })
@@ -307,12 +307,12 @@ export class EngagementsService {
     return this.detail(me, id);
   }
 
-  /** Internal approval (Strategist → Dept Head / AM) then presentation to the client. */
+  /** Internal approval (Strategist → Dept Head / CM) then presentation to the client. */
   async sendPlan(me: Me, id: string, ip?: string) {
     const e = await this.load(me, id);
     const plan = e.cycles[0]?.plans[0];
     if (!plan || plan.status !== 'internal_review') throw new BadRequestException('The plan must be submitted for internal review first');
-    if (!this.canSendPlan(me, e)) throw new ForbiddenException("Only the client's AM, a Department Head or leadership can approve and send the plan");
+    if (!this.canSendPlan(me, e)) throw new ForbiddenException("Only the client's CM, a Department Head or leadership can approve and send the plan");
     await this.prisma.$transaction([
       this.prisma.plan.update({ where: { id: plan.id }, data: { status: 'sent_to_client' } }),
       this.prisma.engagement.update({ where: { id: e.id }, data: { status: 'awaiting_plan_approval' } }),

@@ -26,7 +26,7 @@ const STATUS: { value: string; label: string }[] = [
 ];
 const toggleCls = (on: boolean) => `border px-2.5 py-1.5 text-xs ${on ? "border-charcoal bg-charcoal text-ivory" : "border-border text-ink-muted hover:text-ink"}`;
 
-/** The Clients list: search, filters, saved views, bulk (reassign AM, tag, archive, export), add / migrate / import. */
+/** The Clients list: search, filters, saved views, bulk (reassign CM, tag, archive, export), add / migrate / import. */
 export function ClientsList() {
   const { me, openNew, openReassign, notify, version, changed } = useActions();
   const [q, setQ] = useState("");
@@ -83,7 +83,7 @@ export function ClientsList() {
           columns={[
             { header: "Client", value: (r) => r.name },
             { header: "Industry", value: (r) => r.industry },
-            { header: "Account Manager", value: (r) => r.am?.name },
+            { header: "Client Manager", value: (r) => r.am?.name },
             { header: "Branch", value: (r) => r.branch },
             { header: "Contact", value: (r) => r.contact.name },
             { header: "Phone", value: (r) => r.contact.phone },
@@ -98,7 +98,7 @@ export function ClientsList() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, contact, phone, AM" aria-label="Search clients" className="w-full border border-border bg-surface-raised px-3 py-1.5 text-sm sm:w-72" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, contact, phone, CM" aria-label="Search clients" className="w-full border border-border bg-surface-raised px-3 py-1.5 text-sm sm:w-72" />
         <button type="button" className={toggleCls(!filters.archived)} onClick={() => set({ archived: "" })}>
           Current
         </button>
@@ -124,8 +124,8 @@ export function ClientsList() {
             <option value="amber">Watch</option>
             <option value="red">At risk</option>
           </select>
-          <select className={inputCls} value={filters.am} onChange={(e) => set({ am: e.target.value })} aria-label="Account Manager">
-            <option value="">Any Account Manager</option>
+          <select className={inputCls} value={filters.am} onChange={(e) => set({ am: e.target.value })} aria-label="Client Manager">
+            <option value="">Any Client Manager</option>
             <option value="none">Unassigned</option>
             {(opts.data?.ams.map((a) => [a.id, a.name] as [string, string]) ?? ams).map(([id, name]) => (
               <option key={id} value={id}>
@@ -202,12 +202,12 @@ export function ClientsList() {
 
       <BulkBar count={sel.count} onClear={sel.clear} label="clients">
         {clientsCanReassignAm(me) && (
-          <BulkButton onClick={() => openReassign({ type: "client_am", ids: sel.ids, title: `Reassign Account Manager for ${sel.count} clients`, onDone: () => (sel.clear(), changed()) })}>Reassign AM</BulkButton>
+          <BulkButton onClick={() => openReassign({ type: "client_am", ids: sel.ids, title: `Reassign Client Manager for ${sel.count} clients`, onDone: () => (sel.clear(), changed()) })}>Reassign CM</BulkButton>
         )}
         {clientsCanAdd(me) && <BulkButton onClick={() => setPanel("tag")}>Tag</BulkButton>}
         {clientsCanImport(me) && filters.archived !== "only" && <BulkButton onClick={() => setPanel("archive")}>Archive</BulkButton>}
         {clientsCanImport(me) && filters.archived === "only" && <BulkButton onClick={() => setPanel("restore")}>Restore</BulkButton>}
-        <CsvButton filename="clients-selected.csv" label="Export" rows={rows.filter((r) => sel.has(r.id))} columns={[{ header: "Client", value: (r) => r.name }, { header: "Account Manager", value: (r) => r.am?.name }, { header: "Phone", value: (r) => r.contact.phone }, { header: "Email", value: (r) => r.contact.email }, { header: "Health", value: (r) => healthLabel(r.health) }]} />
+        <CsvButton filename="clients-selected.csv" label="Export" rows={rows.filter((r) => sel.has(r.id))} columns={[{ header: "Client", value: (r) => r.name }, { header: "Client Manager", value: (r) => r.am?.name }, { header: "Phone", value: (r) => r.contact.phone }, { header: "Email", value: (r) => r.contact.email }, { header: "Health", value: (r) => healthLabel(r.health) }]} />
       </BulkBar>
 
       {panel === "import" && <ImportWizard entity="clients" open onClose={() => setPanel(null)} onDone={() => changed()} />}
@@ -234,7 +234,7 @@ function ClientRows({ rows, sel }: { rows: ClientsListRow[]; sel: ReturnType<typ
       <div className="hidden grid-cols-[2rem_minmax(0,2.4fr)_minmax(0,1.4fr)_minmax(0,2fr)_7rem] gap-2 border-b border-border bg-canvas/50 px-3 py-2 text-xs text-ink-muted md:grid">
         <input type="checkbox" checked={sel.allSelected} onChange={sel.toggleAll} aria-label="Select all clients" />
         <span>Client</span>
-        <span>Account Manager</span>
+        <span>Client Manager</span>
         <span>Services</span>
         <span>Health</span>
       </div>

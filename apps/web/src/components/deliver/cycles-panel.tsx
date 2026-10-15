@@ -60,7 +60,7 @@ export function CyclesPanel({ engagementId, onStarted }: { engagementId: string;
                 {i === 0 && <span className="ml-2 text-xs font-normal text-ink-muted">current</span>}
               </p>
               <div className="flex flex-wrap items-center gap-2 text-xs">
-                {c.startedBy && <span className="text-ink-muted">Started {c.startedBy === "auto" ? "automatically" : "by the AM"} {day.format(new Date(c.startedAt))}</span>}
+                {c.startedBy && <span className="text-ink-muted">Started {c.startedBy === "auto" ? "automatically" : "by the CM"} {day.format(new Date(c.startedAt))}</span>}
                 {c.planStatus && <Badge tone={c.planStatus === "approved" ? "green" : "neutral"}>Plan: {planStatusLabels[c.planStatus as PlanStatus] ?? c.planStatus}</Badge>}
                 {c.invoice && (
                   <Badge tone={c.invoice.status === "paid" ? "green" : "dark"}>

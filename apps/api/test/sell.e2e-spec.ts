@@ -232,7 +232,7 @@ describe('negotiation: change requests, versions, expiry', () => {
     expect((await notices(ids.sales, 'proposal_accepted')).length).toBeGreaterThan(0);
   });
 
-  it('paying creates the client, welcomes them, tells the AM and marks the lead won', async () => {
+  it('paying creates the client, welcomes them, tells the CM and marks the lead won', async () => {
     await http().post(`/public/proposals/${v2.publicToken}/pay-test`).expect(200);
     const client = await prisma.clientOrg.findUniqueOrThrow({ where: { leadId } });
     cleanup.clientOrgIds.push(client.id);

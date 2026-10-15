@@ -1,7 +1,7 @@
 // Journey: client request desk end to end.
-// Client raises every request type → AM inbox with working-hour reply timers → scope decisions →
+// Client raises every request type → CM inbox with working-hour reply timers → scope decisions →
 // quote from the add-on list (and a Founder custom price) → approver can't approve → owner approves →
-// pays (dev test payment) → work task created → AM marks done → client rates and can reopen.
+// pays (dev test payment) → work task created → CM marks done → client rates and can reopen.
 // Plus decline / reschedule / question reply paths, and notifications deep links on both sides.
 import { BASE, apiCall, browser, check, done, shot, signIn, sleep } from "./lib.mjs";
 
@@ -39,32 +39,32 @@ for (let i = 0; i < types.length; i++) {
 await client.getByText(`[e2e ${stamp}] billing`).first().waitFor();
 check((await client.locator(`a:has-text("[e2e ${stamp}]")`).count()) >= 5, "client list shows all five");
 
-console.log("AM inbox shows them with working-hours reply timers");
+console.log("CM inbox shows them with working-hours reply timers");
 await am.goto(`${BASE}/team/requests`);
 await am.getByText(`[e2e ${stamp}] urgent`).first().waitFor();
-check((await am.locator(`a:has-text("[e2e ${stamp}]")`).count()) === 5, "all five in the AM inbox");
+check((await am.locator(`a:has-text("[e2e ${stamp}]")`).count()) === 5, "all five in the CM inbox");
 check((await am.locator(`a:has-text("[e2e ${stamp}] urgent") >> text=/Reply in|Reply overdue/`).count()) === 1, "urgent request shows a reply timer");
 const notes = await apiCall(am, "GET", "/notifications");
-check(notes.json.items.some((n) => n.kind === "request_created" && n.link === `/team/requests/${ids.urgent}` && n.critical), "AM got a critical bell alert linking to the urgent request");
+check(notes.json.items.some((n) => n.kind === "request_created" && n.link === `/team/requests/${ids.urgent}` && n.critical), "CM got a critical bell alert linking to the urgent request");
 
 console.log("Change request: in scope → work task → done → client rates → reopen");
 await am.goto(`${BASE}/team/requests/${ids.change}`);
 await am.getByRole("button", { name: "In scope: start work" }).click();
 await am.getByRole("button", { name: "Mark done" }).waitFor();
 const tasks = await apiCall(am, "GET", "/tasks?scope=mine");
-check(JSON.stringify(tasks.json).includes(`[e2e ${stamp}] change`), "work task created for the AM");
+check(JSON.stringify(tasks.json).includes(`[e2e ${stamp}] change`), "work task created for the CM");
 await am.getByPlaceholder(/Reply to the client/).fill("All fixed, please have a look.");
 await am.getByRole("button", { name: "Mark done" }).click();
 await am.getByText("Client satisfaction").waitFor();
 await client.goto(`${BASE}/client/requests/${ids.change}`);
 await client.getByText("How did we do?").waitFor();
-check((await client.getByText("All fixed, please have a look.").count()) > 0, "client sees the AM's note");
+check((await client.getByText("All fixed, please have a look.").count()) > 0, "client sees the CM's note");
 await client.getByPlaceholder("Anything to add? (optional)").fill("Super quick, thanks");
 await client.getByRole("button", { name: "Thumbs up" }).click();
 await client.getByTestId("request-rating").waitFor();
 check((await client.getByTestId("request-rating").textContent()).includes("thumbs up"), "client rated thumbs up");
 await am.goto(`${BASE}/team/requests/${ids.change}`);
-check((await am.getByTestId("team-request-rating").textContent()).includes("Happy"), "AM sees the rating");
+check((await am.getByTestId("team-request-rating").textContent()).includes("Happy"), "CM sees the rating");
 await client.getByRole("button", { name: "Reopen it" }).click();
 await client.getByPlaceholder("What still needs fixing?").fill("The footer link is still wrong");
 await client.getByRole("button", { name: "Reopen request" }).click();
@@ -72,10 +72,10 @@ await client.getByText(/Reopened once/).waitFor();
 const reopened = await apiCall(client, "GET", `/client/requests/${ids.change}`);
 check(reopened.json.status === "in_progress" && reopened.json.reopenCount === 1, "request reopened and back in progress");
 const amNotes = await apiCall(am, "GET", "/notifications");
-check(amNotes.json.items.some((n) => n.kind === "request_reopened" && n.link === `/team/requests/${ids.change}`), "AM alerted about the reopen");
+check(amNotes.json.items.some((n) => n.kind === "request_reopened" && n.link === `/team/requests/${ids.change}`), "CM alerted about the reopen");
 await shot(client, "requests-client-reopened");
 
-console.log("Extra request: AM quotes from the add-on list → approver can't approve → owner approves → pays → task");
+console.log("Extra request: CM quotes from the add-on list → approver can't approve → owner approves → pays → task");
 await am.goto(`${BASE}/team/requests/${ids.new_scope}`);
 const addOnSelect = am.locator("select").first();
 await am.waitForFunction(() => (document.querySelector("select")?.options.length ?? 0) > 1);
@@ -83,7 +83,7 @@ const opts = await addOnSelect.locator("option").allTextContents();
 check(opts.length > 1, `add-on price list loaded (${opts.length - 1} priced add-ons)`);
 await addOnSelect.selectOption({ index: 1 });
 await am.getByPlaceholder("Timeline, e.g. 3 working days").fill("3 working days");
-check((await am.getByPlaceholder(/custom amount/).count()) === 0, "AM cannot enter a custom price");
+check((await am.getByPlaceholder(/custom amount/).count()) === 0, "CM cannot enter a custom price");
 await am.getByRole("button", { name: "Send quote for approval" }).click();
 await am.getByText(/Quote/).first().waitFor();
 await sleep(500);
@@ -161,14 +161,14 @@ await am.getByRole("button", { name: /Reschedule/ }).click();
 await sleep(800);
 check((await apiCall(am, "GET", `/requests/${rs.json.id}`)).json.status === "rescheduled", "request rescheduled");
 
-console.log("SLA breaches are visible (AM lead sees the whole team)");
+console.log("SLA breaches are visible (CM lead sees the whole team)");
 const lead = await signIn(b, "am.lead@bmu.demo");
 const leadList = await apiCall(lead, "GET", "/requests");
-check(leadList.status === 200, "AM lead can open the team request desk");
+check(leadList.status === 200, "CM lead can open the team request desk");
 const late = leadList.json.filter((r) => r.sla.state === "overdue" || r.sla.state === "breached");
-check(late.length > 0, `AM lead sees ${late.length} late request(s) across the team`);
+check(late.length > 0, `CM lead sees ${late.length} late request(s) across the team`);
 const amCount = (await apiCall(am, "GET", "/requests")).json.length;
-check(leadList.json.length >= amCount, `AM lead sees at least what one AM sees (${leadList.json.length} vs ${amCount})`);
+check(leadList.json.length >= amCount, `CM lead sees at least what one CM sees (${leadList.json.length} vs ${amCount})`);
 await lead.goto(`${BASE}/team/requests`);
 const lateBadge = lead.getByText(/Reply overdue|Replied late/).first();
 check(await lateBadge.waitFor({ timeout: 30_000 }).then(() => true, () => false), "late requests are flagged in the inbox (Reply overdue / Replied late)");
@@ -176,7 +176,7 @@ if (late.some((r) => r.sla.state === "overdue")) check(await lead.getByText(/pas
 await shot(lead, "requests-lead-sla");
 
 console.log("Bell deep links work on both sides");
-for (const [page, who] of [[client, "client"], [am, "AM"]]) {
+for (const [page, who] of [[client, "client"], [am, "CM"]]) {
   const list = (await apiCall(page, "GET", "/notifications")).json.items.filter((n) => n.link).slice(0, 8);
   for (const n of list) {
     const r = await page.goto(`${BASE}${n.link}`);

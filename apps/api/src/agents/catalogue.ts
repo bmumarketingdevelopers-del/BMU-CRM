@@ -301,7 +301,7 @@ export const ACTIONS: Record<AgentAction, ActionImpl> = {
     },
     check: async (i, ctx) => {
       const r = await requestFor(ctx, String(i.requestId));
-      if (!r.can.decide) throw new ForbiddenException("Only the client's Account Manager or leadership can reply to this request");
+      if (!r.can.decide) throw new ForbiddenException("Only the client's Client Manager or leadership can reply to this request");
     },
     apply: async (i, ctx) => {
       await get(ctx.ref, RequestsService).decide(ctx.me, String(i.requestId), { action: 'reply', internal: false, message: String(i.text) });
@@ -354,7 +354,7 @@ export const ACTIONS: Record<AgentAction, ActionImpl> = {
     describe: async (i) => ({ title: `Mark the request as "${requestTypeLabels[i.type as RequestType]}"`, summary: String(i.reason ?? ''), link: `/team/requests/${i.requestId}`, target: { type: 'Request', id: String(i.requestId) } }),
     check: async (i, ctx) => {
       const r = await requestFor(ctx, String(i.requestId));
-      if (!r.can.decide) throw new ForbiddenException("Only the client's Account Manager or leadership can change this request");
+      if (!r.can.decide) throw new ForbiddenException("Only the client's Client Manager or leadership can change this request");
       if (['done', 'declined', 'paid', 'approved', 'quoted'].includes(r.status)) throw new BadRequestException('This request has moved on; its type can no longer change');
     },
     apply: async (i, ctx) => {
@@ -405,7 +405,7 @@ export const ACTIONS: Record<AgentAction, ActionImpl> = {
     },
     check: async (i, ctx) => {
       const cap = get(ctx.ref, CapacityService);
-      if (!cap.canBook(ctx.me)) throw new ForbiddenException('Only producers, Account Managers and leadership book people');
+      if (!cap.canBook(ctx.me)) throw new ForbiddenException('Only producers, Client Managers and leadership book people');
       const e = await get(ctx.ref, PrismaService).engagement.findFirst({ where: { id: String(i.engagementId), orgId: ctx.me.orgId, deletedAt: null }, select: { id: true } });
       if (!e) throw new NotFoundException('Project not found');
       const week = String(i.weekStart);

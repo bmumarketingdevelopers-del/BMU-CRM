@@ -158,7 +158,7 @@ export type PeopleCreateUnit = z.input<typeof peopleCreateUnitSchema>;
 
 export const peoplePodSchema = z.object({
   name: z.string().trim().min(2, "Enter the pod name").max(80),
-  amUserId: z.string().min(1, "Pick the account manager"),
+  amUserId: z.string().min(1, "Pick the client manager"),
   strategistUserId: z.string().min(1, "Pick the strategist"),
   producerIds: z.array(z.string().min(1)).min(1, "Pick at least one producer").max(20),
   clientIds: z.array(z.string().min(1)).min(1, "Pick at least one client").max(100),

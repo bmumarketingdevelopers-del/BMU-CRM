@@ -31,7 +31,7 @@ export default function TeamThreadPage({ params }: { params: Promise<{ id: strin
       </Link>
       <PageTitle
         title={t.client.name}
-        subtitle={t.awaitingReply ? `Waiting for a reply since ${when.format(new Date(t.awaitingReply.since))}. Reply by ${when.format(new Date(t.awaitingReply.due))} (same working day).` : `Account Manager: ${t.am ?? "not assigned"}. All caught up.`}
+        subtitle={t.awaitingReply ? `Waiting for a reply since ${when.format(new Date(t.awaitingReply.since))}. Reply by ${when.format(new Date(t.awaitingReply.due))} (same working day).` : `Client Manager: ${t.am ?? "not assigned"}. All caught up.`}
         action={
           <div className="flex items-center gap-2">
             {t.awaitingReply && <Badge tone={t.awaitingReply.overdue ? "red" : "amber"}>{t.awaitingReply.overdue ? "Reply overdue" : "Awaiting reply"}</Badge>}

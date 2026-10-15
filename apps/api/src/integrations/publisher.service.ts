@@ -1,7 +1,7 @@
 // v19 auto-publishing. Every minute, approved posts whose time has come go out to the client's connected account for
 // that channel (Instagram, Facebook page, LinkedIn page or YouTube). Posts without a connected account keep the v16
-// flow (the AM is told it is due and marks it published by hand). Failures retry after 5, 15 and 60 minutes, then
-// stop and tell the AM and leadership. Never publishes without an approved version on record.
+// flow (the CM is told it is due and marks it published by hand). Failures retry after 5, 15 and 60 minutes, then
+// stop and tell the CM and leadership. Never publishes without an approved version on record.
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { CHANNEL_PROVIDER, PROVIDER_INFO, type IntegrationProvider, type Me, type PublicationView } from '@bmu/shared';
 import type { IntegrationAccount, PostPublication } from '../generated/prisma/client.js';
@@ -134,7 +134,7 @@ export class PublisherService implements OnModuleInit, OnModuleDestroy {
   }
 
   private canPublish(me: Me) {
-    if (me.type !== 'staff' || !hasRole(me, ...SCHEDULERS)) throw new ForbiddenException('Only Account Managers, strategists and leadership can publish posts');
+    if (me.type !== 'staff' || !hasRole(me, ...SCHEDULERS)) throw new ForbiddenException('Only Client Managers, strategists and leadership can publish posts');
   }
 
   async publishNow(me: Me, deliverableId: string, ip?: string): Promise<PublicationView> {

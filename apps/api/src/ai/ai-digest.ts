@@ -138,9 +138,9 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
     ].join('\n');
 
     const actions: string[] = [];
-    if (atRisk[0]) actions.push(`Call [${atRisk[0].name}](/team/clients/${atRisk[0].id}) this week (AM + Founder): ${atRisk[0].reasons[0] ?? 'health is low'}.`);
+    if (atRisk[0]) actions.push(`Call [${atRisk[0].name}](/team/clients/${atRisk[0].id}) this week (CM + Founder): ${atRisk[0].reasons[0] ?? 'health is low'}.`);
     if (overdue[0]) actions.push(`Chase [${overdue[0].number} · ${overdue[0].client}](/admin/finance/invoices/${overdue[0].id}) — ${formatINR(overdue[0].balancePaise)}, ${overdue[0].daysOverdue} days overdue (Finance).`);
-    if (sla.length) actions.push(`Reply to the ${sla.length} request${sla.length === 1 ? '' : 's'} past reply time on the [requests desk](/team/requests) (AMs).`);
+    if (sla.length) actions.push(`Reply to the ${sla.length} request${sla.length === 1 ? '' : 's'} past reply time on the [requests desk](/team/requests) (CMs).`);
     if (blocked.length) actions.push(`Unblock ${blocked.length} task${blocked.length === 1 ? '' : 's'}${blocked[0].deliverableId ? `, starting with [${blocked[0].title}](/team/deliverables/${blocked[0].deliverableId})` : ''} (department heads).`);
     if (w.openLeads) actions.push(`Review the ${w.openLeads} open [leads](/team/leads) and make sure each has a follow-up date (Sales).`);
     actions.push('Look at [Client Health](/admin/client-health) and thank one happy client for a referral (Founder).');

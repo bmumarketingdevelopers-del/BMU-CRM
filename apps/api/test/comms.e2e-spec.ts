@@ -70,7 +70,7 @@ beforeAll(async () => {
     data: { orgId, clientOrgId: client.id, serviceId: service.id, tier: 'growth', billingType: 'monthly', status: 'in_production', currentGate: 'G3', amId: am.id, cycles: { create: { orgId, period: '2026-10', rcdAt: new Date(), status: 'production' } } },
   });
   ids.engagement = eng.id;
-  // Clean slate for the AM's calendar so the slot checks are predictable.
+  // Clean slate for the CM's calendar so the slot checks are predictable.
   await prisma.meeting.deleteMany({ where: { hostId: am.id } });
   await prisma.bookingPage.deleteMany({ where: { userId: am.id } });
   for (const who of ['am', 'producer', 'qc', 'founder', 'sales', 'admin']) tokens[who] = await signIn(`${who}@bmu.demo`);
@@ -83,7 +83,7 @@ afterAll(async () => {
 });
 
 describe('shared inbox', () => {
-  it('a WhatsApp from a known client number lands on that client’s thread and in the AM’s inbox', async () => {
+  it('a WhatsApp from a known client number lands on that client’s thread and in the CM’s inbox', async () => {
     const r = await http().post('/webhooks/whatsapp').send(waPayload(`91${ownerPhone}`, `wamid.${stamp}.1`, 'Hi! Can we move the Diwali post to Friday?')).expect(200);
     expect(r.body).toMatchObject({ ok: true, received: 1 });
     // Meta retries the same message id: stored once.
@@ -104,12 +104,12 @@ describe('shared inbox', () => {
     expect(thread).toMatchObject({ clientOrgId: clientId, type: 'client_am' });
     const clientView = (await http().get('/client/thread').set(as('client')).expect(200)).body;
     expect(JSON.stringify(clientView)).toContain('move the Diwali post to Friday');
-    // The AM was told, with a link straight to the conversation.
+    // The CM was told, with a link straight to the conversation.
     const note = await prisma.notification.findFirst({ where: { userId: amId, link: `/team/inbox?c=${row.id}` } });
     expect(note?.kind).toBe('inbox_message');
   });
 
-  it('the AM opens it (marked read), uses a template and replies on WhatsApp; the reply is on the thread too', async () => {
+  it('the CM opens it (marked read), uses a template and replies on WhatsApp; the reply is on the thread too', async () => {
     const tpl = (await http().post('/inbox/templates').set(as('am')).send({ name: `Thanks ${stamp}`, channel: 'whatsapp', body: 'Hi {first_name}, thanks! {my_name} here.' }).expect(201)).body;
     const d = (await http().get(`/inbox/${ids.conv}`).set(as('am')).expect(200)).body as InboxDetail;
     expect(d.unread).toBe(0);
@@ -144,7 +144,7 @@ describe('shared inbox', () => {
     expect(mine.items.find((c) => c.lead?.id === lead.id)).toBeTruthy();
     const act = await prisma.leadActivity.findFirst({ where: { leadId: lead.id, kind: 'whatsapp' } });
     expect(act?.body).toContain('Sending the brief today');
-    // The AM does not see a lead conversation that belongs to sales.
+    // The CM does not see a lead conversation that belongs to sales.
     const amList = (await http().get('/inbox').set(as('am')).expect(200)).body as InboxList;
     expect(amList.items.find((c) => c.lead?.id === lead.id)).toBeFalsy();
     // Producers have no inbox.
@@ -227,7 +227,7 @@ describe('collaborative documents', () => {
   const enc = (u: Uint8Array) => Buffer.from(u).toString('base64');
   const dec = (s: string) => new Uint8Array(Buffer.from(s, 'base64'));
 
-  it('the AM starts a brief for the project; the client sees it only once shared', async () => {
+  it('the CM starts a brief for the project; the client sees it only once shared', async () => {
     const d = (await http().post('/docs').set(as('am')).send({ title: 'Diwali campaign brief', engagementId: ids.engagement, text: 'Goal: more store visits.\n' }).expect(201)).body as DocDetail;
     expect(d).toMatchObject({ client: { id: clientId }, kind: 'brief', clientVisible: false, can: { edit: true, share: true } });
     ids.doc = d.id;
@@ -289,10 +289,10 @@ describe('collaborative documents', () => {
 });
 
 describe('meetings', () => {
-  it('the client books a call with their AM from free slots; the slot is then taken', async () => {
+  it('the client books a call with their CM from free slots; the slot is then taken', async () => {
     const page = (await http().get('/meetings/booking-page').set(as('am')).expect(200)).body;
     expect(page.slug).toBeTruthy();
-    await http().put('/meetings/booking-page').set(as('am')).send({ title: 'Call with your AM', durationMin: 30, days: [1, 2, 3, 4, 5, 6, 7], startTime: '10:00', endTime: '18:00', noticeHours: 2, active: true }).expect(200);
+    await http().put('/meetings/booking-page').set(as('am')).send({ title: 'Call with your CM', durationMin: 30, days: [1, 2, 3, 4, 5, 6, 7], startTime: '10:00', endTime: '18:00', noticeHours: 2, active: true }).expect(200);
     const slots = (await http().get('/client/meetings/slots').set(as('client')).expect(200)).body as BookingSlots;
     expect(slots.durationMin).toBe(30);
     expect(slots.days.length).toBeGreaterThan(5);
@@ -375,7 +375,7 @@ describe('notification router', () => {
     expect(after.prefs.find((p) => p.kind === 'inbox_message')?.whatsapp).toBe(true);
   });
 
-  it('holds the AM’s WhatsApp copy during quiet hours and sends it after', async () => {
+  it('holds the CM’s WhatsApp copy during quiet hours and sends it after', async () => {
     const am = await prisma.user.findUniqueOrThrow({ where: { id: amId } });
     if (!am.phone) await prisma.user.update({ where: { id: amId }, data: { phone: '9876501234' } });
     const phone = (await prisma.user.findUniqueOrThrow({ where: { id: amId } })).phone!;

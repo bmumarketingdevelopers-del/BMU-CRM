@@ -1,6 +1,6 @@
 // Dunning: overdue invoice reminders at the steps set in settings (default 1, 7 and 14 working days late),
 // with a friendlier tone first and a firm final notice. Each step: client message in their thread,
-// in-app + email to the client's owner/finance people, and an alert for Finance and the AM.
+// in-app + email to the client's owner/finance people, and an alert for Finance and the CM.
 // Stops by itself once the invoice is paid; pauses while a promise-to-pay date is in the future.
 import { BadRequestException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import {
@@ -61,7 +61,7 @@ function copy(tone: Tone, inv: { number: string }, balance: string, days: number
     };
   return {
     title: `Final reminder: invoice ${inv.number} is ${late} overdue`,
-    message: `This is our final reminder for invoice ${inv.number} (${balance}), now ${late} overdue. Please pay today or call your Account Manager. As per our terms, work on new deliverables may be paused while invoices are overdue.`,
+    message: `This is our final reminder for invoice ${inv.number} (${balance}), now ${late} overdue. Please pay today or call your Client Manager. As per our terms, work on new deliverables may be paused while invoices are overdue.`,
   };
 }
 

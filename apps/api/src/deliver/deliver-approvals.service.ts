@@ -52,7 +52,7 @@ export class DeliverApprovalsService {
 
   async saveStaffSettings(me: Me, clientOrgId: string, mode: DeliverApprovalMode, ip?: string) {
     const { canEdit } = await this.staffClient(me, clientOrgId);
-    if (!canEdit) throw new ForbiddenException("Only the client's Account Manager or leadership can change the approval rule");
+    if (!canEdit) throw new ForbiddenException("Only the client's Client Manager or leadership can change the approval rule");
     return this.setMode(me, clientOrgId, mode, ip, canEdit);
   }
 
@@ -90,13 +90,13 @@ export class DeliverApprovalsService {
     return { st, engagement: plan.cycle.engagement, title: `the ${plan.cycle.engagement.service.name} plan`, link: '/client/approvals' };
   }
 
-  /** AM (or a client owner/approver) nudges whoever still has to approve. */
+  /** CM (or a client owner/approver) nudges whoever still has to approve. */
   async remind(me: Me, target: 'deliverable' | 'plan', id: string, ip?: string) {
     const { st, engagement, title, link } = await this.pendingFor(target, id, me.orgId);
     if (me.type === 'client') {
       if (engagement.clientOrgId !== me.clientOrg?.id) throw new NotFoundException('Not found');
     } else if (!(isLeadership(me) || engagement.amId === me.id)) {
-      throw new ForbiddenException("Only the client's Account Manager can send reminders");
+      throw new ForbiddenException("Only the client's Client Manager can send reminders");
     }
     const ids = pendingUserIds(st).filter((x) => x !== me.id);
     if (!ids.length) throw new BadRequestException('Nobody is pending');
@@ -141,7 +141,7 @@ export class DeliverApprovalsService {
     return { sent };
   }
 
-  /** Client uploads a file for an onboarding item; the AM then checks it and marks it received. */
+  /** Client uploads a file for an onboarding item; the CM then checks it and marks it received. */
   async uploadRequirement(me: Me, itemId: string, file: ClientUpload | undefined, note: string | undefined, root: string, ip?: string) {
     if (!me.clientOrg) throw new ForbiddenException('Client accounts only');
     if (!file) throw new BadRequestException('Choose a file to upload');

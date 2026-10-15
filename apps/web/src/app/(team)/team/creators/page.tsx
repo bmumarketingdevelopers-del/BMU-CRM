@@ -15,7 +15,7 @@ type Group = "review" | "active" | "done" | "all";
 const groupOf = (s: BriefStatus): Exclude<Group, "all"> => (s === "submitted" ? "review" : ["offered", "accepted", "revision"].includes(s) ? "active" : "done");
 
 export default function CreatorsPage() {
-  // Department heads see the roster (v11 ops) but not briefs, which stay with Account Managers.
+  // Department heads see the roster (v11 ops) but not briefs, which stay with Client Managers.
   const data = useLoad(() => Promise.all([api.creatorAdmin.creators().catch(() => null), api.creatorAdmin.briefs().catch(() => null)]));
   const [picked, setGroup] = useState<Group>();
   const [creating, setCreating] = useState(false);

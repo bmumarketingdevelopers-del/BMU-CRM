@@ -41,7 +41,7 @@ beforeAll(async () => {
 
   const client = await prisma.clientOrg.create({ data: { orgId, name: `Workspace Test ${stamp}`, amUserId: am.id } });
   clientId = client.id;
-  otherClientId = (await prisma.clientOrg.create({ data: { orgId, name: `Other AM Client ${stamp}`, amUserId: lead.id } })).id;
+  otherClientId = (await prisma.clientOrg.create({ data: { orgId, name: `Other CM Client ${stamp}`, amUserId: lead.id } })).id;
   for (const [who, clientRole] of [
     ['owner', 'client_owner'],
     ['viewer', 'client_viewer'],
@@ -54,7 +54,7 @@ beforeAll(async () => {
     tokens[who] = await signIn(u.email!);
   }
 
-  // A fresh staff member (manager: the AM) so leave tests start with a full balance.
+  // A fresh staff member (manager: the CM) so leave tests start with a full balance.
   const staff = await prisma.user.create({
     data: { orgId, type: 'staff', name: 'Leave Tester', email: `ws.staff.${stamp}@example.com`, status: 'active', managerId: am.id, roles: { create: { roleId: (await role('producer')).id } } },
   });
@@ -77,20 +77,20 @@ afterAll(async () => {
 });
 
 describe('Client 360', () => {
-  it('lets the AM open their own client with stats, services and users', async () => {
+  it('lets the CM open their own client with stats, services and users', async () => {
     const r = await http().get(`/workspace/clients/${clientId}`).set(as('am')).expect(200);
     expect(r.body.client.name).toContain('Workspace Test');
     expect(r.body.stats).toMatchObject({ activeServices: 0, openRequests: 0, draftsWaiting: 0 });
     expect(r.body.users).toHaveLength(2);
   });
 
-  it("stops an AM opening another AM's client, and non-client roles entirely", async () => {
+  it("stops a CM opening another CM's client, and non-client roles entirely", async () => {
     await http().get(`/workspace/clients/${otherClientId}`).set(as('am')).expect(403);
     await http().get(`/workspace/clients/${clientId}`).set(as('producer')).expect(403);
     await http().get(`/workspace/clients/${clientId}`).set(as('owner')).expect(403);
   });
 
-  it('lets the founder and AM lead see every client', async () => {
+  it('lets the founder and CM lead see every client', async () => {
     await http().get(`/workspace/clients/${otherClientId}`).set(as('founder')).expect(200);
     await http().get(`/workspace/clients/${clientId}`).set(as('am.lead')).expect(200);
   });
@@ -182,9 +182,9 @@ describe('profile and leave', () => {
 describe('creator briefs and payouts', () => {
   let briefId: string;
 
-  it('lets AMs brief a creator and notifies the creator; others cannot', async () => {
+  it('lets CMs brief a creator and notifies the creator; others cannot', async () => {
     await http().get('/workspace/creators').set(as('producer')).expect(403);
-    await http().post('/workspace/briefs').set(as('am')).send({ creatorId, title: 'Not yours', brief: 'For another AM client', deliverables: ['1 reel'], feeRupees: 1000, clientOrgId: otherClientId }).expect(403);
+    await http().post('/workspace/briefs').set(as('am')).send({ creatorId, title: 'Not yours', brief: 'For another CM client', deliverables: ['1 reel'], feeRupees: 1000, clientOrgId: otherClientId }).expect(403);
     const r = await http()
       .post('/workspace/briefs')
       .set(as('am'))

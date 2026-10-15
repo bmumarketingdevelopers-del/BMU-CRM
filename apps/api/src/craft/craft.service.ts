@@ -117,7 +117,7 @@ export class CraftService {
     return { id: u.id, name: u.name, specialty: u.specialty, departmentId: u.departmentId, department: u.department?.name ?? null, baseRole: u.roles[0]?.role.baseRole ?? null };
   }
 
-  /** Founder, Admin and AM Lead see everyone; a Department Head sees their own department. */
+  /** Founder, Admin and CM Lead see everyone; a Department Head sees their own department. */
   private async leadScope(me: Me): Promise<Prisma.UserWhereInput | null> {
     if (me.roles.some((r) => LEADS_ALL.includes(r))) return { orgId: me.orgId };
     if (me.roles.includes('department_head')) {
@@ -136,7 +136,7 @@ export class CraftService {
     if (scope.departmentId && scope.departmentId !== target.departmentId) throw new ForbiddenException('That person is outside your department');
   }
 
-  /** Who may act on a deliverable: someone with a task on it, its AM, a department head or leadership. */
+  /** Who may act on a deliverable: someone with a task on it, its CM, a department head or leadership. */
   private async assertWorksOn(me: Me, deliverableId: string) {
     this.staffOnly(me);
     const d = await this.prisma.deliverable.findFirst({
@@ -665,7 +665,7 @@ export class CraftService {
     const tight = p.rounds.filter((r) => r.left <= 0);
     if (tight.length) insights.push(`${plural(tight.length, 'video')} ${tight.length === 1 ? 'has' : 'have'} used every included revision round; any more changes should be quoted as an add-on.`);
     const missing = p.assets.filter((a) => a.items.some((i) => i.status !== 'received'));
-    if (missing.length) insights.push(`Footage or assets are still missing for ${missing.map((m) => m.client).filter((c, i, a) => a.indexOf(c) === i).join(', ')}. Ask the AM to chase the client before the edit is due.`);
+    if (missing.length) insights.push(`Footage or assets are still missing for ${missing.map((m) => m.client).filter((c, i, a) => a.indexOf(c) === i).join(', ')}. Ask the CM to chase the client before the edit is due.`);
     return { kpis, insights };
   }
 
@@ -1007,7 +1007,7 @@ export class CraftService {
       c.onTime,
     ];
     const insights = this.commonInsights(ctx, c);
-    if (p.totals.estimateHours) insights.push(usage > 100 ? `Work in this period has taken ${usage}% of the estimate. Raise scope creep with the AM early.` : `You are at ${usage}% of the estimated hours on current and recent work.`);
+    if (p.totals.estimateHours) insights.push(usage > 100 ? `Work in this period has taken ${usage}% of the estimate. Raise scope creep with the CM early.` : `You are at ${usage}% of the estimated hours on current and recent work.`);
     if (openChanges.length) insights.push(`${plural(openChanges.length, 'change request')} from clients ${openChanges.length === 1 ? 'is' : 'are'} open on your web projects${openChanges.some((x) => x.overdue) ? ', and at least one is past its reply time' : ''}.`);
     const failing = p.qc.filter((q) => q.result === 'fail');
     if (failing.length) insights.push(`${plural(failing.length, 'page')} failed the last QC check. Fix the flagged items before sending a new staging link.`);
@@ -1106,7 +1106,7 @@ export class CraftService {
     const hand = p.handoff.filter((h) => h.done < h.total);
     if (hand.length) insights.push(`${plural(hand.length, 'design')} ${hand.length === 1 ? 'needs' : 'need'} the handoff checklist finished before developers pick ${hand.length === 1 ? 'it' : 'them'} up.`);
     const research = p.phases.find((x) => x.key === 'research');
-    if (research?.items.length) insights.push(`${plural(research.items.length, 'job')} ${research.items.length === 1 ? 'is' : 'are'} in research. Lock the brief with the AM before wireframing.`);
+    if (research?.items.length) insights.push(`${plural(research.items.length, 'job')} ${research.items.length === 1 ? 'is' : 'are'} in research. Lock the brief with the CM before wireframing.`);
     return { kpis, insights };
   }
 

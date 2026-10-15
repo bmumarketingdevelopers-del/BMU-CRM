@@ -96,7 +96,7 @@ describe('requirements and Gate 1', () => {
     expect(res.body.status).toBe('blocked');
   });
 
-  it('only the AM (or above) confirms items and sets RCD', async () => {
+  it('only the CM (or above) confirms items and sets RCD', async () => {
     await http().patch(`/engagements/requirements/${itemIds[0]}`).set(as('strategist')).send({ status: 'received' }).expect(403);
     for (const id of itemIds) await http().patch(`/engagements/requirements/${id}`).set(as('am')).send({ status: 'received' }).expect(200);
     await http().post(`/engagements/${engagementId}/rcd`).set(as('strategist')).expect(403);
@@ -117,7 +117,7 @@ describe('plan and Gate 2', () => {
     expect((await http().get('/client/plans').set(as('client')).expect(200)).body).toHaveLength(0);
   });
 
-  it('the strategist cannot send it to the client; the AM can', async () => {
+  it('the strategist cannot send it to the client; the CM can', async () => {
     await http().post(`/engagements/${engagementId}/plan/send`).set(as('strategist')).expect(403);
     await http().post(`/engagements/${engagementId}/plan/send`).set(as('am')).expect(200);
   });

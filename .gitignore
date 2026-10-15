@@ -22,3 +22,6 @@ __pycache__/
 
 # Vercel CLI (local builds and project link)
 .vercel
+
+# Local version snapshots (Claude, until git is set up)
+.bmu-versions/

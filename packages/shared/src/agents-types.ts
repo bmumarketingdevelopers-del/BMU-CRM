@@ -8,7 +8,7 @@ export type AgentKey = (typeof AGENT_KEYS)[number];
 
 /** Agents shown as "coming later" on the Agents page (not built yet). */
 export const AGENTS_LATER = [
-  { key: "am_assistant", label: "AM assistant", summary: "Prepares client check-ins and spots unhappy clients early." },
+  { key: "am_assistant", label: "CM assistant", summary: "Prepares client check-ins and spots unhappy clients early." },
 ] as const;
 
 export type AgentInfo = {
@@ -34,7 +34,7 @@ export const agentInfo: Record<AgentKey, AgentInfo> = {
     label: "Request triage",
     summary: "Reads every new client request, works out what kind it is and how urgent, and drafts the acknowledgement.",
     when: "A client raises a new request.",
-    does: ["Adds an internal note with the type, urgency and scope", "Tells the account manager straight away when it is urgent", "Suggests the right request type (waits in the Agent Inbox)", "Suggests who should handle it (waits in the Agent Inbox)", "Drafts the acknowledgement to the client (waits in the Agent Inbox)"],
+    does: ["Adds an internal note with the type, urgency and scope", "Tells the client manager straight away when it is urgent", "Suggests the right request type (waits in the Agent Inbox)", "Suggests who should handle it (waits in the Agent Inbox)", "Drafts the acknowledgement to the client (waits in the Agent Inbox)"],
     suggestedActsFor: ["am_lead", "founder"],
   },
   producer: {

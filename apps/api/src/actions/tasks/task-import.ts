@@ -30,7 +30,7 @@ export class TaskImport implements OnModuleInit {
         { key: 'description', label: 'Description', required: false },
         { key: 'estimate_hours', label: 'Estimate (hours)', required: false },
       ],
-      sampleCsv: 'Title,Client,Department,Assignee,Deadline,Priority,Description,Estimate (hours)\nMonthly report,Internal,Account Management,am@bmu.demo,2026-10-20,normal,Prepare the October report,2\n',
+      sampleCsv: 'Title,Client,Department,Assignee,Deadline,Priority,Description,Estimate (hours)\nMonthly report,Internal,Client Management,am@bmu.demo,2026-10-20,normal,Prepare the October report,2\n',
       canImport: (me) => hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'account_manager'),
       validate: (me, rows) => this.validate(me, rows),
       commit: async (me, rows, ip) => {

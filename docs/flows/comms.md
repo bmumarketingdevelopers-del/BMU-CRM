@@ -16,12 +16,12 @@ Code: `apps/api/src/comms/`, `packages/shared/src/comms-types.ts`, `packages/sha
 - Matching a new sender, in order: a client person by phone (ends with the 10 digits) or email; a lead by contact
   phone or email (a won lead counts as its client); a client's primary contact or billing email. Unknown senders stay
   unlinked and unassigned.
-- New conversations are assigned to the client's Account Manager or the lead's owner. The assignee (or Founder and
+- New conversations are assigned to the client's Client Manager or the lead's owner. The assignee (or Founder and
   Admin when nobody is) gets an `inbox_message` notification linking to `/team/inbox?c=<id>`.
 - A known client person's message is also written on the client's `client_am` thread as a `Message` by that person,
   with `source` = `whatsapp` or `email`, so the client portal and Client 360 show it. Replies are mirrored there too.
   A lead's messages and replies are logged as lead activity.
-- Who sees what: Founder, Admin, AM lead and Sales manager see everything. Account Managers and Sales executives see
+- Who sees what: Founder, Admin, CM lead and Sales manager see everything. Client Managers and Sales executives see
   conversations assigned to them, unassigned ones, their clients' and their leads'. Other roles have no inbox.
 - Replies: WhatsApp through `WhatsAppSender` (status `queued` without keys, `sent` or `failed` with Meta's reason);
   email through the outbox with a `Re:` subject (`sent` with SMTP, otherwise `simulated`).
@@ -68,7 +68,7 @@ completes, the work moves on, and the round records `via: whatsapp`.
   end time (IST), minimum notice in hours, on/off. Public link `/book/<slug>`.
 - Free slots: the next 14 days in IST on the chosen days and hours, minus booked meetings, approved leave and the
   notice period. Booking re-checks the slot, so two people cannot take the same time.
-- Client booking (`/client/meetings`): with their Account Manager; viewers cannot book. Public booking: links an open
+- Client booking (`/client/meetings`): with their Client Manager; viewers cannot book. Public booking: links an open
   lead with the same email or phone, or creates one (`source: booking`, owner = the host); a known client person is
   booked against their company. At most 3 upcoming public bookings per email.
 - Emails: confirmation with **Add to calendar** (a signed `.ics` link, `/public/meetings/:id/ics?t=…`), a reminder one
@@ -94,7 +94,7 @@ completes, the work moves on, and the round records `via: whatsapp`.
 
 ## Client portal 2.0
 
-- Home: **Your Account Manager** card adds **Book a call**, the next call and shared documents.
+- Home: **Your Client Manager** card adds **Book a call**, the next call and shared documents.
 - Menu: **Meetings** and **Documents** added; **Billing** only for client owners and client finance.
 - Live timeline, approvals, results and requests were built in earlier phases (v9 journey, v16 proofing and results)
   and update live.
@@ -103,5 +103,5 @@ completes, the work moves on, and the round records `via: whatsapp`.
 
 - API: `apps/api/test/comms.e2e-spec.ts` (inbox matching, threads, replies, webhooks and secrets, WhatsApp approval,
   two concurrent editors, meetings, quiet hours and digest).
-- Browser: `apps/web/e2e/comms/comms.mjs` (WhatsApp in → inbox and client thread → template reply; AM and client
+- Browser: `apps/web/e2e/comms/comms.mjs` (WhatsApp in → inbox and client thread → template reply; CM and client
   typing in the same brief at once; client booking; notes to tasks; public booking; notification settings).

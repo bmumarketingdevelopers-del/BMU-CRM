@@ -41,7 +41,7 @@ const toRow = (e: EngagementWith): AdminEngagementRow => ({
   createdAt: e.createdAt.toISOString(),
 });
 
-/** Engagements overview, AM assignment, pause/offboard/close and the offboarding checklist. */
+/** Engagements overview, CM assignment, pause/offboard/close and the offboarding checklist. */
 @Injectable()
 export class ClientsAdminService {
   constructor(
@@ -61,7 +61,7 @@ export class ClientsAdminService {
   }
 
   // ---------------------------------------------------------------------------
-  // AM assignment
+  // CM assignment
 
   async workload(me: Me): Promise<AmWorkloadView> {
     assertClientAdmin(me);
@@ -98,7 +98,7 @@ export class ClientsAdminService {
     const am = await this.prisma.user.findFirst({
       where: { id: amUserId, orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: { in: AM_ROLES } } } } },
     });
-    if (!am) throw new BadRequestException('Choose an active account manager');
+    if (!am) throw new BadRequestException('Choose an active client manager');
     if (client.amUserId === am.id) throw new ConflictException(`${am.name} already manages this client`);
     const moved = await this.prisma.$transaction(async (tx) => {
       await tx.clientOrg.update({ where: { id: client.id }, data: { amUserId: am.id } });
@@ -107,13 +107,13 @@ export class ClientsAdminService {
       return r.count;
     });
     await this.audit.log(me, 'client.am_reassigned', 'ClientOrg', client.id, { amUserId: client.amUserId }, { amUserId: am.id, engagementsMoved: moved }, ip);
-    await this.reassign.record(me, 'client_am', [{ id: client.id, fromUserId: client.amUserId, toUserId: am.id }], 'other', 'Changed in Command Centre → AM workload');
+    await this.reassign.record(me, 'client_am', [{ id: client.id, fromUserId: client.amUserId, toUserId: am.id }], 'other', 'Changed in Command Centre → CM workload');
     await this.prisma.notification.create({
       data: {
         orgId: me.orgId,
         userId: am.id,
         kind: 'client_assigned',
-        title: `You are now the account manager for ${client.name}`,
+        title: `You are now the client manager for ${client.name}`,
         body: `${me.name} assigned this client to you${moved ? ` with ${moved} open engagement${moved === 1 ? '' : 's'}` : ''}.`,
         link: '/team/clients',
       },

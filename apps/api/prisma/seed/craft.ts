@@ -3,6 +3,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { isAbsolute, join, resolve } from 'node:path';
 import { CRAFT_CHECKLISTS, DEFAULT_QC_CHECKLISTS } from '@bmu/shared';
 import type { PrismaClient, Tier } from '../../src/generated/prisma/client.js';
+import { sameDept } from './dept-names.js';
 
 /**
  * v10 craft demo data: one specialist per job function so every specialist dashboard is alive.
@@ -15,7 +16,7 @@ import type { PrismaClient, Tier } from '../../src/generated/prisma/client.js';
  *   rounds, approvals, change requests, hooks, script drafts, checklists and brand kits.
  * - Each producer specialist carries a healthy open workload, so least-loaded assignment in production.e2e
  *   still picks producer@bmu.demo.
- * - A project manager (pm@bmu.demo, base role account_manager) who is the AM of Peak Motors and Brightpath
+ * - A project manager (pm@bmu.demo, base role account_manager) who is the CM of Peak Motors and Brightpath
  *   Academy: unassigned tasks to hand out, client messages waiting, an overdue invoice, call notes and a reminder.
  * Idempotent: users are upserted; the client data is created once (checked by client name).
  */
@@ -108,7 +109,7 @@ const SPECIALISTS = [
   { key: 'design', email: 'design@bmu.demo', name: 'Rhea Bose', specialty: 'graphic_designer', role: 'producer', dept: 'Creative / Design', manager: 'design.head@bmu.demo' },
 ] as const;
 type Who = (typeof SPECIALISTS)[number]['key'] | 'qc' | 'am';
-const PM = { email: 'pm@bmu.demo', name: 'Devika Rao', specialty: 'project_manager', role: 'account_manager', dept: 'Account Management', manager: 'am.lead@bmu.demo' };
+const PM = { email: 'pm@bmu.demo', name: 'Devika Rao', specialty: 'project_manager', role: 'account_manager', dept: 'Client Management', manager: 'am.lead@bmu.demo' };
 /** Clients the project manager looks after (everything else stays with am@bmu.demo). */
 const PM_CLIENTS = ['Peak Motors', 'Brightpath Academy'];
 
@@ -353,7 +354,7 @@ const HOOKS: { text: string; tags: string[]; client?: string; uses: number }[] =
 export async function seedCraft(prisma: PrismaClient, orgId: string) {
   const user = (email: string) => prisma.user.findFirst({ where: { orgId, email } });
   const depts = await prisma.department.findMany({ where: { orgId } });
-  const dept = (name: string) => depts.find((d) => d.name === name);
+  const dept = (name: string) => depts.find((d) => sameDept(d.name, name));
   const roles = await prisma.role.findMany({ where: { orgId, isCustom: false } });
   const branch = await prisma.branch.findFirst({ where: { orgId } });
 

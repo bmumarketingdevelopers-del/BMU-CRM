@@ -129,7 +129,7 @@ export class OpsCreatorsService implements OnModuleInit {
   }
 
   private assertManager(me: Me) {
-    if (!opsCanManageCreators(me)) throw new ForbiddenException('Only the UGC coordinator (Founder, Branch Manager, Account Managers, Department Heads) manages creators');
+    if (!opsCanManageCreators(me)) throw new ForbiddenException('Only the UGC coordinator (Founder, Branch Manager, Client Managers, Department Heads) manages creators');
   }
 
   private async load(me: Me, id: string) {

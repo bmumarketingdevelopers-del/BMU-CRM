@@ -47,7 +47,7 @@ export default async function MyDay() {
       </>
     );
   }
-  // v10 craft: account managers, project managers, AM leads and department heads get the Manager workspace.
+  // v10 craft: client managers, project managers, CM leads and department heads get the Manager workspace.
   if (isCraftManager(me)) {
     return (
       <>

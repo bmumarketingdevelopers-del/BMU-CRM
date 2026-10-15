@@ -27,7 +27,7 @@ export function NotificationsScreen() {
   );
 }
 
-/** Client ↔ AM conversation. Internal notes show only on the team side. */
+/** Client ↔ CM conversation. Internal notes show only on the team side. */
 export function ChatView({ thread, allowInternal, onSend, title, sub }: { thread: ThreadView; allowInternal?: boolean; onSend: (body: string, internal: boolean) => Promise<void>; title: string; sub?: string }) {
   const [body, setBody] = useState('');
   const [internal, setInternal] = useState(false);

@@ -121,7 +121,7 @@ export class DeliverCalendarService {
   }
 
   private async loadForTeam(me: Me, id: string) {
-    if (!this.canSchedule(me)) throw new ForbiddenException('Only account managers, strategists, department heads and leadership manage the content calendar');
+    if (!this.canSchedule(me)) throw new ForbiddenException('Only client managers, strategists, department heads and leadership manage the content calendar');
     const d = await this.prisma.deliverable.findFirst({ where: { id, orgId: me.orgId, cycle: { engagement: await visibleEngagementWhere(this.prisma, me) } }, include });
     if (!d) throw new NotFoundException('Deliverable not found');
     return d;

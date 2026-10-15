@@ -59,7 +59,7 @@ in for you, so just press **Sign in**.
 | Asha Reddy (Admin) | Command Centre, can't change prices or permissions |
 | Rahul Menon (Sales Manager) | Team app, all leads, can assign them |
 | Priya Shah (Sales Executive) | Team app, only her own leads |
-| Neha Iyer (Account Manager) | Team app: her clients, onboarding, sending drafts |
+| Neha Iyer (Client Manager) | Team app: her clients, onboarding, sending drafts |
 | Rohan Gupta (Strategist) | Team app: plans and briefs |
 | Meera Nair (Producer) | Team app: her tasks, uploads versions |
 | Vikram Joshi (QC Reviewer) | Team app: QC queue |
@@ -83,14 +83,14 @@ The demo client Sunrise Realty has a **Logo & Brand Kit** project in production.
 1. **Rohan Gupta** (Strategist): on **My Day**, check in, then **Start** and **Mark done** on *Brief and references*.
 2. **Meera Nair** (Producer): open **Tasks**, click *Design: Logo concepts*, upload an image as version 1.
 3. **Vikram Joshi** (QC): open **QC queue**, untick a check and **Fail QC**, or tick all and **Pass QC**.
-4. **Neha Iyer** (AM): open the deliverable and **Send to client**. Try an 🔒 internal note: the client never sees it.
+4. **Neha Iyer** (CM): open the deliverable and **Send to client**. Try an 🔒 internal note: the client never sees it.
 5. **Anil Kumar** (Client): **Review Studio**, click on the image to pin a comment, then approve or request changes.
 
 ### Try extra requests, messages and final delivery
 
 1. **Anil Kumar** (Client): **Requests**, pick **Extra request**, describe it, **Send request**.
-2. **Neha Iyer** (AM): **Requests inbox** shows the reply timer (working hours). Open it, pick an add-on, add a
-   timeline, **Send quote for approval**. AMs can only quote from the price list; Founder/Admin can set a custom price.
+2. **Neha Iyer** (CM): **Requests inbox** shows the reply timer (working hours). Open it, pick an add-on, add a
+   timeline, **Send quote for approval**. CMs can only quote from the price list; Founder/Admin can set a custom price.
 3. **Anil Kumar**: the home page shows *A quote is ready*. **Approve quote**, then **Pay** (test mode).
    Only now is a task created for the team.
 4. Message each other in **Messages**. Tick 🔒 Internal on the team side: the client never sees it.
@@ -128,7 +128,7 @@ Agents start switched off. They work without an AI key (simple built-in rules); 
 1. **Client** (`client@sunrise.demo`): **Review Studio**, open work waiting for review. On a video, pause where
    something should change, press **Comment at current time**, click the spot on the frame (and **✎ Draw** to circle
    it), then **Add comment**. On an image just click or draw.
-2. **AM** (`am@bmu.demo`) with the same work open: the comment appears without refreshing. Click its time to jump to
+2. **CM** (`am@bmu.demo`) with the same work open: the comment appears without refreshing. Click its time to jump to
    that frame with the pin on it. Upload a new version: open comments move to it, marked *Carried over*.
 3. **Send to client**: each approver gets an email (see Command Centre → Outbox) with **Review and approve**. The link
    works on a phone without signing in. After approval, **Approval certificate** shows who approved which file and how.
@@ -142,13 +142,13 @@ Agents start switched off. They work without an AI key (simple built-in rules); 
 
 1. **Founder** (`founder@bmu.demo`): open **Inbox**. Three demo conversations are there. Under the list, press
    **Test: pretend a message arrived**, type a client person's mobile number or email and a message, and press
-   **Receive it**: it lands on the right client (and on their message thread), assigned to their Account Manager.
+   **Receive it**: it lands on the right client (and on their message thread), assigned to their Client Manager.
 2. Open a conversation: **Insert template** fills in the person's name, **Draft a reply** writes one for you, then
    **Send**. Without WhatsApp keys the reply says *Waiting to send* (see "Connect WhatsApp" below).
-3. **AM** (`am@bmu.demo`): open a project, press **Start a shared brief**, then **Share with client**. Sign in as the
+3. **CM** (`am@bmu.demo`): open a project, press **Start a shared brief**, then **Share with client**. Sign in as the
    client in another browser (or a private window) and open **Documents**: type in both windows at the same time.
    Both see each other's words within a couple of seconds, and nothing is lost.
-4. **Client**: **Meetings → Book a call** with your Account Manager. As the AM, open **Meetings**, press **Notes**
+4. **Client**: **Meetings → Book a call** with your Client Manager. As the CM, open **Meetings**, press **Notes**
    on that call, write notes, press **Summarise and find action items**, tick items and press **Make tasks**.
    **Your booking page** (on the same screen) has a public link anyone can use to book you; it creates a lead.
 5. **Profile → What we tell you about**: pick WhatsApp alerts per type, quiet hours and a daily digest email.
@@ -160,7 +160,7 @@ Agents start switched off. They work without an AI key (simple built-in rules); 
    message thread. With Razorpay keys the same page takes real payments (see "Connect Razorpay" below).
 2. **Payments to match**: a bank credit nobody could place waits here with suggested invoices. Pick one and press
    **Match**.
-3. **AM** (`am@bmu.demo`): **My expenses → Claim an expense**, tick **Bill this to the client**. As Finance, open **Expenses & Bills**,
+3. **CM** (`am@bmu.demo`): **My expenses → Claim an expense**, tick **Bill this to the client**. As Finance, open **Expenses & Bills**,
    **Approve**, then **Invoice <client>** to re-bill it. Vendor bills are added here too.
 4. **Invoice Plans**: split a fee 50/30/20 (or any split adding up to 100%). Each part is invoiced and emailed on its
    date by itself; **Issue now** sends one early.
@@ -178,7 +178,7 @@ Agents start switched off. They work without an AI key (simple built-in rules); 
    on the ads account.
 2. Open that client in the Team app → **Ads & website**: spend, clicks, leads, website visits and campaigns. The client
    sees the same numbers on **Insights**.
-3. **AM**: open an approved post that is scheduled on Instagram for that client and press **Publish now** (or wait for
+3. **CM**: open an approved post that is scheduled on Instagram for that client and press **Publish now** (or wait for
    its scheduled time). It goes live on the test account, and its reach and likes arrive the next morning.
 4. **Command Centre → API & Webhooks**: create a key (tick only **Read leads**) and copy it. It can read
    `http://localhost:4000/v1/leads` but is refused when it tries to add a lead. Add a webhook (for example a
@@ -356,10 +356,10 @@ every job's last run). In the app: **Command Centre → System health** shows ea
   Audit Log.
 - **Proposals**: build from any lead (bundle saving, special discount with Founder approval beyond the limit),
   send a link, client accepts with e-signature and pays. Payment creates the client account, assigns the
-  least-busy Account Manager, opens each service at Milestone 1 with its requirement checklist, and marks the lead won.
+  least-busy Client Manager, opens each service at Milestone 1 with its requirement checklist, and marks the lead won.
 - **Payments**: Razorpay when `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` are set in `apps/api/.env`; otherwise a
   test-payment button (development only). GST invoices numbered `BMU/2026-27/0001`.
-- **Onboarding and planning**: requirement checklist (client sends items, AM marks received or blocked with a
+- **Onboarding and planning**: requirement checklist (client sends items, CM marks received or blocked with a
   reason), project start date (RCD, Gate 1) with a 4-working-day plan deadline, plan editor, internal review,
   client plan approval (Gate 2).
 - **Production**: approving a plan generates department tasks from flow templates with owners, dependencies and
@@ -377,12 +377,12 @@ every job's last run). In the app: **Command Centre → System health** shows ea
 - **Requests desk**: change, extra request, urgent, question and billing requests with first-reply timers counted
   in working hours (9:30 to 6:30, Mon to Sat, holidays excluded). Extra requests become quotes from the add-on
   price list; work starts only after the client owner approves in writing and pays (invoice with GST).
-- **Messages and notifications**: client to Account Manager chat with same-working-day reply tracking and internal
+- **Messages and notifications**: client to Client Manager chat with same-working-day reply tracking and internal
   notes; in-app notification bell with deep links for drafts, QC, quotes, payments and messages.
 - **Final delivery (Gate 5)**: balance invoice raised automatically when every deliverable is approved; files are
   released for download only after written sign-off **and** payment. Client **Pay now** on any invoice.
 - **Command Centre, every section** (v8): Revenue, Collections, Capacity, Quality, Client Health, Departments &
-  Teams, Branches, Attendance & Leave, Holidays & Working Hours, Engagements, AM Assignment, Requests & Add-ons,
+  Teams, Branches, Attendance & Leave, Holidays & Working Hours, Engagements, CM Assignment, Requests & Add-ons,
   Offboarding, Discount Limits, Document Templates, SOP Library, Requirement Checklists, Gate Rules, SLA Rules,
   Error Log, Finance (Invoices, Payments, Credit Notes, Creator Payouts, GST, Accounting export), Notification
   Templates, Integrations, Branding, Data & Exports, Company settings. Settings you change here (holidays, working
@@ -441,7 +441,7 @@ every job's last run). In the app: **Command Centre → System health** shows ea
     and Google Analytics 4 per client (sign in with Meta, LinkedIn or Google), see each account's status, sync log and
     errors, and get alerted when one breaks. Test accounts let you try everything without keys.
   - **Auto-publishing**: approved posts on the content calendar publish themselves at their time to the client's
-    account (or **Publish now**). Failures retry after 5, 15 and 60 minutes, then the AM is told. Each post's reach,
+    account (or **Publish now**). Failures retry after 5, 15 and 60 minutes, then the CM is told. Each post's reach,
     impressions, likes and clicks are pulled every morning.
   - **Ads and website results**: daily spend, clicks, leads, cost per lead and website visits from Google Ads, Meta Ads
     and GA4 on the client's Insights and the team's client page, with a campaign table.
@@ -588,7 +588,7 @@ every job's last run). In the app: **Command Centre → System health** shows ea
     someone (with a preview of what they gain or lose access to), change role with a permission diff, client
     pods, and offboarding that can't finish while the person still owns any open work.
   - **Clients**: add a client by hand (no lead needed) or migrate an existing client at its current gate,
-    reassign the Account Manager (the client gets an intro), add a service or change tier with client approval,
+    reassign the Client Manager (the client gets an intro), add a service or change tier with client approval,
     pause, offboard, client users and brands.
   - **Tasks**: add a task from anywhere (board column, list, calendar day, client, project, message), templates,
     recurring tasks, subtasks and dependencies, reassign with load %, leave and impact shown, deadline changes
@@ -609,7 +609,7 @@ every job's last run). In the app: **Command Centre → System health** shows ea
     pack as one zip, client feedback score (NPS) feeding Client Health.
   - **Specialist dashboards** for video editors, script writers, social media managers, developers, UX/UI designers
     and graphic designers, each with their own KPIs, next actions, workload heatmap and craft tools.
-  - **Managers**: a Manager workspace for project/account managers and department heads to assign and reassign
+  - **Managers**: a Manager workspace for project/client managers and department heads to assign and reassign
     work (with load per person), see their clients' health, and handle approvals (Team app → Manager workspace; leaders also get Plan → Specialists).
   - **AI Copilot**: "Ask BMU" (Ctrl/Cmd + J) on every staff page, lead briefs, follow-up drafts, proposal intros,
     plan drafts, captions, scripts, QC pre-check, request triage, suggested replies, client tone check, Monday

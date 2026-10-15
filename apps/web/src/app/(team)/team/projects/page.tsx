@@ -110,7 +110,7 @@ function ProjectCard({ e }: { e: EngagementRow }) {
         {!!e.slaAtRisk && <Badge tone="amber">{e.slaAtRisk} due soon</Badge>}
         {e.billingType === "monthly" && e.period && e.period !== "project" && <Badge tone="neutral">{e.period}</Badge>}
       </div>
-      {e.am && <p className="mt-2 text-[11px] text-ink-muted">AM: {e.am.name}</p>}
+      {e.am && <p className="mt-2 text-[11px] text-ink-muted">CM: {e.am.name}</p>}
     </Link>
   );
 }

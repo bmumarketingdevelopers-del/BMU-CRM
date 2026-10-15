@@ -607,7 +607,7 @@ export function ActionFields({ action: a, onChange, trigger, options, recipientC
             <TextArea value={a.message} rows={3} onChange={(message) => onChange({ ...a, message })} />
           </Field>
           <Placeholders trigger={trigger} onPick={(p) => onChange({ ...a, message: `${a.message} ${p}`.trim() })} />
-          {a.type === "send_client_reminder" && <p className="text-xs text-ink-muted">Sent from the client&apos;s account manager in their app. Keep it polite and short.</p>}
+          {a.type === "send_client_reminder" && <p className="text-xs text-ink-muted">Sent from the client&apos;s client manager in their app. Keep it polite and short.</p>}
         </>
       );
     case "email":

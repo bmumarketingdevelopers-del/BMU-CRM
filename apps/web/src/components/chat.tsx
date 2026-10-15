@@ -8,7 +8,7 @@ import { when } from "@/components/request-bits";
 const size = (b: number | null) => (b === null ? "" : b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
 /**
- * Client ↔ Account Manager conversation. Internal notes show only on the team side.
+ * Client ↔ Client Manager conversation. Internal notes show only on the team side.
  * Refreshes itself every 15 seconds (pass `onRefresh`) so new replies appear without reloading the page.
  */
 export function Chat({

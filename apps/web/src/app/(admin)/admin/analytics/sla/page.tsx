@@ -36,7 +36,7 @@ function Body({ v }: { v: OpsSlaView }) {
     { key: "prev", header: "Before", align: "right", cell: (r) => <span className="text-ink-muted">{pctText(r.prevWithinPct)}</span> },
   ];
   const amCols: Column<OpsAmRow>[] = [
-    { key: "name", header: "Account Manager", cell: (a) => <span className="font-medium">{a.name}</span> },
+    { key: "name", header: "Client Manager", cell: (a) => <span className="font-medium">{a.name}</span> },
     { key: "requests", header: "Requests", align: "right", cell: (a) => a.requests },
     { key: "avg", header: "Average first reply", align: "right", cell: (a) => minutesText(a.avgReplyMin) },
     { key: "within", header: "Within target", className: "min-w-32", cell: (a) => (a.withinPct === null ? "—" : <Meter value={a.withinPct} tone={a.withinPct >= 85 ? "good" : a.withinPct < 70 ? "bad" : "warn"} />) },
@@ -55,7 +55,7 @@ function Body({ v }: { v: OpsSlaView }) {
             <Link href={`/team/clients/${r.clientId}`} className="hover:underline">
               {r.client}
             </Link>{" "}
-            · {r.typeLabel} · {r.am ?? "No AM"}
+            · {r.typeLabel} · {r.am ?? "No CM"}
           </p>
         </div>
       ),
@@ -121,7 +121,7 @@ function Body({ v }: { v: OpsSlaView }) {
       </div>
 
       <div className="grid gap-6 2xl:grid-cols-2">
-        <Panel className="min-w-0" title="Account Managers" subtitle="Fastest average first reply first." flush>
+        <Panel className="min-w-0" title="Client Managers" subtitle="Fastest average first reply first." flush>
           <DataTable rows={v.ams} rowKey={(a) => a.id} columns={amCols} empty="No requests in this period." />
         </Panel>
         <Panel className="min-w-0" title="Message replies" subtitle="Client messages in app threads and whether the team answered in time.">
@@ -155,7 +155,7 @@ function Body({ v }: { v: OpsSlaView }) {
               { header: "Request", value: (r) => r.description },
               { header: "Client", value: (r) => r.client },
               { header: "Type", value: (r) => r.typeLabel },
-              { header: "Account Manager", value: (r) => r.am },
+              { header: "Client Manager", value: (r) => r.am },
               { header: "Raised", value: (r) => r.createdAt },
               { header: "Working minutes", value: (r) => r.waitingMin },
               { header: "Replied", value: (r) => (r.replied ? "yes" : "no") },

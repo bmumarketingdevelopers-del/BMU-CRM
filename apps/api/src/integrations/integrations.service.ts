@@ -49,7 +49,7 @@ export class IntegrationsService {
 
   // ------------------------------------------------------------------------------------------------ access
 
-  /** Leadership manages every account; Account Managers manage their own clients' accounts. */
+  /** Leadership manages every account; Client Managers manage their own clients' accounts. */
   private async manageScope(me: Me): Promise<'all' | string[]> {
     if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
     if (isLeadership(me)) return 'all';
@@ -57,7 +57,7 @@ export class IntegrationsService {
       const scope = await clientScope(this.prisma, me);
       return scope === 'all' ? 'all' : scope;
     }
-    throw new ForbiddenException('Only Founders, Branch Managers and Account Managers can manage connected accounts');
+    throw new ForbiddenException('Only Founders, Branch Managers and Client Managers can manage connected accounts');
   }
 
   private async assertManage(me: Me, clientOrgId: string | null) {
@@ -294,7 +294,7 @@ export class IntegrationsService {
     }
   }
 
-  /** Leadership and the client's Account Manager hear about connection and publishing problems. */
+  /** Leadership and the client's Client Manager hear about connection and publishing problems. */
   async alert(a: { orgId: string; clientOrgId: string | null }, title: string, body: string) {
     const [leaders, client] = await Promise.all([
       this.prisma.user.findMany({ where: { orgId: a.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: { in: ['founder', 'admin'] } } } } }, select: { id: true } }),

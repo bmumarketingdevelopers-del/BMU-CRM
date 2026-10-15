@@ -4,7 +4,7 @@ import { Injectable } from '@nestjs/common';
 import type { CoreImportField, CoreReassignApply, Me } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 
-/** One record the reassignment engine moves (a task, a deliverable, a lead, a client's AM seat…). */
+/** One record the reassignment engine moves (a task, a deliverable, a lead, a client's CM seat…). */
 export type ReassignItem = {
   id: string;
   title: string;
@@ -16,7 +16,7 @@ export type ReassignItem = {
   /** Client-facing date (deliverable due date, review date) that a deadline change could move. */
   clientDueAt?: Date | null;
   clientOrgId?: string | null;
-  /** The client's AM (notified for client work). */
+  /** The client's CM (notified for client work). */
   amId?: string | null;
   departmentId?: string | null;
   specialty?: string | null;

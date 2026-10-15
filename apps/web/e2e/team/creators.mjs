@@ -1,4 +1,4 @@
-// Creator loop: AM briefs a creator -> creator accepts -> submits -> AM asks for a revision -> creator resubmits -> AM approves
+// Creator loop: CM briefs a creator -> creator accepts -> submits -> CM asks for a revision -> creator resubmits -> CM approves
 // -> payout booked with 10% TDS -> Finance marks it paid -> creator sees it paid and is notified. Plus a declined brief.
 // BASE_URL=http://localhost:3000 node apps/web/e2e/team/creators.mjs
 import { BASE, launch, newPage, signIn, apiCall, check, done } from "./lib.mjs";
@@ -46,7 +46,7 @@ async function creatorSubmit(id, url) {
 console.log("Brief -> accept -> submit -> revision -> approve");
 const title = `Journey reel ${stamp}`;
 const id = await newBrief(title, 12000);
-check(!!id, "AM sends a brief");
+check(!!id, "CM sends a brief");
 const notes = await apiCall(creator, "GET", "/notifications");
 check(notes.body.items.some((n) => (n.title + n.body).includes(title)), "creator is notified of the new brief");
 await creator.goto(`${BASE}/creator/briefs/${id}`, { waitUntil: "networkidle" });
@@ -55,7 +55,7 @@ await creator.getByRole("button", { name: "Paste a link" }).waitFor({ timeout: 1
 check(true, "creator accepts");
 await creatorSubmit(id, "https://drive.google.com/file/d/journey-v1");
 await am.goto(`${BASE}/team/creators/briefs/${id}`, { waitUntil: "networkidle" });
-check((await text(am)).includes("journey-v1"), "AM sees the submission");
+check((await text(am)).includes("journey-v1"), "CM sees the submission");
 await am.getByLabel("Feedback").fill("Tighten the hook and add captions.");
 await am.getByRole("button", { name: "Ask for a revision" }).click();
 await am.waitForLoadState("networkidle").catch(() => {});

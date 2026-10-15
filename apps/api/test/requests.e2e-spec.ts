@@ -73,7 +73,7 @@ afterAll(async () => {
 });
 
 describe('request desk', () => {
-  it('sets the first-reply SLA in working hours and alerts the AM', async () => {
+  it('sets the first-reply SLA in working hours and alerts the CM', async () => {
     const r = await http().post('/client/requests').set(as('approver')).send({ engagementId: retainerId, type: 'urgent', description: 'Fix the typo in today’s post' }).expect(201);
     expect(r.body.status).toBe('received');
     expect(r.body.sla.state).toBe('due');
@@ -89,7 +89,7 @@ describe('request desk', () => {
     expect(accepted.body.sla.state).toBe('met');
   });
 
-  it('keeps internal replies away from the client and other AMs out', async () => {
+  it('keeps internal replies away from the client and other CMs out', async () => {
     const r = await http().post('/client/requests').set(as('owner')).send({ engagementId: retainerId, type: 'question', description: 'When is the next shoot?' }).expect(201);
     await http().post(`/requests/${r.body.id}/decide`).set(as('am')).send({ action: 'reply', message: 'Check the crew calendar first', internal: true }).expect(200);
     let client = await http().get(`/client/requests/${r.body.id}`).set(as('owner')).expect(200);
@@ -105,7 +105,7 @@ describe('request desk', () => {
 describe('extra requests', () => {
   let requestId: string;
 
-  it('cannot be marked in scope, and AMs quote only from the price list', async () => {
+  it('cannot be marked in scope, and CMs quote only from the price list', async () => {
     const r = await http().post('/client/requests').set(as('approver')).send({ engagementId: retainerId, type: 'new_scope', description: 'Add a festive reel for Diwali' }).expect(201);
     requestId = r.body.id;
     expect(r.body.status).toBe('scope_check');
@@ -146,7 +146,7 @@ describe('extra requests', () => {
 });
 
 describe('messages', () => {
-  it('threads client and AM, hides internal notes, and tracks the reply target', async () => {
+  it('threads client and CM, hides internal notes, and tracks the reply target', async () => {
     const sent = await http().post('/client/thread/messages').set(as('owner')).send({ body: 'Can we talk about next month?' }).expect(201);
     expect(sent.body.awaitingReply).toBeNull(); // the reply target is a team-side view
     const threadId = sent.body.id;
@@ -155,7 +155,7 @@ describe('messages', () => {
     await http().post(`/threads/${threadId}/messages`).set(as('am')).send({ body: 'Upsell chance: festive bundle', internal: true }).expect(201);
     await http().post(`/threads/${threadId}/messages`).set(as('am')).send({ body: 'Sure, 4pm today?' }).expect(201);
     const client = await http().get('/client/thread').set(as('owner')).expect(200);
-    // v18: the extra request paid above left a "Payment received" note from the AM at the top of the thread.
+    // v18: the extra request paid above left a "Payment received" note from the CM at the top of the thread.
     const bodies = client.body.messages.map((m: { body: string }) => m.body) as string[];
     expect(bodies.filter((b) => !b.startsWith('Payment received'))).toEqual(['Can we talk about next month?', 'Sure, 4pm today?']);
     expect(bodies.filter((b) => b.startsWith('Payment received'))).toHaveLength(1);

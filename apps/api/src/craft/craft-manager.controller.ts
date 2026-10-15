@@ -12,8 +12,8 @@ import { parse } from '../common/zod.js';
 import { CraftManagerService } from './craft-manager.service.js';
 
 /**
- * v10 craft: the Manager workspace. Account managers and project managers act on their own clients' work, department
- * heads on their department, AM leads, founders and admins on everything. Everyone else gets 403.
+ * v10 craft: the Manager workspace. Client managers and project managers act on their own clients' work, department
+ * heads on their department, CM leads, founders and admins on everything. Everyone else gets 403.
  */
 @Controller('craft/manager')
 export class CraftManagerController {

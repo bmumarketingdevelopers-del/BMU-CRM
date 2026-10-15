@@ -3,7 +3,7 @@
 /**
  * "+ New → Client" and Clients list "+ Add": add a client by hand (no lead), or migrate an existing client at its
  * current gates. Duplicate check (GSTIN, phone, email, business name) with Merge or Continue, optional brands,
- * services from the live price book, AM suggestion by load and industry with a handover note, invite users now or
+ * services from the live price book, CM suggestion by load and industry with a handover note, invite users now or
  * later, and the payment (online in the app, offline confirmed by Finance, or none for a migrated client).
  */
 import { useEffect, useMemo, useState } from "react";
@@ -91,7 +91,7 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
     );
   }, [open]);
 
-  // Re-rank AMs when the industry changes (load + industry match).
+  // Re-rank CMs when the industry changes (load + industry match).
   useEffect(() => {
     if (!open || !v.industry) return;
     const t = setTimeout(() => {
@@ -294,7 +294,7 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
                   </a>{" "}
                   <span className="text-xs text-ink-muted">
                     {d.why.join(", ")}
-                    {d.am ? ` · AM ${d.am}` : ""}
+                    {d.am ? ` · CM ${d.am}` : ""}
                     {d.archived ? " · archived" : ""}
                   </span>
                 </span>
@@ -395,8 +395,8 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
         )}
       </Section>
 
-      <Section title="Account manager" hint="Suggested by current load and industry experience.">
-        <div className="max-h-48 divide-y divide-border overflow-y-auto border border-border" role="radiogroup" aria-label="Account manager">
+      <Section title="Client manager" hint="Suggested by current load and industry experience.">
+        <div className="max-h-48 divide-y divide-border overflow-y-auto border border-border" role="radiogroup" aria-label="Client manager">
           {amRows.map((a) => (
             <label key={a.id} className={`flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm ${v.amUserId === a.id ? "bg-canvas" : ""}`}>
               <span className="flex min-w-0 items-center gap-2">
@@ -411,9 +411,9 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
               </span>
             </label>
           ))}
-          {!amRows.length && <p className="px-3 py-2 text-sm text-ink-muted">{opts ? "No account managers yet." : "Loading…"}</p>}
+          {!amRows.length && <p className="px-3 py-2 text-sm text-ink-muted">{opts ? "No client managers yet." : "Loading…"}</p>}
         </div>
-        <Field label="Handover note for the AM" htmlFor="ac-handover" hint="What they need to know: expectations, contacts, anything promised.">
+        <Field label="Handover note for the CM" htmlFor="ac-handover" hint="What they need to know: expectations, contacts, anything promised.">
           <TextArea id="ac-handover" className="min-h-16" value={v.handoverNote} onChange={(e) => set({ handoverNote: e.target.value })} />
         </Field>
       </Section>
@@ -452,7 +452,7 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
               + Add a person
             </button>
             {errors.invites && <p className="text-xs text-red">{errors.invites}</p>}
-            <p className="text-xs text-ink-muted">They get a welcome message from their account manager and can sign in with their email or mobile number.</p>
+            <p className="text-xs text-ink-muted">They get a welcome message from their client manager and can sign in with their email or mobile number.</p>
           </>
         )}
       </Section>

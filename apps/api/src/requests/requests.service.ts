@@ -70,7 +70,7 @@ export class RequestsService implements OnModuleInit {
     }
     if (isLeadership(me) || me.roles.includes('finance')) return { orgId: me.orgId };
     if (me.roles.includes('account_manager')) return { orgId: me.orgId, OR: [{ engagement: { amId: me.id } }, { assigneeId: me.id }] };
-    throw new ForbiddenException('The request desk is for Account Managers and leadership');
+    throw new ForbiddenException('The request desk is for Client Managers and leadership');
   }
 
   private async load(me: Me, id: string) {
@@ -260,7 +260,7 @@ export class RequestsService implements OnModuleInit {
     return this.view(me, await this.load(me, id));
   }
 
-  /** The client reopens a done request within 7 days: work restarts with a new task and the AM is alerted. */
+  /** The client reopens a done request within 7 days: work restarts with a new task and the CM is alerted. */
   async reopen(me: Me, id: string, reason: string, ip?: string) {
     const r = await this.load(me, id);
     if (me.type !== 'client') throw new ForbiddenException('Only the client can reopen a request');
@@ -306,7 +306,7 @@ export class RequestsService implements OnModuleInit {
   async decide(me: Me, id: string, input: DecideRequest, ip?: string) {
     const r = await this.load(me, id);
     if (me.type !== 'staff') throw new ForbiddenException();
-    if (!isLeadership(me) && r.engagement.amId !== me.id && r.assigneeId !== me.id) throw new ForbiddenException("Only the client's Account Manager can act on this request");
+    if (!isLeadership(me) && r.engagement.amId !== me.id && r.assigneeId !== me.id) throw new ForbiddenException("Only the client's Client Manager can act on this request");
     if (!OPEN.includes(r.status) && input.action !== 'reply') throw new BadRequestException('This request is closed');
     const now = new Date();
     const data: Prisma.RequestUncheckedUpdateInput = {};
@@ -330,8 +330,8 @@ export class RequestsService implements OnModuleInit {
         if (['approved', 'paid', 'in_progress'].includes(r.status)) throw new BadRequestException('Already approved');
         let amount: number;
         if (input.customAmountPaise) {
-          // quote_addon: AMs quote from the add-on price list only; Founder/Admin may set a custom price.
-          if (!me.roles.some((x) => ['founder', 'admin'].includes(x))) throw new ForbiddenException('Account Managers quote from the add-on price list');
+          // quote_addon: CMs quote from the add-on price list only; Founder/Admin may set a custom price.
+          if (!me.roles.some((x) => ['founder', 'admin'].includes(x))) throw new ForbiddenException('Client Managers quote from the add-on price list');
           amount = input.customAmountPaise;
         } else {
           if (!input.addOnId) throw new BadRequestException('Pick an add-on from the price list');

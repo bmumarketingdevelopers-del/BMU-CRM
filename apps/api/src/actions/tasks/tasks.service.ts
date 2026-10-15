@@ -144,7 +144,7 @@ export class TasksActionsService implements OnModuleInit {
     if (hasRole(me, 'account_manager') && eng && (eng.amId === me.id || c.am.has(eng.id))) return null;
     if (hasRole(me, 'strategist') && eng && c.strat.has(eng.id)) return null;
     if (hasRole(me, 'department_head', 'account_manager', 'strategist')) return eng ? "This task belongs to another manager's client" : 'This task is outside your department';
-    return 'Only a department head, the account manager or the strategist can do this';
+    return 'Only a department head, the client manager or the strategist can do this';
   }
 
   private can(c: Ctx, t: TaskFull, eng: { id: string; amId: string | null } | null, openSubtasks: number): CoreTaskCan {
@@ -388,7 +388,7 @@ export class TasksActionsService implements OnModuleInit {
 
     // Producers: only for themselves (or subtasks of their own work).
     let ownerId = input.ownerId || (isDraft ? null : me.id);
-    if (!manager && ownerId && ownerId !== me.id) throw new ForbiddenException('Producers can add tasks only for themselves. Ask your department head, account manager or strategist to assign work to someone else.');
+    if (!manager && ownerId && ownerId !== me.id) throw new ForbiddenException('Producers can add tasks only for themselves. Ask your department head, client manager or strategist to assign work to someone else.');
 
     let engagement: Awaited<ReturnType<TasksActionsService['checkEngagement']>> | null = null;
     if (input.engagementId && !input.internal) engagement = await this.checkEngagement(c, input.engagementId, !!input.preProduction || isDraft);
@@ -409,7 +409,7 @@ export class TasksActionsService implements OnModuleInit {
       departmentId = departmentId ?? deliverable.departmentId;
     }
 
-    // Out of scope: needs an approved add-on request, otherwise it is saved as a draft and the AM is alerted.
+    // Out of scope: needs an approved add-on request, otherwise it is saved as a draft and the CM is alerted.
     let draftReason: string | null = isDraft ? 'author' : null;
     if (input.outOfScope && engagement) {
       const ok = input.addOnRequestId ? await this.prisma.request.findFirst({ where: { id: input.addOnRequestId, engagementId: engagement.id, type: 'new_scope', status: { in: ADDON_OK as never[] } } }) : null;
@@ -431,7 +431,7 @@ export class TasksActionsService implements OnModuleInit {
       if (assess.blocked) throw new BadRequestException(assess.blocked);
     }
     if (input.repeat && !draftReason) {
-      if (!hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'account_manager')) throw new ForbiddenException('Only a department head or account manager can set up recurring tasks');
+      if (!hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'account_manager')) throw new ForbiddenException('Only a department head or client manager can set up recurring tasks');
       return this.createRecurring(me, input as Required<Pick<DraftInput, 'title'>> & DraftInput, { ownerId: assess?.approval ? null : ownerId, departmentId, engagementId: engagement?.id ?? null, deadline, estimateMin }, ip);
     }
     const holdOwner = assess?.approval ? null : ownerId;
@@ -482,8 +482,8 @@ export class TasksActionsService implements OnModuleInit {
     }
     if (input.source) await this.audit.log(me, 'task.created_from', input.source.type === 'message' ? 'Message' : 'Comment', input.source.id, null, { taskId: created.id, title: created.title }, ip);
 
-    // Notifications: assignee and watchers; out-of-scope → AM.
-    let message = draftReason === 'out_of_scope' ? 'Saved as a draft: it adds work beyond the agreed scope. The account manager has been told to raise an add-on request.' : draftReason ? 'Saved as a draft' : 'Task added';
+    // Notifications: assignee and watchers; out-of-scope → CM.
+    let message = draftReason === 'out_of_scope' ? 'Saved as a draft: it adds work beyond the agreed scope. The client manager has been told to raise an add-on request.' : draftReason ? 'Saved as a draft' : 'Task added';
     let approval: { id: string; summary: string } | null = null;
     if (draftReason === 'out_of_scope' && engagement) {
       await this.notifications.notify(me.orgId, [engagement.amId].filter((x) => x !== me.id), { kind: 'task_out_of_scope', title: `Out-of-scope task needs an add-on: ${created.title}`, body: `${me.name} added work beyond ${engagement.clientOrg.name}'s scope. It stays a draft until an add-on request is approved by the client.`, link: `/team/tasks/${created.id}`, critical: true });
@@ -671,14 +671,14 @@ export class TasksActionsService implements OnModuleInit {
     await this.audit.log(me, 'task.deadline_changed', 'Task', t.id, { deadline: t.deadline }, { deadline: due, reason }, ip);
     const notify = [t.ownerId].filter((x): x is string => !!x && x !== me.id);
     if (notify.length) await this.notifications.notify(me.orgId, notify, { kind: 'task_updated', title: `${t.title}: now due ${short(due)}`, body: `Changed by ${me.name}. Reason: ${reason}`, link: `/team/tasks/${t.id}` });
-    // Client-facing date moves: the AM posts an update in the client thread.
+    // Client-facing date moves: the CM posts an update in the client thread.
     const eng = await this.access.engagementOf(t);
     const clientDue = t.kind === 'client_review' ? t.deadline : (t.deliverable?.dueAt ?? null);
     let message = `Deadline moved to ${short(due)}`;
     if (eng && clientDue && due > clientDue) {
       const thread = await this.prisma.thread.findFirst({ where: { clientOrgId: eng.clientOrg.id, OR: [{ engagementId: eng.id }, { engagementId: null }] }, orderBy: { engagementId: { sort: 'desc', nulls: 'last' } }, select: { id: true } });
       if (eng.amId) await this.notifications.notify(me.orgId, [eng.amId], { kind: 'client_date_moved', title: `Client-facing date moved: ${t.title}`, body: `Now ${short(due)} (was ${short(clientDue)}). Please post an update for ${eng.clientOrg.name} in the client thread. Reason: ${reason}`, link: thread ? `/team/messages/${thread.id}` : `/team/clients/${eng.clientOrg.id}`, critical: true });
-      message += `. This moves a client-facing date: the account manager has been asked to update ${eng.clientOrg.name}.`;
+      message += `. This moves a client-facing date: the client manager has been asked to update ${eng.clientOrg.name}.`;
     }
     const undo = await this.undo.create(me, `Deadline of "${t.title}" changed`, [{ model: 'task', id: t.id, data: { deadline: t.deadline?.toISOString() ?? null, deadlineChanges: t.deadlineChanges } }]);
     return { message, undo };
@@ -691,7 +691,7 @@ export class TasksActionsService implements OnModuleInit {
     const c = await this.ctx(me);
     const t = await this.access.load(me, id);
     const eng = await this.access.engagementOf(t);
-    if (!this.can(c, t, eng ? { id: eng.id, amId: eng.amId } : null, 0).duplicate) throw new ForbiddenException(this.manageDenied(c, t, eng) ?? 'Only a department head, account manager or strategist can duplicate tasks');
+    if (!this.can(c, t, eng ? { id: eng.id, amId: eng.amId } : null, 0).duplicate) throw new ForbiddenException(this.manageDenied(c, t, eng) ?? 'Only a department head, client manager or strategist can duplicate tasks');
     const subs = input.withSubtasks ? await this.prisma.task.findMany({ where: { parentId: t.id, archivedAt: null } }) : [];
     const ids: string[] = [];
     const undoRows: UndoRow[] = [];
@@ -717,7 +717,7 @@ export class TasksActionsService implements OnModuleInit {
     const eng = await this.access.engagementOf(t);
     if (t.archivedAt) throw new BadRequestException('Already archived');
     const denied = this.manageDenied(c, t, eng);
-    if (denied || !hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'account_manager')) throw new ForbiddenException(denied ?? 'Only a department head or account manager can archive tasks');
+    if (denied || !hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'account_manager')) throw new ForbiddenException(denied ?? 'Only a department head or client manager can archive tasks');
     if (t.kind !== 'work' && t.kind !== 'planning' && isOpen(t.status)) throw new BadRequestException('QC and client review steps can’t be archived while open; they close with the deliverable');
     const subs = await this.prisma.task.findMany({ where: { parentId: t.id, archivedAt: null }, select: { id: true, status: true } });
     const now = new Date();
@@ -739,7 +739,7 @@ export class TasksActionsService implements OnModuleInit {
     const eng = await this.access.engagementOf(t);
     if (!t.archivedAt) throw new BadRequestException('This task is not archived');
     const denied = this.manageDenied(c, t, eng);
-    if (denied || !hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'account_manager')) throw new ForbiddenException(denied ?? 'Only a department head or account manager can restore tasks');
+    if (denied || !hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'account_manager')) throw new ForbiddenException(denied ?? 'Only a department head or client manager can restore tasks');
     const back = (s: string | null) => (s && s !== 'cancelled' ? (s as TaskStatus) : 'todo');
     await this.prisma.task.update({ where: { id: t.id }, data: { archivedAt: null, archivedReason: null, archivedFromStatus: null, status: back(t.archivedFromStatus) } });
     const subs = await this.prisma.task.findMany({ where: { parentId: t.id, archivedAt: { not: null }, archivedReason: { startsWith: 'Parent archived' } } });
@@ -813,7 +813,7 @@ export class TasksActionsService implements OnModuleInit {
       };
       if (input.action === 'status') why(can.status, 'only the assignee or the department head can change the status');
       if (input.action === 'deadline' || input.action === 'priority') why(can.deadline === 'change', 'you can’t change this one (managers only, open tasks)');
-      if (input.action === 'archive') why(can.archive, 'only a department head or account manager can archive');
+      if (input.action === 'archive') why(can.archive, 'only a department head or client manager can archive');
       if (input.action === 'tag') why(can.edit, 'you can’t edit this task');
     }
     let changed = 0;
@@ -870,7 +870,7 @@ export class TasksActionsService implements OnModuleInit {
   // Flow templates
 
   private async template(me: Me, input: CoreTemplatePreviewInput): Promise<CoreTemplatePreview & { _steps: FlowStep[]; _departmentId: string; _engagementId: string | null; _deliverableId: string | null }> {
-    if (!hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'strategist', 'account_manager')) throw new ForbiddenException('Only a department head, strategist or account manager can add tasks from a template');
+    if (!hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'strategist', 'account_manager')) throw new ForbiddenException('Only a department head, strategist or client manager can add tasks from a template');
     const c = await this.ctx(me);
     const tpl = await this.prisma.flowTemplate.findFirst({ where: { id: input.templateId, orgId: me.orgId }, include: { department: { select: { name: true } } } });
     if (!tpl) throw new NotFoundException('Template not found');
@@ -903,7 +903,7 @@ export class TasksActionsService implements OnModuleInit {
       if (!u && chosen) warnings.push(`The person picked for ${role.replace(/_/g, ' ')} is not available`);
       return {
         role,
-        label: role === 'am' ? 'Account manager' : role.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase()),
+        label: role === 'am' ? 'Client manager' : role.replace(/_/g, ' ').replace(/^./, (x) => x.toUpperCase()),
         userId: u?.id ?? null,
         userName: u?.name ?? null,
         options: pool.map((p) => ({ id: p.id, name: p.name, role: p.role, department: p.department, specialty: p.specialty, skills: p.skills, loadPct: p.loadPct, loadAfterPct: p.loadPct, openTasks: p.openTasks, hoursOpen: p.hoursOpen, capacityHours: p.capacityHours, onLeave: false, leaveNote: p.onLeaveToday ? 'On leave today' : null, onLeaveToday: p.onLeaveToday, suggested: p.id === u?.id, current: false, blockedReason: null })),

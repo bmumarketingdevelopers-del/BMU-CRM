@@ -1,5 +1,5 @@
 "use client";
-// v18 project page: the invoice plan (Finance, leadership, the AM) and who is booked on the project.
+// v18 project page: the invoice plan (Finance, leadership, the CM) and who is booked on the project.
 import Link from "next/link";
 import { Panel } from "@/components/dash";
 import { api } from "@/lib/api";

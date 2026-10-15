@@ -134,7 +134,7 @@ function ClientCard({ c, onChanged }: { c: CraftClientCard; onChanged: () => voi
             {c.name}
           </Link>
           <p className="text-xs text-ink-muted">
-            {c.am ? `AM ${c.am} · ` : ""}
+            {c.am ? `CM ${c.am} · ` : ""}
             {c.lastContact ? `Last contact ${ago(c.lastContact.at)} (${c.lastContact.by === "client" ? `from ${c.lastContact.author}` : "you replied"})` : "No messages yet"}
           </p>
         </div>

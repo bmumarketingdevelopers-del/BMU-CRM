@@ -78,7 +78,7 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
   return [
     {
       name: 'find_clients',
-      description: 'Search the client accounts this person can see, by name or industry. Returns id, name, industry, health colour, account manager and services.',
+      description: 'Search the client accounts this person can see, by name or industry. Returns id, name, industry, health colour, client manager and services.',
       schema: z.object({ query: z.string().optional() }),
       properties: { query: str('Part of the client name or industry. Leave empty for all clients.') },
       status: 'Looking up clients…',
@@ -301,7 +301,7 @@ function rawClientTools(ref: ModuleRef, me: Me): CopilotTool[] {
   return [
     {
       name: 'my_account',
-      description: 'The client’s services, milestones (gates), requirements still pending, account manager and invoices due (if they may see billing).',
+      description: 'The client’s services, milestones (gates), requirements still pending, client manager and invoices due (if they may see billing).',
       schema: z.object({}),
       properties: {},
       status: 'Opening your account…',

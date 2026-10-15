@@ -92,8 +92,8 @@ export class TeamWorkspaceService {
       },
     });
     if (!c) throw new NotFoundException('Client not found');
-    // v11 clients: the previous AM keeps read access for 7 days after a reassignment.
-    if (!seeAll && c.amUserId !== me.id && !(await this.prisma.assignment.findFirst({ where: { orgId: me.orgId, targetType: 'client_am', targetId: c.id, fromUserId: me.id, readAccessUntil: { gt: new Date() } }, select: { id: true } }))) throw new ForbiddenException('This client belongs to another Account Manager');
+    // v11 clients: the previous CM keeps read access for 7 days after a reassignment.
+    if (!seeAll && c.amUserId !== me.id && !(await this.prisma.assignment.findFirst({ where: { orgId: me.orgId, targetType: 'client_am', targetId: c.id, fromUserId: me.id, readAccessUntil: { gt: new Date() } }, select: { id: true } }))) throw new ForbiddenException('This client belongs to another Client Manager');
 
     const engagementIds = c.engagements.map((e) => e.id);
     const cycles = c.engagements.flatMap((e) => e.cycles.map((cy) => ({ ...cy, serviceName: e.service.name })));

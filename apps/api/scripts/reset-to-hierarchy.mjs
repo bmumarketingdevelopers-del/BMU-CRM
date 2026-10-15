@@ -101,7 +101,7 @@ try {
     for (const t of ['flow_templates', 'checklist_templates', 'sops']) await q(`update "${t}" set "departmentId" = $1 where "departmentId" = any($2)`, [deptId[name], ids]);
   }
   const orphanSops = await q(`delete from sops where "departmentId" = any($1)`, [oldDepts.map((d) => d.id)]);
-  if (orphanSops.rowCount) report.push({ table: 'sops', removed: orphanSops.rowCount, note: 'for departments that no longer exist (QC, Account Management)' });
+  if (orphanSops.rowCount) report.push({ table: 'sops', removed: orphanSops.rowCount, note: 'for departments that no longer exist (QC, Client Management)' });
   await q(`update checklist_templates set "departmentId" = null where "departmentId" = any($1)`, [oldDepts.map((d) => d.id)]);
   const orphanFlows = await q(`delete from flow_templates where "departmentId" = any($1)`, [oldDepts.map((d) => d.id)]);
   if (orphanFlows.rowCount) report.push({ table: 'flow_templates', removed: orphanFlows.rowCount });

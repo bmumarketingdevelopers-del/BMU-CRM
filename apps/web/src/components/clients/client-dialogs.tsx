@@ -163,7 +163,7 @@ export function ChangeTierDialog({ client, engagementId, open, onClose, onDone }
           </select>
         </Field>
       )}
-      {!!tier && !upgrade && <p className="text-xs text-ink-muted">Downgrades apply from the next cycle. The AM Lead is told.</p>}
+      {!!tier && !upgrade && <p className="text-xs text-ink-muted">Downgrades apply from the next cycle. The CM Lead is told.</p>}
       <Err error={error} />
     </ActionDialog>
   );
@@ -225,7 +225,7 @@ export function EditClientDrawer({ client, open, onClose, onDone }: { client: Cl
     </Field>
   );
   return (
-    <ActionDrawer open={open} title={`Edit ${client.name}`} subtitle="You see the fields you are allowed to change. The account manager is told about changes." onClose={onClose} onSubmit={save} saving={saving} error={error} testId="edit-client-drawer">
+    <ActionDrawer open={open} title={`Edit ${client.name}`} subtitle="You see the fields you are allowed to change. The client manager is told about changes." onClose={onClose} onSubmit={save} saving={saving} error={error} testId="edit-client-drawer">
       <h3 className="text-sm font-semibold">Business</h3>
       {field("businessName")}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -398,7 +398,7 @@ export function PauseDialog({ service, open, onClose, onDone }: { service: Clien
   }
   return (
     <ActionDialog open={open} title={`Pause ${service.serviceName}`} onClose={onClose} testId="pause-dialog" footer={<><button type="button" className={primary} disabled={busy || reason.trim().length < 3 || !until} onClick={save}>Pause</button><button type="button" className={cancel} onClick={onClose}>Cancel</button></>}>
-      <p>Tasks go on hold, deadlines and the delivery clock stop, and no retainer invoice is raised for the paused months. Account Managers need the AM Lead&apos;s approval.</p>
+      <p>Tasks go on hold, deadlines and the delivery clock stop, and no retainer invoice is raised for the paused months. Client Managers need the CM Lead&apos;s approval.</p>
       <Field label="Reason" required htmlFor="pd-reason">
         <TextArea id="pd-reason" className="min-h-16" value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>

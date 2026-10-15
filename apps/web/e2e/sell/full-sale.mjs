@@ -1,6 +1,6 @@
 // Journey: a stranger builds a package on the website → lead → duplicate enquiry merged → sales logs a call and a
 // follow-up → proposal with a 25% discount → sales manager then Founder approve → sent → client asks for changes →
-// v2 sent (v1 link shows superseded) → client e-signs with designation → pays (test mode) → client account, AM,
+// v2 sent (v1 link shows superseded) → client e-signs with designation → pays (test mode) → client account, CM,
 // welcome → client signs in. Then the pipeline, funnel, forecast and weekly review open with the new numbers.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/sell/full-sale.mjs
 import { launch, newPage, signIn, shot, check, finish, BASE, apiAs } from "./lib.mjs";
@@ -192,7 +192,7 @@ await signIn(newClient, email);
 check(new URL(newClient.url()).pathname.startsWith("/client"), `client lands in the client app (${newClient.url()})`);
 const overview = (await apiAs(newClient, "GET", "/client/overview")).body;
 check(overview.engagements?.length === 2 && overview.engagements.every((e) => e.currentGate === "G1"), "two engagements at G1");
-check(!!overview.accountManager?.name, "account manager assigned");
+check(!!overview.accountManager?.name, "client manager assigned");
 const clientBell = (await apiAs(newClient, "GET", "/notifications")).body;
 check(clientBell.items.some((n) => n.kind === "welcome"), "welcome notification in the client's bell");
 const invoices = (await apiAs(newClient, "GET", "/client/invoices")).body;

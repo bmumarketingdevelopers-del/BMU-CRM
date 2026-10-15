@@ -1,7 +1,7 @@
 // v19 journey: integrations, publishing and the public API.
 // API: a fresh Social Media client with one approved post scheduled for tomorrow on Instagram.
 // Browser: the Founder adds Instagram, Meta Ads and Google Analytics test accounts for the client in Integrations and
-// syncs the ads account → the AM presses "Publish now" on the post and it goes live on the test account (public page) →
+// syncs the ads account → the CM presses "Publish now" on the post and it goes live on the test account (public page) →
 // ads and website numbers show on the team client page and on the client's Insights. In API & Webhooks the Founder makes
 // a key limited to "Read leads" (it reads, but cannot create) and a webhook to a local receiver; a website enquiry
 // arrives there signed. Finance downloads the Tally XML export.
@@ -93,7 +93,7 @@ try {
   check(true, `the sync log shows the ads pull (and ${gaName})`);
   await shot(f, "v19-integrations-hub");
 
-  console.log("3. The AM presses Publish now; the post goes live on the test account");
+  console.log("3. The CM presses Publish now; the post goes live on the test account");
   const t = await as("am@bmu.demo");
   await go(t, `/team/deliverables/${post.id}`);
   const auto = t.getByTestId("auto-publish");

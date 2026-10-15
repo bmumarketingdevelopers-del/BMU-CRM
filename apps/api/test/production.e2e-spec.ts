@@ -144,7 +144,7 @@ describe('QC before the client sees anything', () => {
 describe('Review Studio and Gate 4', () => {
   let v2: { id: string; url: string };
 
-  it('version 2 passes QC and the AM sends it', async () => {
+  it('version 2 passes QC and the CM sends it', async () => {
     let res = await http().post(`/deliverables/${logoId}/versions`).set(as('producer')).attach('file', png, { filename: 'post-v2.png', contentType: 'image/png' }).expect(201);
     v2 = res.body.versions[1];
     res = await http().post(`/deliverables/versions/${v2.id}/qc`).set(as('qc')).send({ items: [{ label: 'Brand colours', ok: true }] }).expect(200);

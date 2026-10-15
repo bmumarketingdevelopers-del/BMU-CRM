@@ -147,7 +147,7 @@ function Handover({ process, staff, busy, onMove }: { process: TeamPeopleProcess
   const work = process.openWork!;
   const sections: { kind: Kind; title: string; rows: { id: string; label: string; sub: string }[]; who: (s: TeamPeopleOptions["staff"][number]) => boolean }[] = [
     { kind: "tasks", title: "Open tasks", rows: work.tasks.map((t) => ({ id: t.id, label: t.title, sub: [t.client, `due ${fmt(t.deadline)}`].filter(Boolean).join(" · ") })), who: () => true },
-    { kind: "clients", title: "Clients (account manager)", rows: work.clients.map((c) => ({ id: c.id, label: c.name, sub: "All their open services move too" })), who: (s) => s.roles.some((r) => ["account_manager", "am_lead", "admin", "founder"].includes(r)) },
+    { kind: "clients", title: "Clients (client manager)", rows: work.clients.map((c) => ({ id: c.id, label: c.name, sub: "All their open services move too" })), who: (s) => s.roles.some((r) => ["account_manager", "am_lead", "admin", "founder"].includes(r)) },
     { kind: "leads", title: "Open leads", rows: work.leads.map((l) => ({ id: l.id, label: l.name, sub: l.stage.replace("_", " ") })), who: (s) => s.roles.some((r) => ["sales_executive", "sales_manager", "founder", "admin", "account_manager", "am_lead"].includes(r)) },
   ];
   return (

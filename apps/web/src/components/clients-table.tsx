@@ -32,7 +32,7 @@ export function ClientsTable() {
         </span>
       ),
     },
-    { key: "am", header: "Account Manager", cell: (c) => c.am?.name ?? <span className="text-ink-muted">Unassigned</span> },
+    { key: "am", header: "Client Manager", cell: (c) => c.am?.name ?? <span className="text-ink-muted">Unassigned</span> },
     {
       key: "services",
       header: "Services",
@@ -78,7 +78,7 @@ export function ClientsTable() {
       <Panel
         title="All clients"
         subtitle={`${rows.length} of ${all.length}`}
-        action={<Input className="w-56" placeholder="Search clients or AMs" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search clients" />}
+        action={<Input className="w-56" placeholder="Search clients or CMs" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search clients" />}
         flush
       >
         <DataTable

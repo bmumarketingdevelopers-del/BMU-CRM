@@ -21,7 +21,7 @@ export const OPS_ANNOUNCE_ROLES = ["founder", "admin"] as const;
 export const OPS_FILE_MANAGER_ROLES = ["founder", "admin", "am_lead", "account_manager", "department_head"] as const;
 
 export const opsCanAddLead = (me: Who) => staff(me) && hasAny(me.roles, OPS_LEAD_ADD_ROLES);
-/** Account managers may only add referrals (they don't own leads). */
+/** Client managers may only add referrals (they don't own leads). */
 export const opsLeadReferralOnly = (me: Who) => !hasAny(me.roles, ["founder", "admin", "sales_manager", "sales_executive"]) && me.roles.includes("account_manager");
 export const opsIsSalesManager = (me: Who) => staff(me) && hasAny(me.roles, OPS_LEAD_MANAGER_ROLES);
 export const opsCanFinance = (me: Who) => staff(me) && hasAny(me.roles, OPS_FINANCE_ROLES);

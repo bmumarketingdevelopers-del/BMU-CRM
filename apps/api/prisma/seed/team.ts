@@ -94,7 +94,7 @@ export async function seedTeam(prisma: PrismaClient, orgId: string) {
   if (leaver && !(await prisma.peopleProcess.findFirst({ where: { userId: leaver.id, kind: 'offboarding' } }))) {
     const items = [
       ['reassign_tasks', 'Open tasks reassigned', 'handover', true],
-      ['reassign_clients', 'Clients moved to another account manager', 'handover', true],
+      ['reassign_clients', 'Clients moved to another client manager', 'handover', true],
       ['reassign_leads', 'Open leads reassigned', 'handover', true],
       ['handover_notes', 'Handover notes shared with the team', 'handover', false],
       ['laptop_returned', 'Laptop and equipment returned', 'equipment', false],
@@ -105,7 +105,7 @@ export async function seedTeam(prisma: PrismaClient, orgId: string) {
     await prisma.peopleProcess.create({ data: { orgId, userId: leaver.id, kind: 'offboarding', startedById: hr.id, lastDay: dbDay(addDays(today, 10)), items, note: 'Moving to another city.' } });
   }
 
-  // Timesheets: six weeks of time entries for the producer and the AM; older weeks approved, last week submitted.
+  // Timesheets: six weeks of time entries for the producer and the CM; older weeks approved, last week submitted.
   const thisMonday = mondayOf(today);
   for (const person of [producer, am]) {
     if (await prisma.timeEntry.findFirst({ where: { userId: person.id, note: { contains: '(team seed)' } } })) continue;

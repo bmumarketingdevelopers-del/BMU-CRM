@@ -191,7 +191,7 @@ export class TaskTargets implements OnModuleInit {
           if (isLeader(me)) continue;
           if (hasRole(me, 'department_head') && i.departmentId && i.departmentId === (await this.access.myDepartment(me))) continue;
           if (hasRole(me, 'account_manager') && i.amId === me.id) continue;
-          throw new ForbiddenException('Only the department head or the account manager can reassign this deliverable');
+          throw new ForbiddenException('Only the department head or the client manager can reassign this deliverable');
         }
       },
       eligibility: async (me, items) => ({ where: { AND: [{ roles: { some: { role: { baseRole: { in: TASK_TEAM_ROLES } } } } }, await this.deptScope(me)] }, departmentId: items[0]?.departmentId ?? null, specialty: items[0]?.specialty ?? null }),

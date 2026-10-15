@@ -283,7 +283,7 @@ describe('Sales assistant (AI mode, scripted model)', () => {
 });
 
 describe('Request triage', () => {
-  it('notes the triage, suggests type, assignee and an acknowledgement; the AM approves the reply', async () => {
+  it('notes the triage, suggests type, assignee and an acknowledgement; the CM approves the reply', async () => {
     await patch('request_triage', { enabled: true, actsForUserId: users.amLead }).expect(200);
     ids.request = (await http().post('/client/requests').set(as('client')).send({ engagementId: ids.engagement, type: 'change', description: `URGENT ${stamp}: we also need an additional new landing page for the festive offer today!` }).expect(201)).body.id;
     await tick();
@@ -296,7 +296,7 @@ describe('Request triage', () => {
     const view = (await http().get(`/client/requests/${ids.request}`).set(as('client')).expect(200)).body as { comments: { internal: boolean }[]; type: string };
     expect(view.comments.filter((c) => !c.internal)).toHaveLength(0);
     expect(view.type).toBe('change');
-    // The client's AM is a decider and approves the acknowledgement.
+    // The client's CM is a decider and approves the acknowledgement.
     const inbox = (await http().get('/agents/inbox').set(as('am')).expect(200)).body as AgentProposalView[];
     const ack = inbox.find((p) => p.action === 'reply_to_request' && p.payload.requestId === ids.request)!;
     expect(ack.canDecide).toBe(true);

@@ -11,7 +11,7 @@ const handle = `journey_${stamp}`;
 const filePath = `${SHOTS}/brief-${stamp}.txt`;
 writeFileSync(filePath, `Moodboard notes ${stamp}\n`);
 
-console.log("1. AM adds a creator");
+console.log("1. CM adds a creator");
 const am = await as(browser, "am@bmu.demo");
 await go(am, "/team/creators");
 await am.getByTestId("add-creator").click();

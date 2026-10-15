@@ -1,5 +1,5 @@
 // Journey: forbidden roles. Buttons are hidden for people who can't use them, and the API refuses them with a
-// plain-English 403 anyway: AM can't add clients or reassign AMs, a designer can't see the client list, Finance
+// plain-English 403 anyway: CM can't add clients or reassign CMs, a designer can't see the client list, Finance
 // can't add clients, a client can't use team endpoints, a client Viewer can't change account settings.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/clients-actions/forbidden.mjs
 import { apiCall, as, check, done, go, launch, noErrors, shot } from "./lib.mjs";
@@ -7,24 +7,24 @@ import { apiCall, as, check, done, go, launch, noErrors, shot } from "./lib.mjs"
 const browser = await launch();
 const body = { businessName: "Should Not Exist", contactName: "No Body", contactPhone: "9000000001", contactEmail: "nobody@example.com", industry: "Retail", billingName: "No LLP", billingAddress: "Nowhere road 1", branchId: "x" };
 
-console.log("Account Manager");
+console.log("Client Manager");
 const am = await as(browser, "am@bmu.demo");
 await go(am, "/team/clients");
 await am.locator("[data-client-row]").first().waitFor({ timeout: 15000 });
-check(!(await am.getByTestId("clients-add").count()), "AM sees no + Add on the Clients list");
-check(!(await am.getByRole("button", { name: "Migrate existing client" }).count()), "AM sees no Migrate");
+check(!(await am.getByTestId("clients-add").count()), "CM sees no + Add on the Clients list");
+check(!(await am.getByRole("button", { name: "Migrate existing client" }).count()), "CM sees no Migrate");
 let r = await apiCall(am, "POST", "/clients-actions", body);
-check(r.status === 403 && /Founder|Admin|Sales Manager|AM Lead/.test(r.body.message), "API: AM can't add a client (403, says who can)");
+check(r.status === 403 && /Founder|Admin|Sales Manager|CM Lead|Client Manager Lead/.test(r.body.message), "API: CM can't add a client (403, says who can)");
 await am.locator("[data-client-row] a").first().click();
 await am.getByTestId("client360-actions").waitFor();
-check(!(await am.getByRole("button", { name: "Reassign AM" }).count()), "AM sees no Reassign AM on Client 360");
+check(!(await am.getByRole("button", { name: "Reassign CM" }).count()), "CM sees no Reassign CM on Client 360");
 const id = am.url().split("/team/clients/")[1].split("?")[0];
 r = await apiCall(am, "POST", "/actions/reassign/client_am/apply", { ids: [id], toUserId: "someone", reason: "overload", handoverNote: "x" });
-check(r.status === 403, "API: AM can't reassign the AM (403)");
+check(r.status === 403, "API: CM can't reassign the CM (403)");
 r = await apiCall(am, "POST", `/clients-actions/${id}/offboard`, { reason: "No reason", lastCycle: "2026-10" });
-check(r.status === 403, "API: AM can't offboard (403)");
+check(r.status === 403, "API: CM can't offboard (403)");
 await shot(am, "30-am-client360");
-noErrors(am, "AM");
+noErrors(am, "CM");
 
 console.log("Designer");
 const design = await as(browser, "design@bmu.demo");

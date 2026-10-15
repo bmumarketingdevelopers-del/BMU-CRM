@@ -1,5 +1,5 @@
 // v10 deliver: monthly retainer cycles that roll over.
-// For active retainers the month's Cycle is created automatically (job) or by the AM ("Start next month"):
+// For active retainers the month's Cycle is created automatically (job) or by the CM ("Start next month"):
 // deliverables from the tier's monthly quota (+ unused quota carried over), a draft plan to approve (the normal
 // plan flow → tasks), and the month's retainer invoice. Idempotent: one cycle per engagement per month.
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
@@ -172,7 +172,7 @@ export class DeliverCyclesService implements OnModuleInit {
   async startNext(me: Me, engagementId: string, ip?: string): Promise<DeliverCyclesView> {
     const v = await this.view(me, engagementId);
     const e = await this.prisma.engagement.findUniqueOrThrow({ where: { id: engagementId } });
-    if (!this.canStart(me, e)) throw new ForbiddenException("Only the client's Account Manager or leadership can start the next month");
+    if (!this.canStart(me, e)) throw new ForbiddenException("Only the client's Client Manager or leadership can start the next month");
     if (v.startNextBlocked || !v.nextPeriod) throw new BadRequestException(v.startNextBlocked ?? 'Nothing to start');
     const res = await this.createCycle(engagementId, v.nextPeriod, 'manual', me);
     if (!res) throw new BadRequestException(`${deliverPeriodLabel(v.nextPeriod)} has already been started`);
@@ -262,7 +262,7 @@ export class DeliverCyclesService implements OnModuleInit {
     let created: { cycleId: string; invoiceId: string | null; invoiceNumber: string | null; invoiceTotal: number };
     try {
       created = await this.prisma.$transaction(async (tx) => {
-        // One cycle per engagement per month, even if the job and the AM's button race.
+        // One cycle per engagement per month, even if the job and the CM's button race.
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cycle:${engagementId}`}))`;
         if (await tx.cycle.findUnique({ where: { engagementId_period: { engagementId, period } } })) throw new AlreadyStarted();
         const cycle = await tx.cycle.create({

@@ -568,7 +568,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     key: "wf_creative_scheduled",
     name: "Approved creative moves to Scheduled",
-    description: "When a client approves a creative it moves to Scheduled and the account manager gets a task to pick the post date.",
+    description: "When a client approves a creative it moves to Scheduled and the client manager gets a task to pick the post date.",
     area: "Delivery",
     workflow: {
       name: "Approved creative to Scheduled",
@@ -628,7 +628,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     key: "wf_sla_75_100",
     name: "Request reply time: warn at 75%, escalate at 100%",
-    description: "The account manager is warned when three quarters of the reply time has gone. If nobody replies by the deadline the AM Lead is told.",
+    description: "The client manager is warned when three quarters of the reply time has gone. If nobody replies by the deadline the CM Lead is told.",
     area: "Client requests",
     workflow: {
       name: "Reply time warning and escalation",
@@ -643,7 +643,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     key: "wf_renewal_30d",
     name: "Renewal 30 days before the end date",
-    description: "A renewal call task and an AI-drafted note for the account manager 30 days before a project ends. The Founder hears about it if it is still not renewed 2 weeks later.",
+    description: "A renewal call task and an AI-drafted note for the client manager 30 days before a project ends. The Founder hears about it if it is still not renewed 2 weeks later.",
     area: "Delivery",
     workflow: {
       name: "Renewal 30 days out",

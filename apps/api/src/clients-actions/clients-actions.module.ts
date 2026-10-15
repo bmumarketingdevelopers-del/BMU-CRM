@@ -11,7 +11,7 @@ import { ClientsTargets } from './clients-targets.js';
 import { ClientReadOnlyInterceptor } from './read-only.interceptor.js';
 
 /**
- * v11 clients: add clients by hand (and migrated clients), edit, users, brands, AM reassignment (`client_am`), request
+ * v11 clients: add clients by hand (and migrated clients), edit, users, brands, CM reassignment (`client_am`), request
  * reassignment (`request`), add service / change tier, pause, offboarding, health, and the request actions.
  * See docs/flows/clients-actions.md.
  */

@@ -306,7 +306,7 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
             <input type="checkbox" checked={v.outOfScope} onChange={(e) => set("outOfScope", e.target.checked)} /> Adds client work beyond the agreed scope
           </label>
           {v.outOfScope && (
-            <Field label="Approved add-on request" hint="Without one, the task is saved as a draft and the account manager is asked to raise an add-on.">
+            <Field label="Approved add-on request" hint="Without one, the task is saved as a draft and the client manager is asked to raise an add-on.">
               <select className={inputCls} value={v.addOnRequestId} onChange={(e) => set("addOnRequestId", e.target.value)} aria-label="Approved add-on request">
                 <option value="">None yet</option>
                 {addOns.map((a) => (

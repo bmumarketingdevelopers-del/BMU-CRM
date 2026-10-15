@@ -63,7 +63,7 @@ export default function ClientRequestPage({ params }: { params: Promise<{ id: st
                   <p className="mt-1 whitespace-pre-wrap">{c.body}</p>
                 </li>
               ))}
-              {r.comments.length === 0 && <li className="text-sm text-ink-muted">Your Account Manager will reply here.</li>}
+              {r.comments.length === 0 && <li className="text-sm text-ink-muted">Your Client Manager will reply here.</li>}
             </ol>
             <form
               className="mt-3 grid gap-2"
@@ -146,7 +146,7 @@ export default function ClientRequestPage({ params }: { params: Promise<{ id: st
                   {r.rating.comment ? `: “${r.rating.comment}”` : ""}. Thank you!
                 </p>
               ) : (
-                <p className="mt-1 text-xs text-ink-muted">Your rating goes straight to your Account Manager and our quality review.</p>
+                <p className="mt-1 text-xs text-ink-muted">Your rating goes straight to your Client Manager and our quality review.</p>
               )}
               {r.can.rate && (
                 <div className="mt-3 grid gap-2">
@@ -194,7 +194,7 @@ export default function ClientRequestPage({ params }: { params: Promise<{ id: st
               )}
             </Card>
           )}
-          {!!r.reopenCount && r.status !== "done" && <p className="text-xs text-ink-muted">Reopened {r.reopenCount === 1 ? "once" : `${r.reopenCount} times`}. Your Account Manager is on it.</p>}
+          {!!r.reopenCount && r.status !== "done" && <p className="text-xs text-ink-muted">Reopened {r.reopenCount === 1 ? "once" : `${r.reopenCount} times`}. Your Client Manager is on it.</p>}
           {error && <p className="text-sm text-red">{error}</p>}
         </div>
       </div>

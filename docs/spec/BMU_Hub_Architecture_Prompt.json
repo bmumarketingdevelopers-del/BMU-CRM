@@ -36,7 +36,7 @@
       "Follow the uploaded UX/UI designs exactly. Do not redesign, restyle or add screens that are not in the design unless this JSON requires them; if a required screen has no design, build it using the same components and tokens and flag it.",
       "Make targeted changes when asked to revise. Never regenerate unrelated parts.",
       "Enforce every gate, permission and rule in this JSON in the backend, not only in the UI.",
-      "Never expose internal-only data (internal notes, QC results, costs, margins, staff below AM, other clients) to client roles.",
+      "Never expose internal-only data (internal notes, QC results, costs, margins, staff below CM, other clients) to client roles.",
       "Use the exact vocabulary in glossary for team UI; use the client_label equivalents in client UI.",
       "When something is ambiguous, choose the option that keeps the MOS rule intact and list the assumption in a short ASSUMPTIONS section of your output."
     ],
@@ -108,7 +108,7 @@
           "Request desk",
           "Files",
           "Billing + reports",
-          "Single thread with Account Manager"
+          "Single thread with Client Manager"
         ]
       },
       {
@@ -183,7 +183,7 @@
         "name": "Department",
         "values": [
           "Sales",
-          "Account Management",
+          "Client Management",
           "Strategy",
           "Creative / Design",
           "Video / Production",
@@ -200,7 +200,7 @@
         "level": 3,
         "id": "team",
         "name": "Team / Pod",
-        "notes": "Client pods: 1 AM + strategist + producers serving a client group."
+        "notes": "Client pods: 1 CM + strategist + producers serving a client group."
       }
     ],
     "team_roles": [
@@ -239,15 +239,15 @@
       {
         "rank": 4,
         "id": "am_lead",
-        "name": "Account Management Lead",
+        "name": "Client Manager Lead",
         "reports_to": "admin",
-        "scope": "all AMs and their clients",
-        "can_manage": "AM assignment, escalations, client health"
+        "scope": "all CMs and their clients",
+        "can_manage": "CM assignment, escalations, client health"
       },
       {
         "rank": 5,
         "id": "account_manager",
-        "name": "Account Manager",
+        "name": "Client Manager",
         "reports_to": "am_lead",
         "scope": "assigned clients",
         "can_manage": "onboarding, RCD, client comms, requests, quotes from add-on list, sending drafts"
@@ -344,11 +344,11 @@
       }
     ],
     "rules": [
-      "Roles are permission sets; a user may hold multiple roles (e.g. AM + Strategist).",
+      "Roles are permission sets; a user may hold multiple roles (e.g. CM + Strategist).",
       "Custom roles can be cloned from a base role in Admin Panel.",
       "Role changes require a manager at least one rank higher.",
       "Every privileged action is written to the audit log.",
-      "Clients never message or tag production staff; all client messages route to the AM (Client → AM → Team)."
+      "Clients never message or tag production staff; all client messages route to the CM (Client → CM → Team)."
     ]
   },
   "permissions": {
@@ -466,7 +466,7 @@
       },
       "credential_vault_reveal": {
         "account_manager": "own (logged)",
-        "department_head": "on request, approved by AM (logged)",
+        "department_head": "on request, approved by CM (logged)",
         "founder": "full (logged)",
         "others": "none"
       }
@@ -474,7 +474,7 @@
     "client_hidden_data": [
       "internal notes",
       "QC results",
-      "task owners below AM",
+      "task owners below CM",
       "costs, margins, staff rates",
       "other clients",
       "creator rates"
@@ -511,7 +511,7 @@
         "items": [
           "Clients",
           "Engagements",
-          "AM Assignment",
+          "CM Assignment",
           "Requests & Add-ons",
           "Offboarding"
         ]
@@ -618,9 +618,9 @@
       "id": "handover_onboarding",
       "phase": "onboard",
       "features": [
-        "Sales → AM handover form (client, service, package, value, payment, deliverables, promised timeline, special commitments)",
-        "Auto AM assignment by load",
-        "Welcome flow introducing AM"
+        "Sales → CM handover form (client, service, package, value, payment, deliverables, promised timeline, special commitments)",
+        "Auto CM assignment by load",
+        "Welcome flow introducing CM"
       ]
     },
     {
@@ -630,7 +630,7 @@
         "Per-service requirement checklists (info, assets, access, brand material, min. 10 reference videos for content/video/UGC)",
         "Encrypted credential vault",
         "Blocked items with reason, waiting for, owner, date requested",
-        "AM marks RCD → project clock starts (Gate 1)"
+        "CM marks RCD → project clock starts (Gate 1)"
       ]
     },
     {
@@ -639,7 +639,7 @@
       "features": [
         "4-working-day planning timer from RCD",
         "Strategy workspace (business, competitors, references, audience, pillars, campaign + creative direction, scripts)",
-        "Internal approval chain: Strategist → Dept Head → AM",
+        "Internal approval chain: Strategist → Dept Head → CM",
         "Client plan presentation + written approval (Gate 2)"
       ]
     },
@@ -677,7 +677,7 @@
         "Frame-accurate video comments, pinned image/PDF comments, live URL comments",
         "Version compare",
         "Revision rounds counted against package",
-        "Approve / Request changes; AI consolidates feedback (AM edits before sending to team)"
+        "Approve / Request changes; AI consolidates feedback (CM edits before sending to team)"
       ]
     },
     {
@@ -704,14 +704,14 @@
       "features": [
         "Service-specific monthly reports",
         "Live data: Meta Ads, Google Ads, GA4, Search Console, GBP, YouTube, Instagram",
-        "AI summary reviewed by AM before release"
+        "AI summary reviewed by CM before release"
       ]
     },
     {
       "id": "messaging_requests",
       "phase": "all",
       "features": [
-        "Client thread per client (with AM)",
+        "Client thread per client (with CM)",
         "Project threads",
         "Internal notes (hidden from client, lock icon)",
         "Request desk: change, add-on, urgent, query with SLA timers"
@@ -807,7 +807,7 @@
       {
         "id": "G1",
         "name": "Requirements Complete",
-        "unlock_when": "All requirement checklist items received AND AM marks RCD",
+        "unlock_when": "All requirement checklist items received AND CM marks RCD",
         "locks": [
           "planning timer",
           "strategy workspace",
@@ -923,7 +923,7 @@
       "change_addon": [
         "client raises request",
         "auto-ack: 'Received — we'll check scope and confirm timeline.'",
-        "AM: within scope? yes → schedule",
+        "CM: within scope? yes → schedule",
         "no → quote cost + timeline (impact: scope, timeline, resource, commercial)",
         "client approves in writing",
         "payment if applicable",
@@ -932,11 +932,11 @@
       "urgent": [
         "client flags urgent",
         "system shows in-scope check, brief completeness, affected work, capacity, extra charge",
-        "AM accepts or reschedules; confirmed in writing"
+        "CM accepts or reschedules; confirmed in writing"
       ],
       "blocked": [
         "owner marks BLOCKED with reason, waiting for, responsible, date requested, expected resolution",
-        "AM informs client immediately (no-surprise rule)",
+        "CM informs client immediately (no-surprise rule)",
         "unresolved → auto-escalate to weekly review",
         "on resume, delivery date shifts by delay"
       ],
@@ -1072,7 +1072,7 @@
         "amplify",
         "report"
       ],
-      "bundles": "One AM, one roadmap, one calendar, multiple departments, one reporting system",
+      "bundles": "One CM, one roadmap, one calendar, multiple departments, one reporting system",
       "hard_rules": [
         "No development on an unapproved design",
         "Every flow ends in internal QC before the client"
@@ -1108,7 +1108,7 @@
       "Planning gets up to 4 working days after requirements are complete.",
       "First draft generally takes 2–3 working days after approved planning and inputs.",
       "Every service has a defined scope.",
-      "Every client gets one primary Account Manager.",
+      "Every client gets one primary Client Manager.",
       "Clients do not directly manage production staff.",
       "Every client request is checked against scope.",
       "Every additional requirement is documented before execution.",
@@ -1126,14 +1126,14 @@
   "communication": {
     "policy": "No WhatsApp groups. All conversation, feedback, approvals and files live in the app.",
     "channels": [
-      "client_thread (client ↔ AM)",
+      "client_thread (client ↔ CM)",
       "project_thread",
       "contextual comments on deliverables/frames/tasks",
       "internal notes (team only)",
       "request desk",
       "announcements (admin → all clients or all team)"
     ],
-    "whatsapp_business_api": "One-way template notifications with deep links to the exact screen. Inbound WhatsApp replies are posted into the client's AM thread and answered with the app link.",
+    "whatsapp_business_api": "One-way template notifications with deep links to the exact screen. Inbound WhatsApp replies are posted into the client's CM thread and answered with the app link.",
     "notifications": {
       "channels": [
         "push",
@@ -1168,7 +1168,7 @@
         "first_reply": "1 working day"
       }
     ],
-    "sla_timer_rules": "Timers pause outside working hours and on holidays; breaches surface on AM dashboard and weekly review."
+    "sla_timer_rules": "Timers pause outside working hours and on holidays; breaches surface on CM dashboard and weekly review."
   },
   "screens": {
     "website": [
@@ -1182,7 +1182,7 @@
       "Sign in"
     ],
     "client_app": [
-      "Home (needs you, services with gate track, AM card)",
+      "Home (needs you, services with gate track, CM card)",
       "Onboarding checklist",
       "Approvals list",
       "Plan approval",
@@ -1191,7 +1191,7 @@
       "Files",
       "Billing (due, autopay, history)",
       "Reports",
-      "Thread with AM",
+      "Thread with CM",
       "Team users (Owner only)",
       "Profile & notifications"
     ],
@@ -1203,7 +1203,7 @@
       "Review Studio (team side)",
       "Projects board by phase",
       "Client 360",
-      "Requests inbox (AM)",
+      "Requests inbox (CM)",
       "Calendar",
       "Capacity",
       "SOP library",
@@ -1606,15 +1606,15 @@
   "automations": [
     "New lead → assign owner + first-reply timer",
     "Proposal viewed, not accepted in 48h → sales nudge",
-    "Payment received → create client account, send agreement copy, assign AM, welcome",
+    "Payment received → create client account, send agreement copy, assign CM, welcome",
     "Pending requirement items → client reminder every 2 working days",
-    "All requirements received → prompt AM to mark RCD",
+    "All requirements received → prompt CM to mark RCD",
     "RCD marked → create 4-working-day planning task",
     "Plan approved → generate department tasks from flow templates",
     "Task late or blocked → department head alert",
-    "QC pass → prompt AM to send to client",
+    "QC pass → prompt CM to send to client",
     "Retainer invoice raised 5 days before month start",
-    "Invoice overdue 7 days → pause new production, alert AM + Finance",
+    "Invoice overdue 7 days → pause new production, alert CM + Finance",
     "Client health turns Red → Founder alert",
     "Month end → generate report → next cycle kick-off",
     "Blocked > 3 working days → add to weekly review"
@@ -1886,7 +1886,7 @@
         "capacity planning",
         "creator portal + payouts",
         "client health scoring",
-        "AI copilot for AMs",
+        "AI copilot for CMs",
         "accounting sync"
       ]
     },
@@ -2349,7 +2349,7 @@
   "glossary": [
     {
       "term": "RCD",
-      "meaning": "Requirement Completion Date — marked only by the AM; starts project clock",
+      "meaning": "Requirement Completion Date — marked only by the CM; starts project clock",
       "client_label": "Project start date"
     },
     {
@@ -2379,9 +2379,9 @@
     }
   ],
   "acceptance_criteria": [
-    "A client cannot see any internal note, QC result, cost or staff below AM via UI or API.",
+    "A client cannot see any internal note, QC result, cost or staff below CM via UI or API.",
     "'Send to client' is impossible (UI + API) without a QC pass on that version.",
-    "Planning cannot start before RCD; RCD can only be set by the client's AM or above.",
+    "Planning cannot start before RCD; RCD can only be set by the client's CM or above.",
     "Final files cannot be downloaded by the client before final payment clears.",
     "A request marked new direction creates an add-on that requires written client approval before tasks are created.",
     "Every approval stores user, timestamp and version and cannot be edited.",

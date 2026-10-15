@@ -26,7 +26,7 @@ and can be undone where that is safe. Some changes are sent to someone more seni
 
 ## Who can do what
 
-| | Founder | Admin | HR / Ops | Department Head | AM Lead | Everyone else |
+| | Founder | Admin | HR / Ops | Department Head | CM Lead | Everyone else |
 | --- | --- | --- | --- | --- | --- | --- |
 | See the tree and Users | everyone | their branch | everyone | their department | everyone (tree) | no |
 | Add a person | yes | yes | yes (not an Admin) | goes to an Admin for approval; only roles below Department Head | no | no |
@@ -77,9 +77,9 @@ save. Admin-level changes wait for the Founder.
 - **Branch**: name, city and a working-hours calendar (opening time, closing time, working days).
 - **Department**: branch, head, and the flow templates and QC checklists to copy in.
 - **Team**: department and lead (the lead is placed in the team).
-- **Client pod**: AM, strategist, producers and clients. A client can be in only one pod. New tasks for a pod's clients
+- **Client pod**: CM, strategist, producers and clients. A client can be in only one pod. New tasks for a pod's clients
   go to a pod member by default: first a producer in the task's department with the fewest open tasks, then the
-  strategist, then the AM. The task drawer fills this in, and the API does the same when no assignee is sent
+  strategist, then the CM. The task drawer fills this in, and the API does the same when no assignee is sent
   (`podDefaultAssignee` in `apps/api/src/people-actions/pod-defaults.ts`, called from the task create path).
 
 ### Leave
@@ -89,7 +89,7 @@ opens that cover page.
 
 ### Offboard
 1. Last working day, reason and an optional note. This starts the offboarding checklist.
-2. It **can't finish** while they own anything open: tasks, clients or engagements as AM, leads, open client requests
+2. It **can't finish** while they own anything open: tasks, clients or engagements as CM, leads, open client requests
    on their engagements, approvals waiting on them, and creator briefs. The dialog lists each one with links. "Move all
    their work…" uses the reassign engine; approvals and briefs have a one-click handover.
 3. Checklist: assets returned, access revoked, vault access revoked, files transferred, and the v10 items.

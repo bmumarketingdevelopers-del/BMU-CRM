@@ -77,7 +77,7 @@ export async function seedAutomations(prisma: PrismaClient, orgId: string) {
       const failed = i === 12;
       const steps: AutomationStep[] = [
         { action: 'notify', ok: true, text: `Alerted Founder: "${client} is 10 days late on invoice ${number} (${amount} owed)."` },
-        failed ? { action: 'notify', ok: false, text: 'Could not notify: the account manager account was suspended' } : { action: 'notify', ok: true, text: `Alerted ${am}: "${client} is 10 days late on invoice ${number}. Please call them today."` },
+        failed ? { action: 'notify', ok: false, text: 'Could not notify: the client manager account was suspended' } : { action: 'notify', ok: true, text: `Alerted ${am}: "${client} is 10 days late on invoice ${number}. Please call them today."` },
       ];
       return { ruleKey: 'escalate_overdue_10d', entity: 'Invoice', entityId: inv?.id ?? `demo-invoice-${i}`, status: failed ? 'failed' : 'success', detail: { summary: failed ? `1 of 2 actions failed for Invoice ${number} · ${client}` : `2 actions done for Invoice ${number} · ${client}`, record: `Invoice ${number} · ${client}`, link: inv ? `/admin/finance/invoices/${inv.id}` : null, steps, demo: true } };
     }

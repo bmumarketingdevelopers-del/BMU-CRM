@@ -96,7 +96,7 @@ describe('client accepts, signs and pays', () => {
     expect(res.body.proposal.invoice.number).toMatch(/^BMU\/\d{4}-\d{2}\/\d{4}$/);
   });
 
-  it('payment creates the client account, engagements and assigns an AM', async () => {
+  it('payment creates the client account, engagements and assigns a CM', async () => {
     expect((await http().post(`/public/proposals/${token}/checkout`).expect(200)).body.mode).toBe('test');
     const paid = (await http().post(`/public/proposals/${token}/pay-test`).expect(200)).body;
     expect(paid.proposal.paid).toBe(true);

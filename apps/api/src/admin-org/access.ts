@@ -20,9 +20,9 @@ export function assertOrgEditor(me: Me) {
   if (!canEditOrg(me)) throw new ForbiddenException('Only the Founder, Branch Manager or HR can change the organisation');
 }
 
-/** Clients screens: Founder, Branch Manager, AM Lead. */
+/** Clients screens: Founder, Branch Manager, CM Lead. */
 export function assertClientAdmin(me: Me) {
-  if (!has(me, CLIENT_ADMINS)) throw new ForbiddenException('Only the Founder, Branch Manager or AM Lead can do this');
+  if (!has(me, CLIENT_ADMINS)) throw new ForbiddenException('Only the Founder, Branch Manager or CM Lead can do this');
 }
 
 /** Catalogue screens: catalogue_pricing_engine. */

@@ -61,7 +61,7 @@ export class PaymentsHubService implements OnModuleInit {
   // ---------------------------------------------------------------------------
   // Paid → client thread
 
-  /** Fully paid: close its pay links and thank the client on their Account Manager thread. */
+  /** Fully paid: close its pay links and thank the client on their Client Manager thread. */
   async onInvoicePaid(paid: PaidInvoice) {
     const inv = await this.prisma.invoice.findUnique({ where: { id: paid.id }, include: { payments: { orderBy: { at: 'desc' }, take: 1 }, clientOrg: { select: { id: true, amUserId: true } } } });
     if (!inv) return;

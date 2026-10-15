@@ -1,5 +1,6 @@
 import { isWorkingDay } from '@bmu/shared';
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
+import { deptNames } from './dept-names.js';
 
 const DAY = 86_400_000;
 const istYmd = (d: Date) => new Date(d.getTime() + 330 * 60_000).toISOString().slice(0, 10);
@@ -13,7 +14,7 @@ export async function seedAdminOrg(prisma: PrismaClient, orgId: string) {
   const user = async (email: string) => prisma.user.findFirst({ where: { orgId, email } });
   const hq = await prisma.branch.findFirst({ where: { orgId, name: 'Bengaluru HQ' } });
   if (!hq) return;
-  const dept = (name: string, branchId = hq.id) => prisma.department.findUnique({ where: { branchId_name: { branchId, name } } });
+  const dept = (name: string, branchId = hq.id) => prisma.department.findFirst({ where: { branchId, name: { in: deptNames(name) } } });
 
   // Second branch with two departments and two people.
   const mumbai =
@@ -57,7 +58,7 @@ export async function seedAdminOrg(prisma: PrismaClient, orgId: string) {
   const amLead = await user('am.lead@bmu.demo');
   const producer = await user('producer@bmu.demo');
   const am = await user('am@bmu.demo');
-  const amDept = await dept('Account Management');
+  const amDept = await dept('Client Management');
   const design = await dept('Creative / Design');
   if (amDept && amLead && !amDept.headUserId) await prisma.department.update({ where: { id: amDept.id }, data: { headUserId: amLead.id } });
   if (design && designHead && !design.headUserId) await prisma.department.update({ where: { id: design.id }, data: { headUserId: designHead.id } });

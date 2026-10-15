@@ -167,7 +167,7 @@ describe('Specialist dashboards', () => {
 });
 
 describe('Manager workspace', () => {
-  it('scopes the board: an AM sees only their own clients', async () => {
+  it('scopes the board: a CM sees only their own clients', async () => {
     const pm = await http().get('/craft/manager').set(as('pm')).expect(200);
     expect(pm.body.scope).toBe('own_clients');
     const boardIds = pm.body.board.map((t: { id: string }) => t.id);
@@ -181,7 +181,7 @@ describe('Manager workspace', () => {
     expect(card.suggestion?.userId).toBeTruthy();
   });
 
-  it("an AM can't assign tasks of another AM's client", async () => {
+  it("a CM can't assign tasks of another CM's client", async () => {
     await http().post(`/craft/manager/tasks/${ids.amTask}/assign`).set(as('pm')).send({ ownerId: ids.design }).expect(403);
     await http().patch(`/craft/manager/tasks/${ids.amTask}`).set(as('pm')).send({ priority: 'high' }).expect(403);
   });
@@ -209,7 +209,7 @@ describe('Manager workspace', () => {
     expect(await prisma.auditEvent.count({ where: { entityId: ids.pmTask, action: 'task.reassigned' } })).toBe(1);
   });
 
-  it('lets an AM view the dashboard of someone working on their clients', async () => {
+  it('lets a CM view the dashboard of someone working on their clients', async () => {
     await http().get(`/craft/dashboard?userId=${ids.uxui}`).set(as('pm')).expect(200);
   });
 
@@ -251,7 +251,7 @@ describe('Manager workspace', () => {
     expect(r.body.client.id).toBe(ids.peak);
     expect(await prisma.notification.count({ where: { userId: ids.design, title: { contains: `Craft e2e ad-hoc ${stamp}` } } })).toBe(1);
     expect(await prisma.auditEvent.count({ where: { entityId: r.body.id, action: 'task.created' } })).toBe(1);
-    // Not on another AM's engagement, and an AM must pick a client.
+    // Not on another CM's engagement, and a CM must pick a client.
     await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e nope ${stamp}`, engagementId: ids.amEng }).expect(403);
     await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e nope ${stamp}` }).expect(400);
   });

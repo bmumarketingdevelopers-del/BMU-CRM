@@ -71,19 +71,19 @@ export class ClientsRequestsService implements OnModuleInit {
     assertStaff(me);
     const r = await this.prisma.request.findFirst({ where: { id, orgId: me.orgId }, include: { engagement: { include: { clientOrg: { select: { id: true, name: true } }, service: { select: { name: true } } } } } });
     if (!r) throw new NotFoundException('Request not found');
-    if (!isClientLead(me) && r.engagement.amId !== me.id && r.assigneeId !== me.id && !hasRole(me, 'department_head')) throw new ForbiddenException("This request belongs to another Account Manager's client");
+    if (!isClientLead(me) && r.engagement.amId !== me.id && r.assigneeId !== me.id && !hasRole(me, 'department_head')) throw new ForbiddenException("This request belongs to another Client Manager's client");
     return r;
   }
 
   // -------------------------------------------------------------------------
-  // raise_request: the AM raises it on the client's behalf
+  // raise_request: the CM raises it on the client's behalf
 
   async raise(me: Me, input: ClientsRaiseRequest, ip?: string) {
     assertStaff(me);
-    if (!clientsCanRaiseRequest(me)) throw new ForbiddenException("Only the client's Account Manager (or leadership) can raise a request for them");
+    if (!clientsCanRaiseRequest(me)) throw new ForbiddenException("Only the client's Client Manager (or leadership) can raise a request for them");
     const e = await this.prisma.engagement.findFirst({ where: { id: input.engagementId, orgId: me.orgId, deletedAt: null }, include: { clientOrg: true, service: { select: { name: true } } } });
     if (!e) throw new NotFoundException('Service not found');
-    if (!(isClientLead(me) || (hasRole(me, 'account_manager') && (e.amId === me.id || e.clientOrg.amUserId === me.id)))) throw new ForbiddenException("Only the client's Account Manager (or leadership) can raise a request for them");
+    if (!(isClientLead(me) || (hasRole(me, 'account_manager') && (e.amId === me.id || e.clientOrg.amUserId === me.id)))) throw new ForbiddenException("Only the client's Client Manager (or leadership) can raise a request for them");
     if (e.clientOrg.readOnlyUntil || e.status === 'closed') throw new BadRequestException('This client is offboarded');
     const files = input.attachmentIds?.length ? await this.prisma.file.findMany({ where: { id: { in: input.attachmentIds }, orgId: me.orgId, clientOrgId: e.clientOrgId }, select: { id: true } }) : [];
     if ((input.attachmentIds?.length ?? 0) !== files.length) throw new BadRequestException("One of the files isn't on this client's account");
@@ -121,7 +121,7 @@ export class ClientsRequestsService implements OnModuleInit {
 
   async customQuote(me: Me, id: string, input: ClientsCustomQuote, ip?: string) {
     const r = await this.requestFor(me, id);
-    if (!(isClientLead(me) || r.engagement.amId === me.id)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can quote");
+    if (!(isClientLead(me) || r.engagement.amId === me.id)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can quote");
     if (['approved', 'paid', 'in_progress', 'done', 'declined'].includes(r.status)) throw new BadRequestException(`This request is already ${r.status.replace(/_/g, ' ')}`);
     if (input.amountPaise > CLIENTS_ADDON_CUSTOM_LIMIT_PAISE && !isAdmin(me)) {
       const req = await this.approvals.create(
@@ -154,7 +154,7 @@ export class ClientsRequestsService implements OnModuleInit {
     const r = await this.requestFor(me, id);
     const canConvert = isClientLead(me) || r.engagement.amId === me.id || hasRole(me, 'department_head');
     let blocked: string | null = null;
-    if (!canConvert) blocked = 'Only the Account Manager or a Department Head can convert requests to tasks';
+    if (!canConvert) blocked = 'Only the Client Manager or a Department Head can convert requests to tasks';
     else if (r.type === 'new_scope' && !['paid', 'in_progress'].includes(r.status)) blocked = 'Extra requests need the client’s written approval and payment first';
     else if (!CONVERTIBLE.includes(r.status)) blocked = r.status === 'done' ? 'This request is already done' : 'Decide the request first (in scope, or quote and get it approved)';
     const [depts, people, templates, addOn] = await Promise.all([

@@ -1,4 +1,4 @@
-// Journey: AM Lead adds a client by hand (no lead) with an offline payment; Finance confirms; the payment gate opens.
+// Journey: CM Lead adds a client by hand (no lead) with an offline payment; Finance confirms; the payment gate opens.
 // Also: duplicate warning with Merge / Continue, the Client 360 tabs, and the Clients list at phone width.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/clients-actions/manual-client.mjs
 import { apiCall, as, check, done, go, launch, noErrors, noSideScroll, shot, stamp, toast } from "./lib.mjs";
@@ -7,7 +7,7 @@ const browser = await launch();
 const name = `Journey Bakery ${stamp}`;
 const phone = `98${String(stamp).padStart(6, "0")}11`.slice(0, 10);
 
-console.log("AM Lead adds a client from the Clients list");
+console.log("CM Lead adds a client from the Clients list");
 const lead = await as(browser, "am.lead@bmu.demo");
 await go(lead, "/team/clients");
 check(await lead.getByTestId("clients-add").isVisible(), "Clients list shows + Add");
@@ -35,7 +35,7 @@ await drawer.getByRole("button", { name: "Add client", exact: true }).click();
 await toast(lead).waitFor({ timeout: 15000 });
 check(/Finance|added|confirm/i.test(await toast(lead).innerText()), "toast confirms the client was added");
 await lead.waitForTimeout(800);
-await lead.getByPlaceholder("Search name, contact, phone, AM").fill(name);
+await lead.getByPlaceholder("Search name, contact, phone, CM").fill(name);
 const row = lead.locator("[data-client-row]").filter({ hasText: name });
 await row.first().waitFor({ timeout: 10000 });
 check(await row.getByText("Payment pending").isVisible(), "list row shows Payment pending");

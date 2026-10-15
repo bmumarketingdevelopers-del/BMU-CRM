@@ -55,7 +55,7 @@ export class InboxService {
   // ------------------------------------------------------------------------------------------------ who sees what
 
   private assertInbox(me: Me) {
-    if (me.type !== 'staff' || !hasRole(me, ...INBOX_ROLES)) throw new ForbiddenException('The inbox is for Account Managers, Sales and leadership');
+    if (me.type !== 'staff' || !hasRole(me, ...INBOX_ROLES)) throw new ForbiddenException('The inbox is for Client Managers, Sales and leadership');
   }
 
   private async visibleWhere(me: Me): Promise<Prisma.ConversationWhereInput> {

@@ -5,7 +5,7 @@ import { ApprovalsList } from "@/components/actions/approvals-list";
 
 export const metadata = { title: "Approvals | Command Centre" };
 
-/** v11 core: every ApprovalRequest in the organisation (admins) or in my area (AM leads, department heads). */
+/** v11 core: every ApprovalRequest in the organisation (admins) or in my area (CM leads, department heads). */
 export default async function AdminApprovalsPage() {
   const me = await requireMe(["staff"]);
   if (!me.roles.some((r) => ["founder", "admin", "am_lead", "department_head"].includes(r))) redirect("/admin");

@@ -31,10 +31,10 @@ Migration: `20261006090000_v19_integrations`.
   - **LinkedIn**: organisation pages through `organizationAcls`, with a refresh token.
   - **Google**: offline access covers YouTube channels, Google Ads customers (with the developer token) and GA4
     properties.
-- Who can manage accounts: Founder, Admin and AM lead manage all of them. An Account Manager or strategist manages
+- Who can manage accounts: Founder, Admin and CM lead manage all of them. A Client Manager or strategist manages
   only the clients they work on.
 - `runJob` writes a `SyncJob` row for every publish or numbers pull. When a non-publish job fails, the account is
-  marked `error` with the reason. Founder, Admin and the client's AM are told once (notification kind `integration`),
+  marked `error` with the reason. Founder, Admin and the client's CM are told once (notification kind `integration`),
   and `integration.sync_failed` is audited.
 
 ## Auto-publishing (`publisher.service.ts`)
@@ -47,7 +47,7 @@ Migration: `20261006090000_v19_integrations`.
 - When it succeeds, the post is marked published with its live link, `deliverable.published` is audited with
   `{ auto: true }`, and the client's approvers are told.
 - When it fails, it retries after 5, 15 and 60 minutes. After the third failure the status is `failed`,
-  `post.publish_failed` is audited, and the AM is told. **Retry** on the calendar or in Integrations sends it again.
+  `post.publish_failed` is audited, and the CM is told. **Retry** on the calendar or in Integrations sends it again.
   **Publish now** skips the wait.
 - LinkedIn supports text, link and image posts; video is refused with a clear message. YouTube uploads the video
   with its caption as the description.

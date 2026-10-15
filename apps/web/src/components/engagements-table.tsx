@@ -19,7 +19,7 @@ export function EngagementsTable() {
         <thead>
           <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.12em] text-ink-muted">
             <th className="px-3 py-2">Client and service</th>
-            <th className="px-3 py-2">Account Manager</th>
+            <th className="px-3 py-2">Client Manager</th>
             <th className="px-3 py-2">Stage</th>
             <th className="px-3 py-2">Onboarding</th>
             <th className="px-3 py-2">Plan</th>

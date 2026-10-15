@@ -20,7 +20,7 @@ Code: `apps/api/src/money/`, `apps/api/src/agents/finance-plan.ts`, `packages/sh
   match calls the normal `recordPayment` (same receipts, balances and notices as a hand-entered payment). Retries are
   stored once (`UnmatchedPayment` is unique per org, provider and reference; payments by reference).
 - When the invoice becomes fully paid, its links close and a message is posted on the client's `client_am` thread by
-  the Account Manager (or the Founder): "Payment received …: invoice X (₹) is now fully paid. Thank you!".
+  the Client Manager (or the Founder): "Payment received …: invoice X (₹) is now fully paid. Thank you!".
 - Anything that cannot be placed is an `UnmatchedPayment` and Finance is alerted. **Payments to match**
   (`/admin/finance/reconcile`) lists them with suggestions (invoice number in the reference, the payer's email on the
   client, the same amount, the payer's name), **Match** or **Ignore**. Bank credits can be added by hand.
@@ -33,7 +33,7 @@ Code: `apps/api/src/money/`, `apps/api/src/agents/finance-plan.ts`, `packages/sh
   **Plan instalments** splits a fee by percentages that must add up to 100%; the last part absorbs rounding.
 - A 15-minute timer issues due instalments (claimed first so nothing goes twice), emails them and tells service
   billing. Failures stay planned with the error shown. Off in tests and with `AUTOMATIONS_DISABLED=1`.
-- Who sees them: Finance, leadership and the client's Account Manager. Finance writes.
+- Who sees them: Finance, leadership and the client's Client Manager. Finance writes.
 
 ## Expenses and vendor bills (`expenses.service.ts`)
 
@@ -68,7 +68,7 @@ Code: `apps/api/src/money/`, `apps/api/src/agents/finance-plan.ts`, `packages/sh
 - `ResourceBooking`: a person or a skill (`specialty`, status `requested`) on a project for a week (Monday) with
   hours. Booking several weeks skips refused weeks and says which.
 - Refusals: "X is on approved leave that week (approved leave …)" or "X has only N of M hours free that week".
-- Who books: Founder, Admin, AM lead, department heads, producers, Account Managers. Weekly hours: Founder, Admin,
+- Who books: Founder, Admin, CM lead, department heads, producers, Client Managers. Weekly hours: Founder, Admin,
   HR, department heads.
 - **Workload** (`/team/workload`, admin menu too): six-week heatmap (amber over 100%, red over 120%), skill requests,
   bookings, **Who is free?** suggestions.

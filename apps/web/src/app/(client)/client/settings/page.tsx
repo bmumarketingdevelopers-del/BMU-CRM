@@ -79,9 +79,9 @@ export default function ClientSettingsPage() {
       {off && off.status !== "awaiting_client" && off.status !== "closed" && <p className="mb-4 text-sm text-ink-muted">{clientsOffboardStatusLabels[off.status]}</p>}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <ContactPanel account={a} canEdit={owner} busy={busy === "contact"} onSave={(v) => run("contact", () => api.clientAccount.contact(v), "Contact details saved. Your Account Manager has been told.")} />
+        <ContactPanel account={a} canEdit={owner} busy={busy === "contact"} onSave={(v) => run("contact", () => api.clientAccount.contact(v), "Contact details saved. Your Client Manager has been told.")} />
 
-        <Panel title="Your Account Manager">
+        <Panel title="Your Client Manager">
           {a.am ? (
             <div className="text-sm">
               <p className="font-medium">{a.am.name}</p>
@@ -101,7 +101,7 @@ export default function ClientSettingsPage() {
         <BrandsPanel account={a} canEdit={owner} busy={busy === "brand"} onAdd={(v) => run("brand", () => api.clientAccount.addBrand(v), `${v.name} added`)} />
 
         {a.isOwner && a.pendingInvites.length > 0 && (
-          <Panel title="Owners waiting for your confirmation" subtitle="Your Account Manager invited them as an Owner. Owners can change users, billing and plans." flush>
+          <Panel title="Owners waiting for your confirmation" subtitle="Your Client Manager invited them as an Owner. Owners can change users, billing and plans." flush>
             <ul className="divide-y divide-border">
               {a.pendingInvites.map((p) => (
                 <li key={p.approvalId} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm" data-testid="owner-invite">
@@ -270,7 +270,7 @@ function ServicesPanel({ account, canEdit, busy, run }: { account: ClientsAccoun
             <p className="text-xs text-ink-muted">
               {price.isFromPrice ? "From " : ""}
               {formatINR(price.pricePaise)}
-              {svc?.billingType === "monthly" ? " a month" : ""} + GST. Your Account Manager confirms and sends the quote.
+              {svc?.billingType === "monthly" ? " a month" : ""} + GST. Your Client Manager confirms and sends the quote.
             </p>
           )}
           <div className="flex gap-2">
@@ -279,7 +279,7 @@ function ServicesPanel({ account, canEdit, busy, run }: { account: ClientsAccoun
               className={primary}
               disabled={!serviceId || busy === "ask"}
               onClick={async () => {
-                if (await run("ask", () => api.clientAccount.requestQuote({ kind: "add_service", serviceId, tier, startMonth }), "Request sent. Your Account Manager will send you a quote.")) setAsking(false);
+                if (await run("ask", () => api.clientAccount.requestQuote({ kind: "add_service", serviceId, tier, startMonth }), "Request sent. Your Client Manager will send you a quote.")) setAsking(false);
               }}
             >
               Send request
@@ -329,7 +329,7 @@ function ServicesPanel({ account, canEdit, busy, run }: { account: ClientsAccoun
                     className={primary}
                     disabled={busy === "tier"}
                     onClick={async () => {
-                      if (await run("tier", () => api.clientAccount.requestQuote({ kind: "change_tier", engagementId: s.id, tier: newTier, effective }), "Request sent. Your Account Manager will send you a quote.")) setChanging(undefined);
+                      if (await run("tier", () => api.clientAccount.requestQuote({ kind: "change_tier", engagementId: s.id, tier: newTier, effective }), "Request sent. Your Client Manager will send you a quote.")) setChanging(undefined);
                     }}
                   >
                     Ask
@@ -354,7 +354,7 @@ function ServicesPanel({ account, canEdit, busy, run }: { account: ClientsAccoun
                 <span className="min-w-0">
                   <span className="font-medium">{q.kind === "add_service" ? `New: ${q.serviceName}` : `${q.serviceName}: ${q.fromTier} → ${q.tier}`}</span>
                   <span className="block text-xs text-ink-muted">
-                    {q.status === "requested" ? "Waiting for your Account Manager to price it" : `${formatINR(q.amountPaise + q.gstPaise)} incl. GST`}
+                    {q.status === "requested" ? "Waiting for your Client Manager to price it" : `${formatINR(q.amountPaise + q.gstPaise)} incl. GST`}
                     {q.monthlyDiffPaise !== null && q.status !== "requested" ? ` · ${q.monthlyDiffPaise >= 0 ? "+" : ""}${formatINR(q.monthlyDiffPaise)} a month` : ""}
                   </span>
                 </span>

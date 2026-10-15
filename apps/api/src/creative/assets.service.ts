@@ -290,7 +290,7 @@ export class AssetsService {
 
   async archive(me: Me, id: string, archived: boolean, ip?: string) {
     const a = await this.load(me, id);
-    if (!(await this.canManage(me, a))) throw new ForbiddenException('Only the person who added it, the Account Manager, department heads or leadership can archive assets');
+    if (!(await this.canManage(me, a))) throw new ForbiddenException('Only the person who added it, the Client Manager, department heads or leadership can archive assets');
     await this.prisma.asset.update({ where: { id }, data: { archivedAt: archived ? new Date() : null } });
     await this.audit.log(me, archived ? 'asset.archived' : 'asset.restored', 'Asset', id, undefined, { title: a.title }, ip);
     return this.get(me, id);

@@ -133,7 +133,7 @@ export function DevPanels({ p, readOnly, onChanged }: { p: CraftDevPanels; readO
         )}
         <Insight tone={over.length ? "warn" : "default"}>
           {p.totals.loggedHours}h logged against {p.totals.estimateHours}h estimated.{" "}
-          {over.length ? `${over.length} task${over.length === 1 ? " is" : "s are"} over estimate — usually a sign of scope creep worth raising with the AM.` : "Everything is within its estimate."}
+          {over.length ? `${over.length} task${over.length === 1 ? " is" : "s are"} over estimate — usually a sign of scope creep worth raising with the CM.` : "Everything is within its estimate."}
         </Insight>
       </Panel>
     </>

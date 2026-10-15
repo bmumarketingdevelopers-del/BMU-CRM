@@ -149,7 +149,7 @@ describe('one-time project: onboarding → plan → production → review → fi
   let planId: string;
   const deliverables: Record<string, string> = {};
 
-  it('client sends a file and a note; AM blocks then receives; RCD needs everything received', async () => {
+  it('client sends a file and a note; CM blocks then receives; RCD needs everything received', async () => {
     const onb = (await http().get('/client/onboarding').set(as('owner')).expect(200)).body;
     const items = onb.engagements.find((e: { id: string }) => e.id === projectId).requirements as { id: string; label: string }[];
     const guide = items.find((i) => i.label === 'Brand guidelines')!;
@@ -163,7 +163,7 @@ describe('one-time project: onboarding → plan → production → review → fi
     let det = (await http().get(`/engagements/${projectId}`).set(as('am')).expect(200)).body;
     const note = det.cycle.requirements.find((r: { id: string }) => r.id === guide.id).clientNote as string;
     expect(note).toMatch(/\/api\/files\/\w+/);
-    // The AM can open the uploaded file and so can the client who uploaded it.
+    // The CM can open the uploaded file and so can the client who uploaded it.
     const fileUrl = note.match(/\/api\/files\/(\w+)/)![0].replace('/api', '');
     await http().get(fileUrl).set(as('am')).expect(200);
     await http().get(fileUrl).set(as('owner')).expect(200);
@@ -182,7 +182,7 @@ describe('one-time project: onboarding → plan → production → review → fi
     expect((await notes('owner')).some((n) => n.kind === 'project_started')).toBe(true);
   });
 
-  it('plan: strategist drafts and submits, AM sends, client asks for changes (planning reopens)', async () => {
+  it('plan: strategist drafts and submits, CM sends, client asks for changes (planning reopens)', async () => {
     const content = {
       objectives: 'Launch identity',
       audience: 'Families in Bengaluru',
@@ -215,7 +215,7 @@ describe('one-time project: onboarding → plan → production → review → fi
   });
 
   it('multi-approver: "all approvers" needs both; votes are per round; tasks are generated once approved (G2 → G3)', async () => {
-    // Only the owner (or AM) can change the rule.
+    // Only the owner (or CM) can change the rule.
     await http().put('/deliver/client/approval-settings').set(as('approver')).send({ mode: 'all' }).expect(403);
     const s = (await http().put('/deliver/client/approval-settings').set(as('owner')).send({ mode: 'all' }).expect(200)).body;
     expect(s.mode).toBe('all');
@@ -227,7 +227,7 @@ describe('one-time project: onboarding → plan → production → review → fi
     expect(p.youApproved).toBe(true);
     expect(p.plan.approvalStatus.pending).toEqual(['Deliver owner']);
     await http().post(`/client/plans/${planId}/approve`).set(as('approver')).expect(400);
-    // AM reminds the pending owner.
+    // CM reminds the pending owner.
     const r = (await http().post('/deliver/approvals/remind').set(as('am')).send({ target: 'plan', id: planId }).expect(200)).body;
     expect(r.reminded).toEqual(['Deliver owner']);
     expect((await notes('owner')).some((n) => n.kind === 'approval_reminder')).toBe(true);
@@ -346,7 +346,7 @@ describe('one-time project: onboarding → plan → production → review → fi
     const delivery = (await http().get('/client/delivery').set(as('owner')).expect(200)).body.find((x: { engagementId: string }) => x.engagementId === projectId);
     expect(delivery.balanceInvoice.status).toBe('issued');
 
-    // AM adds a login before release: client can't see it yet, nor download.
+    // CM adds a login before release: client can't see it yet, nor download.
     let hv = (await http().post(`/deliver/engagements/${projectId}/handover/items`).set(as('am')).send({ kind: 'credential', label: 'Brand Drive', value: 'drive@client.in / s3cret' }).expect(201)).body;
     expect(hv.items).toHaveLength(1);
     await http().post(`/deliver/engagements/${projectId}/handover/items`).set(as('producer')).send({ kind: 'note', label: 'Fonts', value: 'y' }).expect(404);
@@ -387,7 +387,7 @@ describe('one-time project: onboarding → plan → production → review → fi
     expect(buf.includes(Buffer.from('Brand guide PDF v1.pdf'))).toBe(true);
     expect(buf.includes(Buffer.from('drive@client.in / s3cret'))).toBe(true);
 
-    // Feedback (NPS): a detractor score turns the client red and alerts the AM.
+    // Feedback (NPS): a detractor score turns the client red and alerts the CM.
     await http().post(`/deliver/engagements/${projectId}/feedback`).set(as('viewer')).send({ score: 9 }).expect(403);
     await http().post(`/deliver/engagements/${projectId}/feedback`).set(as('owner')).send({ score: 11 }).expect(400);
     hv = (await http().post(`/deliver/engagements/${projectId}/feedback`).set(as('owner')).send({ score: 4, comment: 'Too slow' }).expect(200)).body;
@@ -425,7 +425,7 @@ describe('monthly retainer cycles that roll over', () => {
     expect(det.plan.content.deliverables.length).toBe(15 + 4 + 8);
   });
 
-  it('AM starts next month manually (once); others cannot; the month after is blocked until then', async () => {
+  it('CM starts next month manually (once); others cannot; the month after is blocked until then', async () => {
     await http().post(`/deliver/engagements/${retainerId}/cycles/next`).set(as('strategist')).expect(403);
     const v = (await http().post(`/deliver/engagements/${retainerId}/cycles/next`).set(as('am')).expect(200)).body;
     expect(v.cycles[0].period).toBe('2026-11');

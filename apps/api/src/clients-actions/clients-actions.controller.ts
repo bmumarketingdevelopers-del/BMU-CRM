@@ -270,7 +270,7 @@ export class ClientAccountController {
     };
   }
 
-  /** client_owner: own contact info (AM notified). Billing details use the existing Billing page. */
+  /** client_owner: own contact info (CM notified). Billing details use the existing Billing page. */
   @Patch('contact')
   async contact(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
     const id = this.assertOwner(me);
@@ -315,7 +315,7 @@ export class ClientAccountController {
     return this.account(me);
   }
 
-  /** The existing Owner confirms (or declines) a new Owner invited by the AM. */
+  /** The existing Owner confirms (or declines) a new Owner invited by the CM. */
   @Post('owner-invites/:approvalId')
   @HttpCode(200)
   async decideInvite(@CurrentUser() me: Me, @Param('approvalId') approvalId: string, @Body() body: unknown, @ClientIp() ip?: string) {

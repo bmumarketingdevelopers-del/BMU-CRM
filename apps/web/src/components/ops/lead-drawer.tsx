@@ -3,7 +3,7 @@
 /**
  * "+ New → Lead" (also the pipeline column "+ Add" and the leads list "+ Add"). Required: name, phone, business
  * name, source and service interest. Live duplicate check on phone / email; owner by round-robin or a manager's pick;
- * account managers add referrals only. The first-reply timer starts and the owner is told.
+ * client managers add referrals only. The first-reply timer starts and the owner is told.
  */
 import { useState } from "react";
 import { OPS_LEAD_SOURCES, opsLeadSourceLabels, services as catalogue, type OpsLeadCreate } from "@bmu/shared";
@@ -106,7 +106,7 @@ export function LeadDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) 
         </>
       }
     >
-      {referralOnly && <p className="border border-border bg-canvas px-3 py-2 text-xs">Account managers add referrals. The sales team picks it up by round-robin.</p>}
+      {referralOnly && <p className="border border-border bg-canvas px-3 py-2 text-xs">Client managers add referrals. The sales team picks it up by round-robin.</p>}
       <Field label="Contact name" required error={errors.name}>
         <input className={inputCls} value={v.name} onChange={set("name")} aria-label="Contact name" />
       </Field>

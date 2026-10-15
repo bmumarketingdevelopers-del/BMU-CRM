@@ -114,7 +114,7 @@ export const permissionsData = {
     },
     "credential_vault_reveal": {
       "account_manager": "own (logged)",
-      "department_head": "on request, approved by AM (logged)",
+      "department_head": "on request, approved by CM (logged)",
       "founder": "full (logged)",
       "others": "none"
     }
@@ -122,7 +122,7 @@ export const permissionsData = {
   "client_hidden_data": [
     "internal notes",
     "QC results",
-    "task owners below AM",
+    "task owners below CM",
     "costs, margins, staff rates",
     "other clients",
     "creator rates"

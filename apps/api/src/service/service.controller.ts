@@ -177,7 +177,7 @@ export class ServiceController {
     if (me.type !== 'staff') throw new ForbiddenException();
     let scope: Prisma.RequestWhereInput = { orgId: me.orgId };
     if (!canReadCommand(me)) {
-      if (!me.roles.includes('account_manager')) throw new ForbiddenException('Satisfaction is for Account Managers and leadership');
+      if (!me.roles.includes('account_manager')) throw new ForbiddenException('Satisfaction is for Client Managers and leadership');
       scope = { orgId: me.orgId, engagement: { amId: me.id } };
     }
     const end = to && !Number.isNaN(Date.parse(to)) ? new Date(to) : new Date();

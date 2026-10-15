@@ -927,12 +927,12 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async validatePod(me: Me, input: { name: string; amUserId: string; strategistUserId: string; producerIds: string[]; clientIds: string[] }, podId?: string) {
-    if (!peopleCan(me).addPod) throw new ForbiddenException('Only the Founder, a Branch Manager or the AM Lead can manage client pods');
+    if (!peopleCan(me).addPod) throw new ForbiddenException('Only the Founder, a Branch Manager or the CM Lead can manage client pods');
     const ids = [...new Set([input.amUserId, input.strategistUserId, ...input.producerIds])];
     const users = await this.prisma.user.findMany({ where: { id: { in: ids }, orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null }, include: { roles: { include: { role: { select: { baseRole: true } } } } } });
     const u = (id: string) => users.find((x) => x.id === id);
     const roles = (id: string) => u(id)?.roles.map((r) => r.role.baseRole) ?? [];
-    if (!u(input.amUserId) || !roles(input.amUserId).some((r) => ['account_manager', 'am_lead'].includes(r))) throw new BadRequestException('The AM must be an active account manager');
+    if (!u(input.amUserId) || !roles(input.amUserId).some((r) => ['account_manager', 'am_lead'].includes(r))) throw new BadRequestException('The CM must be an active client manager');
     if (!u(input.strategistUserId) || !roles(input.strategistUserId).some((r) => ['strategist', 'department_head'].includes(r))) throw new BadRequestException('The strategist must be an active strategist');
     for (const p of input.producerIds) if (!u(p)) throw new BadRequestException('Every producer must be an active team member');
     const clients = await this.prisma.clientOrg.findMany({ where: { id: { in: input.clientIds }, orgId: me.orgId, deletedAt: null }, select: { id: true, name: true } });
@@ -968,7 +968,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
 
   async removePod(me: Me, id: string, ip?: string): Promise<PeopleMutationResult> {
     staffOnly(me);
-    if (!peopleCan(me).addPod) throw new ForbiddenException('Only the Founder, a Branch Manager or the AM Lead can manage client pods');
+    if (!peopleCan(me).addPod) throw new ForbiddenException('Only the Founder, a Branch Manager or the CM Lead can manage client pods');
     const pod = await this.prisma.clientPod.findFirst({ where: { id, orgId: me.orgId, deletedAt: null } });
     if (!pod) throw new NotFoundException('Pod not found');
     await this.prisma.clientPod.update({ where: { id }, data: { deletedAt: new Date() } });

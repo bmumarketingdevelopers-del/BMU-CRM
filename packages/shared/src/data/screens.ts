@@ -11,7 +11,7 @@ export const screens = {
     "Sign in"
   ],
   "client_app": [
-    "Home (needs you, services with gate track, AM card)",
+    "Home (needs you, services with gate track, CM card)",
     "Onboarding checklist",
     "Approvals list",
     "Plan approval",
@@ -20,7 +20,7 @@ export const screens = {
     "Files",
     "Billing (due, autopay, history)",
     "Reports",
-    "Thread with AM",
+    "Thread with CM",
     "Team users (Owner only)",
     "Profile & notifications"
   ],
@@ -32,7 +32,7 @@ export const screens = {
     "Review Studio (team side)",
     "Projects board by phase",
     "Client 360",
-    "Requests inbox (AM)",
+    "Requests inbox (CM)",
     "Calendar",
     "Capacity",
     "SOP library",

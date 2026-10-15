@@ -36,15 +36,15 @@ export const hierarchyData = {
     {
       "rank": 4,
       "id": "am_lead",
-      "name": "Account Management Lead",
+      "name": "Client Manager Lead",
       "reports_to": "admin",
-      "scope": "all AMs and their clients",
-      "can_manage": "AM assignment, escalations, client health"
+      "scope": "all CMs and their clients",
+      "can_manage": "CM assignment, escalations, client health"
     },
     {
       "rank": 5,
       "id": "account_manager",
-      "name": "Account Manager",
+      "name": "Client Manager",
       "reports_to": "am_lead",
       "scope": "assigned clients",
       "can_manage": "onboarding, RCD, client comms, requests, quotes from add-on list, sending drafts"
@@ -134,7 +134,7 @@ export const hierarchyData = {
   ],
   "departments": [
     "Sales",
-    "Account Management",
+    "Client Management",
     "Strategy",
     "Creative / Design",
     "Video / Production",

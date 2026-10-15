@@ -1,4 +1,4 @@
-// Journey: client ↔ AM messages. Both directions, internal notes hidden from the client, unread badges,
+// Journey: client ↔ CM messages. Both directions, internal notes hidden from the client, unread badges,
 // file attachments, live refresh without reloading, same-working-day reply tracking, bell deep links,
 // and notification preferences really switching alerts off.
 import { writeFileSync } from "node:fs";
@@ -9,7 +9,7 @@ const b = await browser();
 const client = await signIn(b, "client@sunrise.demo");
 const am = await signIn(b, "am@bmu.demo");
 
-// Start clean: the AM has read the thread.
+// Start clean: the CM has read the thread.
 const threadId = (await apiCall(client, "GET", "/client/thread")).json.id;
 await apiCall(am, "GET", `/threads/${threadId}`);
 
@@ -25,7 +25,7 @@ await client.locator(`text=Hi, here is the brief [${stamp}]`).waitFor();
 await client.locator(`[data-testid=chat-message] a:has-text("brief-${stamp}.txt")`).waitFor();
 check((await client.locator(`[data-testid=chat-message] a:has-text("brief-${stamp}.txt")`).count()) === 1, "attachment shows in the client's message");
 
-console.log("AM sees the unread badge, the waiting timer and the attachment");
+console.log("CM sees the unread badge, the waiting timer and the attachment");
 await am.goto(`${BASE}/team/messages`);
 await am.getByText("Sunrise Realty Pvt Ltd").first().waitFor();
 const badge = await am.getByTestId("unread-badge").first().textContent().catch(() => null);
@@ -34,16 +34,16 @@ const row = am.locator(`a[href="/team/messages/${threadId}"]`);
 check((await row.locator("text=/Awaiting reply|Reply overdue/").count()) === 1, "thread shows 'Awaiting reply' (same working day target)");
 check((await row.getByLabel(/unread/).count()) === 1, "thread row shows its unread count");
 const amNote = (await apiCall(am, "GET", "/notifications")).json.items.find((n) => n.kind === "message" && n.body?.includes(stamp));
-check(amNote?.link === `/team/messages/${threadId}`, "AM bell alert deep-links to the thread");
+check(amNote?.link === `/team/messages/${threadId}`, "CM bell alert deep-links to the thread");
 await am.goto(`${BASE}/team/messages/${threadId}`);
 await am.getByText(`Hi, here is the brief [${stamp}]`).waitFor();
 const href = await am.locator(`a:has-text("brief-${stamp}.txt")`).getAttribute("href");
 const dl = await apiCall(am, "GET", href.replace(/^\/api/, ""));
-check(dl.status === 200 && String(dl.json).includes("festive"), "AM can download the attachment");
+check(dl.status === 200 && String(dl.json).includes("festive"), "CM can download the attachment");
 const listAfter = (await apiCall(am, "GET", "/threads")).json.find((t) => t.id === threadId);
 check(listAfter.unread === 0, "opening the thread clears its unread count");
 
-console.log("AM adds an internal note and replies; client sees only the reply, live");
+console.log("CM adds an internal note and replies; client sees only the reply, live");
 await am.getByLabel(/Internal note/).check();
 await am.getByRole("textbox", { name: "Message" }).fill(`Internal: budget is tight [${stamp}]`);
 await am.getByRole("button", { name: "Send", exact: true }).click();

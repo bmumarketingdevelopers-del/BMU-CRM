@@ -1,5 +1,5 @@
 // v11 clients: adding clients by hand (no lead), migrated clients, edit with field-level rights, client users,
-// brands/locations, AM reassignment, add service / change tier quotes, pause, offboarding, health override, and the
+// brands/locations, CM reassignment, add service / change tier quotes, pause, offboarding, health override, and the
 // request actions (raise on behalf, reassign, add-on quote limit, convert to tasks, internal approval).
 import { z } from "zod";
 import { TIERS, type Tier } from "./catalogue.js";
@@ -11,13 +11,13 @@ const hasAny = (roles: string[], allowed: readonly string[]) => roles.some((r) =
 
 // ------------------------------------------------------------------ Who may do what
 
-/** add_client: Founder, Branch Manager, Sales Manager, AM Lead. */
+/** add_client: Founder, Branch Manager, Sales Manager, CM Lead. */
 export const CLIENTS_ADD_ROLES = ["founder", "admin", "sales_manager", "am_lead"] as const;
-/** assign_reassign_am: AM Lead, Branch Manager, Founder. */
+/** assign_reassign_am: CM Lead, Branch Manager, Founder. */
 export const CLIENTS_AM_ROLES = ["founder", "admin", "am_lead"] as const;
-/** cancel / offboard client: Admin, AM Lead (Admin approves). */
+/** cancel / offboard client: Admin, CM Lead (Admin approves). */
 export const CLIENTS_OFFBOARD_ROLES = ["founder", "admin", "am_lead"] as const;
-/** add_engagement: AM (propose), Sales Manager, Admin. */
+/** add_engagement: CM (propose), Sales Manager, Admin. */
 export const CLIENTS_ENGAGEMENT_ROLES = ["founder", "admin", "am_lead", "sales_manager", "account_manager"] as const;
 /** People whose list of clients shows everyone. */
 export const CLIENTS_SEE_ALL_ROLES = ["founder", "admin", "am_lead", "finance", "department_head", "sales_manager"] as const;
@@ -29,7 +29,7 @@ export const clientsCanReassignAm = (me: Who) => staff(me) && hasAny(me.roles, C
 export const clientsCanOffboard = (me: Who) => staff(me) && hasAny(me.roles, CLIENTS_OFFBOARD_ROLES);
 export const clientsCanAddEngagement = (me: Who) => staff(me) && hasAny(me.roles, CLIENTS_ENGAGEMENT_ROLES);
 export const clientsCanImport = (me: Who) => staff(me) && hasAny(me.roles, ["founder", "admin", "am_lead"]);
-/** raise_request on behalf of a client: the AM (own clients) and leadership. */
+/** raise_request on behalf of a client: the CM (own clients) and leadership. */
 export const clientsCanRaiseRequest = (me: Who) => staff(me) && hasAny(me.roles, ["founder", "admin", "am_lead", "account_manager"]);
 /** Request internal approval: any staff. */
 export const clientsCanAskApproval = (me: Who) => staff(me);
@@ -251,7 +251,7 @@ export type ClientsBulk = z.input<typeof clientsBulkSchema>;
 
 // ------------------------------------------------------------------ Requests
 
-/** Above this, an AM's custom-priced add-on quote goes to a Branch Manager first (quote_addon). */
+/** Above this, a CM's custom-priced add-on quote goes to a Branch Manager first (quote_addon). */
 export const CLIENTS_ADDON_CUSTOM_LIMIT_PAISE = 2_500_000;
 
 export const clientsRaiseRequestSchema = z.object({
@@ -376,7 +376,7 @@ export type ClientsDetail = {
   tags: { id: string; name: string; color: string }[];
   archivedAt: string | null;
   readOnlyAccess: boolean;
-  /** Account Manager changes, newest first. */
+  /** Client Manager changes, newest first. */
   amHistory: { id: string; at: string; from: string | null; to: string | null; by: string; reason: string; note: string | null; handoverNote: string | null }[];
   can: {
     edit: boolean;

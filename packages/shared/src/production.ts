@@ -9,7 +9,7 @@ import type { DeliverApprovalStatus, DeliverSlaItem } from "./deliver-flows.js";
 export const flowStepSchema = z.object({
   key: z.string().trim().min(1).max(40),
   name: z.string().trim().min(2).max(80),
-  /** Role that owns the step (team role id). "am" means the engagement's Account Manager. */
+  /** Role that owns the step (team role id). "am" means the engagement's Client Manager. */
   role: z.string().trim().min(2),
   days: z.number().int().min(0).max(30),
   kind: z.enum(["work", "qc", "client_review"]).default("work"),

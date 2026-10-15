@@ -107,7 +107,7 @@ export class CreativeService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async assertClientManager(me: Me, clientOrgId: string) {
-    if (!this.canSchedule(me)) throw new ForbiddenException('Only account managers, strategists, department heads and leadership manage channels');
+    if (!this.canSchedule(me)) throw new ForbiddenException('Only client managers, strategists, department heads and leadership manage channels');
     const c = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId, deletedAt: null } });
     if (!c) throw new NotFoundException('Client not found');
     const scope = await clientScope(this.prisma, me);
@@ -135,12 +135,12 @@ export class CreativeService implements OnModuleInit, OnModuleDestroy {
     return this.settings(me);
   }
 
-  /** Founder, Branch Manager, AM Lead or the client's AM decide whether BMU may approve posts for this client. */
+  /** Founder, Branch Manager, CM Lead or the client's CM decide whether BMU may approve posts for this client. */
   async setPublishRule(me: Me, clientOrgId: string, body: unknown, ip?: string) {
     const input = parse(publishRuleSchema, body);
     const c = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId, deletedAt: null } });
     if (!c) throw new NotFoundException('Client not found');
-    if (!isLeadership(me) && c.amUserId !== me.id) throw new ForbiddenException("Only leadership or the client's Account Manager can change who approves posts");
+    if (!isLeadership(me) && c.amUserId !== me.id) throw new ForbiddenException("Only leadership or the client's Client Manager can change who approves posts");
     await this.prisma.clientOrg.update({ where: { id: clientOrgId }, data: { publishNeedsApproval: input.publishNeedsApproval } });
     await this.audit.log(me, 'client.publish_rule_changed', 'ClientOrg', clientOrgId, { publishNeedsApproval: c.publishNeedsApproval }, input, ip);
     return this.settings(me);
@@ -149,7 +149,7 @@ export class CreativeService implements OnModuleInit, OnModuleDestroy {
   // ------------------------------------------------------------------------------------------------ posts
 
   private async post(me: Me, id: string, manage = true) {
-    if (manage && !this.canSchedule(me)) throw new ForbiddenException('Only account managers, strategists, department heads and leadership manage posts');
+    if (manage && !this.canSchedule(me)) throw new ForbiddenException('Only client managers, strategists, department heads and leadership manage posts');
     const d = await this.prisma.deliverable.findFirst({
       where: { id, orgId: me.orgId, cycle: { engagement: await visibleEngagementWhere(this.prisma, me) } },
       include: { cycle: { select: { engagementId: true, engagement: { select: { amId: true, clientOrgId: true, clientOrg: { select: { name: true, publishNeedsApproval: true } } } } } }, versions: { orderBy: { number: 'asc' } } },
@@ -177,13 +177,13 @@ export class CreativeService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * For clients who let BMU approve posts (publishing rule off): the AM or leadership approves a QC-passed post.
+   * For clients who let BMU approve posts (publishing rule off): the CM or leadership approves a QC-passed post.
    * Recorded as an approval "via BMU" with a certificate, exactly like a client approval.
    */
   async approveInternally(me: Me, id: string, ip?: string) {
     const d = await this.post(me, id, false);
     if (d.cycle.engagement.clientOrg.publishNeedsApproval) throw new ForbiddenException(`${d.cycle.engagement.clientOrg.name} approves their own posts. Send it to them for review.`);
-    if (!isLeadership(me) && d.cycle.engagement.amId !== me.id && (await amOf(this.prisma, d.cycle.engagement.clientOrgId)) !== me.id) throw new ForbiddenException("Only leadership or the client's Account Manager can approve on BMU's side");
+    if (!isLeadership(me) && d.cycle.engagement.amId !== me.id && (await amOf(this.prisma, d.cycle.engagement.clientOrgId)) !== me.id) throw new ForbiddenException("Only leadership or the client's Client Manager can approve on BMU's side");
     if (!(DELIVER_SOCIAL_TYPES as readonly string[]).includes(d.type)) throw new BadRequestException('Only social posts, reels, stories and ads can be approved this way');
     const v = d.versions.at(-1);
     if (!v || !['qc_passed', 'ready_for_client'].includes(d.status)) throw new BadRequestException('Only a version that passed QC can be approved');
@@ -246,7 +246,7 @@ export class CreativeService implements OnModuleInit, OnModuleDestroy {
 
   // ------------------------------------------------------------------------------------------------ timers
 
-  /** Posts due to go out tell the AM once; usage rights ending within 7 days warn the asset owner and the AM once. */
+  /** Posts due to go out tell the CM once; usage rights ending within 7 days warn the asset owner and the CM once. */
   async tick(now = new Date(), orgId?: string) {
     const org = orgId ? { orgId } : {};
     const due = await this.prisma.deliverable.findMany({

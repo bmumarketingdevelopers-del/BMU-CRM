@@ -116,9 +116,9 @@ try {
   check(rows[0]?.status === "success", `run succeeded: ${rows[0]?.summary}`);
 
   const amNotes = (await apiCall(am, "GET", "/notifications")).json.items;
-  check(amNotes.some((n) => n.kind === "automation" || /request/i.test(n.title)), "AM got the in-app alert");
+  check(amNotes.some((n) => n.kind === "automation" || /request/i.test(n.title)), "CM got the in-app alert");
   const tasks = JSON.stringify((await apiCall(am, "GET", "/tasks")).json);
-  check(tasks.includes(`request ${stamp}`), "task created for the AM");
+  check(tasks.includes(`request ${stamp}`), "task created for the CM");
   const clientThread = (await apiCall(client, "GET", "/client/thread")).json;
   check(clientThread.messages.some((m) => m.body.includes(`Thanks, we have your request ${stamp}`)), "client sees the automatic message");
   check(!clientThread.messages.some((m) => m.body.includes(`auto note ${stamp}`)), "client never sees the internal note");
@@ -180,8 +180,8 @@ try {
   check((await apiCall(admin, "GET", `/automations/${reqRule.id}`)).json.enabled === true, "switched back on");
 
   console.log("Permissions");
-  check((await apiCall(am, "POST", "/automations/run-now", {})).status === 403, "an Account Manager cannot run automations");
-  check((await apiCall(am, "PATCH", `/automations/${reqRule.id}`, { enabled: false })).status === 403, "an Account Manager cannot switch rules");
+  check((await apiCall(am, "POST", "/automations/run-now", {})).status === 403, "a Client Manager cannot run automations");
+  check((await apiCall(am, "PATCH", `/automations/${reqRule.id}`, { enabled: false })).status === 403, "a Client Manager cannot switch rules");
 
   // Leave the demo data tidy: close the test requests.
   check(admin.errors.length + am.errors.length + client.errors.length === 0, `no page errors (${[...admin.errors, ...am.errors, ...client.errors].join("; ")})`);

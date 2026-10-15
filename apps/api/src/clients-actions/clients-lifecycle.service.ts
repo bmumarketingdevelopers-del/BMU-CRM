@@ -1,5 +1,5 @@
 // v11 clients: add_engagement and change_tier quotes (client Owner approves in the app, pays, then it applies),
-// pause_engagement (AM Lead approval; tasks paused, clocks paused, invoices skipped), set the gate of a migrated
+// pause_engagement (CM Lead approval; tasks paused, clocks paused, invoices skipped), set the gate of a migrated
 // service, and cancel/offboard a client (Branch Manager approval, checklist, client confirms receipt, users read-only 90 days).
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import {
@@ -65,7 +65,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
       label: 'Pause a service',
       href: (r) => `/team/projects/${r.targetId}`,
       apply: async ({ approver, requester, req }) => {
-        if (!hasRole(approver, 'am_lead', 'admin', 'founder')) throw new ForbiddenException('Only the AM Lead (or a Branch Manager) can approve a pause');
+        if (!hasRole(approver, 'am_lead', 'admin', 'founder')) throw new ForbiddenException('Only the CM Lead (or a Branch Manager) can approve a pause');
         const p = req.payload as { reason: string; until: string };
         return this.pauseNow(requester ?? approver, req.targetId, p.reason, p.until, approver);
       },
@@ -148,8 +148,8 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   async createQuote(me: Me, clientOrgId: string, input: ClientsQuoteInput, ip?: string) {
     const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
-    if (input.kind === 'add_service' && !(clientsCanAddEngagement(me) && (runsClient(me, c) || hasRole(me, 'sales_manager')))) throw new ForbiddenException("Only the client's Account Manager, a Sales Manager or a Branch Manager can add a service");
-    if (input.kind === 'change_tier' && !runsClient(me, c)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can change a tier");
+    if (input.kind === 'add_service' && !(clientsCanAddEngagement(me) && (runsClient(me, c) || hasRole(me, 'sales_manager')))) throw new ForbiddenException("Only the client's Client Manager, a Sales Manager or a Branch Manager can add a service");
+    if (input.kind === 'change_tier' && !runsClient(me, c)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can change a tier");
     if (c.offboarding) throw new BadRequestException('This client is being offboarded');
     const p = await this.price(me.orgId, c.id, input);
     const q = await this.prisma.clientServiceQuote.create({
@@ -161,7 +161,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { quoteId: q.id, message: `Quote sent to ${c.name}: ${what}` };
   }
 
-  /** client_owner (request): the client asks; the AM checks and sends it. */
+  /** client_owner (request): the client asks; the CM checks and sends it. */
   async clientRequestQuote(me: Me, input: ClientsQuoteInput, ip?: string) {
     const clientOrgId = this.assertOwner(me);
     const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: clientOrgId } });
@@ -184,7 +184,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
   async sendQuote(me: Me, id: string, ip?: string) {
     const q = await this.quoteFor(me, id);
     const { client: c } = await loadClient(this.prisma, me, q.clientOrgId, { write: true });
-    if (!runsClient(me, c) && !hasRole(me, 'sales_manager')) throw new ForbiddenException("Only the client's Account Manager can send this quote");
+    if (!runsClient(me, c) && !hasRole(me, 'sales_manager')) throw new ForbiddenException("Only the client's Client Manager can send this quote");
     if (q.status !== 'requested') throw new BadRequestException('This quote was already sent');
     const fresh = await this.price(me.orgId, c.id, q.kind === 'add_service' ? { kind: 'add_service', serviceId: q.serviceId, tier: q.tier, startMonth: q.startMonth ?? istMonth() } : { kind: 'change_tier', engagementId: q.engagementId!, tier: q.tier, effective: q.effective as 'next_cycle' | 'now_prorata' });
     await this.prisma.clientServiceQuote.update({ where: { id }, data: { status: 'sent', sentById: me.id, amountPaise: fresh.amountPaise, monthlyDiffPaise: fresh.monthlyDiffPaise } });
@@ -196,7 +196,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
   async cancelQuote(me: Me, id: string, ip?: string) {
     const q = await this.quoteFor(me, id);
     const { client: c } = await loadClient(this.prisma, me, q.clientOrgId, { write: true });
-    if (!runsClient(me, c) && q.requestedById !== me.id) throw new ForbiddenException("Only the client's Account Manager can cancel this quote");
+    if (!runsClient(me, c) && q.requestedById !== me.id) throw new ForbiddenException("Only the client's Client Manager can cancel this quote");
     if (!['requested', 'sent'].includes(q.status)) throw new BadRequestException(`This quote is already ${q.status}`);
     await this.prisma.clientServiceQuote.update({ where: { id }, data: { status: 'cancelled' } });
     await this.audit.log(me, 'client.quote_cancelled', 'ClientOrg', c.id, { status: q.status }, { quoteId: id, status: 'cancelled' }, ip);
@@ -219,7 +219,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     const clientOrgId = this.assertOwner(me);
     const q = await this.prisma.clientServiceQuote.findFirst({ where: { id, clientOrgId } });
     if (!q) throw new NotFoundException('Quote not found');
-    if (q.status !== 'sent') throw new BadRequestException(q.status === 'requested' ? 'Your account manager is still preparing this quote' : `This quote is already ${q.status}`);
+    if (q.status !== 'sent') throw new BadRequestException(q.status === 'requested' ? 'Your client manager is still preparing this quote' : `This quote is already ${q.status}`);
     const service = await this.prisma.service.findUniqueOrThrow({ where: { id: q.serviceId } });
     const now = new Date();
     let invoiceId: string | null = null;
@@ -288,7 +288,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   async pause(me: Me, id: string, input: { reason: string; until: string }, ip?: string) {
     const { e, client } = await this.engagementFor(me, id);
-    if (!runsClient(me, client)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can pause a service");
+    if (!runsClient(me, client)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can pause a service");
     if (STOPPED.includes(e.status) || e.status === 'pending_payment') throw new BadRequestException(`${e.service.name} is ${e.status.replace(/_/g, ' ')}`);
     const until = new Date(`${input.until}T23:59:00+05:30`);
     if (until.getTime() < Date.now() + DAY_MS / 2) throw new BadRequestException('The pause must end on a future date');
@@ -302,7 +302,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
       { action: 'clients.pause', targetType: 'engagement', targetId: id, summary: `Pause ${client.name} · ${e.service.name} until ${input.until}`, payload: { reason: input.reason, until: input.until }, reason: input.reason, approverId: null, approverRoles: ['am_lead'], diff: [{ field: 'Status', before: e.status.replace(/_/g, ' '), after: `Paused until ${input.until}` }] },
       ip,
     );
-    return { ok: true as const, message: 'Sent to the AM Lead for approval', approval: { id: req.id, summary: req.summary } };
+    return { ok: true as const, message: 'Sent to the CM Lead for approval', approval: { id: req.id, summary: req.summary } };
   }
 
   /** Pauses: open tasks wait (deadlines lifted), deliverable due dates lifted (SLA clock stops), billing run skips it. */
@@ -327,7 +327,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   async resume(me: Me, id: string, ip?: string) {
     const { e, client } = await this.engagementFor(me, id);
-    if (!runsClient(me, client)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can resume a service");
+    if (!runsClient(me, client)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can resume a service");
     if (e.status !== 'paused') throw new BadRequestException(`${e.service.name} is not paused`);
     await this.resumeNow(me, id, 'Resumed', ip);
     return { ok: true as const, message: `${e.service.name} resumed` };
@@ -358,7 +358,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   async setGate(me: Me, id: string, input: { gate: string; reason: string }, ip?: string) {
     const { e, client } = await this.engagementFor(me, id);
-    if (!runsClient(me, client)) throw new ForbiddenException("Only the client's Account Manager or a Branch Manager can set the gate");
+    if (!runsClient(me, client)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can set the gate");
     if (!e.migrated) throw new BadRequestException('Only migrated services can have their gate set by hand. New services move through the gates as the work happens.');
     if (STOPPED.includes(e.status)) throw new BadRequestException(`${e.service.name} is ${e.status.replace(/_/g, ' ')}`);
     const gate = input.gate as ClientsGate;
@@ -380,7 +380,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   async offboard(me: Me, clientOrgId: string, input: { reason: string; lastCycle: string }, ip?: string) {
     const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
-    if (!clientsCanOffboard(me)) throw new ForbiddenException('Only a Branch Manager or the AM Lead can offboard a client');
+    if (!clientsCanOffboard(me)) throw new ForbiddenException('Only a Branch Manager or the CM Lead can offboard a client');
     if (c.offboarding) throw new BadRequestException('Offboarding has already started for this client');
     const o: Offboarding = { status: 'requested', reason: input.reason, lastCycle: input.lastCycle, checklist: {}, requestedBy: me.name, requestedAt: new Date().toISOString(), approvedAt: null, completedAt: null, clientConfirmedAt: null };
     await this.prisma.clientOrg.update({ where: { id: c.id }, data: { offboarding: o } });
@@ -407,13 +407,13 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.clientOrg.update({ where: { id: clientOrgId }, data: { offboarding: next } });
     await this.audit.log(by, 'client.offboarding_started', 'ClientOrg', clientOrgId, { status: 'requested' }, { status: 'in_progress', engagements: moved.count }, undefined);
     await this.notifications.notify(c.orgId, [c.amUserId].filter((x) => x !== by.id), { kind: 'engagement_status', title: `Offboarding ${c.name}`, body: 'Work through the offboarding checklist on Client 360.', link: `/team/clients/${clientOrgId}`, critical: true });
-    await this.notifications.notify(c.orgId, await this.owners(clientOrgId), { kind: 'engagement_status', title: 'We have started closing your account', body: `Last cycle: ${o.lastCycle}. Your account manager will hand over your final files.`, link: '/client/settings' });
+    await this.notifications.notify(c.orgId, await this.owners(clientOrgId), { kind: 'engagement_status', title: 'We have started closing your account', body: `Last cycle: ${o.lastCycle}. Your client manager will hand over your final files.`, link: '/client/settings' });
     return { started: true };
   }
 
   async tick(me: Me, clientOrgId: string, key: ClientsOffboardCheck, done: boolean, ip?: string) {
     const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
-    if (!(runsClient(me, c) || (hasRole(me, 'finance') && key === 'dues_cleared'))) throw new ForbiddenException("Only the client's Account Manager, AM Lead or a Branch Manager can tick the checklist");
+    if (!(runsClient(me, c) || (hasRole(me, 'finance') && key === 'dues_cleared'))) throw new ForbiddenException("Only the client's Client Manager, CM Lead or a Branch Manager can tick the checklist");
     const o = c.offboarding as Offboarding | null;
     if (!o || o.status !== 'in_progress') throw new BadRequestException(o?.status === 'requested' ? 'Offboarding is waiting for Branch Manager approval' : 'Offboarding is not in progress');
     if (key === 'dues_cleared' && done) {
@@ -427,7 +427,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
 
   async complete(me: Me, clientOrgId: string, ip?: string) {
     const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
-    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Account Manager, AM Lead or a Branch Manager can finish offboarding");
+    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Client Manager, CM Lead or a Branch Manager can finish offboarding");
     const o = c.offboarding as Offboarding | null;
     if (!o || o.status !== 'in_progress') throw new BadRequestException('Offboarding is not in progress');
     const open = CLIENTS_OFFBOARD_CHECKS.filter((k) => !o.checklist[k.key]?.done);

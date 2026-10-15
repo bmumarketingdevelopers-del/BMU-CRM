@@ -1,5 +1,5 @@
 // v11 core: who can see and who can manage a task. Same scopes as the Manager workspace and Production:
-// leadership everything; department heads their department; AMs their clients' tasks; strategists their own
+// leadership everything; department heads their department; CMs their clients' tasks; strategists their own
 // engagements; everyone their own work, what they watch and (for 7 days) what was moved away from them.
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Me } from '@bmu/shared';
@@ -34,7 +34,7 @@ export class TaskAccess {
     return (await this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } }))?.departmentId ?? null;
   }
 
-  /** Engagements a strategist works on: any task they own there, or engagements of AMs in their team. */
+  /** Engagements a strategist works on: any task they own there, or engagements of CMs in their team. */
   async strategistEngagements(me: Me): Promise<string[]> {
     const [own, self] = await Promise.all([
       this.prisma.task.findMany({ where: { orgId: me.orgId, ownerId: me.id, engagementId: { not: null } }, select: { engagementId: true }, distinct: ['engagementId'] }),
@@ -88,7 +88,7 @@ export class TaskAccess {
 
   /**
    * Manager rights on a task (edit, reassign, deadline, duplicate, archive): leadership; the department head of the
-   * task's (or owner's) department; the AM of the client; a strategist on their own engagements; the author of an
+   * task's (or owner's) department; the CM of the client; a strategist on their own engagements; the author of an
    * internal task. Returns null when allowed, or the reason it isn't.
    */
   async manageDenied(me: Me, t: { departmentId: string | null; createdById: string | null; isInternal: boolean; engagementId: string | null; owner?: { departmentId: string | null } | null; deliverable?: TaskFull['deliverable'] }): Promise<string | null> {
@@ -103,7 +103,7 @@ export class TaskAccess {
     if (hasRole(me, 'account_manager') && eng?.amId === me.id) return null;
     if (hasRole(me, 'strategist') && eng && (await this.strategistEngagements(me)).includes(eng.id)) return null;
     if (hasRole(me, 'department_head', 'account_manager', 'strategist')) return eng ? "This task belongs to another manager's client" : 'This task is outside your department';
-    return 'Only a department head, the account manager or the strategist can do this';
+    return 'Only a department head, the client manager or the strategist can do this';
   }
 
   async assertManage(me: Me, t: Parameters<TaskAccess['manageDenied']>[1]) {

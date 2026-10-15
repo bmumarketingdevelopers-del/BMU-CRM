@@ -80,7 +80,7 @@ try {
     if (u.rowCount) changed.push({ table: r.t, column: r.col, action: r.nullable ? 'cleared' : 'credited to demo Founder', rows: u.rowCount });
   }
 
-  // The people themselves (role and client-portal links go with them; owner / account manager links become empty).
+  // The people themselves (role and client-portal links go with them; owner / client manager links become empty).
   const du = await q(`delete from users where id = any($1)`, [goneIds]);
   deleted.push({ table: 'users', why: 'demo people', rows: du.rowCount });
 

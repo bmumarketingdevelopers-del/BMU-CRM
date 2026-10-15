@@ -9,7 +9,7 @@ import { SettingsService } from '../settings/settings.service.js';
 import { defaultRequirements } from './requirements.js';
 
 /**
- * Automation "Payment received → create client account, send agreement copy, assign AM, welcome".
+ * Automation "Payment received → create client account, send agreement copy, assign CM, welcome".
  * Idempotent: a repeated payment callback for the same invoice does nothing.
  */
 @Injectable()
@@ -44,7 +44,7 @@ export class OnboardingService {
 
       await tx.payment.create({ data: { orgId, invoiceId, amountPaise, method, ref } });
 
-      // Account manager with the fewest active clients ("Auto AM assignment by load").
+      // Client manager with the fewest active clients ("Auto CM assignment by load").
       const ams = await tx.user.findMany({
         where: { orgId, status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'account_manager' } } } },
         include: { _count: { select: { managedClients: true } } },
@@ -164,11 +164,11 @@ export class OnboardingService {
       const r = result as Extract<typeof result, { orgId: string }>;
       if (r.wasStage !== 'won') await this.audit.logSystem(r.orgId, 'lead.won', 'Lead', r.leadId, { stage: 'won', before: r.wasStage });
       if (r.renewed.length) await this.audit.logSystem(r.orgId, 'engagement.renewed', 'ClientOrg', r.clientOrgId, { engagementIds: r.renewed, months: SELL_RENEWAL_MONTHS });
-      await logLeadActivity(this.prisma, { orgId: r.orgId, leadId: r.leadId, kind: 'system', body: r.renewal ? `Renewal paid. ${r.renewed.length} retainer(s) extended by ${SELL_RENEWAL_MONTHS} months.` : `First payment received. Client account created${r.amName ? ` and ${r.amName} assigned as account manager` : ''}.` });
+      await logLeadActivity(this.prisma, { orgId: r.orgId, leadId: r.leadId, kind: 'system', body: r.renewal ? `Renewal paid. ${r.renewed.length} retainer(s) extended by ${SELL_RENEWAL_MONTHS} months.` : `First payment received. Client account created${r.amName ? ` and ${r.amName} assigned as client manager` : ''}.` });
       await this.notifications.notify(r.orgId, [r.ownerId], {
         kind: r.renewal ? 'renewal_confirmed' : 'welcome',
         title: r.renewal ? 'Thank you for renewing with BMU' : 'Welcome to BMU! Your account is ready',
-        body: r.renewal ? 'Your services continue without a break.' : `${r.amName ?? 'Your account manager'} will help you get started. First step: share the items on your onboarding checklist.`,
+        body: r.renewal ? 'Your services continue without a break.' : `${r.amName ?? 'Your client manager'} will help you get started. First step: share the items on your onboarding checklist.`,
         link: r.renewal ? '/client' : '/client/onboarding',
       });
       await this.notifications.notify(r.orgId, [r.amId], {

@@ -1,10 +1,10 @@
 // v17 journey: client portal 2.0 and communications.
-// API: a fresh client (owner has a mobile number) with BMU's Account Manager.
-// Browser: a WhatsApp from the client's number arrives (webhook) → it is in the AM's inbox, linked to the client, and on
-// the client's message thread → the AM replies with a template. The AM starts the project's shared brief and shares it;
-// the AM and the client type in it at the same time and both see all the text. The client books a call with the AM
-// from free slots; the AM sees it and writes notes that become tasks. A visitor books from the AM's public link.
-// The AM sets quiet hours and WhatsApp alerts.
+// API: a fresh client (owner has a mobile number) with BMU's Client Manager.
+// Browser: a WhatsApp from the client's number arrives (webhook) → it is in the CM's inbox, linked to the client, and on
+// the client's message thread → the CM replies with a template. The CM starts the project's shared brief and shares it;
+// the CM and the client type in it at the same time and both see all the text. The client books a call with the CM
+// from free slots; the CM sees it and writes notes that become tasks. A visitor books from the CM's public link.
+// The CM sets quiet hours and WhatsApp alerts.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/comms/comms.mjs
 import { api, check, freshClient, launch, publicApi, shot, signIn, BASE } from "../deliver/lib.mjs";
 
@@ -30,14 +30,14 @@ const amUser = users.find((u) => u.email === "am@bmu.demo");
 const stamp = Date.now().toString(36);
 
 try {
-  console.log("1. Fresh client with BMU's Account Manager (API)");
+  console.log("1. Fresh client with BMU's Client Manager (API)");
   const c = await freshClient({ services: [{ serviceKey: "smm", tier: "growth" }], tag: `cm${stamp}` });
   await founder.post(`/admin-org/clients/${c.clientOrgId}/am`, { amUserId: amUser.id }).catch(() => {});
   const me = await c.owner.get("/auth/me");
   const phone = (me.phone ?? "").replace(/\D/g, "").slice(-10);
   check(phone.length === 10, "the client owner has a mobile number");
 
-  console.log("2. A WhatsApp from the client's number lands in the AM's inbox and on the client's thread");
+  console.log("2. A WhatsApp from the client's number lands in the CM's inbox and on the client's thread");
   const text = `Hi team, can the Diwali post go out on Friday? (${stamp})`;
   const r = await publicApi.post("/webhooks/whatsapp", { entry: [{ changes: [{ value: { contacts: [{ wa_id: `91${phone}`, profile: { name: "Owner" } }], messages: [{ from: `91${phone}`, id: `wamid.${stamp}`, type: "text", text: { body: text } }] } }] }] });
   check(r.received === 1, "the webhook stored the message");
@@ -58,7 +58,7 @@ try {
   await go(clientPage, "/client/messages");
   await clientPage.getByText(text).first().waitFor();
   await clientPage.getByText("Friday works").first().waitFor();
-  check(true, "the client's message thread shows their WhatsApp and the AM's reply");
+  check(true, "the client's message thread shows their WhatsApp and the CM's reply");
 
   console.log("3. Two people edit the same brief at once");
   const e = c.engagements[0];
@@ -74,17 +74,17 @@ try {
   const amText = amPage.getByTestId("doc-text");
   const clText = clientPage.getByTestId("doc-text");
   await clText.waitFor();
-  // Both type at the same moment: the AM at the end, the client at the very start.
+  // Both type at the same moment: the CM at the end, the client at the very start.
   await amText.click();
   await amPage.keyboard.press("Control+End");
   await clText.click();
   await clientPage.keyboard.press("Control+Home");
-  await Promise.all([amPage.keyboard.type(`AM note ${stamp}. `, { delay: 15 }), clientPage.keyboard.type(`CLIENT ${stamp}: `, { delay: 15 })]);
+  await Promise.all([amPage.keyboard.type(`CM note ${stamp}. `, { delay: 15 }), clientPage.keyboard.type(`CLIENT ${stamp}: `, { delay: 15 })]);
   await sleep(4000);
   const a = await amText.inputValue();
   const b = await clText.inputValue();
-  check(a.includes(`AM note ${stamp}.`) && a.includes(`CLIENT ${stamp}:`), "the AM's editor has both people's text");
-  check(b.includes(`AM note ${stamp}.`) && b.includes(`CLIENT ${stamp}:`), "the client's editor has both people's text");
+  check(a.includes(`CM note ${stamp}.`) && a.includes(`CLIENT ${stamp}:`), "the CM's editor has both people's text");
+  check(b.includes(`CM note ${stamp}.`) && b.includes(`CLIENT ${stamp}:`), "the client's editor has both people's text");
   check(a === b, "both editors show exactly the same document");
   check(b.startsWith(`CLIENT ${stamp}: `), "the client's text is where they typed it");
   await amPage.getByText("All changes saved").waitFor();
@@ -92,18 +92,18 @@ try {
   check(saved.text === a, "the saved document matches what both see");
   await shot(clientPage, "comms-doc");
 
-  console.log("4. The client books a call with the AM; the AM writes notes that become tasks");
+  console.log("4. The client books a call with the CM; the CM writes notes that become tasks");
   await go(clientPage, "/client/meetings");
   await clientPage.getByTestId("book-call").click();
   await clientPage.getByTestId("slot").first().click();
   await clientPage.getByLabel("Agenda").fill("November plan");
   await clientPage.getByTestId("confirm-booking").click();
   await clientPage.getByTestId("meeting-row").first().waitFor();
-  check(await clientPage.getByTestId("meeting-row").first().getByText(amUser.name).isVisible(), "the client sees the call with their AM");
+  check(await clientPage.getByTestId("meeting-row").first().getByText(amUser.name).isVisible(), "the client sees the call with their CM");
   await go(amPage, "/team/meetings");
   const row = amPage.getByTestId("meeting-row").filter({ hasText: c.company }).first();
   await row.waitFor();
-  check(await row.getByText("Booked by client").isVisible(), "the AM sees the call the client booked");
+  check(await row.getByText("Booked by client").isVisible(), "the CM sees the call the client booked");
   await row.getByRole("button", { name: "Notes" }).click();
   await amPage.getByLabel("Meeting notes").fill("Talked about November. They want more reels.\n- [ ] Share 5 reel ideas by Friday\nAction: send the revised plan");
   await amPage.getByTestId("meeting-summarise").click();
@@ -115,7 +115,7 @@ try {
   check(await amPage.getByTestId("meeting-notes").getByRole("link", { name: "Task" }).first().isVisible(), "the action item is now a task");
   await shot(amPage, "comms-meetings");
 
-  console.log("5. A visitor books from the AM's public booking link");
+  console.log("5. A visitor books from the CM's public booking link");
   const page = await am.get("/meetings/booking-page");
   const ctx = await browser.newContext();
   const visitor = await ctx.newPage();
@@ -130,7 +130,7 @@ try {
   check(leads.some((l) => JSON.stringify(l).includes(`priya.${stamp}@example.com`)), "the visitor became a lead");
   await ctx.close();
 
-  console.log("6. The AM turns on WhatsApp alerts for the inbox and sets quiet hours");
+  console.log("6. The CM turns on WhatsApp alerts for the inbox and sets quiet hours");
   await go(amPage, "/team/profile");
   await amPage.getByLabel("WhatsApp or email in the inbox on WhatsApp").check();
   await amPage.getByLabel("Quiet from").fill("21:00");

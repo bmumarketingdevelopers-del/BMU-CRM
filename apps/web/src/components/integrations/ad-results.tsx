@@ -21,7 +21,7 @@ export function AdResults({ load, audience }: { load: () => Promise<AdResultsVie
       <Panel title="Ads and website" subtitle="Spend, clicks, leads and visits from Google Ads, Meta Ads and Google Analytics">
         <p className="py-4 text-sm text-ink-muted" data-testid="ad-results-empty">
           {audience === "client"
-            ? "Your ad and website numbers will show here once your account manager connects your ad accounts and Google Analytics."
+            ? "Your ad and website numbers will show here once your client manager connects your ad accounts and Google Analytics."
             : v.accounts.length
               ? "Accounts are connected. Numbers appear after the next morning sync, or press Sync now in Integrations."
               : "No ads or analytics account is linked to this client. Connect one in Command Centre → Integrations."}

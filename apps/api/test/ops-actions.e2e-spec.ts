@@ -84,7 +84,7 @@ afterAll(async () => {
 
 // ---------------------------------------------------------------------------
 describe('leads: add lead', () => {
-  it('only the sales team, founder, admin and AMs (referrals only) can add leads', async () => {
+  it('only the sales team, founder, admin and CMs (referrals only) can add leads', async () => {
     const base = { name: 'Asha Rao', phone: phone(1), company: `Rao Textiles ${stamp}`, source: 'phone', serviceIds: ['smm'], need: `Instagram ${stamp}` };
     await http().post('/ops/leads').set(as('producer')).send(base).expect(403);
     await http().post('/ops/leads').set(as('client')).send(base).expect(403);
@@ -438,7 +438,7 @@ describe('files', () => {
     expect(await prisma.notification.count({ where: { userId: ids.am, kind: 'requirement_sent', title: { contains: `logo-${stamp}` } } })).toBe(1);
   });
 
-  it('move / rename / tag: uploader, AM or department head only', async () => {
+  it('move / rename / tag: uploader, CM or department head only', async () => {
     await http().patch(`/ops/files/${ids.file}`).set(as('producer')).send({ name: 'nope' }).expect((r) => expect([403, 404]).toContain(r.status));
     await http().patch(`/ops/files/${ids.file}`).set(as('am')).send({ name: `Brochure final ${stamp}.png`, tags: ['brochure'] }).expect(200);
     await http().patch(`/ops/files/${ids.file}`).set(as('head')).send({ folder: 'brand' }).expect(200);
@@ -463,7 +463,7 @@ describe('files', () => {
     await http().get(`/files/${ids.file}?download=1`).set(as('client')).expect(200);
   });
 
-  it('share link: AM or Branch Manager, expiry required, optional password checked on the public page', async () => {
+  it('share link: CM or Branch Manager, expiry required, optional password checked on the public page', async () => {
     await http().post(`/ops/files/${ids.file}/shares`).set(as('head')).send({ expiresInDays: 7 }).expect(403);
     await http().post(`/ops/files/${ids.file}/shares`).set(as('am')).send({}).expect(400);
     const s = await http().post(`/ops/files/${ids.file}/shares`).set(as('am')).send({ expiresInDays: 7, password: 'sun123' }).expect(201);
@@ -549,7 +549,7 @@ describe('admin configuration', () => {
     await http().post('/ops/admin/integrations/meta_ads/disconnect').set(as('admin')).send({ reason: 'Changing ad account' }).expect(200);
   });
 
-  it("per-client ad/social accounts: the client's AM connects with client consent", async () => {
+  it("per-client ad/social accounts: the client's CM connects with client consent", async () => {
     await http().post(`/ops/admin/clients/${ids.sunrise}/accounts`).set(as('producer')).send({}).expect(403);
     await http().post(`/ops/admin/clients/${ids.sunrise}/accounts`).set(as('am')).send({ platform: 'instagram', accountName: `@sunrise${tail}`, consentBy: 'Anil Kumar' }).expect(400);
     const r = await http().post(`/ops/admin/clients/${ids.sunrise}/accounts`).set(as('am')).send({ platform: 'instagram', accountName: `@sunrise${tail}`, consentBy: 'Anil Kumar', consentConfirmed: true }).expect(201);

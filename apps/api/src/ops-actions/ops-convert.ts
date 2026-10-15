@@ -1,7 +1,7 @@
 // v11 ops: the ONE place where a lead becomes a client by hand (convert_to_client, manual with payment proof).
 //
 // It reuses the existing onboarding path: the proposal is accepted offline (if it was only sent), which issues the
-// first-payment invoice, then OnboardingService.recordFirstPayment creates the client account, owner login, AM,
+// first-payment invoice, then OnboardingService.recordFirstPayment creates the client account, owner login, CM,
 // engagements at G1 with their requirement checklists and the client thread, and marks the lead won — exactly what
 // an online payment does.
 //

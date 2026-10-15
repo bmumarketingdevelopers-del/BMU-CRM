@@ -41,7 +41,7 @@ const PHRASES: Record<string, string> = {
   'proposal.accepted': 'accepted the proposal',
   'proposal.discount_approved': 'approved the proposal discount',
   'client.onboarded': 'set up the client account',
-  'client.am_reassigned': 'changed the account manager',
+  'client.am_reassigned': 'changed the client manager',
   'client.data_exported': 'exported the client data (DPDP)',
   'client.personal_data_deleted': 'deleted client personal data (DPDP)',
   'invoice.issued': 'issued an invoice',

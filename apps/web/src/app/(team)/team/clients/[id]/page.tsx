@@ -125,7 +125,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
       <PageTitle
         presence={{ entity: "ClientOrg", id: id }}
         title={c.client.name}
-        subtitle={[c.client.industry, `Client since ${fmtDate.format(new Date(c.client.since))}`, `Account Manager: ${c.client.am?.name ?? "not assigned"}`].filter(Boolean).join(" · ")}
+        subtitle={[c.client.industry, `Client since ${fmtDate.format(new Date(c.client.since))}`, `Client Manager: ${c.client.am?.name ?? "not assigned"}`].filter(Boolean).join(" · ")}
         action={
           <span className="flex flex-wrap items-center gap-2" data-testid="client360-actions">
             <Badge tone={healthTone(c.client.health)}>{healthLabel(c.client.health)}</Badge>
@@ -142,8 +142,8 @@ export default function Client360Page({ params, searchParams }: { params: Promis
               </button>
             )}
             {can?.reassignAm && (
-              <button type="button" className={addCls} onClick={() => openReassign({ type: "client_am", ids: [id], title: `Reassign Account Manager for ${c.client.name}`, onDone: () => changed() })}>
-                Reassign AM
+              <button type="button" className={addCls} onClick={() => openReassign({ type: "client_am", ids: [id], title: `Reassign Client Manager for ${c.client.name}`, onDone: () => changed() })}>
+                Reassign CM
               </button>
             )}
             <UploadFilesButton prefill={{ clientId: c.client.id }} onSaved={changed} />
@@ -395,7 +395,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
             )}
           </Panel>
           {d && d.pendingInvites.length > 0 && (
-            <Panel title="Waiting for the Owner to confirm" subtitle="Owners invited by the Account Manager need the client's Owner or a Branch Manager to confirm" flush>
+            <Panel title="Waiting for the Owner to confirm" subtitle="Owners invited by the Client Manager need the client's Owner or a Branch Manager to confirm" flush>
               <ul className="divide-y divide-border">
                 {d.pendingInvites.map((p) => (
                   <li key={p.approvalId} className="flex items-center justify-between gap-3 px-5 py-3 text-sm">

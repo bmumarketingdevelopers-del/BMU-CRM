@@ -3,7 +3,7 @@ import { initialDocState } from '../../src/comms/doc-state.js';
 
 // v17 communications demo data. Idempotent: every block checks before it writes.
 // - Reply templates for the inbox.
-// - Booking pages for the Account Managers and Sales (so the client portal and public links work at once).
+// - Booking pages for the Client Managers and Sales (so the client portal and public links work at once).
 // - A WhatsApp conversation from a demo client person (also on their message thread) and one from a lead.
 // - A shared brief on one project and a past meeting with notes and a summary.
 

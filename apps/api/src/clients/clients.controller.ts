@@ -40,7 +40,7 @@ const toInvoice = (i: Prisma.InvoiceGetPayload<{ include: { payments: true } }>)
   createdAt: i.createdAt.toISOString(),
 });
 
-/** Client-facing data. Returns only what client_hidden_data allows: no internal notes, QC, costs or staff below AM. */
+/** Client-facing data. Returns only what client_hidden_data allows: no internal notes, QC, costs or staff below CM. */
 @Controller('client')
 export class ClientPortalController {
   constructor(
@@ -119,7 +119,7 @@ export class ClientPortalController {
     };
   }
 
-  /** Client sends an item (note or link); the AM then confirms it as received. */
+  /** Client sends an item (note or link); the CM then confirms it as received. */
   @Post('requirements/:id/submit')
   @HttpCode(200)
   async submitRequirement(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
@@ -211,7 +211,7 @@ export class ClientPortalController {
     // Automation: plan approved → department tasks from flow templates, then the Gate 3 check.
     const result = await generateProductionTasks(this.prisma, plan.cycleId, now);
     await this.audit.logSystem(me.orgId, result.g3Passed ? 'gate.G3.passed' : 'gate.G3.waiting', 'Engagement', plan.cycle.engagementId, result);
-    // Tell the AM and everyone who just got work.
+    // Tell the CM and everyone who just got work.
     const owners = await this.prisma.task.findMany({ where: { deliverable: { cycleId: plan.cycleId }, ownerId: { not: null } }, select: { ownerId: true } });
     await this.notifications.notify(me.orgId, [engagement.amId], {
       kind: 'plan_approved',
@@ -253,7 +253,7 @@ export class ClientPortalController {
   }
 }
 
-/** Staff list of clients: Founder/Admin/AM Lead see all, Account Managers their own. */
+/** Staff list of clients: Founder/Admin/CM Lead see all, Client Managers their own. */
 @Controller('clients')
 export class ClientsController {
   constructor(private readonly prisma: PrismaService) {}

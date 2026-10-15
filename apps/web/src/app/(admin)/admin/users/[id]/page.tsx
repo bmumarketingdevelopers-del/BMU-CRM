@@ -53,8 +53,8 @@ export default function PersonPage({ params, searchParams }: { params: Promise<{
   const groups = open
     ? ([
         ["Tasks", open.tasks],
-        ["Clients (as AM)", open.clients],
-        ["Engagements (as AM)", open.engagements],
+        ["Clients (as CM)", open.clients],
+        ["Engagements (as CM)", open.engagements],
         ["Leads", open.leads],
         ["Open requests", open.requests],
         ["Approvals waiting on them", open.approvals],

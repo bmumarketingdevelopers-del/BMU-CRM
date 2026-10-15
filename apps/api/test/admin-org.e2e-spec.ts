@@ -1,4 +1,4 @@
-// Command Centre: departments & teams, branches, attendance & leave, AM assignment, offboarding, discount approvals.
+// Command Centre: departments & teams, branches, attendance & leave, CM assignment, offboarding, discount approvals.
 import 'dotenv/config';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
@@ -173,14 +173,14 @@ describe('clients admin', () => {
     ).id;
   });
 
-  it('lists engagements for Founder/Admin/AM Lead only', async () => {
+  it('lists engagements for Founder/Admin/CM Lead only', async () => {
     const r = await http().get('/admin-org/engagements').set(as('am.lead')).expect(200);
     expect(r.body.find((e: { id: string }) => e.id === openId).client.name).toBe(`Admin Test ${stamp}`);
     await http().get('/admin-org/engagements').set(as('am')).expect(403);
     await http().get('/admin-org/engagements').set(as('client')).expect(403);
   });
 
-  it('reassigns the AM on the client and its open engagements, and tells the new AM', async () => {
+  it('reassigns the CM on the client and its open engagements, and tells the new CM', async () => {
     const lead = await userId('am.lead@bmu.demo');
     await http().post(`/admin-org/clients/${clientId}/am`).set(as('am')).send({ amUserId: lead }).expect(403);
     await http().post(`/admin-org/clients/${clientId}/am`).set(as('admin')).send({ amUserId: await userId('producer@bmu.demo') }).expect(400);

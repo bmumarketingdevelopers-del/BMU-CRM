@@ -149,10 +149,10 @@ export const opsMetricInfo: Record<OpsMetric, { label: string; unit: "count" | "
   proposals_won: { label: "Proposals won", unit: "count", money: false, dimensions: ["month", "week", "person", "lead_source"], hint: "Proposals accepted and signed" },
   tasks_completed: { label: "Tasks completed", unit: "count", money: false, dimensions: ["month", "week", "service", "department", "person", "client"], hint: "Tasks marked done" },
   hours_logged: { label: "Hours logged", unit: "hours", money: false, dimensions: ["month", "week", "service", "department", "person", "client"], hint: "Time logged on tasks finished in the period" },
-  requests: { label: "Client requests", unit: "count", money: false, dimensions: ["month", "week", "service", "person", "client", "request_type"], hint: "Requests raised by clients (person = Account Manager)" },
+  requests: { label: "Client requests", unit: "count", money: false, dimensions: ["month", "week", "service", "person", "client", "request_type"], hint: "Requests raised by clients (person = Client Manager)" },
   sla_breaches: { label: "Reply times missed", unit: "count", money: false, dimensions: ["month", "week", "service", "person", "client", "request_type"], hint: "Requests answered after the reply target, or still waiting past it" },
   qc_pass_rate: { label: "QC pass rate", unit: "pct", money: false, dimensions: ["month", "week", "service", "department", "person", "client"], hint: "Share of QC checks that passed (person = who made the version)" },
-  new_clients: { label: "New clients", unit: "count", money: false, dimensions: ["month", "week", "service", "person", "lead_source"], hint: "Client accounts created (person = Account Manager)" },
+  new_clients: { label: "New clients", unit: "count", money: false, dimensions: ["month", "week", "service", "person", "lead_source"], hint: "Client accounts created (person = Client Manager)" },
 };
 
 export const opsDimensionLabels: Record<OpsDimension, string> = {

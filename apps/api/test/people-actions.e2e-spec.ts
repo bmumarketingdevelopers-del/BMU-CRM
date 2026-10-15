@@ -335,7 +335,7 @@ describe('offboarding', () => {
     expect((await prisma.user.findUniqueOrThrow({ where: { id: leaver.id } })).status).toBe('suspended');
 
     const blocked = await http().post(`/people-actions/people/${leaver.id}/offboard/confirm`).set(as('admin')).expect(400);
-    expect(blocked.body.message).toMatch(/still owns 1 open task, 1 client \(as AM\), 1 open lead, 1 approval/);
+    expect(blocked.body.message).toMatch(/still owns 1 open task, 1 client \(as CM\), 1 open lead, 1 approval/);
     await http().post(`/team-flows/people/${s.processId}/complete`).set(as('admin')).expect(400);
 
     // Hand everything over: the task through the engine, clients and leads through the v10 handover, the approval here.

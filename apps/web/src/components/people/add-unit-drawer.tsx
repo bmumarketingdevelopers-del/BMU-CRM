@@ -3,7 +3,7 @@
 /**
  * AddUnitDrawer: "+ Add team" on the hierarchy tree (and + New → Team or pod). Creates a branch (with its working-hours
  * calendar), a department (head, branch, default flow templates and QC checklists copied in), a team (lead) or a
- * client pod (AM, strategist, producers, clients: new tasks for those clients default to pod members).
+ * client pod (CM, strategist, producers, clients: new tasks for those clients default to pod members).
  *
  * Prefill keys: kind (branch | department | team | pod), branchId, departmentId.
  */
@@ -180,9 +180,9 @@ export function AddUnitDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
           {shownKind === "pod" && (
             <>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Account manager" required htmlFor="au-am">
+                <Field label="Client manager" required htmlFor="au-am">
                   <select id="au-am" className={inputCls} value={amId} onChange={(e) => setAmId(e.target.value)}>
-                    <option value="">Pick the AM</option>
+                    <option value="">Pick the CM</option>
                     {byRole("account_manager", "am_lead").map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}

@@ -342,7 +342,7 @@ export class ProposalsService {
   async requestChanges(token: string, input: { name: string; email?: string; comment: string }, ip?: string) {
     const p = await this.byToken(token);
     if (p.status === 'superseded') throw new BadRequestException('A newer version of this proposal has been sent. Please open the latest one.');
-    if (p.status === 'accepted') throw new BadRequestException('This proposal is already accepted. Message your account manager for changes.');
+    if (p.status === 'accepted') throw new BadRequestException('This proposal is already accepted. Message your client manager for changes.');
     if (p.status !== 'sent' && p.status !== 'expired') throw new BadRequestException('Changes can no longer be requested on this proposal');
     const open = await this.prisma.proposalChangeRequest.count({ where: { proposalId: p.id, resolvedAt: null } });
     if (open >= 5) throw new BadRequestException('You have already sent several requests. We will get back to you shortly.');

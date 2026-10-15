@@ -106,9 +106,9 @@ describe('notification preferences', () => {
     expect(pick('message')).toMatchObject({ inApp: false, email: false });
     expect(pick('qc_waiting')).toBeUndefined(); // a team kind is ignored for a client
 
-    // The AM writes: the owner (message alerts off) gets nothing; the approver does.
+    // The CM writes: the owner (message alerts off) gets nothing; the approver does.
     const thread = (await http().get('/client/thread').set(as('approver')).expect(200)).body;
-    await http().post(`/threads/${thread.id}/messages`).set(as('am')).send({ body: `Hello from the AM ${stamp}` }).expect(201);
+    await http().post(`/threads/${thread.id}/messages`).set(as('am')).send({ body: `Hello from the CM ${stamp}` }).expect(201);
     const owner = await prisma.user.findFirstOrThrow({ where: { email: `svc.owner.${stamp}@example.com` } });
     const approver = await prisma.user.findFirstOrThrow({ where: { email: `svc.approver.${stamp}@example.com` } });
     expect(await prisma.notification.count({ where: { userId: owner.id, kind: 'message' } })).toBe(0);
@@ -152,7 +152,7 @@ describe('GST tax invoice and billing details', () => {
     await http().get(`/service/client/invoices/${home.id}/tax-invoice`).set(as('other')).expect(404);
   });
 
-  it('lets the account owner and Finance edit billing details, not an approver or AM', async () => {
+  it('lets the account owner and Finance edit billing details, not an approver or CM', async () => {
     await http().put('/service/client/billing-details').set(as('approver')).send({ legalName: 'Nope' }).expect(403);
     await http().put('/service/client/billing-details').set(as('owner')).send({ gstin: 'NOT-A-GSTIN' }).expect(400);
     await http().put('/service/client/billing-details').set(as('owner')).send({ legalName: 'Service Home Private Limited', billingEmail: `accounts.${stamp}@example.com` }).expect(200);

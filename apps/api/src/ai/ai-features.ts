@@ -76,7 +76,7 @@ const TASKS: Record<string, string> = {
   feedback_summary:
     'Summarise the client feedback on this deliverable into a numbered **Change list** for the producer (one change per line, most recent version first, merge duplicates, mark anything unclear with "(confirm with client)"), then one line **Revisions** with rounds used vs included.',
   reply_suggest:
-    'Draft a reply from the account manager to the client’s latest message or request. Polite, warm Indian business English, under 110 words. Acknowledge what they asked, give the next step and a realistic time frame (working hours 9:30-18:30 Mon-Sat), never promise free extra work or discounts. If it sounds unhappy, apologise sincerely without blaming anyone.',
+    'Draft a reply from the client manager to the client’s latest message or request. Polite, warm Indian business English, under 110 words. Acknowledge what they asked, give the next step and a realistic time frame (working hours 9:30-18:30 Mon-Sat), never promise free extra work or discounts. If it sounds unhappy, apologise sincerely without blaming anyone.',
   request_triage:
     'Triage this client request against their package. Return JSON: type (change|new_scope|urgent|question|billing), urgency (low|normal|high), scope (in_scope|out_of_scope|unclear), reasoning (2-3 sentences citing the package or revision rounds), addOnId (the id of the best matching add-on from the list, or null), suggestedQuotePaise (integer paise from that add-on price, or null).',
   sentiment:
@@ -544,7 +544,7 @@ export class AiFeaturesService {
     const msgs = t.messages.filter((m) => !m.internal).slice(-12);
     const clientMsgs = msgs.filter((m) => m.isClient);
     const lastClient = clientMsgs.at(-1);
-    const facts = `Client: ${t.client.name}. Account manager: ${t.am ?? 'not assigned'}.\nConversation (oldest first; client messages fenced):\n${msgs
+    const facts = `Client: ${t.client.name}. Client manager: ${t.am ?? 'not assigned'}.\nConversation (oldest first; client messages fenced):\n${msgs
       .map((m) => (m.isClient ? `[${m.id}] Client (${day(m.at)}):\n${fence('client message', m.body, 1500)}` : `[${m.id}] BMU – ${m.author} (${day(m.at)}): ${redact(m.body).slice(0, 600)}`))
       .join('\n')}`;
     const target = { type: 'Thread', id };

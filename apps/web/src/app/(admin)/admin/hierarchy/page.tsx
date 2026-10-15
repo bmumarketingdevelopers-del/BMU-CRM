@@ -377,7 +377,7 @@ export default function HierarchyPage() {
                   )}
                 </div>
                 <p className="text-xs text-ink-muted">
-                  AM {pod.am?.name ?? "—"} · Strategist {pod.strategist?.name ?? "—"}
+                  CM {pod.am?.name ?? "—"} · Strategist {pod.strategist?.name ?? "—"}
                 </p>
                 <p className="mt-1">Producers: {pod.producers.map((x) => x.name).join(", ") || "None"}</p>
                 <p className="text-xs text-ink-muted">Clients: {pod.clients.map((x) => x.name).join(", ") || "None"}</p>

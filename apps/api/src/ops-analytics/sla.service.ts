@@ -111,7 +111,7 @@ export class OpsSlaService {
     const amMap = new Map<string, { name: string; xs: typeof rows }>();
     for (const x of cur) {
       const id = x.engagement.amId ?? 'none';
-      const g = amMap.get(id) ?? { name: x.engagement.am?.name ?? 'No Account Manager', xs: [] };
+      const g = amMap.get(id) ?? { name: x.engagement.am?.name ?? 'No Client Manager', xs: [] };
       g.xs.push(x);
       amMap.set(id, g);
     }

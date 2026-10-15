@@ -164,7 +164,7 @@ export class CapacityService {
   }
 
   async book(me: Me, body: unknown, ip?: string, opts: { via?: string } = {}): Promise<BookingResult> {
-    if (!this.canBook(me)) throw new ForbiddenException('Only producers, Account Managers and leadership book people');
+    if (!this.canBook(me)) throw new ForbiddenException('Only producers, Client Managers and leadership book people');
     const input = parse(bookingSchema, body);
     if (!isMonday(input.weekStart)) throw new BadRequestException('Bookings start on a Monday');
     if (input.weekStart < mondayOf(todayIst())) throw new BadRequestException('That week is already over');
@@ -204,7 +204,7 @@ export class CapacityService {
   }
 
   async update(me: Me, id: string, body: unknown, ip?: string) {
-    if (!this.canBook(me)) throw new ForbiddenException('Only producers, Account Managers and leadership book people');
+    if (!this.canBook(me)) throw new ForbiddenException('Only producers, Client Managers and leadership book people');
     const input = parse(bookingUpdateSchema, body);
     const b = await this.prisma.resourceBooking.findFirst({ where: { id, orgId: me.orgId } });
     if (!b) throw new NotFoundException('Booking not found');
@@ -220,7 +220,7 @@ export class CapacityService {
   }
 
   async remove(me: Me, id: string, ip?: string) {
-    if (!this.canBook(me)) throw new ForbiddenException('Only producers, Account Managers and leadership book people');
+    if (!this.canBook(me)) throw new ForbiddenException('Only producers, Client Managers and leadership book people');
     const b = await this.prisma.resourceBooking.findFirst({ where: { id, orgId: me.orgId } });
     if (!b) throw new NotFoundException('Booking not found');
     await this.prisma.resourceBooking.delete({ where: { id } });

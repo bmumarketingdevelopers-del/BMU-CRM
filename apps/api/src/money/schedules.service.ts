@@ -112,7 +112,7 @@ export class SchedulesService implements OnModuleInit, OnModuleDestroy {
   async list(me: Me, q: { clientId?: string; engagementId?: string; status?: string }) {
     let clientId = q.clientId;
     if (q.engagementId && !clientId) clientId = (await this.prisma.engagement.findFirst({ where: { id: q.engagementId, orgId: me.orgId }, select: { clientOrgId: true } }))?.clientOrgId;
-    if (!(await this.canRead(me, clientId))) throw new ForbiddenException('Invoice plans are for Finance, leadership and the client’s Account Manager');
+    if (!(await this.canRead(me, clientId))) throw new ForbiddenException('Invoice plans are for Finance, leadership and the client’s Client Manager');
     return this.rows({ where: { orgId: me.orgId, clientOrgId: clientId, engagementId: q.engagementId, status: q.status && ['planned', 'issued', 'skipped'].includes(q.status) ? q.status : undefined }, take: 300 });
   }
 

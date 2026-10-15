@@ -72,7 +72,7 @@ export function ClientHome({ name, go }: { name: string; go: ClientNav }) {
       ))}
       {o.accountManager && (
         <>
-          <Section>Your Account Manager</Section>
+          <Section>Your Client Manager</Section>
           <Card onPress={() => go('messages')}>
             <Body bold>{o.accountManager.name}</Body>
             <Muted>{o.accountManager.email ?? o.accountManager.phone}</Muted>
@@ -302,7 +302,7 @@ function RequestDetail({ id, onBack }: { id: string; onBack: () => void }) {
           <Body style={{ marginTop: 4 }}>{c.body}</Body>
         </Card>
       ))}
-      {r.comments.length === 0 && <Muted>Your Account Manager will reply here.</Muted>}
+      {r.comments.length === 0 && <Muted>Your Client Manager will reply here.</Muted>}
       <Input value={reply} onChangeText={setReply} placeholder="Add a reply" multiline />
       <Button variant="secondary" title="Reply" busy={busy} disabled={!reply.trim()} onPress={() => run(() => api.client.commentRequest(id, reply.trim()))} />
       <ErrorText>{error}</ErrorText>
@@ -326,7 +326,7 @@ export function PayButton({ invoiceId, amountPaise, onPaid }: { invoiceId: strin
         onPaid();
       } else if (c.mode === 'razorpay') setMsg('Please pay this invoice on the website (Billing). Card and UPI payments open there.');
       else if (c.mode === 'paid') onPaid();
-      else setMsg("Online payment isn't set up yet. Please contact your Account Manager.");
+      else setMsg("Online payment isn't set up yet. Please contact your Client Manager.");
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -346,7 +346,7 @@ export function ClientMessages() {
   if (!t.data) return <Screen><Loading /><ErrorText>{t.error}</ErrorText></Screen>;
   return (
     <Screen refreshing={t.refreshing} onRefresh={t.refresh}>
-      <ChatView thread={t.data} title="Messages" sub={t.data.am ? `With ${t.data.am}, your Account Manager` : undefined} onSend={async (body) => t.setData(await api.client.sendMessage(body))} />
+      <ChatView thread={t.data} title="Messages" sub={t.data.am ? `With ${t.data.am}, your Client Manager` : undefined} onSend={async (body) => t.setData(await api.client.sendMessage(body))} />
     </Screen>
   );
 }

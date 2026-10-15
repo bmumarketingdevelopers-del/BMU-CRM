@@ -1,10 +1,10 @@
 // v16 journey: the creative studio end to end.
 // API: a fresh Social Media client with a reel and two posts in its plan; the maker uploads the reel (15 s video).
-// Browser: the client pins a comment at 0:12 with a drawing → the Account Manager sees it appear live and on that frame →
+// Browser: the client pins a comment at 0:12 with a drawing → the Client Manager sees it appear live and on that frame →
 // the client asks for changes → v2 arrives with the open comment carried over → the client approves v2 from the
 // one-tap email link (no sign-in) → the certificate verifies. Calendar: unapproved work cannot be scheduled or published;
 // the approved post is scheduled, published and its results typed in; the client sees the results. The approved reel is
-// in both asset libraries and a new file uploads in pieces. Finally the client allows BMU sign-off and the AM approves a
+// in both asset libraries and a new file uploads in pieces. Finally the client allows BMU sign-off and the CM approves a
 // post on BMU's side.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/creative/creative.mjs
 import { api, check, freshClient, launch, publicApi, rejects, shot, signIn, BASE } from "../deliver/lib.mjs";
@@ -75,7 +75,7 @@ try {
   await am.post(`/deliverables/versions/${v1.id}/send`);
   check(true, "reel v1 uploaded, QC passed and sent to the client");
 
-  console.log("2. The client pins a comment at 0:12 with a drawing; the AM sees it live on that frame");
+  console.log("2. The client pins a comment at 0:12 with a drawing; the CM sees it live on that frame");
   const team = await as("am@bmu.demo");
   await go(team, `/team/deliverables/${reel.id}`);
   await team.getByRole("heading", { name: "Review Studio" }).waitFor();
@@ -104,7 +104,7 @@ try {
 
   const row = team.locator("[data-comment]").filter({ hasText: "Logo too small here" });
   await row.waitFor({ timeout: 30_000 });
-  check(true, "the comment appears on the AM's open page without a reload");
+  check(true, "the comment appears on the CM's open page without a reload");
   await row.getByRole("button", { name: "0:12" }).click();
   await team.locator("[data-pin]").first().waitFor({ timeout: 15_000 });
   const t = await team.locator("video").first().evaluate((v) => v.currentTime);
@@ -199,7 +199,7 @@ try {
   await client.getByText(`Launch reel ${stamp}`).first().waitFor({ timeout: 20_000 });
   check(true, "the client sees the approved reel in their asset library");
 
-  console.log("7. The client lets BMU approve posts; the AM approves one");
+  console.log("7. The client lets BMU approve posts; the CM approves one");
   await go(team, "/team/content-calendar");
   const rule = team.locator(`[data-rule="${c.clientOrgId}"]`);
   await rule.waitFor({ timeout: 20_000 });

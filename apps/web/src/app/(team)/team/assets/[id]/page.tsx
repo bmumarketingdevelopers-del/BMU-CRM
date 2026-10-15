@@ -272,7 +272,7 @@ function Details({ a, lists, onSaved }: { a: AssetDetail; lists: AssetList | nul
           </Select>
         </label>
         <label className="grid gap-1">
-          <span className="text-xs text-ink-muted">Rights end on (we warn the Account Manager 7 days before)</span>
+          <span className="text-xs text-ink-muted">Rights end on (we warn the Client Manager 7 days before)</span>
           <Input type="date" value={rightsExpireAt} onChange={(e) => setExpiry(e.target.value)} />
         </label>
         <label className="grid gap-1">

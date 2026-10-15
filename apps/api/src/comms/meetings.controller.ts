@@ -28,6 +28,58 @@ export class MeetingsController {
     return this.meetings.saveBookingPage(me, body, ip);
   }
 
+  // v23 meeting requests (declared before meetings/:id so the paths are not read as ids) ---------------------
+  @Get('meetings/arrange-options')
+  arrangeOptions(@CurrentUser() me: Me) {
+    return this.meetings.arrangeOptions(me);
+  }
+
+  @Post('meetings/founder-request')
+  founderRequest(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.founderRequest(me, body, ip);
+  }
+
+  @Post('meetings/:id/arrange')
+  @HttpCode(200)
+  arrange(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.arrange(me, id, body, ip);
+  }
+
+  @Post('meetings/:id/respond')
+  @HttpCode(200)
+  respond(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.respond(me, id, body, ip);
+  }
+
+  @Post('meetings/:id/fix')
+  @HttpCode(200)
+  fix(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.fix(me, id, body, ip);
+  }
+
+  @Post('meetings/:id/link')
+  @HttpCode(200)
+  shareLink(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.shareLink(me, id, body, ip);
+  }
+
+  @Get('meetings/:id/member-options')
+  memberOptions(@CurrentUser() me: Me, @Param('id') id: string) {
+    return this.meetings.memberOptions(me, id);
+  }
+
+  @Post('meetings/:id/members')
+  @HttpCode(200)
+  addMembers(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.addMembers(me, id, body, ip);
+  }
+
+  @Post('meetings/:id/join')
+  @HttpCode(200)
+  join(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.joinOrIgnore(me, id, body, ip);
+  }
+
   @Get('meetings/:id')
   get(@CurrentUser() me: Me, @Param('id') id: string) {
     return this.meetings.get(me, id);
@@ -69,6 +121,11 @@ export class MeetingsController {
   @Post('client/meetings')
   clientBook(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.meetings.clientBook(me, body, ip);
+  }
+
+  @Post('client/meetings/request')
+  clientRequest(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.clientRequest(me, body, ip);
   }
 
   @Post('client/meetings/:id/cancel')

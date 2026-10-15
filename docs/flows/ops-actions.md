@@ -21,10 +21,10 @@ audit entry and sends the right notifications. Errors are in plain English.
 
 | Entry | Who sees it | Drawer |
 | --- | --- | --- |
-| Lead | Founder, Admin, Sales Manager, Sales Executive, Account Manager (referrals only) | `components/ops/lead-drawer.tsx` |
+| Lead | Founder, Admin, Sales Manager, Sales Executive, Client Manager (referrals only) | `components/ops/lead-drawer.tsx` |
 | Invoice | Founder, Admin, Finance | `components/ops/invoice-drawer.tsx` |
 | File upload | All staff | `components/ops/file-upload-drawer.tsx` |
-| Creator | Founder, Admin, AM Lead, Account Manager, Department Head | `components/ops/creator-drawer.tsx` |
+| Creator | Founder, Admin, CM Lead, Client Manager, Department Head | `components/ops/creator-drawer.tsx` |
 | Announcement | Founder, Admin | `components/ops/announcement-drawer.tsx` |
 
 **Note** and **Meeting** (core entries) can now be about a **lead** as well as a client. Sales roles see them too.
@@ -45,7 +45,7 @@ audit entry and sends the right notifications. Errors are in plain English.
   - The owner is notified straight away.
 - **First-reply timer.** The deadline is set from the SLA settings, in working hours. The first logged conversation
   stops the timer. A job runs every 10 minutes. When a reply is overdue, it alerts the owner and the sales managers once.
-- Account managers see **Add a referral**. The source is fixed to referral and the lead goes to round-robin.
+- Client managers see **Add a referral**. The source is fixed to referral and the lead goes to round-robin.
 
 ### Lead ⋯ menu (board cards, list rows and the lead page)
 - **Reassign owner** uses the engine's dialog (target `lead_owner`; a reason is required).
@@ -127,7 +127,7 @@ audit entry and sends the right notifications. Errors are in plain English.
   - **Move to another creator**: engine target `creator_brief`, creators only.
   - **Rate creator** after delivery: 1 to 5 stars and a note, once per brief.
   - **Propose the payout.**
-- Department heads now see the roster. Briefs stay with Account Managers.
+- Department heads now see the roster. Briefs stay with Client Managers.
 
 ## Files (`/team/files`, client and project pages, `/client/files`, `/s/:token`)
 
@@ -155,7 +155,7 @@ audit entry and sends the right notifications. Errors are in plain English.
 - **Client uploads** (`/client/files`, Send us files):
   - Files land in **From client**.
   - They tick the chosen checklist item, or the items whose tags match, as received.
-  - The Account Manager is told.
+  - The Client Manager is told.
   - Clients see their uploads plus the brand and final files released to them.
 
 ## Communication (`/team/discussions`, `/team/messages`)
@@ -165,7 +165,7 @@ audit entry and sends the right notifications. Errors are in plain English.
   - An **internal** discussion: only the people you add, plus leadership.
 - On the message ⋯ menu:
   - **Create task** reuses the core task drawer, pre-filled.
-  - **Create request** (AM and leadership) picks the service and type and uses the SLA from settings. A message can
+  - **Create request** (CM and leadership) picks the service and type and uses the SLA from settings. A message can
     become only one request. An internal note is posted in the thread.
 - **+ New → Announcement** (Founder and Admin only):
   - Audience: all clients, a client segment (by service or health), all team, or one department.

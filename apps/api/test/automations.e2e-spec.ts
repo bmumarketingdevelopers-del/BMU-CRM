@@ -93,7 +93,7 @@ describe('permissions', () => {
     await http().post('/automations/run-now').set(as('producer')).send({}).expect(403);
   });
 
-  it('lets the AM Lead and Finance read but not change rules', async () => {
+  it('lets the CM Lead and Finance read but not change rules', async () => {
     const rule = await createRule(overdueRule(3, { enabled: false }));
     const ov = await http().get('/automations/overview').set(as('amLead')).expect(200);
     expect(ov.body.canManage).toBe(false);

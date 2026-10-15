@@ -24,7 +24,7 @@ export async function clientScope(prisma: PrismaService, me: Me): Promise<'all' 
 
 export const inScope = (scope: 'all' | string[], clientOrgId: string | null) => scope === 'all' || clientOrgId === null || scope.includes(clientOrgId);
 
-/** Account Manager of a client (null when none). */
+/** Client Manager of a client (null when none). */
 export async function amOf(prisma: PrismaService, clientOrgId: string | null) {
   if (!clientOrgId) return null;
   return (await prisma.clientOrg.findUnique({ where: { id: clientOrgId }, select: { amUserId: true } }))?.amUserId ?? null;

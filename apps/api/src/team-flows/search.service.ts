@@ -109,7 +109,7 @@ export class SearchService {
       take: FETCH,
       orderBy: { createdAt: 'desc' },
     });
-    return rows.map((e) => ({ kind: 'project', id: e.id, title: `${e.clientOrg.name} · ${e.service.name}`, sub: [e.status.replace(/_/g, ' '), e.currentGate, e.am ? `AM ${e.am.name}` : null].filter(Boolean).join(' · '), href: `/team/projects/${e.id}` }));
+    return rows.map((e) => ({ kind: 'project', id: e.id, title: `${e.clientOrg.name} · ${e.service.name}`, sub: [e.status.replace(/_/g, ' '), e.currentGate, e.am ? `CM ${e.am.name}` : null].filter(Boolean).join(' · '), href: `/team/projects/${e.id}` }));
   }
 
   private async requests(me: Me, like: Prisma.StringFilter, h: Hits): Promise<TeamSearchItem[]> {
@@ -146,7 +146,7 @@ export class SearchService {
       where = { ...where, am: { teamId: self.teamId ?? '__none__' } };
     } else return [];
     const rows = await this.prisma.clientOrg.findMany({ where, include: { am: { select: { name: true } } }, take: FETCH, orderBy: { name: 'asc' } });
-    return rows.map((c) => ({ kind: 'client', id: c.id, title: c.name, sub: [c.industry, c.am ? `AM ${c.am.name}` : null].filter(Boolean).join(' · ') || null, href: `/team/clients/${c.id}` }));
+    return rows.map((c) => ({ kind: 'client', id: c.id, title: c.name, sub: [c.industry, c.am ? `CM ${c.am.name}` : null].filter(Boolean).join(' · ') || null, href: `/team/clients/${c.id}` }));
   }
 
   private leadWhere(me: Me): Prisma.LeadWhereInput | null {

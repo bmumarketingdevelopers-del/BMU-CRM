@@ -14,7 +14,7 @@ export default async function ManagerPage() {
   return (
     <>
       <PageTitle title="Manager workspace" subtitle="Assign work across the team, keep clients moving and see who has room." action={dash?.canEdit ? <CustomiseLink id={dash.id} /> : undefined} />
-      {canOpenCraftManager(me) ? <ManagerDashboard layout={dash?.layout} /> : <Empty>The manager workspace is for account managers, project managers and department heads.</Empty>}
+      {canOpenCraftManager(me) ? <ManagerDashboard layout={dash?.layout} /> : <Empty>The manager workspace is for client managers, project managers and department heads.</Empty>}
     </>
   );
 }

@@ -79,7 +79,7 @@ export const dashboardListInfo: Record<DashboardListSource, { label: string; hin
   due_this_week: { label: "Tasks due in the next 7 days", hint: "Everyone's for leaders, the viewer's own otherwise", href: "/team/tasks" },
   overdue_tasks: { label: "Overdue tasks", hint: "Past their deadline and not done", href: "/team/tasks" },
   blocked_tasks: { label: "Blocked tasks", hint: "With the reason they are blocked", href: "/team/tasks" },
-  open_requests: { label: "Open client requests", hint: "All for leaders, the viewer's clients for Account Managers", href: "/team/requests" },
+  open_requests: { label: "Open client requests", hint: "All for leaders, the viewer's clients for Client Managers", href: "/team/requests" },
   late_requests: { label: "Requests past reply time", hint: "Still waiting for a reply after the target", href: "/team/requests" },
   new_leads: { label: "New leads to contact", hint: "All for sales leaders, the viewer's own for sales executives", href: "/team/leads" },
   follow_ups_due: { label: "Lead follow-ups due", hint: "Follow-ups due today or earlier", href: "/team/leads" },
@@ -111,7 +111,7 @@ export const DASHBOARD_BUILTINS: Record<DashboardBuiltinKey, DashboardBuiltinDef
   command_centre: {
     name: "Weekly Review",
     where: "Command Centre home",
-    who: "Founder, Branch Manager, Finance, AM lead and department heads",
+    who: "Founder, Branch Manager, Finance, CM lead and department heads",
     surface: "admin",
     path: "/admin",
     sections: [
@@ -159,7 +159,7 @@ export const DASHBOARD_BUILTINS: Record<DashboardBuiltinKey, DashboardBuiltinDef
   manager: {
     name: "Manager workspace",
     where: "Team app home for managers, and the Manager workspace page",
-    who: "Account managers, project managers, AM leads and department heads",
+    who: "Client managers, project managers, CM leads and department heads",
     surface: "team",
     path: "/team/manager",
     sections: [
@@ -198,7 +198,7 @@ export const DASHBOARD_BUILTINS: Record<DashboardBuiltinKey, DashboardBuiltinDef
       { key: "tiles", label: "Summary numbers", size: "full" },
       { key: "needs_you", label: "What needs you", size: "full" },
       { key: "services", label: "Your services and milestones", size: "full" },
-      { key: "account_manager", label: "Your Account Manager", size: "full" },
+      { key: "account_manager", label: "Your Client Manager", size: "full" },
     ],
   },
 };

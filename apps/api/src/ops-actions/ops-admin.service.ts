@@ -1,5 +1,5 @@
 // v11 ops: admin configuration gaps. Integrations connect / disconnect (Founder / Admin), per-client ad and social
-// accounts connected by the AM with client consent, holiday / working-hour changes recalculating SLA timers and
+// accounts connected by the CM with client consent, holiday / working-hour changes recalculating SLA timers and
 // working-day deadlines, and Admin publishing of department-head drafts (SOPs, flow templates, QC checklists).
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import {
@@ -166,13 +166,13 @@ export class OpsAdminService implements OnModuleInit {
   }
 
   // -------------------------------------------------------------------------
-  // Per-client ad / social accounts (AM with client consent)
+  // Per-client ad / social accounts (CM with client consent)
 
   private async assertClientAm(me: Me, clientOrgId: string) {
     if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
     const c = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId, deletedAt: null } });
     if (!c) throw new NotFoundException('Client not found');
-    if (!hasRole(me, 'founder', 'admin', 'am_lead') && c.amUserId !== me.id) throw new ForbiddenException("Only the client's Account Manager connects their accounts");
+    if (!hasRole(me, 'founder', 'admin', 'am_lead') && c.amUserId !== me.id) throw new ForbiddenException("Only the client's Client Manager connects their accounts");
     return c;
   }
 

@@ -50,7 +50,7 @@ it into chat or messages.
 | New proposal | **Proposal intro & scope** from the lead and the picked services. Copy only: proposals have no intro field. |
 | Project page (strategist) | **Draft the plan with AI**: "Fill the plan form" fills objectives, audience, pillars, direction and deliverables. Nothing is saved until Save. |
 | Deliverable page | **Creative brief**, **Captions & hooks** (post, carousel, story, ad and reel types), **Video script** (reel and video types), **QC pre-check** on pasted copy (spelling, brand name, risky claims, style), **Feedback → change list** (when the client has commented). "Post as internal note" adds an internal comment, which the client never sees. |
-| Request page | **Triage**: type, urgency, in scope or not, and a suggested add-on. "Use suggested add-on" fills the quote form. **Suggested reply**: "Put in reply box"; the AM clicks Reply to send. |
+| Request page | **Triage**: type, urgency, in scope or not, and a suggested add-on. "Use suggested add-on" fills the quote form. **Suggested reply**: "Put in reply box"; the CM clicks Reply to send. |
 | Message thread | **Suggested reply** goes into the message box. **How is the client feeling?** runs a tone check. |
 | Weekly Review | **Weekly digest**: written every Monday at 9 am IST, the Founder gets a notification, and it can be refreshed any time. **What stands out**: notes on unusual numbers. |
 | Scorecard | **What stands out**: notes worked out only from the computed numbers. |
@@ -83,7 +83,7 @@ differ from one run to the next. So the trigger uses BMU Hub's built-in tone che
 urgent language. It is free, instant and gives the same answer every time.
 
 The tone sweep that feeds Client Health works differently. It runs every 5 minutes and uses the fast model when AI is
-connected, and the same word list when it is not. The seeded rule "Unhappy request → AI draft for the AM" shows the
+connected, and the same word list when it is not. The seeded rule "Unhappy request → AI draft for the CM" shows the
 two working together.
 
 ## Data (one additive migration: `20261003125000_v10_ai`)

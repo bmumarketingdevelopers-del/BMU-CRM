@@ -1,6 +1,7 @@
 import { settingsDefaults } from '@bmu/shared';
 import type { Prisma, PrismaClient } from '../../src/generated/prisma/client.js';
 import { defaultRequirements } from '../../src/proposals/requirements.js';
+import { sameDept } from './dept-names.js';
 
 const SOPS: Record<string, { title: string; body: string }[]> = {
   'Creative / Design': [
@@ -16,14 +17,14 @@ Every design job starts from a complete brief. No brief, no start.
 
 ## What a complete brief has
 - Objective: what the post or asset must achieve (awareness, offer, hiring…)
-- Copy: final headline and caption, approved by the AM
+- Copy: final headline and caption, approved by the CM
 - Format and size: e.g. 1080x1350 feed post, 1080x1920 story
 - Mandatory elements: logo placement, offer terms, contact details
 - Deadline from the task, not from chat
 
 ## If something is missing
 - Mark the task blocked with a clear reason ("waiting for offer terms").
-- Tag the AM on the task. Do not message the client directly.`,
+- Tag the CM on the task. Do not message the client directly.`,
     },
     {
       title: 'Design self-check before QC',
@@ -57,10 +58,10 @@ Each package includes a fixed number of revision rounds. The Review Studio count
 
 ## Out of scope
 - A new concept, a new format or new copy direction
-- Do not start. Ask the AM to raise an extra request so the client gets a quote.`,
+- Do not start. Ask the CM to raise an extra request so the client gets a quote.`,
     },
   ],
-  'Account Management': [
+  'Client Management': [
     {
       title: 'Client review etiquette',
       body: `# Client review etiquette
@@ -176,7 +177,7 @@ const ERRORS = [
     why: 'Caption used last month’s price. The brief was not updated after the client changed the offer on a call.',
     foundBy: 'Client (Sunrise Bakery)',
     impact: 'Story live for 40 minutes; two customers asked for the old price. Client unhappy.',
-    fix: 'Story removed and reposted with the correct price; AM apologised on the thread.',
+    fix: 'Story removed and reposted with the correct price; CM apologised on the thread.',
     prevention: 'Offer changes agreed on calls must be written in the plan before production. Added to the design self-check.',
     cause: 'communication',
   },
@@ -207,7 +208,7 @@ export async function seedAdminPlatform(prisma: PrismaClient, orgId: string) {
   // SOP library
   const departments = await prisma.department.findMany({ where: { orgId, deletedAt: null } });
   for (const [deptName, sops] of Object.entries(SOPS)) {
-    const dept = departments.find((d) => d.name === deptName);
+    const dept = departments.find((d) => sameDept(d.name, deptName));
     if (!dept) continue;
     for (const sop of sops) {
       if (await prisma.sOP.findFirst({ where: { orgId, title: sop.title } })) continue;

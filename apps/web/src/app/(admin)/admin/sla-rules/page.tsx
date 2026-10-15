@@ -41,7 +41,7 @@ function Editor({ initial, canEdit }: { initial: Sla; canEdit: boolean }) {
 
   return (
     <>
-      <PageTitle title="SLA Rules" subtitle="How fast the Account Manager must send the first reply to each kind of client request. Timers count working hours only (9:30–18:30, Monday to Saturday, holidays skipped)." />
+      <PageTitle title="SLA Rules" subtitle="How fast the Client Manager must send the first reply to each kind of client request. Timers count working hours only (9:30–18:30, Monday to Saturday, holidays skipped)." />
       {!canEdit && <ReadOnlyNote who="operations" />}
       <div className="grid gap-6 [&>*]:min-w-0 lg:grid-cols-[1fr_340px]">
         <Panel title="First reply to a client request" subtitle="Applies to requests created after you save. Between 15 minutes and 10 working days." flush>

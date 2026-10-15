@@ -82,7 +82,7 @@ export function PublicProposal({ token, preview = false }: { token: string; prev
       if (c.mode === "test") return api.publicProposal.payTest(token);
       if (c.mode === "razorpay") return openRazorpay(c);
       if (c.mode === "paid") return api.publicProposal.view(token);
-      throw new Error("Online payment isn't set up yet. Your account manager will share payment details.");
+      throw new Error("Online payment isn't set up yet. Your client manager will share payment details.");
     });
   }
 
@@ -120,7 +120,7 @@ export function PublicProposal({ token, preview = false }: { token: string; prev
             Open the latest version
           </Link>
         ) : (
-          <p className="mt-3 text-sm text-ink-muted">Your account manager will share the new link shortly.</p>
+          <p className="mt-3 text-sm text-ink-muted">Your client manager will share the new link shortly.</p>
         )}
       </Card>
     );
@@ -252,7 +252,7 @@ export function PublicProposal({ token, preview = false }: { token: string; prev
           <p className="mt-2 text-sm">
             {p.kind === "renewal"
               ? `Payment received for invoice ${p.invoice?.number}. Your services continue without a break. Thank you for staying with us!`
-              : `Payment received for invoice ${p.invoice?.number}. Your account is ready and your Account Manager will be in touch to start onboarding.`}
+              : `Payment received for invoice ${p.invoice?.number}. Your account is ready and your Client Manager will be in touch to start onboarding.`}
           </p>
           <Link href="/sign-in" className="mt-4 inline-block bg-green px-5 py-2 text-sm font-semibold text-charcoal">
             Open your client app

@@ -1,12 +1,12 @@
-// Journey: AM Lead migrates an existing client and sets the current gate of its service (with a reason); the
-// service shows as migrated at that gate, earlier gates count as approved, and the AM can move the gate later.
+// Journey: CM Lead migrates an existing client and sets the current gate of its service (with a reason); the
+// service shows as migrated at that gate, earlier gates count as approved, and the CM can move the gate later.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/clients-actions/migrated-client.mjs
 import { apiCall, as, check, done, go, launch, noErrors, shot, stamp, toast } from "./lib.mjs";
 
 const browser = await launch();
 const name = `Journey Legacy ${stamp}`;
 
-console.log("AM Lead migrates an existing client");
+console.log("CM Lead migrates an existing client");
 const lead = await as(browser, "am.lead@bmu.demo");
 await go(lead, "/team/clients");
 await lead.getByRole("button", { name: "Migrate existing client" }).click();
@@ -41,7 +41,7 @@ check(await lead.getByText("Migrated at G3").isVisible(), "service shows Migrate
 check(!(await lead.getByText("Waiting for first payment").count()), "no payment hold for a migrated client");
 await shot(lead, "11-migrated-services");
 
-console.log("The AM moves the migrated service to G4");
+console.log("The CM moves the migrated service to G4");
 const am = await as(browser, "am@bmu.demo");
 const detail = await apiCall(lead, "GET", `/clients-actions/${row.id}`);
 const svc = detail.body.services[0];

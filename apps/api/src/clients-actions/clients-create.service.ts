@@ -1,5 +1,5 @@
 // v11 clients: add_client (manual, no lead), Merge into an existing client, existing-client migration, CSV import,
-// convert a lead by hand (sales manager, payment proof), AM suggestion and the Finance payment confirmation.
+// convert a lead by hand (sales manager, payment proof), CM suggestion and the Finance payment confirmation.
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import {
   CLIENT_TEAM_ROLES,
@@ -107,9 +107,9 @@ export class ClientsCreateService implements OnModuleInit {
         { key: 'billing_address', label: 'Billing address', required: true },
         { key: 'branch', label: 'Branch', required: true, hint: 'Branch name or city' },
         { key: 'gstin', label: 'GSTIN', required: false },
-        { key: 'am', label: 'Account manager', required: false, hint: 'Email or full name; empty = suggested by load' },
+        { key: 'am', label: 'Client manager', required: false, hint: 'Email or full name; empty = suggested by load' },
       ],
-      sampleCsv: 'Business name,Contact name,Contact phone,Contact email,Industry,Billing name,Billing address,Branch,GSTIN,Account manager\nAroma Bakes,Kavya Rao,9876500011,kavya@aromabakes.in,Restaurants & cafes,Aroma Bakes LLP,"12 MG Road, Bengaluru",Bengaluru,29ABCDE1234F1Z5,am@bmu.demo\n',
+      sampleCsv: 'Business name,Contact name,Contact phone,Contact email,Industry,Billing name,Billing address,Branch,GSTIN,Client manager\nAroma Bakes,Kavya Rao,9876500011,kavya@aromabakes.in,Restaurants & cafes,Aroma Bakes LLP,"12 MG Road, Bengaluru",Bengaluru,29ABCDE1234F1Z5,am@bmu.demo\n',
       canImport: (me) => hasRole(me, 'founder', 'admin', 'am_lead'),
       validate: (me, rows) => this.validateImport(me, rows),
       commit: async (me, rows, ip) => {
@@ -125,7 +125,7 @@ export class ClientsCreateService implements OnModuleInit {
   }
 
   // -------------------------------------------------------------------------
-  // Options, AM suggestion, duplicates
+  // Options, CM suggestion, duplicates
 
   async formOptions(me: Me): Promise<ClientsFormOptions> {
     assertStaff(me);
@@ -159,7 +159,7 @@ export class ClientsCreateService implements OnModuleInit {
     return this.prisma.priceBook.findFirst({ where: { orgId, status: 'active' }, orderBy: { effectiveFrom: 'desc' }, include: { services: { include: { tiers: true }, orderBy: { name: 'asc' } } } });
   }
 
-  /** AMs ranked: not on leave, already looking after this industry, then fewest active engagements and lowest load. */
+  /** CMs ranked: not on leave, already looking after this industry, then fewest active engagements and lowest load. */
   async amSuggest(me: Me, industry?: string): Promise<ClientsAmSuggestion[]> {
     assertStaff(me);
     const where: Prisma.UserWhereInput = { roles: { some: { role: { baseRole: { in: AM_BASE_ROLES } } } } };
@@ -173,7 +173,7 @@ export class ClientsCreateService implements OnModuleInit {
       return {
         id: p.id,
         name: p.name,
-        role: p.roles.includes('am_lead') ? 'AM Lead' : 'Account Manager',
+        role: p.roles.includes('am_lead') ? 'CM Lead' : 'Client Manager',
         clients: mine.length,
         activeEngagements: mine.reduce((s, c) => s + c.engagements.length, 0),
         industryMatch: ind ? mine.filter((c) => (c.industry ?? '').toLowerCase() === ind).length : 0,
@@ -222,7 +222,7 @@ export class ClientsCreateService implements OnModuleInit {
 
   async create(me: Me, body: unknown, ip?: string, opts: { source?: 'manual' | 'lead' | 'import'; leadId?: string; allowSalesManagerOnly?: boolean } = {}): Promise<ClientsCreateResult> {
     assertStaff(me);
-    if (!clientsCanAdd(me)) throw new ForbiddenException('Only the Founder, Branch Manager, Sales Manager or AM Lead can add clients');
+    if (!clientsCanAdd(me)) throw new ForbiddenException('Only the Founder, Branch Manager, Sales Manager or CM Lead can add clients');
     const parsed = clientsCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Check the form');
     const input = parsed.data;
@@ -240,11 +240,11 @@ export class ClientsCreateService implements OnModuleInit {
     });
     if (new Set(lines.map((l) => l.serviceId)).size !== lines.length) throw new BadRequestException('Each service can be added once');
 
-    // AM: chosen (must be an active AM) or suggested by load and industry.
+    // CM: chosen (must be an active CM) or suggested by load and industry.
     let amId = input.amUserId ?? null;
     if (amId) {
       const ok = await this.prisma.user.findFirst({ where: { id: amId, orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: { in: AM_BASE_ROLES } } } } } });
-      if (!ok) throw new BadRequestException('Choose an active account manager');
+      if (!ok) throw new BadRequestException('Choose an active client manager');
     } else amId = (await this.amSuggest(me, input.industry)).find((a) => a.suggested)?.id ?? null;
 
     // Merge into an existing client, or check for duplicates first.
@@ -355,7 +355,7 @@ export class ClientsCreateService implements OnModuleInit {
     if (result.pastCount) await this.audit.log(me, 'client.past_invoices_imported', 'ClientOrg', client.id, null, { count: result.pastCount }, ip);
     if (result.invoice) await this.serviceBilling.invoiceIssued(result.invoice.id).catch(() => 0);
 
-    // AM handover form: who handed the client over and what they need to know.
+    // CM handover form: who handed the client over and what they need to know.
     if (amId && (!merged || !merged.amUserId)) {
       await this.reassign.record(me, 'client_am', [{ id: client.id, fromUserId: null, toUserId: amId }], 'other', input.handoverNote ? `Handover: ${input.handoverNote}` : 'New client');
       if (input.handoverNote) await this.threadNote(me, client.id, `Handover from ${me.name}: ${input.handoverNote}`, true);
@@ -381,7 +381,7 @@ export class ClientsCreateService implements OnModuleInit {
       approval = { id: req.id, summary: req.summary };
     }
 
-    // Notify AM, AM Lead, Finance; welcome the invited users.
+    // Notify CM, CM Lead, Finance; welcome the invited users.
     const leads = await this.roleHolders(me.orgId, ['am_lead']);
     const finance = await this.roleHolders(me.orgId, ['finance']);
     const services = lines.length ? `${lines.length} service${lines.length > 1 ? 's' : ''}` : 'no services yet';
@@ -423,7 +423,7 @@ export class ClientsCreateService implements OnModuleInit {
   }
 
   // -------------------------------------------------------------------------
-  // Client users (shared with the AM / owner invite flows)
+  // Client users (shared with the CM / owner invite flows)
 
   async checkInvites(orgId: string, invites: ClientsInvite[]) {
     const seen = new Set<string>();
@@ -468,12 +468,12 @@ export class ClientsCreateService implements OnModuleInit {
     return { id: u.id, name: u.name, role: i.role };
   }
 
-  /** Welcome message in the client thread (from the AM) and a bell notification for each new user. */
+  /** Welcome message in the client thread (from the CM) and a bell notification for each new user. */
   async welcome(me: Me, clientOrgId: string, users: { id: string; name: string }[], amId: string | null) {
     const am = amId ? await this.prisma.user.findUnique({ where: { id: amId }, select: { id: true, name: true } }) : null;
     const names = users.map((u) => u.name.split(' ')[0]).join(', ');
-    await this.threadNote(am ? { ...me, id: am.id, name: am.name } : me, clientOrgId, `Welcome to BMU, ${names}! I'm ${am?.name ?? me.name}${am ? ', your account manager' : ''}. Sign in with your email or mobile number to see your services, share onboarding items and message us here any time.`, false);
-    await this.notifications.notify(me.orgId, users.map((u) => u.id), { kind: 'welcome', title: 'Welcome to BMU! Your account is ready', body: `${am?.name ?? 'Your account manager'} will help you get started.`, link: '/client' });
+    await this.threadNote(am ? { ...me, id: am.id, name: am.name } : me, clientOrgId, `Welcome to BMU, ${names}! I'm ${am?.name ?? me.name}${am ? ', your client manager' : ''}. Sign in with your email or mobile number to see your services, share onboarding items and message us here any time.`, false);
+    await this.notifications.notify(me.orgId, users.map((u) => u.id), { kind: 'welcome', title: 'Welcome to BMU! Your account is ready', body: `${am?.name ?? 'Your client manager'} will help you get started.`, link: '/client' });
     for (const u of users) await this.audit.log(me, 'client_user.invited', 'User', u.id, null, { clientOrgId, name: u.name }, undefined);
   }
 
@@ -613,7 +613,7 @@ export class ClientsCreateService implements OnModuleInit {
       const parsed = clientsCreateSchema.safeParse(r.input);
       if (!parsed.success) for (const issue of parsed.error.issues) if (!(issue.path[0] === 'branchId' && rows[i].branch)) errors.push(issue.message);
       if (rows[i].branch && !r.branch) errors.push(`Unknown branch "${rows[i].branch}"`);
-      if (r.amGiven && !r.am) errors.push(`No active account manager matches "${rows[i].am}"`);
+      if (r.amGiven && !r.am) errors.push(`No active client manager matches "${rows[i].am}"`);
       if (r.input.gstin && !SERVICE_GSTIN_RE.test(r.input.gstin.toUpperCase())) errors.push('GSTIN should look like 29ABCDE1234F1Z5');
       const n = clientsNormName(r.input.businessName);
       if (n && seenNames.has(n)) errors.push('This business is listed twice in the file');

@@ -2,7 +2,7 @@
 
 This covers everything after the first payment, for one-time projects and monthly retainers: onboarding, plan,
 tasks, versions, QC, Review Studio, sign-off, final payment and the handover. I tested it in a real browser as the
-client owner and approver (a brand-new client and the Sunrise demo accounts), AM, AM lead, strategist, producer,
+client owner and approver (a brand-new client and the Sunrise demo accounts), CM, CM lead, strategist, producer,
 QC, design head and Founder.
 
 - Journey scripts: `apps/web/e2e/deliver/*.mjs`. Run one with
@@ -18,12 +18,12 @@ QC, design head and Founder.
 ## What I tested (end to end)
 - **Onboarding (G1)**:
   - The client uploads a file (real PDF) or sends a note for each item on the checklist.
-  - The AM opens the file, marks an item blocked (a reason is required), then received.
+  - The CM opens the file, marks an item blocked (a reason is required), then received.
   - The project start date (RCD) needs every item received, then passes Gate 1.
 - **Plan (G2)**:
   - The strategist writes the plan and submits it for internal review.
-  - The AM sends it to the client. The client asks for changes, and the planning task reopens.
-  - The strategist edits and resubmits, and the AM sends it again.
+  - The CM sends it to the client. The client asks for changes, and the planning task reopens.
+  - The strategist edits and resubmits, and the CM sends it again.
   - The approvers approve under the client's approval rule.
 - **Tasks (G3)**:
   - Tasks are created with owners and deadlines, one chain per deliverable.
@@ -44,7 +44,7 @@ QC, design head and Founder.
     released.
   - The zip download contains the final files.
 - **It shows up everywhere**:
-  - Notifications (bell) for the AM, client, planner, task owners and approvers.
+  - Notifications (bell) for the CM, client, planner, task owners and approvers.
   - My Day, the Projects board, the Client 360 journey and the client journey.
   - Delivery analytics and Client Health.
 - **Mobile app (`apps/mobile`)**:
@@ -55,17 +55,17 @@ QC, design head and Founder.
 
 ## What was broken and is now fixed
 - **Missing notifications.** Nobody was told about most delivery steps, so these are now sent:
-  - Requirement sent: to the AM.
+  - Requirement sent: to the CM.
   - Project started (RCD): to the planner and the client.
-  - Plan submitted: to the AM.
+  - Plan submitted: to the CM.
   - Plan ready: to the client deciders.
-  - Plan changes requested and plan approved: to the AM.
+  - Plan changes requested and plan approved: to the CM.
   - Tasks assigned: to each owner.
-  - Final sign-off: to the AM.
+  - Final sign-off: to the CM.
 - **Plan changes.** When the client asked for changes, the planning task stayed "done", so nobody picked the plan
   up again. It now reopens.
 - **Onboarding uploads.** Clients could only type a note on onboarding items. They can now upload the file
-  itself, and the AM sees it as an "open file" link. Clients can open their own uploaded files.
+  itself, and the CM sees it as an "open file" link. Clients can open their own uploaded files.
 - **Client Files** listed every superseded version. It now shows one row per deliverable: the approved version,
   otherwise the latest one sent.
 - **Overdue invoices.** The Gate 3 check only counted invoices already marked "overdue". It now also counts issued
@@ -79,7 +79,7 @@ QC, design head and Founder.
 
 ## What I added
 1. **Monthly retainer months**
-   - A job (every 10 minutes, idempotent) and an AM button, "Start <next month>", start each month.
+   - A job (every 10 minutes, idempotent) and a CM button, "Start <next month>", start each month.
    - Each month gets deliverables from the tier's monthly quota plus whatever was unused last month, spread across
      the month as a draft plan to approve.
    - Starting a month also creates a planning task and issues the month's retainer invoice. If the client has an
@@ -95,20 +95,20 @@ QC, design head and Founder.
    - The client view is read-only and shows the live link.
 3. **Approval rule per client**
    - The options are any one approver, the owner must approve, or every approver.
-   - The client owner sets it under Team users; the AM can set it on Client 360.
+   - The client owner sets it under Team users; the CM can set it on Client 360.
    - It applies to plan approvals and Review Studio, and shows who approved and who is pending.
    - Pending approvers can be reminded with a button, and are also reminded automatically once every working day while they wait.
 4. **Delivery SLA and escalation**
    - Each deliverable has a due date from the plan.
    - Late and at-risk steps and deliverables show on the Projects board (a "Late or at risk" tile and a Delivery
      SLA panel, plus badges on cards), on My Day and on the project page.
-   - A step more than one working day late is escalated once to the department head (the AM lead if there is
-     none), and the owner and AM are told.
+   - A step more than one working day late is escalated once to the department head (the CM lead if there is
+     none), and the owner and CM are told.
 5. **Handover pack at G5**
    - A Final delivery page (`/client/handover/[id]`) lists the approved files plus the links, logins and notes the
-     AM added. The logins stay hidden until release.
+     CM added. The logins stay hidden until release.
    - "Download all (.zip)" is streamed from the server.
-   - The client gives an NPS score (0–10) and a comment. It goes to the AM, and a low score lowers Client Health.
+   - The client gives an NPS score (0–10) and a comment. It goes to the CM, and a low score lowers Client Health.
 6. **Seed data** (`apps/api/prisma/seed/deliver.ts`, idempotent)
    - Scheduled and published calendar posts.
    - Handover items, and feedback on delivered projects.

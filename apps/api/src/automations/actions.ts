@@ -112,7 +112,7 @@ async function staffByRole(ctx: ActionCtx, roles: string[]): Promise<(StaffUser 
   });
 }
 
-const personWord: Record<string, string> = { am: 'account manager', owner: 'owner', assignee: 'assignee', manager: 'manager', department_head: 'department head' };
+const personWord: Record<string, string> = { am: 'client manager', owner: 'owner', assignee: 'assignee', manager: 'manager', department_head: 'department head' };
 
 async function recipients(ctx: ActionCtx, to: string, role?: string, userIds?: string[]): Promise<{ users: StaffUser[]; missing?: string }> {
   if (to === 'role') {

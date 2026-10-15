@@ -103,7 +103,7 @@ function Details({ me, onSaved }: { me: Me; onSaved: () => void }) {
             <span className="text-ink-muted">Mobile number</span>
             <Input className="mt-1" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="10-digit mobile" />
           </label>
-          <p className="text-xs text-ink-muted">To change your email, ask your Account Manager.</p>
+          <p className="text-xs text-ink-muted">To change your email, ask your Client Manager.</p>
           {error && <p className="text-sm text-red">{error}</p>}
           <div className="flex gap-2">
             <Button disabled={busy}>Save</Button>

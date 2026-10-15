@@ -373,8 +373,8 @@ function RoleDialog({ person, onClose, onDone }: { person: PersonLite; onClose: 
 
 const GROUPS: [keyof Omit<PeopleOffboardingStatus["openRecords"], "total">, string][] = [
   ["tasks", "Tasks"],
-  ["clients", "Clients (as AM)"],
-  ["engagements", "Engagements (as AM)"],
+  ["clients", "Clients (as CM)"],
+  ["engagements", "Engagements (as CM)"],
   ["leads", "Leads"],
   ["requests", "Client requests"],
   ["approvals", "Approvals waiting on them"],

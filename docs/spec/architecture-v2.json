@@ -141,9 +141,9 @@
       "New lead: score with AI, assign by round-robin within specialty, send WhatsApp welcome, create follow-up task",
       "Proposal sent: remind after 3 days, escalate to founder after 7",
       "Client approved creative: move task to Scheduled, notify specialist, add to content calendar",
-      "Invoice overdue: polite reminder day 1, firm reminder day 7, call task for AM day 14, pause work flag day 30",
+      "Invoice overdue: polite reminder day 1, firm reminder day 7, call task for CM day 14, pause work flag day 30",
       "SLA at risk: alert owner at 75% of time, manager at 100%",
-      "Renewal in 30 days: health check, AI draft of renewal proposal, meeting task for AM",
+      "Renewal in 30 days: health check, AI draft of renewal proposal, meeting task for CM",
       "Person offboarded: reassign all open work by rules from v11"
     ]
   },
@@ -161,7 +161,7 @@
     },
     "agents": [
       {"name": "Sales assistant", "does": "Scores and enriches new leads, drafts first replies and follow-ups, books discovery calls, drafts proposals from the catalogue and past wins, flags stalled deals."},
-      {"name": "Account manager assistant", "does": "Weekly client status report draft, renewal and upsell suggestions, churn-risk alerts with reasons, meeting prep and meeting notes to tasks."},
+      {"name": "Client manager assistant", "does": "Weekly client status report draft, renewal and upsell suggestions, churn-risk alerts with reasons, meeting prep and meeting notes to tasks."},
       {"name": "Producer", "does": "Breaks a brief into tasks with owners and deadlines based on capacity, chases overdue work, rebalances when someone is overloaded or on leave."},
       {"name": "Request triage", "does": "Reads incoming client requests (portal, email, WhatsApp), classifies, sets priority and SLA, routes to the right specialist, drafts the acknowledgement."},
       {"name": "Finance collector", "does": "Matches payments to invoices, drafts reminders, flags unbilled work and scope creep."},
@@ -208,11 +208,11 @@
       "Requests with SLA countdown and live status",
       "Invoices, pay online (UPI, card, net banking), download GST invoices and statements",
       "Shared files and brand kit",
-      "Meeting booking with the account manager",
-      "Monthly report (auto-generated, reviewed by AM before it is shared)",
+      "Meeting booking with the client manager",
+      "Monthly report (auto-generated, reviewed by CM before it is shared)",
       "Multiple client users with their own roles (owner, approver, viewer, finance)"
     ],
-    "client_dashboard": "Built on v12 Dashboard Studio; the AM picks the widgets each client sees."
+    "client_dashboard": "Built on v12 Dashboard Studio; the CM picks the widgets each client sees."
   },
 
   "finance_v2": {

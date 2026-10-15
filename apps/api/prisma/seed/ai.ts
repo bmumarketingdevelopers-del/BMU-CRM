@@ -58,7 +58,7 @@ export async function seedAi(prisma: PrismaClient, orgId: string) {
       data: {
         orgId,
         name: 'AI drafts a reply to unhappy requests',
-        description: 'When a client request sounds unhappy, AI Copilot drafts a calm reply and sends it to the account manager to review. Nothing goes to the client automatically.',
+        description: 'When a client request sounds unhappy, AI Copilot drafts a calm reply and sends it to the client manager to review. Nothing goes to the client automatically.',
         trigger: 'request_created',
         conditions: [{ field: 'tone', op: 'equals', value: 'negative' }],
         actions: [{ type: 'ai_draft', draft: 'client_message', to: 'am', instruction: 'Apologise, acknowledge the issue and promise a call today.' }],

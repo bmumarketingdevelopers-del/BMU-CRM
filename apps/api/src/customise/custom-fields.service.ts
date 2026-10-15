@@ -142,7 +142,7 @@ export class CustomFieldsService {
       case 'request': {
         const r = await this.prisma.request.findFirst({ where: { id, orgId: me.orgId }, select: { assigneeId: true, engagement: { select: { amId: true } } } });
         if (!r) throw new NotFoundException('Request not found');
-        if (!isClientLead(me) && r.engagement.amId !== me.id && r.assigneeId !== me.id && !hasRole(me, 'department_head', 'finance')) throw new ForbiddenException("This request belongs to another Account Manager's client");
+        if (!isClientLead(me) && r.engagement.amId !== me.id && r.assigneeId !== me.id && !hasRole(me, 'department_head', 'finance')) throw new ForbiddenException("This request belongs to another Client Manager's client");
         return { canEdit: !hasRole(me, 'finance') || isClientLead(me) || r.engagement.amId === me.id || r.assigneeId === me.id };
       }
       case 'creator': {

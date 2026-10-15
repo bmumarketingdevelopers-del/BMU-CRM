@@ -1,16 +1,17 @@
 import type { PrismaClient } from '../../src/generated/prisma/client.js';
+import { sameDept } from './dept-names.js';
 
 const day = (s: string) => new Date(`${s}T00:00:00Z`);
 const istDay = (d: Date) => new Date(d.getTime() + 330 * 60_000).toISOString().slice(0, 10);
 
 const DEMO_SOPS: { department: string; title: string; body: string }[] = [
   {
-    department: 'Account Management',
+    department: 'Client Management',
     title: 'Client onboarding in the first 48 hours',
     body: `## Why\nA calm, fast start sets the tone for the whole engagement.\n\n## Steps\n1. Send the welcome message from Messages within 2 working hours of payment.\n2. Open the requirements checklist and add anything specific to this client.\n3. Book the kick-off call and add it to the checklist.\n4. Chase missing items once a day, politely, in the client thread.\n5. When every item is received, mark the Project start date (RCD). Planning gets 4 working days from then.\n\n## Done when\nAll requirements are received and the start date is set.`,
   },
   {
-    department: 'Account Management',
+    department: 'Client Management',
     title: 'Handling extra requests and quotes',
     body: `## Rule\nNothing outside the agreed scope starts without a written approval in the app.\n\n## Steps\n1. Reply within the first-reply time shown on the request.\n2. Decide: in scope, extra (quote from the add-on list) or decline with a reason.\n3. For extras, send the quote. Work starts only after the client approves and pays.\n4. Keep all decisions in the request thread, never on WhatsApp alone.`,
   },
@@ -22,7 +23,7 @@ const DEMO_SOPS: { department: string; title: string; body: string }[] = [
   {
     department: 'QC',
     title: 'QC review checklist basics',
-    body: `## What QC checks\n- Spelling, grammar and phone numbers\n- Brand colours, logo use and fonts\n- Platform sizes and safe areas\n- The brief and plan were followed\n\n## Outcome\nPass sends the version to the AM to share. Fail returns it to the maker with notes on every failed item. You cannot QC your own work.`,
+    body: `## What QC checks\n- Spelling, grammar and phone numbers\n- Brand colours, logo use and fonts\n- Platform sizes and safe areas\n- The brief and plan were followed\n\n## Outcome\nPass sends the version to the CM to share. Fail returns it to the maker with notes on every failed item. You cannot QC your own work.`,
   },
   {
     department: 'HR / Ops',
@@ -156,7 +157,7 @@ export async function seedWorkspace(prisma: PrismaClient, orgId: string) {
     });
   }
 
-  // Leave requests and a little attendance for the Account Manager.
+  // Leave requests and a little attendance for the Client Manager.
   if (amId && (await prisma.leaveRequest.count({ where: { userId: amId } })) === 0) {
     const leadId = idOf('am.lead@bmu.demo');
     await prisma.leaveRequest.createMany({
@@ -188,7 +189,7 @@ export async function seedWorkspace(prisma: PrismaClient, orgId: string) {
   if ((await prisma.sOP.count({ where: { orgId } })) === 0) {
     const departments = await prisma.department.findMany({ where: { orgId }, select: { id: true, name: true } });
     for (const s of DEMO_SOPS) {
-      const dept = departments.find((d) => d.name === s.department);
+      const dept = departments.find((d) => sameDept(d.name, s.department));
       if (dept) await prisma.sOP.create({ data: { orgId, departmentId: dept.id, title: s.title, body: s.body } });
     }
   }

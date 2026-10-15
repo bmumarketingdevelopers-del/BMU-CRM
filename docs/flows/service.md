@@ -21,7 +21,7 @@ The API side is covered by `apps/api/test/service.e2e-spec.ts`.
 - The client sees the status at every step. The decline and reschedule paths work. An SLA breach shows in the inbox.
 
 **Messages**
-- Client to AM and AM to client. Internal notes never reach the client.
+- Client to CM and CM to client. Internal notes never reach the client.
 - Unread counts in the menu and per conversation. File attachments.
 - Same-working-day reply tracking. Bell links open the right page for every notification kind.
 - Notification preferences are respected, on both the client profile and the team profile.
@@ -34,10 +34,10 @@ The API side is covered by `apps/api/test/service.e2e-spec.ts`.
 
 **Automations**
 - Each of the 15 triggers was built through the rule builder, tested against current data and saved.
-- A client-request rule (condition, in-app alert, task, internal note, client message, email) ran with Run now. Each action was checked for real: AM bell, AM task list, the client thread (the internal note stays hidden), and the Outbox.
+- A client-request rule (condition, in-app alert, task, internal note, client message, email) ran with Run now. Each action was checked for real: CM bell, CM task list, the client thread (the internal note stays hidden), and the Outbox.
 - A lead rule assigned an owner round-robin and moved the stage.
 - Webhooks to this computer or a private network are refused; a public address is accepted.
-- Checked the run log, the rule history, and switching a rule off and on from the list. Account Managers cannot run or switch rules.
+- Checked the run log, the rule history, and switching a rule off and on from the list. Client Managers cannot run or switch rules.
 
 ## What was broken and is fixed
 
@@ -56,7 +56,7 @@ The API side is covered by `apps/api/test/service.e2e-spec.ts`.
 ## What was added
 
 1. **GST tax invoice**: a printable invoice with seller and buyer GSTIN, place of supply, CGST + SGST (or IGST between states), amount in words, payments and credit notes, bank and UPI details. "Save as PDF" uses the print styles. Clients and Finance can edit billing details (client owner or client finance only on the client side). Invoice emails carry the tax invoice.
-2. **Dunning**: reminders at 1, 7 and 14 working days late (configurable on Collections). The tone gets firmer each time. Each reminder sends a client message, an email and a Finance + AM alert. Only the latest due step is sent, and reminders stop when the invoice is paid or pause while a promise to pay is pending. Collections can log a promise to pay and send a reminder by hand.
+2. **Dunning**: reminders at 1, 7 and 14 working days late (configurable on Collections). The tone gets firmer each time. Each reminder sends a client message, an email and a Finance + CM alert. Only the latest due step is sent, and reminders stop when the invoice is paid or pause while a promise to pay is pending. Collections can log a promise to pay and send a reminder by hand.
 3. **Email Outbox**: real emails through SMTP when `SMTP_*` is set (see `apps/api/.env.example`). Otherwise every email is saved to Command Centre > Platform > Outbox with a preview. Wired in: sign-in codes, invoices, quotes, reminders, draft ready and the automation email action, all respecting templates and preferences.
 4. **Ratings**: thumbs up or down plus a comment on done requests. Ratings feed Client Health and the SLA analytics page. A client can reopen a request within 7 days, which puts it back in progress and creates a task.
 5. **Billing run** (Finance): preview this month's retainer invoices, then issue all or selected. Duplicates are checked by engagement + month inside a lock, including retainer invoices made at cycle start. Every run is logged.

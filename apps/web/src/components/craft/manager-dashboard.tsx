@@ -1,5 +1,5 @@
 "use client";
-// v10 craft: the Manager workspace for account managers, project managers, AM leads and department heads.
+// v10 craft: the Manager workspace for client managers, project managers, CM leads and department heads.
 // My Day strip, KPIs, Today, the assignment board, the client portfolio and the team's next two weeks.
 import { useEffect, useState, type ReactNode } from "react";
 import { dashboardDefaultLayout, type CraftManagerView } from "@bmu/shared";

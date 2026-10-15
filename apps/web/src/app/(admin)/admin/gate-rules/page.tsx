@@ -57,7 +57,7 @@ function Editor({ initial, canEdit }: { initial: Rules; canEdit: boolean }) {
 
   const extra: Record<string, ReactNode> = {
     G1: (
-      <Rule title="Plan deadline after requirements are complete" hint="Working days the strategist gets to deliver the plan once the Account Manager marks requirements complete (RCD). Holidays and Sundays are skipped.">
+      <Rule title="Plan deadline after requirements are complete" hint="Working days the strategist gets to deliver the plan once the Client Manager marks requirements complete (RCD). Holidays and Sundays are skipped.">
         {canEdit ? (
           <label className="flex items-center gap-2 text-sm">
             <Input type="number" min={1} max={30} className="w-20!" value={rules.planDeadlineWorkingDays} onChange={(e) => setRules({ ...rules, planDeadlineWorkingDays: Number(e.target.value) })} aria-label="Working days" />

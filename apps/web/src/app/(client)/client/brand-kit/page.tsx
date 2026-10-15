@@ -9,7 +9,7 @@ export default function ClientBrandKitPage() {
   const kit = useLoad(() => api.creative.clientBrandKit(), { live: false });
   return (
     <>
-      <PageTitle title="Brand kit" subtitle="What our team follows for your brand. Tell your Account Manager if anything here is out of date." />
+      <PageTitle title="Brand kit" subtitle="What our team follows for your brand. Tell your Client Manager if anything here is out of date." />
       {kit.data ? <BrandKitCard kit={kit.data} readOnly /> : <LoadState loading={kit.loading} error={kit.error} />}
     </>
   );

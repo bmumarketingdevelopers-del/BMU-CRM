@@ -2,7 +2,7 @@
 // API: a fresh client with a project and an open invoice.
 // Browser: Finance creates a pay link on the invoice → the client pays on the public pay page (test mode) → the invoice
 // is paid and the client sees "Payment received" on their thread. A Razorpay payment nobody can place lands in
-// "Payments to match" and Finance matches it. The AM claims a billable expense, Finance approves and re-bills it.
+// "Payments to match" and Finance matches it. The CM claims a billable expense, Finance approves and re-bills it.
 // Finance plans 50/30/20 instalments and issues the first. Profit and Cash flow pages load. A producer runs the
 // stopwatch. The workload board books a designer and refuses someone on approved leave.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/finance/finance.mjs
@@ -75,7 +75,7 @@ try {
   check((await finance.get(`/finance/invoices/${inv2.id}`)).status === "paid", "matched payment marked the invoice paid");
   await shot(fin, "finance-reconcile");
 
-  console.log("4. The AM claims a billable expense; Finance approves it and re-bills the client");
+  console.log("4. The CM claims a billable expense; Finance approves it and re-bills the client");
   const amPage = await as("am@bmu.demo");
   await go(amPage, "/team/expenses");
   await amPage.getByTestId("new-expense").click();

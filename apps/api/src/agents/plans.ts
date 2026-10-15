@@ -150,7 +150,7 @@ export async function triageBasic(h: PlanHelpers, requestId: string): Promise<Ba
   if (t.urgency === 'high' && r.engagement.amId) await h.act('notify_person', { userId: r.engagement.amId, title: `Urgent request from ${f.client}`, body: redact(r.description).slice(0, 160), link: `/team/requests/${r.id}` });
   if (t.type !== r.type && (REQUEST_TYPES as readonly string[]).includes(t.type)) await h.act('set_request_type', { requestId, type: t.type, reason: t.reasoning.slice(0, 380) });
   if (!r.assigneeId) {
-    const who = r.engagement.amId ? { id: r.engagement.amId, why: "The client's account manager" } : await suggestOwner(h, 'request', requestId);
+    const who = r.engagement.amId ? { id: r.engagement.amId, why: "The client's client manager" } : await suggestOwner(h, 'request', requestId);
     if (who) await h.act('assign_request', { requestId, assigneeId: who.id, reason: who.why });
   }
   if (!r.firstReplyAt) await h.act('reply_to_request', { requestId, text: basicReply(f.client, r.description, t.type).replace(/Warm regards$/, 'Warm regards,\nTeam BMU Marketing') });
@@ -160,16 +160,16 @@ export async function triageBasic(h: PlanHelpers, requestId: string): Promise<Ba
 export function triagePrompt(f: Awaited<ReturnType<typeof requestFacts>>) {
   const r = f.request;
   return `A client raised a new request. Request id: ${r.id}
-Client: ${f.client}. Service: ${f.service}. Type picked by the client: ${r.type}. Status: ${r.status}. Assigned to someone: ${r.assigneeId ? 'yes' : 'no'}. Account manager id: ${r.engagement.amId ?? 'none'}. Already replied: ${r.firstReplyAt ? 'yes' : 'no'}.
+Client: ${f.client}. Service: ${f.service}. Type picked by the client: ${r.type}. Status: ${r.status}. Assigned to someone: ${r.assigneeId ? 'yes' : 'no'}. Client manager id: ${r.engagement.amId ?? 'none'}. Already replied: ${r.firstReplyAt ? 'yes' : 'no'}.
 Deliverable: ${f.deliverable ? `${f.deliverable.title}, ${f.deliverable.revisionRoundsUsed} of ${f.rounds} revision rounds used` : 'not linked'}.
 The request: ${fence('client request', r.description, 3000)}
 
 Do this:
 1. Decide the type (change, new_scope, urgent, question, billing), urgency (low, normal, high) and whether it is in scope. Use knowledge_search for the service's inclusions and SOPs when useful.
 2. add_request_note with your triage in 2-4 short lines.
-3. If urgency is high, notify_person the account manager.
+3. If urgency is high, notify_person the client manager.
 4. If the type should be different, set_request_type.
-5. If nobody is assigned, assign_request (usually the account manager).
+5. If nobody is assigned, assign_request (usually the client manager).
 6. If nobody has replied, reply_to_request with a short, warm acknowledgement that says what happens next. Never promise prices, dates or free work.
 Finish with one line saying what you did.`;
 }
@@ -309,7 +309,7 @@ Use business_summary, sales_numbers, clients_at_risk and team_performance. Keep 
 
 export const AGENT_SYSTEM: Record<AgentKey, string> = {
   sales_assistant: `You are the Sales assistant agent in BMU Hub, the CRM of BMU Marketing (a marketing agency in Bengaluru: social media, branding, web, video, SEO, ads). You prepare new leads for the sales team.`,
-  request_triage: `You are the Request triage agent in BMU Hub, the CRM of BMU Marketing (a marketing agency in Bengaluru). You triage requests raised by clients so the account manager can act fast.`,
+  request_triage: `You are the Request triage agent in BMU Hub, the CRM of BMU Marketing (a marketing agency in Bengaluru). You triage requests raised by clients so the client manager can act fast.`,
   producer: `You are the Producer agent in BMU Hub, the CRM of BMU Marketing (a marketing agency in Bengaluru). You keep production on track: chase overdue work and suggest fair reassignments.`,
   analyst: `You are the Analyst agent in BMU Hub, the CRM of BMU Marketing (a marketing agency in Bengaluru). You answer questions about the business and write the monthly founder report.`,
   finance_collector: `You are the Finance collector agent in BMU Hub, the CRM of BMU Marketing (a marketing agency in Bengaluru). You help Finance collect money: match payments to invoices, chase overdue invoices politely and flag costs nobody billed. Every payment match and reminder waits for a person.`,

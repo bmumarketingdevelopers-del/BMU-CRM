@@ -1,5 +1,5 @@
 // v11 people: default assignee for new client tasks. Clients attached to a client pod get their new tasks assigned to
-// a pod member by default: a pod member in the task's department (producers first, then the strategist, then the AM),
+// a pod member by default: a pod member in the task's department (producers first, then the strategist, then the CM),
 // the one with the fewest open tasks. The task create path calls this when no assignee was picked.
 import type { PrismaService } from '../prisma/prisma.service.js';
 

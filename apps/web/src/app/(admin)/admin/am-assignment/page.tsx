@@ -41,22 +41,22 @@ export default function AmAssignmentPage() {
 
   return (
     <>
-      <PageTitle title="AM Assignment" subtitle="How many clients each account manager looks after, and who should take a client over." />
+      <PageTitle title="CM Assignment" subtitle="How many clients each client manager looks after, and who should take a client over." />
       <ErrorNote>{error}</ErrorNote>
       {done && <p className="mb-4 border border-green bg-green/10 px-4 py-2 text-sm">{done}</p>}
       <LoadState loading={!data && w.loading} error={w.error} />
       {data && (
         <div className="space-y-6">
           <StatRow>
-            <StatTile label="Account managers" value={data.ams.length} />
+            <StatTile label="Client managers" value={data.ams.length} />
             <StatTile label="Clients" value={data.clients.length} />
-            <StatTile label="Without an AM" value={unassigned.length} tone={unassigned.length ? "bad" : "default"} />
+            <StatTile label="Without a CM" value={unassigned.length} tone={unassigned.length ? "bad" : "default"} />
             <StatTile label="Busiest" value={busiest?.activeEngagements ?? 0} hint={busiest ? `${busiest.name} · active engagements` : undefined} />
           </StatRow>
 
           <div className="grid grid-cols-1 gap-6 [&>*]:min-w-0 lg:grid-cols-[1fr_2fr]">
             <div className="space-y-6">
-              <Panel title="Active engagements per AM" subtitle="Paused, offboarding, delivered and closed work is not counted.">
+              <Panel title="Active engagements per CM" subtitle="Paused, offboarding, delivered and closed work is not counted.">
                 <BarList
                   items={[...data.ams]
                     .sort((a, b) => b.activeEngagements - a.activeEngagements)
@@ -71,18 +71,18 @@ export default function AmAssignmentPage() {
                       <span className="text-xs text-ink-muted">{ROLE_LABEL[a.role]}</span>
                     </li>
                   ))}
-                  {data.ams.length === 0 && <li className="px-5 py-6 text-center text-ink-muted">No account managers yet. Give someone the Account Manager role under Users.</li>}
+                  {data.ams.length === 0 && <li className="px-5 py-6 text-center text-ink-muted">No client managers yet. Give someone the Client Manager role under Users.</li>}
                 </ul>
               </Panel>
             </div>
 
             <Panel
               title="Clients"
-              subtitle="Pick a new AM and confirm. It is logged in the audit trail."
+              subtitle="Pick a new CM and confirm. It is logged in the audit trail."
               action={
-                <Select aria-label="Filter by AM" value={filter} onChange={(e) => setFilter(e.target.value)}>
-                  <option value="">All AMs</option>
-                  <option value="none">No AM</option>
+                <Select aria-label="Filter by CM" value={filter} onChange={(e) => setFilter(e.target.value)}>
+                  <option value="">All CMs</option>
+                  <option value="none">No CM</option>
                   {data.ams.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name}
@@ -108,13 +108,13 @@ export default function AmAssignmentPage() {
                     ),
                   },
                   { key: "active", header: "Active work", align: "right", cell: (c) => c.activeEngagements },
-                  { key: "am", header: "Current AM", cell: (c) => c.am?.name ?? <Badge tone="red">None</Badge> },
+                  { key: "am", header: "Current CM", cell: (c) => c.am?.name ?? <Badge tone="red">None</Badge> },
                   {
                     key: "move",
                     header: "Move to",
                     cell: (c) => (
                       <div className="flex items-center gap-2">
-                        <Select aria-label={`New AM for ${c.name}`} value={choice[c.id] ?? ""} onChange={(e) => setChoice((s) => ({ ...s, [c.id]: e.target.value }))}>
+                        <Select aria-label={`New CM for ${c.name}`} value={choice[c.id] ?? ""} onChange={(e) => setChoice((s) => ({ ...s, [c.id]: e.target.value }))}>
                           <option value="">Choose…</option>
                           {data.ams
                             .filter((a) => a.id !== c.am?.id)

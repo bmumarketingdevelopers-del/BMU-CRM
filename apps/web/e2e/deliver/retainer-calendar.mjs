@@ -1,8 +1,8 @@
 // Deliver journey 2: a fresh monthly retainer (Social Media Management, Growth) through its first month and the
 // roll-over into the next one, then the content calendar.
 // API: lead → pay → onboarding → RCD → small plan (2 posts, 1 reel) approved → tasks → 2 posts made, QC'd, approved.
-// Browser: AM sees the cycles panel (quota, unused that rolls over) → clicks "Start November 2026" → the new month has a
-// prefilled plan with carried-over items and its own retainer invoice → clicking again is refused → AM drags an approved
+// Browser: CM sees the cycles panel (quota, unused that rolls over) → clicks "Start November 2026" → the new month has a
+// prefilled plan with carried-over items and its own retainer invoice → clicking again is refused → CM drags an approved
 // post onto a calendar day, sets the channel, marks it published with a live link → client sees it on their calendar
 // (month and week views) with the live link → notifications.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/deliver/retainer-calendar.mjs
@@ -68,7 +68,7 @@ try {
   }
   check(true, "2 posts uploaded, QC passed, sent and approved by the client");
 
-  console.log("2. AM: cycles panel → Start next month");
+  console.log("2. CM: cycles panel → Start next month");
   let page = await as("am@bmu.demo");
   await go(page, `/team/projects/${e.id}`);
   const panel = page.getByTestId("cycles-panel");
@@ -82,7 +82,7 @@ try {
   await shot(page, "j2-cycles-panel");
   const cycles = await am.get(`/deliver/engagements/${e.id}/cycles`);
   const next = cycles.cycles[0];
-  check(next.startedBy && next.startedBy !== "auto", `${next.label} started by the AM`);
+  check(next.startedBy && next.startedBy !== "auto", `${next.label} started by the CM`);
   check(next.carriedOver.some((x) => x.type === "post" && x.count === 10), "10 unused posts carried over");
   check(next.quota.find((q) => q.type === "post")?.count === 22, "post quota = 12 + 10 carried over");
   check(next.invoice && ["issued", "draft", "overdue"].includes(next.invoice.status), `retainer invoice issued for the month (${next.invoice?.number})`);

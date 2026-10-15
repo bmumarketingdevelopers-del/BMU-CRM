@@ -38,7 +38,7 @@ export default function ClientHandoverPage({ params }: { params: Promise<{ id: s
         <Panel title="Handover pack">
           <HandoverContents v={v} onChange={setFresh} />
         </Panel>
-        <Panel title="How did we do?" subtitle="Your answer goes straight to your account manager and BMU leadership.">
+        <Panel title="How did we do?" subtitle="Your answer goes straight to your client manager and BMU leadership.">
           {v.can.giveFeedback ? (
             <FeedbackForm v={v} onChange={setFresh} />
           ) : (

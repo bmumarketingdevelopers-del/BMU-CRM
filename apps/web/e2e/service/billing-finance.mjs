@@ -165,7 +165,7 @@ if (ready.length) {
   check(runs[0]?.issuedCount === 0 && runs[1]?.issuedCount === 1, "both runs are in the log");
 } else check(true, "nothing ready to bill this month (all already billed)");
 const amRun = await apiCall(am, "GET", "/service/finance/billing-run");
-check(amRun.status === 403, "Account Managers cannot open the billing run");
+check(amRun.status === 403, "Client Managers cannot open the billing run");
 await finance.reload();
 await finance.getByText(/Active retainers/).waitFor();
 await shot(finance, "billing-run");

@@ -27,12 +27,12 @@ export const CRAFT_SPECIALTIES = [
 
 /**
  * Project manager: a manager specialty (not a maker), so it is kept out of CRAFT_SPECIALTIES and never picks a
- * specialist dashboard. People with it (and AMs, AM leads and department heads) get the Manager workspace.
+ * specialist dashboard. People with it (and CMs, CM leads and department heads) get the Manager workspace.
  */
 export const CRAFT_PROJECT_MANAGER: CraftSpecialtyDef = {
   id: "project_manager",
   label: "Project manager",
-  department: "Account Management",
+  department: "Client Management",
   baseRole: "account_manager",
   description: "Assigns work across a mixed team and looks after a set of clients.",
   steps: [],
@@ -404,7 +404,7 @@ export type CraftSpecialistRow = {
 };
 
 // ---------------------------------------------------------------------------
-// Manager workspace (account managers, AM leads, department heads, project managers)
+// Manager workspace (client managers, CM leads, department heads, project managers)
 
 /** Base roles whose /team home is the Manager workspace (unless they also have a maker specialty). */
 export const CRAFT_MANAGER_ROLES = ["account_manager", "am_lead", "department_head"] as const;

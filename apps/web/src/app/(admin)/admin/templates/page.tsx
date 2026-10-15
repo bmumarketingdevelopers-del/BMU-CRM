@@ -15,7 +15,7 @@ function useCanPublish() {
 }
 
 const ROLES = [
-  ["am", "Client's Account Manager"],
+  ["am", "Client's Client Manager"],
   ["strategist", "Strategist"],
   ["producer", "Producer"],
   ["qc_reviewer", "QC Reviewer"],

@@ -45,7 +45,7 @@ export default function EngagementsPage() {
     { key: "billing", header: "Billing", cell: (r) => BILLING[r.billingType] ?? r.billingType },
     { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
     { key: "gate", header: "Current gate", cell: (r) => <span className="whitespace-nowrap text-ink-muted">{gateLabel(r.currentGate)}</span> },
-    { key: "am", header: "Account manager", cell: (r) => r.am?.name ?? <span className="text-[#9a6b00]">Unassigned</span> },
+    { key: "am", header: "Client manager", cell: (r) => r.am?.name ?? <span className="text-[#9a6b00]">Unassigned</span> },
     { key: "start", header: "Started", align: "right", cell: (r) => <span className="whitespace-nowrap">{fmtDate(r.startDate)}</span> },
   ];
 
@@ -92,8 +92,8 @@ export default function EngagementsPage() {
                     </option>
                   ))}
                 </Select>
-                <Select aria-label="Account manager" value={am} onChange={(e) => setAm(e.target.value)}>
-                  <option value="">All AMs</option>
+                <Select aria-label="Client manager" value={am} onChange={(e) => setAm(e.target.value)}>
+                  <option value="">All CMs</option>
                   <option value="none">Unassigned</option>
                   {ams.map(([id, name]) => (
                     <option key={id} value={id}>

@@ -1,6 +1,6 @@
 // Deliver journey 1: a brand-new paying client through a one-time project, driven in the browser by every role.
-// lead → proposal → e-sign + pay (API) → client onboarding uploads → AM blocks/receives → RCD (G1) → strategist plan →
-// AM sends → client asks for changes → resubmit → approver + owner approve under "all approvers" (G2) → tasks (G3) →
+// lead → proposal → e-sign + pay (API) → client onboarding uploads → CM blocks/receives → RCD (G1) → strategist plan →
+// CM sends → client asks for changes → resubmit → approver + owner approve under "all approvers" (G2) → tasks (G3) →
 // task board (start / blocked / log time / done) → versions (png, mp4, pdf, link) → QC fail/pass (uploader can't QC) →
 // send → client Review Studio (pin, video time comment, compare, request changes, approve version) → G4 → balance
 // invoice → sign-off + test payment → G5 → final delivery page: zip download + feedback → Client Health.
@@ -30,7 +30,7 @@ try {
   const c = await freshClient({ services: [{ serviceKey: "logo_brand_kit", tier: "starter" }] });
   const e = c.engagements[0];
   check(e.currentGate === "G1" && e.status === "onboarding", "client account and engagement created at G1");
-  // Make sure the demo AM owns it (load balancing may pick another AM).
+  // Make sure the demo CM owns it (load balancing may pick another CM).
   const am = users.find((u) => u.email === "am@bmu.demo");
   await api("founder@bmu.demo").post(`/admin-org/clients/${c.clientOrgId}/am`, { amUserId: am.id }).catch(() => {});
   // Second decider on the client account, so the approval rule can be tested.
@@ -53,15 +53,15 @@ try {
   check((await page.getByText("Sent, BMU is checking").count()) >= 2, "both items show as sent");
   await shot(page, "j1-client-onboarding");
 
-  console.log("3. AM: open project, check the file, block then receive, mark RCD (G1)");
+  console.log("3. CM: open project, check the file, block then receive, mark RCD (G1)");
   page = await as("am@bmu.demo");
   await go(page, "/team");
   await page.getByRole("button", { name: /notifications/i }).first().click().catch(() => {});
   await go(page, `/team/projects/${e.id}`);
-  check(await page.getByRole("link", { name: "open file" }).isVisible(), "AM sees the uploaded file as a link");
+  check(await page.getByRole("link", { name: "open file" }).isVisible(), "CM sees the uploaded file as a link");
   const fileHref = await page.getByRole("link", { name: "open file" }).getAttribute("href");
   const fileRes = await page.request.get(`${BASE}${fileHref}`);
-  check(fileRes.ok(), "uploaded file opens for the AM");
+  check(fileRes.ok(), "uploaded file opens for the CM");
   await page.getByRole("button", { name: "Mark blocked" }).first().click();
   await page.getByPlaceholder("Why is it blocked? (required)").fill("Fonts missing from the pack");
   await page.getByRole("button", { name: "Save" }).click();
@@ -94,13 +94,13 @@ try {
   await page.getByText("Internal review").first().waitFor();
   check(true, "plan submitted for internal review");
 
-  console.log("5. AM approves internally and sends to the client");
+  console.log("5. CM approves internally and sends to the client");
   page = await as("am@bmu.demo");
   await go(page, `/team/projects/${e.id}`);
   await page.getByRole("button", { name: "Approve and send to client" }).click();
   await page.getByText("With client").first().waitFor();
 
-  console.log("6. Client asks for changes; strategist updates; AM resends");
+  console.log("6. Client asks for changes; strategist updates; CM resends");
   page = await as(c.email);
   await go(page, "/client/approvals");
   await page.getByRole("button", { name: "Request changes" }).click();
@@ -119,7 +119,7 @@ try {
   await page.getByRole("button", { name: "Approve and send to client" }).click();
   await page.getByText("With client").first().waitFor();
 
-  console.log("7. Approval rule = every approver: approver approves, owner pending, AM reminds, owner approves (G2 → G3)");
+  console.log("7. Approval rule = every approver: approver approves, owner pending, CM reminds, owner approves (G2 → G3)");
   page = await as(c.email);
   await go(page, "/client/team");
   await page.getByText("Every approver").click();
@@ -175,7 +175,7 @@ try {
   check(true, "task started, blocked with reason, resumed, 1.5h logged, done");
   await shot(page, "j1-task-board");
 
-  console.log("9. Makers upload versions; QC; AM sends after a pass");
+  console.log("9. Makers upload versions; QC; CM sends after a pass");
   const uploads = [
     ["Logo concepts", "post.png"],
     ["Logo reveal reel", "reel.mp4"],
@@ -264,7 +264,7 @@ try {
     await approver.getByText("Approved", { exact: true }).first().waitFor();
   }
 
-  // Changes on the logo: maker uploads v2, QC fails it, maker fixes v3, QC passes, AM sends, client compares and approves v3.
+  // Changes on the logo: maker uploads v2, QC fails it, maker fixes v3, QC passes, CM sends, client compares and approves v3.
   {
     const id = byTitle["Logo concepts"];
     const d = await api("am@bmu.demo").get(`/deliverables/${id}`);
@@ -337,7 +337,7 @@ try {
   page = await as("am@bmu.demo");
   await go(page, "/team");
   const amNotes = await api("am@bmu.demo").get("/notifications");
-  for (const kind of ["requirement_sent", "plan_review", "plan_changes", "plan_approved", "approval_partial", "client_feedback"]) check(amNotes.items.some((n) => n.kind === kind), `AM notified: ${kind}`);
+  for (const kind of ["requirement_sent", "plan_review", "plan_changes", "plan_approved", "approval_partial", "client_feedback"]) check(amNotes.items.some((n) => n.kind === kind), `CM notified: ${kind}`);
   await go(page, `/team/projects/${e.id}`);
   check(await page.getByText("Final delivery and handover pack").isVisible(), "project shows the handover pack");
   check(await page.getByText("Lovely work, quick turnaround").isVisible(), "project shows the client's feedback");

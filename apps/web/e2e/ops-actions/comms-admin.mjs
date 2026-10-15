@@ -6,7 +6,7 @@ import { as, apiCall, check, done, go, launch, noErrors, noSideScroll, shot, sta
 
 const browser = await launch();
 
-console.log("1. AM starts a project discussion and turns a message into a request");
+console.log("1. CM starts a project discussion and turns a message into a request");
 const am = await as(browser, "am@bmu.demo");
 await go(am, "/team/messages");
 await am.getByTestId("start-discussion").click();

@@ -21,7 +21,7 @@ TAGS = {
     "FA": ("FA", HexColor("#C0392B"), "Founder & Admin only"),
     "$": ("$", HexColor("#B7791F"), "+ Finance"),
     "P": ("P", HexColor("#6B46C1"), "+ HR/Ops & Dept Head"),
-    "L": ("L", HexColor("#2B6CB0"), "+ AM Lead & Dept Head"),
+    "L": ("L", HexColor("#2B6CB0"), "+ CM Lead & Dept Head"),
     "N": ("N", HexColor("#2F855A"), "all except HR/Ops"),
 }
 
@@ -291,8 +291,8 @@ roles = R("Founder / Super Admin", "all branches - everything, incl. roles,\npri
         R("Sales Manager", "lead assignment,\nproposals, discounts", w=100, h=36, kids=[
             R("Sales Executive", "own leads &\nproposals", w=82, h=30, size=8),
         ]),
-        R("AM Lead", "AM assignment,\nescalations, health", w=100, h=36, kids=[
-            R("Account Manager", "onboarding, comms,\nrequests, drafts", w=86, h=38, size=8),
+        R("CM Lead", "CM assignment,\nescalations, health", w=100, h=36, kids=[
+            R("Client Manager", "onboarding, comms,\nrequests, drafts", w=86, h=38, size=8),
         ]),
         R("Finance", "invoices, payments,\nGST, payouts", w=88, h=36),
         R("HR / Ops", "people, leave,\nattendance", w=80, h=36),
@@ -326,7 +326,7 @@ dx = W / 2 + 30
 c.setFont("Helvetica-Bold", 10)
 c.setFillColor(INK)
 c.drawString(dx, 156, "12 departments")
-deps = ["Sales", "Account Management", "Strategy", "Creative / Design", "Video / Production", "Web / AI",
+deps = ["Sales", "Client Management", "Strategy", "Creative / Design", "Video / Production", "Web / AI",
         "SEO", "Performance Ads", "Creator / UGC", "QC", "Finance", "HR / Ops"]
 for i, d in enumerate(deps):
     col, rw = i % 3, i // 3
@@ -355,11 +355,11 @@ cc = [
 cc2 = [
     ("Organisation", [("Hierarchy Tree", "P"), ("Users", "P"), ("Roles & Permissions", "P"), ("Departments & Teams", "P"), ("Branches", "P"),
                       ("Attendance & Leave", "P"), "Holidays & Working Hours", ("Onboarding & Offboarding", "P"), ("Timesheets", "P")]),
-    ("Clients", [("Clients", "N"), "Engagements (FA + AM Lead)", "AM Assignment (FA + AM Lead)", "Requests & Add-ons (FA, AM Lead, Fin.)", "Offboarding (FA + AM Lead)"]),
+    ("Clients", [("Clients", "N"), "Engagements (FA + CM Lead)", "CM Assignment (FA + CM Lead)", "Requests & Add-ons (FA, CM Lead, Fin.)", "Offboarding (FA + CM Lead)"]),
     ("Catalogue", [("Services & Tiers", "FA"), ("Bundles", "FA"), ("Add-ons", "FA"), ("Discount Limits", "FA"), "Proposal & Agreement Templates"]),
     ("Operations", ["SOP Library", "Requirement Checklists", "Department Flow Templates", "QC Checklists", "Gate Rules", "SLA Rules", "Error Log"]),
     ("Finance", [("Invoices", "$"), ("Invoice Plans", "$"), ("Billing Run", "$"), ("Payments", "$"), ("Payments to Match", "$"), ("Expenses & Bills", "$"),
-                 ("Credit Notes", "$"), ("Creator Payouts", "$"), "Profit (FA, Finance, AM Lead)", ("Cash Flow", "$"), ("GST Settings", "$"), ("Accounting Sync", "$")]),
+                 ("Credit Notes", "$"), ("Creator Payouts", "$"), "Profit (FA, Finance, CM Lead)", ("Cash Flow", "$"), ("GST Settings", "$"), ("Accounting Sync", "$")]),
     ("Platform", [("System Health", "FA"), ("AI Copilot", "FA"), "Notification Templates", ("Outbox", "FA"), ("Integrations", "FA"), ("API & Webhooks", "FA"),
                   "Branding & Theme", ("Security", "FA"), ("Audit Log", "FA"), ("Privacy (DPDP)", "FA"), ("Data Export / Deletion", "FA"), ("Tenant Settings", "FA")]),
 ]
@@ -369,7 +369,7 @@ def cc_page(title, sections, ncols):
     header("Command Centre  /admin", title)
     c.setFillColor(INK)
     c.setFont("Helvetica", 8)
-    c.drawString(M, H - 74, "Open to: Founder, Admin, Department Head, Finance, HR / Ops, AM Lead. Everyone else is sent to the Team app.")
+    c.drawString(M, H - 74, "Open to: Founder, Admin, Department Head, Finance, HR / Ops, CM Lead. Everyone else is sent to the Team app.")
     legend(M, H - 88, ["FA", "$", "P", "L", "N"])
     columns(sections, H - 100, ncols)
     c.showPage()
@@ -382,8 +382,8 @@ header("Team app  /team", "Every staff member; items appear by role")
 team = [
     ("Work", ["My Day / My workspace", "Manager workspace (craft managers)", "Dashboards", "Leads (sales roles)", "Proposals (sales roles)",
               "Discount approvals (Sales Mgr, Admin, Founder)", "Renewals (all-leads scope)", "Client 360 (client team)", "Tasks", "QC queue (QC roles)",
-              "Review Studio", "Projects", "Requests inbox (client team)", "Messages (client team)", "Inbox (AM & sales roles)", "Meetings", "Goals",
-              "Documents", "Creators (AM, Dept Head, Admin)", "Files", "Asset library", "Brand kits", "Discussions"]),
+              "Review Studio", "Projects", "Requests inbox (client team)", "Messages (client team)", "Inbox (CM & sales roles)", "Meetings", "Goals",
+              "Documents", "Creators (CM, Dept Head, Admin)", "Files", "Asset library", "Brand kits", "Discussions"]),
     None,
     ("Plan", ["Calendar", "Content calendar", "Capacity", "Workload", "Specialists (leaders)", "SOP library"]),
     ("You", ["My performance", "My timesheet", "My expenses", "Approvals", "Agent Inbox", "My onboarding", "Profile, leave & attendance"]),
@@ -393,7 +393,7 @@ team = [
 columns(team, H - 76, 3, row=12.4)
 c.setFont("Helvetica", 7.6)
 c.setFillColor(MUTED)
-c.drawString(M, 34, "Client team = Founder, Admin, AM Lead, Account Manager, Finance.   Craft specialists (design, video, dev...) get a personal workspace as their home page.")
+c.drawString(M, 34, "Client team = Founder, Admin, CM Lead, Client Manager, Finance.   Craft specialists (design, video, dev...) get a personal workspace as their home page.")
 c.showPage()
 
 # =========================================================== PAGE 6: client, creator, public

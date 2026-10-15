@@ -60,7 +60,7 @@ export function RenewalsList() {
             { header: "Due", value: (r) => r.dueDate.slice(0, 10) },
             { header: "Reason", value: (r) => r.reason },
             { header: "Monthly (₹)", value: (r) => (r.monthlyPaise ? r.monthlyPaise / 100 : "") },
-            { header: "Account manager", value: (r) => r.am },
+            { header: "Client manager", value: (r) => r.am },
             { header: "Proposal", value: (r) => r.openProposal?.status ?? "" },
           ]}
         />
@@ -76,7 +76,7 @@ export function RenewalsList() {
                 <Link href={`/team/clients/${clientOrgId}`} className="font-semibold underline-offset-2 hover:underline">
                   {items[0].client}
                 </Link>
-                <span className="ml-2 text-xs text-ink-muted">AM: {items[0].am ?? "not assigned"}</span>
+                <span className="ml-2 text-xs text-ink-muted">CM: {items[0].am ?? "not assigned"}</span>
               </div>
               {allOpen ? (
                 <Link href={`/team/proposals/${items[0].openProposal!.id}`} className="text-sm underline">

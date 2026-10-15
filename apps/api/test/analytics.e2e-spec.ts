@@ -77,7 +77,7 @@ describe('who may read sales analytics', () => {
     }
   });
 
-  it('account managers cannot see money; Founder, Branch Manager and Finance can', async () => {
+  it('client managers cannot see money; Founder, Branch Manager and Finance can', async () => {
     await http().get('/analytics/scorecard').set(as('am')).expect(403);
     await http().get('/analytics/profitability').set(as('am')).expect(403);
     for (const p of PAGES) await http().get(`/analytics/${p}`).set(as('finance')).expect(200);

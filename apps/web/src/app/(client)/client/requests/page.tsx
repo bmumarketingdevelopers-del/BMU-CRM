@@ -28,7 +28,7 @@ export default function ClientRequestsPage() {
     try {
       const r = await api.client.createRequest({ engagementId: chosen, type, description });
       setDescription("");
-      setSent(r.type === "new_scope" ? "Got it. We'll check the scope and send you a quote." : "Got it. Your Account Manager will reply soon.");
+      setSent(r.type === "new_scope" ? "Got it. We'll check the scope and send you a quote." : "Got it. Your Client Manager will reply soon.");
       list.reload();
     } catch (err) {
       setError((err as Error).message);

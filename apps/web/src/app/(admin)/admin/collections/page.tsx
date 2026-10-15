@@ -81,7 +81,7 @@ export default function CollectionsPage() {
               <Panel className="min-w-0" title="How late is the money" subtitle="Balance due, by days past the due date">
                 <StackBar parts={c.aging.map((x, i) => ({ label: `${x.label} (${x.count})`, value: x.valuePaise, tone: agingTone[i] }))} format={inrShort} />
               </Panel>
-              <Panel className="min-w-0" title="Unpaid invoices" subtitle="Most overdue first. Reminders go to the client's owner and finance people (in the app, by email and as a message from their AM)." flush>
+              <Panel className="min-w-0" title="Unpaid invoices" subtitle="Most overdue first. Reminders go to the client's owner and finance people (in the app, by email and as a message from their CM)." flush>
                 <DataTable rows={c.unpaid} columns={columns} rowKey={(r) => r.id} empty="Nothing is owed. Every invoice is paid." />
               </Panel>
               {a && <DunningSettings a={a} canEdit={c.canAct} onChange={setFresh} />}
@@ -217,9 +217,9 @@ function DunningSettings({ a, canEdit, onChange }: { a: ServiceCollectionsAction
           {check("workingDays", "Count working days only (Mon–Sat, not holidays)")}
         </div>
         <div className="grid content-start gap-2">
-          {check("messageClient", "Message the client in their app thread (from their AM)")}
+          {check("messageClient", "Message the client in their app thread (from their CM)")}
           {check("emailClient", "Email the client's owner and finance people")}
-          {check("alertFinance", "Alert Finance and the AM")}
+          {check("alertFinance", "Alert Finance and the CM")}
         </div>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-2">

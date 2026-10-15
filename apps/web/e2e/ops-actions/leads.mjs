@@ -1,6 +1,6 @@
 // v11 ops journey: leads & sales. + Add lead (top button and the column "+ Add") with required fields, the live
 // duplicate warning and "Add anyway", owner by round-robin, the ⋯ menu (mark lost with a reason, merge), list view with
-// bulk actions and export, the lead page's History, account managers adding referrals only, and forbidden roles.
+// bulk actions and export, the lead page's History, client managers adding referrals only, and forbidden roles.
 // BASE_URL=http://localhost:3000 node apps/web/e2e/ops-actions/leads.mjs
 import { as, apiCall, check, done, go, launch, noErrors, noSideScroll, shot, stamp, toast } from "./lib.mjs";
 
@@ -92,15 +92,15 @@ check(await mgr.getByTestId("history-tab").isVisible(), "History on the lead pag
 check(await mgr.getByRole("button", { name: `More actions for ${company}` }).isVisible(), "⋯ menu on the lead page");
 noErrors(mgr, "sales manager");
 
-console.log("7. Account manager adds referrals only");
+console.log("7. Client manager adds referrals only");
 const am = await as(browser, "am@bmu.demo");
 await go(am, "/team/tasks");
 await am.locator("[data-new-button]").click();
 await am.getByRole("menuitem", { name: /^Lead/ }).click();
 await am.getByText("Add a referral").first().waitFor();
-check(!(await am.getByTestId("lead-drawer").getByLabel("Source").isVisible().catch(() => false)), "no source picker for an AM (referral)");
+check(!(await am.getByTestId("lead-drawer").getByLabel("Source").isVisible().catch(() => false)), "no source picker for a CM (referral)");
 const amTry = await apiCall(am, "POST", "/ops/leads", { name: "X Y", phone: "9876500011", company: "AM Direct", source: "walk_in", serviceIds: ["smm"] });
-check(amTry.status === 403 || amTry.status === 400, `AM cannot add a non-referral lead (${amTry.status})`);
+check(amTry.status === 403 || amTry.status === 400, `CM cannot add a non-referral lead (${amTry.status})`);
 noErrors(am, "am");
 
 console.log("8. Forbidden: producer");

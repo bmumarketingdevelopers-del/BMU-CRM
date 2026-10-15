@@ -1,5 +1,5 @@
 // v19 public REST API v1. Each route needs an API key with the route's scope (see auth.guard.ts). Requests act as the
-// key's person, so visibility follows the app (an Account Manager's key sees their clients) and writes go through the
+// key's person, so visibility follows the app (a Client Manager's key sees their clients) and writes go through the
 // same services as the app (validation, duplicate checks, leave rules, audit, undo, webhooks).
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Header, HttpCode, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
 import { services as catalogue, type Me, type PublicDepartment, type PublicMe, type PublicPage, type PublicPerson, type PublicService } from '@bmu/shared';

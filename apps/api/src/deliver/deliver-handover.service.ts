@@ -109,7 +109,7 @@ export class DeliverHandoverService {
 
   async addItem(me: Me, engagementId: string, input: DeliverHandoverItemInput, ip?: string) {
     const v = await this.view(me, engagementId);
-    if (!v.can.addItems) throw new ForbiddenException("Only the client's Account Manager or leadership can add to the handover pack");
+    if (!v.can.addItems) throw new ForbiddenException("Only the client's Client Manager or leadership can add to the handover pack");
     if (input.kind === 'link' && !/^https?:\/\//.test(input.value)) throw new BadRequestException('Links start with https://');
     const item = await this.prisma.deliverHandoverItem.create({ data: { orgId: me.orgId, engagementId, kind: input.kind, label: input.label, value: input.value, createdById: me.id } });
     // Never write the secret itself to the audit log.
@@ -129,7 +129,7 @@ export class DeliverHandoverService {
     const item = await this.prisma.deliverHandoverItem.findFirst({ where: { id: itemId, orgId: me.orgId, deletedAt: null } });
     if (!item) throw new NotFoundException('Item not found');
     const v = await this.view(me, item.engagementId);
-    if (!v.can.addItems) throw new ForbiddenException("Only the client's Account Manager or leadership can change the handover pack");
+    if (!v.can.addItems) throw new ForbiddenException("Only the client's Client Manager or leadership can change the handover pack");
     await this.prisma.deliverHandoverItem.update({ where: { id: itemId }, data: { deletedAt: new Date() } });
     await this.audit.log(me, 'handover.item_removed', 'Engagement', item.engagementId, { kind: item.kind, label: item.label }, undefined, ip);
     return this.view(me, item.engagementId);
@@ -187,7 +187,7 @@ export class DeliverHandoverService {
       try {
         await zip.addFile(name, abs);
       } catch {
-        await zip.addBuffer(`${name}.missing.txt`, Buffer.from('This file could not be read from storage. Ask your account manager for it.'));
+        await zip.addBuffer(`${name}.missing.txt`, Buffer.from('This file could not be read from storage. Ask your client manager for it.'));
       }
     }
     const lines = [

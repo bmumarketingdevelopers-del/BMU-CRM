@@ -120,7 +120,7 @@ describe('who can read the operations analytics', () => {
     await http().get('/ops-analytics/client').set(as('founder')).expect(403);
   });
 
-  it('an account manager is not a Command Centre reader', async () => {
+  it('a client manager is not a Command Centre reader', async () => {
     await http().get('/ops-analytics/delivery').set(as('am')).expect(403);
     await http().get('/ops-analytics/team').set(as('am')).expect(403);
   });

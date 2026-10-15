@@ -8,6 +8,7 @@ import type { BookingPageView, BookingSlots, MeetingList, MeetingView } from "@b
 import { Badge, Button, Card, Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
+import { ClientMeetingRow, ClientRequestForm, FixedMeetingActions, FounderMeetingRequest, TeamRequestCard, teamTime } from "./meeting-requests";
 
 const IST = { timeZone: "Asia/Kolkata" } as const;
 export const dayLabel = new Intl.DateTimeFormat("en-IN", { ...IST, weekday: "short", day: "numeric", month: "short" });
@@ -47,13 +48,13 @@ function MeetingRow({ m, team, onOpen, onCancel }: { m: MeetingView; team: boole
       <div className="min-w-0">
         <p className="font-medium">{m.title}</p>
         <p className="text-xs text-ink-muted">
-          {whenLabel(m.startAt)} · {team ? (m.client?.name ?? (m.lead ? `Lead: ${m.lead.name}` : (m.guest.name ?? "Internal"))) : `with ${m.host.name}`}
+          {team && m.timeZone !== "Asia/Kolkata" ? teamTime(m.startAt, m.timeZone) : whenLabel(m.startAt)} · {team ? (m.client?.name ?? (m.lead ? `Lead: ${m.lead.name}` : (m.guest.name ?? "Internal"))) : `with ${m.host.name}`}
           {m.agenda ? ` · ${m.agenda}` : ""}
         </p>
       </div>
       <div className="flex items-center gap-2">
         {m.status !== "booked" && <Badge tone={m.status === "done" ? "green" : "neutral"}>{m.status === "done" ? "Held" : "Cancelled"}</Badge>}
-        {m.bookedVia !== "team" && team && <Badge>{m.bookedVia === "client" ? "Booked by client" : "Booking link"}</Badge>}
+        {m.bookedVia !== "team" && team && <Badge>{m.bookedVia === "client" ? "Asked by client" : m.bookedVia === "founder" ? "Asked by Founder" : "Booking link"}</Badge>}
         {onOpen && (
           <Button variant="secondary" onClick={onOpen}>
             Notes
@@ -71,8 +72,8 @@ function MeetingRow({ m, team, onOpen, onCancel }: { m: MeetingView; team: boole
 
 // ------------------------------------------------------------------------------------------------ team
 
-export function TeamMeetings() {
-  const list = useLoad(() => api.meetings.list(), { live: ["Meeting"] });
+export function TeamMeetings({ isFounder = false }: { isFounder?: boolean }) {
+  const list = useLoad(() => api.meetings.list(), { live: ["Meeting", "MeetingParticipant"] });
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string>();
   if (!list.data) return <LoadState loading={list.loading} error={list.error} />;
@@ -80,15 +81,33 @@ export function TeamMeetings() {
   const cancel = (id: string) => window.confirm("Cancel this meeting? The guest is told by email.") && api.meetings.cancel(id).then(list.reload).catch((e: Error) => setError(e.message));
   return (
     <>
-      <PageTitle title="Meetings" subtitle="Calls clients booked with you, calls from your booking link, and meetings you added. Write notes after the call and turn action items into tasks." />
+      <PageTitle title="Meetings" subtitle="Meeting requests from clients to arrange or confirm, meetings you are in, and calls from your booking link. Write notes after the call and turn action items into tasks." />
       {error && <p className="mb-4 border border-red bg-red/10 px-3 py-2 text-sm">{error}</p>}
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div>
+          {!!d.requests.length && (
+            <>
+              <h2 className="mb-2 font-semibold">Requests</h2>
+              <div className="mb-8 border-t border-border" data-testid="meeting-requests">
+                {d.requests.map((m) => (
+                  <div key={m.id}>
+                    <TeamRequestCard m={m} onChanged={list.reload} />
+                    {m.can.cancel && (
+                      <button className="mb-2 text-xs underline" onClick={() => cancel(m.id)}>
+                        Cancel this request
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
           <h2 className="mb-2 font-semibold">Upcoming</h2>
           <div className="mb-8 border-t border-border">
             {d.upcoming.map((m) => (
               <div key={m.id}>
                 <MeetingRow m={m} team onOpen={() => setOpen(open === m.id ? null : m.id)} onCancel={() => cancel(m.id)} />
+                {(m.participants.length > 0 || m.joinUrl || m.can.shareLink) && <FixedMeetingActions m={m} onChanged={list.reload} />}
                 {open === m.id && <MeetingNotes key={m.id} m={m} onSaved={list.reload} />}
               </div>
             ))}
@@ -106,6 +125,7 @@ export function TeamMeetings() {
           </div>
         </div>
         <div className="space-y-6">
+          {isFounder && <FounderMeetingRequest onSaved={list.reload} />}
           <AddMeeting onSaved={list.reload} />
           {d.booking && <BookingSettings initial={d.booking} />}
         </div>
@@ -337,7 +357,7 @@ function BookingSettings({ initial }: { initial: BookingPageView }) {
 // ------------------------------------------------------------------------------------------------ client portal
 
 export function ClientMeetings() {
-  const list = useLoad(() => api.meetings.clientList(), { live: ["Meeting"] });
+  const list = useLoad(() => api.meetings.clientList(), { live: ["Meeting", "MeetingParticipant"] });
   const [booking, setBooking] = useState(false);
   const [error, setError] = useState<string>();
   if (!list.data) return <LoadState loading={list.loading} error={list.error} />;
@@ -346,17 +366,27 @@ export function ClientMeetings() {
     <>
       <PageTitle
         title="Meetings"
-        subtitle={d.am ? `Book a call with ${d.am.name}, your Account Manager.` : "Your Account Manager will set up calls with you."}
-        action={d.am && !booking ? <Button onClick={() => setBooking(true)} data-testid="book-call">Book a call</Button> : undefined}
+        subtitle={d.am ? `Request a meeting with BMU. ${d.am.name}, your Client Manager, arranges it with the right people and confirms the time.` : "Your Client Manager will set up meetings with you."}
+        action={d.am && !booking ? <Button onClick={() => setBooking(true)} data-testid="book-call">Request a meeting</Button> : undefined}
       />
       {error && <p className="mb-4 border border-red bg-red/10 px-3 py-2 text-sm">{error}</p>}
-      {booking && <ClientBook onDone={() => { setBooking(false); list.reload(); }} />}
+      {booking && <ClientRequestForm onDone={() => { setBooking(false); list.reload(); }} />}
+      {!!d.requests.length && (
+        <>
+          <h2 className="mb-2 mt-6 font-semibold">Requested</h2>
+          <div className="mb-8 border-t border-border">
+            {d.requests.map((m) => (
+              <ClientMeetingRow key={m.id} m={m} onCancel={() => window.confirm("Cancel this request?") && api.meetings.clientCancel(m.id).then(list.reload).catch((e: Error) => setError(e.message))} />
+            ))}
+          </div>
+        </>
+      )}
       <h2 className="mb-2 mt-6 font-semibold">Upcoming</h2>
       <div className="mb-8 border-t border-border">
         {d.upcoming.map((m) => (
-          <MeetingRow key={m.id} m={m} team={false} onCancel={() => window.confirm("Cancel this call?") && api.meetings.clientCancel(m.id).then(list.reload).catch((e: Error) => setError(e.message))} />
+          <ClientMeetingRow key={m.id} m={m} onCancel={() => window.confirm("Cancel this meeting?") && api.meetings.clientCancel(m.id).then(list.reload).catch((e: Error) => setError(e.message))} />
         ))}
-        {!d.upcoming.length && <p className="py-6 text-center text-sm text-ink-muted">No calls booked.</p>}
+        {!d.upcoming.length && <p className="py-6 text-center text-sm text-ink-muted">No meetings scheduled.</p>}
       </div>
       <h2 className="mb-2 font-semibold">Past calls</h2>
       <div className="border-t border-border">
@@ -381,30 +411,6 @@ export function ClientMeetings() {
   );
 }
 
-function ClientBook({ onDone }: { onDone: () => void }) {
-  const slots = useLoad(() => api.meetings.clientSlots(), { live: ["Meeting"] });
-  const [pick, setPick] = useState<string | null>(null);
-  const [agenda, setAgenda] = useState("");
-  const [error, setError] = useState<string>();
-  if (!slots.data) return <LoadState loading={slots.loading} error={slots.error} />;
-  return (
-    <Card className="mb-6">
-      <h2 className="mb-3 font-semibold">{slots.data.title}</h2>
-      <SlotPicker slots={slots.data} value={pick} onChange={setPick} />
-      <textarea className="mt-3 h-20 w-full border border-border bg-surface-raised p-2 text-sm" placeholder="What would you like to talk about? (optional)" value={agenda} onChange={(e) => setAgenda(e.target.value)} aria-label="Agenda" />
-      {error && <p className="text-xs text-red">{error}</p>}
-      <div className="mt-2 flex gap-2">
-        <Button disabled={!pick} data-testid="confirm-booking" onClick={() => pick && api.meetings.clientBook(pick, agenda || undefined).then(onDone).catch((e: Error) => setError(e.message))}>
-          {pick ? `Book ${whenLabel(pick)}` : "Pick a time"}
-        </Button>
-        <Button variant="ghost" onClick={onDone}>
-          Close
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
 /** Next call card for the client home page. */
 export function NextMeetingCard({ list }: { list: MeetingList & { am: { name: string } | null } }) {
   const next = list.upcoming[0];
@@ -419,7 +425,7 @@ export function NextMeetingCard({ list }: { list: MeetingList & { am: { name: st
         <p className="mt-1">No call booked.</p>
       )}
       <Link href="/client/meetings" className="mt-2 inline-block underline">
-        {next ? "See meetings" : list.am ? `Book a call with ${list.am.name}` : "Meetings"}
+        {next ? "See meetings" : list.am ? `Request a meeting with ${list.am.name}` : "Meetings"}
       </Link>
     </div>
   );

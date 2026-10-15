@@ -31,7 +31,7 @@ How to work:
 - Use the tools; they only return this client's own data. If a tool says "not allowed", explain that their user role cannot see it and that the account owner can.
 - Never discuss other clients, BMU's internal costs, staff workload or anything not returned by the tools.
 - Be warm and brief. Cite pages as markdown links using the exact "link" values, e.g. [Billing](/client/billing).
-- For anything you cannot answer, suggest messaging their account manager from Messages.
+- For anything you cannot answer, suggest messaging their client manager from Messages.
 
 ${SAFETY_RULES}`;
 
@@ -231,7 +231,7 @@ export class AiCopilotService {
       const d = out.data as { client: { name: string; health: string; am: string | null }; stats: { activeServices: number; openRequests: number; draftsWaiting: number; outstanding: string }; deliverables: { title: string; overdue: boolean }[]; link: string };
       const overdue = d.deliverables.filter((x) => x.overdue).length;
       return {
-        text: `[${d.client.name}](${d.link}) — health ${d.client.health}, account manager ${d.client.am ?? 'not assigned'}.\n- ${d.stats.activeServices} active service${d.stats.activeServices === 1 ? '' : 's'}, ${d.stats.openRequests} open request${d.stats.openRequests === 1 ? '' : 's'}, ${d.stats.draftsWaiting} draft${d.stats.draftsWaiting === 1 ? '' : 's'} waiting for the client\n- Outstanding: ${d.stats.outstanding}${overdue ? `\n- ${overdue} deliverable${overdue === 1 ? ' is' : 's are'} overdue` : ''}`,
+        text: `[${d.client.name}](${d.link}) — health ${d.client.health}, client manager ${d.client.am ?? 'not assigned'}.\n- ${d.stats.activeServices} active service${d.stats.activeServices === 1 ? '' : 's'}, ${d.stats.openRequests} open request${d.stats.openRequests === 1 ? '' : 's'}, ${d.stats.draftsWaiting} draft${d.stats.draftsWaiting === 1 ? '' : 's'} waiting for the client\n- Outstanding: ${d.stats.outstanding}${overdue ? `\n- ${overdue} deliverable${overdue === 1 ? ' is' : 's are'} overdue` : ''}`,
         citations: out.citations,
       };
     }
@@ -252,7 +252,7 @@ export class AiCopilotService {
     const q = question.toLowerCase();
     if (/\b(invoice|invoices|pay|paid|payment|due|bill|billing|owe)\b/.test(q)) {
       const out = await this.call(tools, 'my_invoices', {}, emit);
-      if ((out.data as { notAllowed?: boolean }).notAllowed) return { text: 'Your user role cannot see billing. Your account owner can, or ask your account manager in [Messages](/client/messages).', citations: [{ label: 'Messages', href: '/client/messages' }] };
+      if ((out.data as { notAllowed?: boolean }).notAllowed) return { text: 'Your user role cannot see billing. Your account owner can, or ask your client manager in [Messages](/client/messages).', citations: [{ label: 'Messages', href: '/client/messages' }] };
       const rows = out.data as { number: string; status: string; total: string; paid: string; due: string }[];
       const open = rows.filter((r) => !['paid', 'void', 'credit_noted'].includes(r.status));
       return { text: open.length ? `You have ${open.length} invoice${open.length === 1 ? '' : 's'} to pay:\n${open.map((r) => `- ${r.number}: ${r.total} (paid ${r.paid}), due ${r.due}`).join('\n')}\nPay from [Billing](/client/billing).` : 'All your invoices are paid. Thank you!', citations: [{ label: 'Billing', href: '/client/billing' }] };
@@ -270,7 +270,7 @@ export class AiCopilotService {
     const out = await this.call(tools, 'my_account', {}, emit);
     const d = out.data as { company: string; accountManager: string | null; services: { service: string; status: string; milestone: string; requirementsPending: number }[]; invoicesDue: { number: string; total: string }[] };
     return {
-      text: `${d.company}: ${d.services.length} service${d.services.length === 1 ? '' : 's'} with BMU.\n${d.services.map((s) => `- ${s.service}: ${s.status.replaceAll('_', ' ')} (milestone ${s.milestone})${s.requirementsPending ? `, ${s.requirementsPending} item${s.requirementsPending === 1 ? '' : 's'} needed from you` : ''}`).join('\n')}${d.invoicesDue.length ? `\n${d.invoicesDue.length} invoice${d.invoicesDue.length === 1 ? '' : 's'} due — see [Billing](/client/billing).` : ''}\nYour account manager is ${d.accountManager ?? 'being assigned'}.`,
+      text: `${d.company}: ${d.services.length} service${d.services.length === 1 ? '' : 's'} with BMU.\n${d.services.map((s) => `- ${s.service}: ${s.status.replaceAll('_', ' ')} (milestone ${s.milestone})${s.requirementsPending ? `, ${s.requirementsPending} item${s.requirementsPending === 1 ? '' : 's'} needed from you` : ''}`).join('\n')}${d.invoicesDue.length ? `\n${d.invoicesDue.length} invoice${d.invoicesDue.length === 1 ? '' : 's'} due — see [Billing](/client/billing).` : ''}\nYour client manager is ${d.accountManager ?? 'being assigned'}.`,
       citations: out.citations,
     };
   }

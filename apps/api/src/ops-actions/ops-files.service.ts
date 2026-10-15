@@ -67,7 +67,7 @@ export class OpsFilesService implements OnModuleInit {
       auditEntity: 'File',
       assertCan: async (me, id) => {
         const f = await this.staffFile(me, id);
-        if (!(await this.canEdit(me, f))) throw new ForbiddenException('Only the uploader, the Account Manager or a Department Head can archive this file');
+        if (!(await this.canEdit(me, f))) throw new ForbiddenException('Only the uploader, the Client Manager or a Department Head can archive this file');
       },
     });
   }
@@ -200,7 +200,7 @@ export class OpsFilesService implements OnModuleInit {
             share: hasRole(me, 'founder', 'admin') || manages,
             archive: f.uploadedById === me.id || leader || head || manages,
           },
-          releaseBlockedReason: manages ? releaseBlockedReason : f.released ? null : 'Only the Account Manager releases final files',
+          releaseBlockedReason: manages ? releaseBlockedReason : f.released ? null : 'Only the Client Manager releases final files',
         };
       });
     return {
@@ -301,7 +301,7 @@ export class OpsFilesService implements OnModuleInit {
       body: ticked.length ? `Ticked: ${ticked.map((i) => i.label).join(', ')}. Check the file.` : 'It is in From client.',
       link: `/team/files?client=${clientOrgId}`,
     });
-    return { id: f.id, name: f.name, ticked: ticked.map((i) => i.label), message: ticked.length ? `Uploaded. Ticked off: ${ticked.map((i) => i.label).join(', ')}` : 'Uploaded. Your account manager has been told.' };
+    return { id: f.id, name: f.name, ticked: ticked.map((i) => i.label), message: ticked.length ? `Uploaded. Ticked off: ${ticked.map((i) => i.label).join(', ')}` : 'Uploaded. Your client manager has been told.' };
   }
 
   /** The client's own uploads and the final files released to them by the team. */
@@ -343,7 +343,7 @@ export class OpsFilesService implements OnModuleInit {
   async update(me: Me, id: string, body: unknown, ip?: string) {
     const input = parse(opsFileUpdateSchema, body);
     const f = await this.staffFile(me, id);
-    if (!(await this.canEdit(me, f))) throw new ForbiddenException('Only the uploader, the Account Manager or a Department Head can change this file');
+    if (!(await this.canEdit(me, f))) throw new ForbiddenException('Only the uploader, the Client Manager or a Department Head can change this file');
     if (f.archivedAt) throw new BadRequestException('Restore the file first');
     if (f.released && input.folder && input.folder !== 'final') throw new BadRequestException('This file was released to the client. It stays in Final files.');
     let engagementId: string | null | undefined;
@@ -370,7 +370,7 @@ export class OpsFilesService implements OnModuleInit {
 
   async release(me: Me, id: string, ip?: string) {
     const f = await this.staffFile(me, id);
-    if (!(await this.canManageClient(me, f))) throw new ForbiddenException("Only the client's Account Manager can release final files");
+    if (!(await this.canManageClient(me, f))) throw new ForbiddenException("Only the client's Client Manager can release final files");
     if (f.released) throw new BadRequestException('Already released');
     if (this.folderOf(f) !== 'final') throw new BadRequestException('Move the file to Final files before releasing it');
     if (!f.engagementId) throw new BadRequestException('Link the file to a project first');
@@ -387,7 +387,7 @@ export class OpsFilesService implements OnModuleInit {
 
   private async assertShare(me: Me, id: string) {
     const f = await this.staffFile(me, id);
-    if (!hasRole(me, 'founder', 'admin') && !(await this.canManageClient(me, f))) throw new ForbiddenException('Only the Account Manager or a Branch Manager can share files outside BMU');
+    if (!hasRole(me, 'founder', 'admin') && !(await this.canManageClient(me, f))) throw new ForbiddenException('Only the Client Manager or a Branch Manager can share files outside BMU');
     if (f.archivedAt) throw new BadRequestException('Restore the file first');
     if (f.kind === 'link') throw new BadRequestException('This is already a link');
     return f;

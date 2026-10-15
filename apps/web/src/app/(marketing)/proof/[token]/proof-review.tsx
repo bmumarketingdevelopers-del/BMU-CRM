@@ -21,7 +21,7 @@ export function ProofReview({ token }: { token: string }) {
     return (
       <div className="border border-border bg-surface-raised p-6 text-center" data-testid="proof-gone">
         <h1 className="text-lg font-semibold">This link no longer works</h1>
-        <p className="mt-2 text-sm text-ink-muted">{loaded.error ?? "It may have expired."} Sign in to your BMU portal to review the work, or ask your Account Manager for a new link.</p>
+        <p className="mt-2 text-sm text-ink-muted">{loaded.error ?? "It may have expired."} Sign in to your BMU portal to review the work, or ask your Client Manager for a new link.</p>
       </div>
     );
   }

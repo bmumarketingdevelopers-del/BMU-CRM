@@ -21,7 +21,7 @@ export function ScriptPanels({ p, readOnly, onChanged }: { p: CraftScriptPanels;
               ))}
             </div>
           ) : (
-            <Empty>No briefs waiting. Ask your AM what is coming next.</Empty>
+            <Empty>No briefs waiting. Ask your CM what is coming next.</Empty>
           )}
         </Panel>
         <Panel title="Client feedback to address" subtitle="Changes requested and open client comments on your scripts.">

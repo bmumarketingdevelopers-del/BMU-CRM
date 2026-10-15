@@ -44,7 +44,7 @@ export const createRequestSchema = z.object({
 });
 export type CreateRequest = z.infer<typeof createRequestSchema>;
 
-/** AM decision on a request. "quote" = new direction → add-on that needs written client approval. */
+/** CM decision on a request. "quote" = new direction → add-on that needs written client approval. */
 export const decideRequestSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("reply"), message: z.string().trim().min(1).max(4000), internal: z.boolean().default(false) }),
   z.object({ action: z.literal("in_scope"), message: z.string().trim().max(4000).optional() }),
@@ -95,7 +95,7 @@ export type RequestView = {
   reopenCount?: number;
   /** Last day the client can reopen a done request (7 days after it was closed). */
   reopenUntil?: string | null;
-  /** v11 clients: who handles it, when the client needs it, raised by the AM for the client. */
+  /** v11 clients: who handles it, when the client needs it, raised by the CM for the client. */
   assignee?: { id: string; name: string } | null;
   neededBy?: string | null;
   raisedOnBehalf?: boolean;

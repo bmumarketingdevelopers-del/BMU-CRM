@@ -51,7 +51,7 @@ export class AuthService {
     this.limit(`id:${identifier}`, 6, 15 * 60_000, ip);
     this.limit(`ip:${ip}`, 30, 15 * 60_000, ip);
     const user = await this.findUser(identifier);
-    if (!user) throw new NotFoundException('No BMU account uses that email or number. Ask your account manager for an invite.');
+    if (!user) throw new NotFoundException('No BMU account uses that email or number. Ask your client manager for an invite.');
 
     const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await this.prisma.otpCode.create({

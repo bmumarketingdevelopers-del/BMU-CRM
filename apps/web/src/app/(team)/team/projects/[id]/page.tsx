@@ -78,7 +78,7 @@ export default function EngagementPage({ params }: { params: Promise<{ id: strin
       <PageTitle
         presence={{ entity: "Engagement", id: id }}
         title={v.client.name}
-        subtitle={`${v.serviceName} · ${v.tier} · Account Manager: ${v.am?.name ?? "unassigned"}`}
+        subtitle={`${v.serviceName} · ${v.tier} · Client Manager: ${v.am?.name ?? "unassigned"}`}
         action={
           <span className="flex flex-wrap items-center gap-3">
             <AddTaskButton prefill={{ engagementId: v.id }} onSaved={() => e.reload()} />

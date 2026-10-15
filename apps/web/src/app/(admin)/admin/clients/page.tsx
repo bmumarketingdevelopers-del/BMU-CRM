@@ -6,7 +6,7 @@ export const metadata = { title: "Clients | BMU Hub" };
 export default function ClientsPage() {
   return (
     <>
-      <PageTitle title="Clients" subtitle="Every client with its services, Account Manager and milestones. Add, migrate, import, tag or archive from here." />
+      <PageTitle title="Clients" subtitle="Every client with its services, Client Manager and milestones. Add, migrate, import, tag or archive from here." />
       <ClientsList />
     </>
   );

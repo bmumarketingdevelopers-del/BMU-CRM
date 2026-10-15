@@ -62,7 +62,7 @@ export const workflowData = {
     {
       "id": "G1",
       "name": "Requirements Complete",
-      "unlock_when": "All requirement checklist items received AND AM marks RCD",
+      "unlock_when": "All requirement checklist items received AND CM marks RCD",
       "locks": [
         "planning timer",
         "strategy workspace",

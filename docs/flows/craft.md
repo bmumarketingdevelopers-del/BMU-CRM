@@ -5,7 +5,7 @@
 | Person | `/team` home | How it is decided |
 | --- | --- | --- |
 | Video editor, script writer, social media manager, developer, UX/UI designer, graphic designer | Their specialist dashboard | `User.specialty` is one of the maker specialties (`isCraftSpecialty`) |
-| Account manager, AM lead, department head, or anyone with the `project_manager` specialty | Manager workspace | `isCraftManager(me)`. A maker specialty wins over the manager role |
+| Client manager, CM lead, department head, or anyone with the `project_manager` specialty | Manager workspace | `isCraftManager(me)`. A maker specialty wins over the manager role |
 | Everyone else | My Day (unchanged) | |
 
 Founders and admins open the Manager workspace at `/team/manager` (nav: "Manager workspace"). Leads see every specialist at `/team/specialists` and open anyone's dashboard read-only at `/team/specialists/:id`.
@@ -68,7 +68,7 @@ Panels per specialty:
 Access rules:
 
 - You can always see your own dashboard.
-- Founder, Admin and AM lead see anyone's, read-only.
+- Founder, Admin and CM lead see anyone's, read-only.
 - A department head sees their own department.
 - An account or project manager sees anyone who works on their clients.
 - Producers can't view other people's dashboards.
@@ -78,9 +78,9 @@ Access rules:
 
 **Scope** is enforced on the server for every read and write:
 
-- **Account manager / project manager**: engagements where they are the AM.
+- **Client manager / project manager**: engagements where they are the CM.
 - **Department head**: tasks in their department. Assignees must also be in it.
-- **AM lead, founder, admin**: everything.
+- **CM lead, founder, admin**: everything.
 - **Anyone else**: 403.
 
 A task outside your scope returns 403 ("belongs to another manager's client").
@@ -98,13 +98,13 @@ A task outside your scope returns 403 ("belongs to another manager's client").
 - **Assign work**: all open tasks for the scope.
   - Filters: unassigned/all, client, service, specialty and due date.
   - **Drag a task card onto a person**. The keyboard/select fallback is "Assign to…" on every card.
-  - **Suggest**: one click assigns the best person. That is the right specialty (from the task's specialty or its flow step), the lowest load, and not on leave today. QC tasks only go to QC reviewers or department heads, never to the uploader of the latest version. Client reviews go to AMs.
+  - **Suggest**: one click assigns the best person. That is the right specialty (from the task's specialty or its flow step), the lowest load, and not on leave today. QC tasks only go to QC reviewers or department heads, never to the uploader of the latest version. Client reviews go to CMs.
   - Bulk select and reassign.
   - Deadline and priority (urgent, high, normal, low) on each card.
-  - **+ New task** creates an ad-hoc task: title, client engagement, optional deliverable, specialty, assignee, due date and priority. An AM must pick one of their own engagements.
+  - **+ New task** creates an ad-hoc task: title, client engagement, optional deliverable, specialty, assignee, due date and priority. A CM must pick one of their own engagements.
   - Member cards show specialty, hours due this week vs capacity (open tasks × 4h against 48h, minus 8h per leave day), open/due/overdue counts, and an "On leave today" badge. While you drag, the best fit is outlined.
 - **My clients**: one card per client, showing:
-  - Health and the AM.
+  - Health and the CM.
   - Last contact (who spoke last, and when).
   - Each service's gate, cycle progress and next milestone.
   - Approvals waiting, with days waiting and Nudge.
@@ -161,7 +161,7 @@ Specialists, all on `@bmu.demo`:
 
 Managers:
 
-- `pm@bmu.demo` (Devika Rao): project manager, AM of Peak Motors and Brightpath Academy. Has unassigned tasks, a client waiting for a reply, an overdue invoice, call notes and a meeting reminder.
+- `pm@bmu.demo` (Devika Rao): project manager, CM of Peak Motors and Brightpath Academy. Has unassigned tasks, a client waiting for a reply, an overdue invoice, call notes and a meeting reminder.
 - `am@bmu.demo`: Saffron Table and Urbanloom.
 - `am.lead@bmu.demo`: everything.
 - `design.head@bmu.demo`: Creative / Design.
@@ -173,8 +173,8 @@ Managers:
   - each dashboard returning only its owner's work
   - leads reading others
   - producers and clients refused
-  - AM scope on the manager board
-  - an AM can't assign another AM's client's tasks
+  - CM scope on the manager board
+  - a CM can't assign another CM's client's tasks
   - producers can't assign
   - assignment creates a notification and audit
   - bulk and update

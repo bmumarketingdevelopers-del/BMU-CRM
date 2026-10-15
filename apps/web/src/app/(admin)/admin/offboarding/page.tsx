@@ -79,7 +79,7 @@ export default function OffboardingPage() {
           autoFocus
           required={asking.action === "close"}
           minLength={asking.action === "close" ? 3 : undefined}
-          placeholder={asking.action === "close" ? "Why is it closing? (required)" : "Reason (optional, shared with the AM)"}
+          placeholder={asking.action === "close" ? "Why is it closing? (required)" : "Reason (optional, shared with the CM)"}
           className="min-w-56 flex-1"
         />
         <Button type="submit">{ACTION_LABEL[asking.action]}</Button>
@@ -124,7 +124,7 @@ export default function OffboardingPage() {
                   <Panel
                     key={r.id}
                     title={r.client.name}
-                    subtitle={`${r.serviceName} · ${r.am?.name ?? "No AM"} · ${gateLabel(r.currentGate)}`}
+                    subtitle={`${r.serviceName} · ${r.am?.name ?? "No CM"} · ${gateLabel(r.currentGate)}`}
                     action={<StatusBadge status={r.status} />}
                   >
                     {r.lastChange && (
@@ -195,7 +195,7 @@ export default function OffboardingPage() {
                     ),
                   },
                   { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} /> },
-                  { key: "am", header: "AM", cell: (r) => r.am?.name ?? "—" },
+                  { key: "am", header: "CM", cell: (r) => r.am?.name ?? "—" },
                   {
                     key: "money",
                     header: "Invoices",
