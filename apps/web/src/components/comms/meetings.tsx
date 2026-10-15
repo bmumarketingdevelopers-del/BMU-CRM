@@ -370,6 +370,8 @@ function AddMeeting({ onSaved, google }: { onSaved: () => void; google: Calendar
   const [meet, setMeet] = useState(true);
   const [error, setError] = useState<string>();
   const [done, setDone] = useState<string>();
+  // One click, one meeting: the button stays off until the meeting (and its Google Meet link) is saved.
+  const [saving, setSaving] = useState(false);
   const canMeet = !!google?.connected;
   return (
     <Card>
@@ -406,8 +408,12 @@ function AddMeeting({ onSaved, google }: { onSaved: () => void; google: Calendar
         {error && <p className="text-xs text-red">{error}</p>}
         {done && <p className="text-xs text-green">{done}</p>}
         <Button
-          disabled={title.trim().length < 2 || !date}
-          onClick={() =>
+          disabled={saving || title.trim().length < 2 || !date}
+          data-testid="add-meeting"
+          onClick={() => {
+            if (saving) return;
+            setSaving(true);
+            setDone(undefined);
             api.meetings
               .create({ title: title.trim(), startAt: new Date(`${date}T${time}:00+05:30`).toISOString(), durationMin: duration, clientOrgId: clientOrgId || null, location: location || undefined, attendeeIds, addMeet: canMeet && meet })
               .then((m) => {
@@ -420,9 +426,10 @@ function AddMeeting({ onSaved, google }: { onSaved: () => void; google: Calendar
                 onSaved();
               })
               .catch((e: Error) => setError(e.message))
-          }
+              .finally(() => setSaving(false));
+          }}
         >
-          Add meeting
+          {saving ? (canMeet && meet ? "Saving and creating the Meet link…" : "Saving…") : "Add meeting"}
         </Button>
       </div>
     </Card>

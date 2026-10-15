@@ -213,6 +213,34 @@ describe('Google Meet', () => {
     expect(await prisma.emailOutbox.findFirst({ where: { kind: 'meeting', entityId: n.id, text: { contains: 'Indiranagar office' } } })).toBeTruthy();
   });
 
+  it('pressing Add meeting many times makes one meeting, one Meet link and one notice each', async () => {
+    const sunrise = (await prisma.user.findFirstOrThrow({ where: { id: users.client }, select: { clientUser: { select: { clientOrgId: true } } } })).clientUser!.clientOrgId;
+    const startAt = zonedTimeToUtc(day, `18:${mm}`, 'Asia/Kolkata');
+    const title = `Design review ${mm}`;
+    const before = events.size;
+    const body = { title, startAt, durationMin: 30, clientOrgId: sunrise, attendeeIds: [users.producer] };
+    const replies = await Promise.all(Array.from({ length: 6 }, () => http().post('/meetings').set(as('am')).send(body)));
+    for (const r of replies) expect(r.status).toBe(201);
+    const ids = [...new Set(replies.map((r) => (r.body as MeetingView).id))];
+    made.push(...ids);
+    expect(ids).toHaveLength(1);
+    expect(await prisma.meeting.count({ where: { title, startAt: new Date(startAt) } })).toBe(1);
+    expect(events.size).toBe(before + 1);
+    // Everyone invited sees that one meeting, with the link, in their own Meetings, and hears about it once.
+    const producer = (await http().get('/meetings').set(as('producer')).expect(200)).body as { upcoming: MeetingView[] };
+    const theirs = producer.upcoming.filter((x) => x.title === title);
+    expect(theirs).toHaveLength(1);
+    expect(theirs[0].joinUrl).toBe(lastEvent().hangoutLink);
+    expect(await prisma.notification.count({ where: { userId: users.producer, createdAt: { gte: since }, title: { contains: `invited you: ${title}` } } })).toBe(1);
+    const client = (await http().get('/client/meetings').set(as('client')).expect(200)).body as { upcoming: MeetingView[] };
+    expect(client.upcoming.filter((x) => x.title === title)).toHaveLength(1);
+    expect(await prisma.notification.count({ where: { userId: users.client, createdAt: { gte: since }, title: `Meeting with BMU: ${title}` } })).toBe(1);
+    // A genuinely different meeting (another time) is still made.
+    const other = (await http().post('/meetings').set(as('am')).send({ ...body, startAt: zonedTimeToUtc(day, `19:${mm}`, 'Asia/Kolkata') }).expect(201)).body as MeetingView;
+    made.push(other.id);
+    expect(other.id).not.toBe(ids[0]);
+  });
+
   it('a host without Google Calendar gets the meeting with a clear reason instead of a link', async () => {
     const x = (await http().post('/meetings').set(as('producer')).send({ title: 'Edit review', startAt: zonedTimeToUtc(day, `17:${mm}`, 'Asia/Kolkata'), durationMin: 30 }).expect(201)).body as MeetingView;
     made.push(x.id);

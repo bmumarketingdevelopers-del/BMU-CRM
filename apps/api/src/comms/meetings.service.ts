@@ -511,26 +511,36 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const lead = input.leadId ? await this.prisma.lead.findFirst({ where: { id: input.leadId, orgId: me.orgId }, select: { id: true, contact: true } }) : null;
     if (input.leadId && !lead) throw new BadRequestException('Lead not found');
     const contact = (lead?.contact ?? {}) as { name?: string; email?: string; phone?: string };
-    const m = await this.prisma.meeting.create({
-      data: {
-        orgId: me.orgId,
-        title: input.title,
-        hostId: me.id,
-        startAt,
-        endAt: new Date(startAt.getTime() + input.durationMin * 60_000),
-        clientOrgId: input.clientOrgId ?? null,
-        leadId: input.leadId ?? null,
-        bookedById: me.id,
-        guestName: contact.name ?? null,
-        guestEmail: contact.email ?? null,
-        guestPhone: contact.phone ?? null,
-        agenda: input.agenda || null,
-        location: input.location || null,
-        bookedVia: 'team',
-      },
-    });
-    // v23: invited team members join as participants; the client's people / guest are invited; Google Meet when connected.
     const team = await this.teamInvitees(me.orgId, me.id, input.attendeeIds ?? []);
+    // One click, one meeting: a repeat of the same meeting (same host, title and time) within two minutes, e.g. the
+    // button pressed again while Google was still making the Meet link, returns the meeting already made. The lock
+    // makes requests that arrive together wait for each other.
+    const { m, repeat } = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`select pg_advisory_xact_lock(hashtext(${`meeting:${me.id}:${input.title}:${startAt.toISOString()}`}))::text`;
+      const same = await tx.meeting.findFirst({ where: { orgId: me.orgId, hostId: me.id, title: input.title, startAt, status: { not: 'cancelled' }, createdAt: { gte: new Date(Date.now() - 2 * 60_000) } }, orderBy: { createdAt: 'asc' } });
+      if (same) return { m: same, repeat: true };
+      const made = await tx.meeting.create({
+        data: {
+          orgId: me.orgId,
+          title: input.title,
+          hostId: me.id,
+          startAt,
+          endAt: new Date(startAt.getTime() + input.durationMin * 60_000),
+          clientOrgId: input.clientOrgId ?? null,
+          leadId: input.leadId ?? null,
+          bookedById: me.id,
+          guestName: contact.name ?? null,
+          guestEmail: contact.email ?? null,
+          guestPhone: contact.phone ?? null,
+          agenda: input.agenda || null,
+          location: input.location || null,
+          bookedVia: 'team',
+        },
+      });
+      return { m: made, repeat: false };
+    });
+    if (repeat) return this.view(me, m);
+    // v23: invited team members join as participants; the client's people / guest are invited; Google Meet when connected.
     if (team.length) await this.prisma.meetingParticipant.createMany({ data: team.map((userId) => ({ meetingId: m.id, userId, role: 'member', status: 'invited' })), skipDuplicates: true });
     const outside = await this.saveOutsiders(m);
     const after = await this.toGoogle(m, input.addMeet ?? true);
