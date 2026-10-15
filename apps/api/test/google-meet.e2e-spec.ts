@@ -204,6 +204,9 @@ describe('Google Meet', () => {
     expect(await prisma.notification.findFirst({ where: { userId: users.producer, createdAt: { gte: since }, title: { contains: 'invited you: Kick-off' } } })).toBeTruthy();
     const producer = (await http().get('/meetings').set(as('producer')).expect(200)).body as { upcoming: MeetingView[] };
     expect(producer.upcoming.some((x) => x.id === t.id)).toBe(true);
+    // The host joins with the organiser Google account (Meet host); invited people just get the link.
+    expect(t.joinAs).toBe('am@bmu.demo');
+    expect(producer.upcoming.find((x) => x.id === t.id)?.joinAs).toBeNull();
     // Without a Meet link: no Google event, and the client is emailed by the CRM instead.
     const before = events.size;
     const n = (await http().post('/meetings').set(as('am')).send({ title: 'Office visit', startAt, durationMin: 30, clientOrgId: sunrise, location: 'Indiranagar office', addMeet: false }).expect(201)).body as MeetingView;

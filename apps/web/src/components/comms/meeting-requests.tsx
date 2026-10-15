@@ -88,19 +88,26 @@ export function ParticipantList({ m, team }: { m: MeetingView; team: boolean }) 
   );
 }
 
-/** Opens the call in a new tab (Google Meet works in any browser, no Google account needed). */
-export function JoinButton({ url }: { url: string }) {
+/**
+ * Opens the call in a new tab (Google Meet works in any browser, no Google account needed). The host joins through
+ * Google's account chooser with the organiser account picked, so Google opens the call as the Meet host.
+ */
+export function JoinButton({ url, as }: { url: string; as?: string | null }) {
+  const href = as ? `https://accounts.google.com/AccountChooser?${new URLSearchParams({ Email: as, continue: `${url}${url.includes("?") ? "&" : "?"}authuser=${encodeURIComponent(as)}` })}` : url;
   return (
-    <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block bg-green px-3 py-1.5 text-sm font-semibold text-charcoal hover:opacity-90" data-testid="join-link">
-      {/^https:\/\/meet\.google\.com\//i.test(url) ? "Join Google Meet" : "Join meeting"}
-    </a>
+    <span className="inline-flex flex-col items-start">
+      <a href={href} target="_blank" rel="noopener noreferrer" className="inline-block bg-green px-3 py-1.5 text-sm font-semibold text-charcoal hover:opacity-90" data-testid="join-link">
+        {/^https:\/\/meet\.google\.com\//i.test(url) ? "Join Google Meet" : "Join meeting"}
+      </a>
+      {as && <span className="mt-0.5 text-[11px] text-ink-muted" data-testid="join-as">as {as} (host)</span>}
+    </span>
   );
 }
 
 function JoinLine({ m }: { m: MeetingView }) {
   if (m.status !== "booked") return null;
   return m.joinUrl ? (
-    <JoinButton url={m.joinUrl} />
+    <JoinButton url={m.joinUrl} as={m.joinAs} />
   ) : (
     <span className="text-xs text-ink-muted">Your meeting is scheduled. The link will be shared before the call.</span>
   );

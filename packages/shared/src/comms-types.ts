@@ -236,6 +236,11 @@ export type MeetingView = {
   department: { id: string; name: string } | null;
   /** The meeting link: the Google Meet link Google created, or one the Client Manager pasted. */
   joinUrl: string | null;
+  /**
+   * v23 Google Meet: for the meeting's host only, the Google account that organised it in Google Calendar (their
+   * connected calendar). Joining with that account makes them the Meet host instead of asking to join.
+   */
+  joinAs: string | null;
   /** Set when the fixed time differs from the time first asked for. */
   rescheduledAt: string | null;
   participants: MeetingParticipantView[];

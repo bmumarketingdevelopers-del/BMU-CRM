@@ -76,7 +76,7 @@ function MeetingRow({ m, team, onOpen, onCancel }: { m: MeetingView; team: boole
         {team && m.status === "booked" && m.google?.error && <p className="mt-0.5 text-xs text-amber">Google Meet: {m.google.error}</p>}
       </div>
       <div className="flex items-center gap-2">
-        {m.status === "booked" && m.joinUrl && <JoinButton url={m.joinUrl} />}
+        {m.status === "booked" && m.joinUrl && <JoinButton url={m.joinUrl} as={m.joinAs} />}
         {m.status !== "booked" && <Badge tone={m.status === "done" ? "green" : "neutral"}>{m.status === "done" ? "Held" : "Cancelled"}</Badge>}
         {m.bookedVia !== "team" && team && <Badge>{m.bookedVia === "client" ? "Asked by client" : m.bookedVia === "founder" ? "Asked by Founder" : "Booking link"}</Badge>}
         {onOpen && (

@@ -390,6 +390,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const ids = (k: 'hostId' | 'clientOrgId' | 'leadId' | 'departmentId') => [...new Set(list.map((m) => m[k]).filter((x): x is string => !!x))];
     const parts = list.length ? await this.prisma.meetingParticipant.findMany({ where: { meetingId: { in: list.map((m) => m.id) } }, orderBy: { createdAt: 'asc' } }) : [];
     const attendees: AttendeeRec[] = list.length ? await this.prisma.meetingAttendee.findMany({ where: { meetingId: { in: list.map((m) => m.id) } }, orderBy: { createdAt: 'asc' } }) : [];
+    // The Google account that organised each meeting, for the host's "Join Google Meet" (joins as the Meet host).
+    const organisers = me?.type === 'staff' ? await this.prisma.calendarConnection.findMany({ where: { userId: { in: [...new Set(list.filter((m) => m.googleEventId && m.hostId === me.id).map((m) => m.googleUserId!))] } }, select: { userId: true, email: true } }) : [];
     const [hosts, clients, leads, depts] = await Promise.all([
       this.prisma.user.findMany({ where: { id: { in: [...new Set([...ids('hostId'), ...parts.map((p) => p.userId)])] } }, select: { id: true, name: true } }),
       this.prisma.clientOrg.findMany({ where: { id: { in: ids('clientOrgId') } }, select: { id: true, name: true } }),
@@ -425,6 +427,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
         timeZone: m.timeZone,
         department: depts.find((d) => d.id === m.departmentId) ?? null,
         joinUrl: m.status === 'booked' ? m.joinUrl : null,
+        joinAs: m.status === 'booked' && staff && m.hostId === me.id && m.googleEventId && m.joinUrl && /^https:\/\/meet\.google\.com\//i.test(m.joinUrl) ? (organisers.find((o) => o.userId === m.googleUserId)?.email ?? null) : null,
         rescheduledAt: m.rescheduledAt?.toISOString() ?? null,
         participants: shown.map((p) => ({
           userId: p.userId,
