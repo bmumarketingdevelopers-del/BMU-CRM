@@ -2,6 +2,8 @@
 // client meeting, here from "+ New → Meeting"; once everyone accepts it is fixed and only the Branch Manager of the
 // client's branch is asked to join or ignore; Department Heads add only people working on the client's projects; and
 // another branch's Branch Manager can be added only by the Client Manager or the client's Branch Manager.
+// v26: everyone taking part is reminded 15 minutes before with the link, and once a meeting ends its link closes and
+// it is in Past as completed.
 import 'dotenv/config';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
@@ -9,6 +11,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { zonedTimeToUtc, type MeetingBranchManagerOption, type MeetingList, type MeetingMemberOption, type MeetingView } from '@bmu/shared';
 import { AppModule } from '../src/app.module.js';
+import { MeetingsService } from '../src/comms/meetings.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
 let app: INestApplication;
@@ -195,5 +198,51 @@ describe('meetings with several departments', () => {
     expect(mine.rescheduleReason).toBe('Our developers have a release in the morning');
     // The head who had accepted the old time hears it moved, and why.
     expect(await prisma.notification.findFirst({ where: { userId: users.designHead, createdAt: { gte: since }, title: { startsWith: 'Meeting moved' }, body: { contains: 'release in the morning' } } })).toBeTruthy();
+  });
+});
+
+describe('15-minute reminder and ended meetings', () => {
+  it('everyone taking part hears 15 minutes before, with the link; people not coming do not', async () => {
+    const soon = new Date(Date.now() + 12 * 60_000);
+    const r = (await http().post('/meetings').set(as('am')).send({ title: `Soon ${stamp}`, startAt: new Date(Date.now() + 2 * 86_400_000).toISOString(), durationMin: 30, clientOrgId: ids.client, attendeeIds: [users.worker], addMeet: false }).expect(201)).body as MeetingView;
+    // Bring it forward to start in 12 minutes, with a link, and have the Branch Manager ignore it.
+    await prisma.meeting.update({ where: { id: r.id }, data: { startAt: soon, endAt: new Date(soon.getTime() + 30 * 60_000), joinUrl: 'https://meet.google.com/soo-nnnn-mmm', reminderAt: null, soonReminderAt: null } });
+    await http().post(`/meetings/${r.id}/join`).set(as('localBm')).send({ decision: 'ignore' }).expect(200);
+    const svc = app.get(MeetingsService);
+    await svc.remindSoon(); // the app's own minute job may have sent it already: either way it goes out once
+    const got = async (userId: string) => prisma.notification.findFirst({ where: { userId, createdAt: { gte: since }, title: { contains: `Soon ${stamp}` }, body: { contains: 'meet.google.com/soo-nnnn-mmm' } } });
+    expect(await got(users.am), 'host').toBeTruthy();
+    expect(await got(users.worker), 'team member').toBeTruthy();
+    expect(await got(users.localBm), 'Branch Manager who ignored').toBeNull();
+    const cara = await prisma.user.findFirstOrThrow({ where: { email: `v24.client.${stamp}@example.com` } });
+    expect(await prisma.notification.findFirst({ where: { userId: cara.id, createdAt: { gte: since }, title: { startsWith: 'Your meeting starts in' }, body: { contains: 'meet.google.com/soo-nnnn-mmm' } } })).toBeTruthy();
+    expect(await prisma.emailOutbox.findFirst({ where: { toEmail: cara.email!, createdAt: { gte: since }, subject: { contains: `Soon ${stamp}` } } })).toBeTruthy();
+    // Sent once; and the hour reminder does not also go out right before it.
+    expect((await prisma.meeting.findUniqueOrThrow({ where: { id: r.id } })).soonReminderAt).toBeTruthy();
+    await svc.remindSoon();
+    await svc.remind();
+    expect(await prisma.notification.count({ where: { userId: users.worker, createdAt: { gte: since }, title: { startsWith: 'In ', endsWith: `: Soon ${stamp}` } } })).toBe(1);
+    expect(await prisma.notification.count({ where: { userId: users.worker, createdAt: { gte: since }, title: `Starting soon: Soon ${stamp}` } })).toBe(0);
+  });
+
+  it('once a meeting ends its link is closed and it is in Past as completed', async () => {
+    const r = (await http().post('/meetings').set(as('am')).send({ title: `Ended ${stamp}`, startAt: new Date(Date.now() + 2 * 86_400_000).toISOString(), durationMin: 30, clientOrgId: ids.client, attendeeIds: [users.worker], addMeet: false }).expect(201)).body as MeetingView;
+    await prisma.meeting.update({ where: { id: r.id }, data: { joinUrl: 'https://meet.google.com/end-dddd-ddd' } });
+    const live = ((await http().get('/meetings').set(as('worker')).expect(200)).body as MeetingList).upcoming.find((x) => x.id === r.id)!;
+    expect(live.joinUrl).toBe('https://meet.google.com/end-dddd-ddd');
+    expect(live.ended).toBe(false);
+    // It took place an hour ago.
+    await prisma.meeting.update({ where: { id: r.id }, data: { startAt: new Date(Date.now() - 90 * 60_000), endAt: new Date(Date.now() - 60 * 60_000) } });
+    for (const who of ['worker', 'am', 'client']) {
+      const list = (await http().get(who === 'client' ? '/client/meetings' : '/meetings').set(as(who)).expect(200)).body as MeetingList;
+      expect(list.upcoming.some((x) => x.id === r.id), who).toBe(false);
+      const past = list.past.find((x) => x.id === r.id)!;
+      expect(past, who).toBeTruthy();
+      expect(past.ended).toBe(true);
+      expect(past.joinUrl).toBeNull();
+      expect(past.joinAs).toBeNull();
+      expect(past.can.shareLink).toBe(false);
+      expect(past.can.join).toBe(false);
+    }
   });
 });

@@ -73,11 +73,13 @@ function MeetingRow({ m, team, onOpen, onCancel }: { m: MeetingView; team: boole
           {m.agenda ? ` · ${m.agenda}` : ""}
         </p>
         <Attendees m={m} />
-        {team && m.status === "booked" && m.google?.error && <p className="mt-0.5 text-xs text-amber">Google Meet: {m.google.error}</p>}
+        {m.ended && <p className="mt-0.5 text-xs text-ink-muted" data-testid="meeting-ended">This meeting has ended. The link is closed.</p>}
+        {team && m.status === "booked" && !m.ended && m.google?.error && <p className="mt-0.5 text-xs text-amber">Google Meet: {m.google.error}</p>}
       </div>
       <div className="flex items-center gap-2">
         {m.status === "booked" && m.joinUrl && <JoinButton url={m.joinUrl} as={m.joinAs} />}
         {m.status !== "booked" && <Badge tone={m.status === "done" ? "green" : "neutral"}>{m.status === "done" ? "Held" : "Cancelled"}</Badge>}
+        {m.status === "booked" && m.ended && <Badge tone="green">Completed</Badge>}
         {m.bookedVia !== "team" && team && <Badge>{m.bookedVia === "client" ? "Asked by client" : m.bookedVia === "founder" ? "Asked by Founder" : "Booking link"}</Badge>}
         {onOpen && (
           <Button variant="secondary" onClick={onOpen}>
@@ -536,7 +538,18 @@ export function ClientMeetings() {
           <div key={m.id} className="border-b border-border py-3 text-sm">
             <p className="font-medium">
               {m.title} <span className="text-xs font-normal text-ink-muted">· {whenLabel(m.startAt)}</span>
+              {m.ended && (
+                <span className="ml-2">
+                  <Badge tone="green">Completed</Badge>
+                </span>
+              )}
+              {m.status === "cancelled" && (
+                <span className="ml-2">
+                  <Badge>Cancelled</Badge>
+                </span>
+              )}
             </p>
+            {m.ended && <p className="mt-0.5 text-xs text-ink-muted">This meeting has ended. The link is closed.</p>}
             {m.summary && <p className="mt-1 text-ink-muted">{m.summary}</p>}
             {!!m.actionItems.length && (
               <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">

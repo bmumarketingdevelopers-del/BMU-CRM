@@ -252,6 +252,8 @@ export type MeetingView = {
   rescheduledAt: string | null;
   /** v25: why the meeting moved, as the Client Manager told the client. */
   rescheduleReason: string | null;
+  /** v26: the meeting's end time has passed: it is in Past as completed and its link is closed (joinUrl is null). */
+  ended: boolean;
   participants: MeetingParticipantView[];
   /** The viewer's own place in the meeting, when they were brought in. */
   myRole: MeetingParticipantRole | null;

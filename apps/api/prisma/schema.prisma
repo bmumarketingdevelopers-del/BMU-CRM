@@ -3008,6 +3008,8 @@ model Meeting {
   actionItems Json      @default("[]")
   cancelledAt DateTime?
   reminderAt  DateTime?
+  /// v26: when the 15-minute reminder went out (everyone taking part, with the join link)
+  soonReminderAt DateTime?
   /// v23 Google Meet: the Google Calendar event (in the host's calendar) that carries the Meet link
   googleEventId String?
   /// v23: whose connected calendar holds the event (normally the host)

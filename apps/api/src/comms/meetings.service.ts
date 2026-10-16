@@ -439,8 +439,10 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
         timeZone: m.timeZone,
         department: meetingDepts[0] ?? null,
         departments: meetingDepts,
-        joinUrl: m.status === 'booked' ? m.joinUrl : null,
-        joinAs: m.status === 'booked' && staff && m.hostId === me.id && m.googleEventId && m.joinUrl && /^https:\/\/meet\.google\.com\//i.test(m.joinUrl) ? (organisers.find((o) => o.userId === m.googleUserId)?.email ?? null) : null,
+        // v26: the link closes when the meeting ends; the meeting is then in Past as completed.
+        joinUrl: m.status === 'booked' && m.endAt > now ? m.joinUrl : null,
+        ended: (m.status === 'booked' || m.status === 'done') && m.endAt <= now,
+        joinAs: m.status === 'booked' && m.endAt > now && staff && m.hostId === me.id && m.googleEventId && m.joinUrl && /^https:\/\/meet\.google\.com\//i.test(m.joinUrl) ? (organisers.find((o) => o.userId === m.googleUserId)?.email ?? null) : null,
         rescheduledAt: m.rescheduledAt?.toISOString() ?? null,
         rescheduleReason: m.rescheduledAt ? m.rescheduleReason : null,
         participants: shown.map((p) => ({
@@ -1059,7 +1061,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const durationMs = m.endAt.getTime() - m.startAt.getTime();
     const after = await this.prisma.meeting.update({
       where: { id: m.id },
-      data: { status: 'booked', startAt, endAt: new Date(startAt.getTime() + durationMs), rescheduledAt: moved ? new Date() : m.rescheduledAt, rescheduleReason: moved ? reason : m.rescheduleReason, reminderAt: null },
+      data: { status: 'booked', startAt, endAt: new Date(startAt.getTime() + durationMs), rescheduledAt: moved ? new Date() : m.rescheduledAt, rescheduleReason: moved ? reason : m.rescheduleReason, reminderAt: null, soonReminderAt: null },
     });
     // Anyone who asked for another time is now on the fixed time.
     await this.prisma.meetingParticipant.updateMany({ where: { meetingId: m.id, status: 'reschedule' }, data: { status: 'accepted', proposedStartAt: null } });
@@ -1378,7 +1380,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
 
   /** One hour before: remind the host (in the app) and the guest (email). */
   async remind(now = new Date()) {
-    const due = await this.prisma.meeting.findMany({ where: { status: 'booked', reminderAt: null, startAt: { gt: now, lte: new Date(now.getTime() + 3_600_000) } }, take: 50 });
+    // A meeting starting within 15 minutes gets only the 15-minute reminder (no "in an hour" right before it).
+    const due = await this.prisma.meeting.findMany({ where: { status: 'booked', reminderAt: null, startAt: { gt: new Date(now.getTime() + 15 * 60_000), lte: new Date(now.getTime() + 3_600_000) } }, take: 50 });
     for (const m of due) {
       const claimed = await this.prisma.meeting.updateMany({ where: { id: m.id, reminderAt: null }, data: { reminderAt: now } });
       if (!claimed.count) continue;
@@ -1387,6 +1390,42 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
       await this.notifications.notify(m.orgId, [m.hostId, ...coming], { kind: 'meeting', title: `Starting soon: ${m.title}`, body: `${istLabel(m.startAt)}. ${this.linkLine(m.joinUrl)}`, link: '/team/meetings' });
       if (m.guestEmail && m.bookedVia !== 'team') {
         await this.email.send({ orgId: m.orgId, to: m.guestEmail, toName: m.guestName, subject: `Reminder: ${m.title} at ${istLabel(m.startAt)}`, paragraphs: [`Hi ${m.guestName?.split(' ')[0] ?? 'there'}, a reminder that our call starts at ${istLabel(m.startAt)} (IST).`, m.joinUrl ? `Join here: ${m.joinUrl}` : ''].filter(Boolean), button: m.joinUrl ? { label: 'Join meeting', url: m.joinUrl } : { label: 'Add to calendar', url: this.icsUrl(m.id) }, kind: 'meeting', entity: 'Meeting', entityId: m.id });
+      }
+    }
+    return due.length + (await this.remindSoon(now));
+  }
+
+  /**
+   * v26: 15 minutes before, everyone taking part hears with the join link: the host, a Founder or Department Head who
+   * accepted, team members invited, a Branch Manager who chose to join, and the client's people (in their portal and by
+   * email).
+   */
+  async remindSoon(now = new Date()) {
+    const due = await this.prisma.meeting.findMany({ where: { status: 'booked', soonReminderAt: null, startAt: { gt: now, lte: new Date(now.getTime() + 15 * 60_000) } }, take: 50 });
+    for (const m of due) {
+      const claimed = await this.prisma.meeting.updateMany({ where: { id: m.id, soonReminderAt: null }, data: { soonReminderAt: now, reminderAt: m.reminderAt ?? now } });
+      if (!claimed.count) continue;
+      const mins = Math.max(1, Math.round((m.startAt.getTime() - now.getTime()) / 60_000));
+      const coming = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: m.id, OR: [{ status: { in: ['accepted', 'joined'] } }, { role: 'member', status: 'invited' }] }, select: { userId: true } })).map((p) => p.userId);
+      const team = [...new Set([m.hostId, ...coming])];
+      const line = m.joinUrl ? `Join here: ${m.joinUrl}` : m.location ? `Where: ${m.location}` : 'The meeting link will be shared by your Client Manager.';
+      await this.notifications.notify(m.orgId, team, { kind: 'meeting', title: `In ${mins} min: ${m.title}`, body: `${istLabel(m.startAt)} IST. ${line}`, link: '/team/meetings', critical: true });
+      const clientUsers = await this.clientPeople(m.clientOrgId);
+      const theirs = `${zonedLabel(m.startAt.toISOString(), m.timeZone)} (${m.timeZone})`;
+      if (clientUsers.length) await this.notifications.notify(m.orgId, clientUsers.map((u) => u.id), { kind: 'meeting', title: `Your meeting starts in ${mins} min`, body: `${theirs}. ${line}`, link: '/client/meetings', critical: true });
+      const emails = m.clientOrgId ? this.clientEmails(m, clientUsers) : new Map(m.guestEmail ? [[m.guestEmail.toLowerCase(), m.guestName]] : []);
+      for (const [to, toName] of emails) {
+        await this.email.send({
+          orgId: m.orgId,
+          to,
+          toName,
+          subject: `Starting in ${mins} min: ${m.title}`,
+          paragraphs: [`Hi ${toName?.split(' ')[0] ?? 'there'}, your meeting with BMU Marketing starts in ${mins} minutes (${m.clientOrgId ? theirs : `${istLabel(m.startAt)} IST`}).`, line],
+          button: m.joinUrl ? { label: 'Join meeting', url: m.joinUrl } : { label: 'Add to calendar', url: this.icsUrl(m.id) },
+          kind: 'meeting',
+          entity: 'Meeting',
+          entityId: m.id,
+        });
       }
     }
     return due.length;
