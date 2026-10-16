@@ -197,4 +197,3 @@ ALTER TABLE "assets" ADD CONSTRAINT "assets_collectionId_fkey" FOREIGN KEY ("col
 
 -- AddForeignKey
 ALTER TABLE "asset_versions" ADD CONSTRAINT "asset_versions_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "assets"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
