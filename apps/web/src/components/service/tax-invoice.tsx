@@ -108,11 +108,11 @@ function Signature({ t }: { t: ServiceTaxInvoice }) {
   return (
     <div className="w-[64mm] text-center" data-testid="invoice-signature">
       <p className="text-[11.5px] text-[#4b5563]">For {t.seller.legalName}</p>
-      <div className="relative mx-auto flex h-[30mm] items-end justify-center">
+      <div className="flex h-[28mm] items-end justify-center gap-0 pb-1">
         {/* eslint-disable-next-line @next/next/no-img-element -- signed-in image from the API, not optimisable */}
-        {s.sealUrl && <img src={s.sealUrl} alt="Company seal" className="absolute left-0 top-1 h-[26mm] w-[26mm] object-contain opacity-90" />}
+        {s.sealUrl && <img src={s.sealUrl} alt="Company seal" className="h-[24mm] w-[24mm] shrink-0 object-contain opacity-90" />}
         {/* eslint-disable-next-line @next/next/no-img-element -- signed-in image from the API, not optimisable */}
-        {s.signatureUrl && <img src={s.signatureUrl} alt="Signature" className="relative z-10 max-h-[18mm] max-w-[44mm] object-contain" />}
+        {s.signatureUrl && <img src={s.signatureUrl} alt="Signature" className={`relative z-10 max-h-[16mm] max-w-[40mm] object-contain ${s.sealUrl ? "-ml-[4mm] mb-[1mm]" : ""}`} />}
       </div>
       <div className="border-t border-[#1c2430] pt-1">
         {s.name && <p className="text-[12px] font-semibold text-[#1c2430]">{s.name}</p>}
@@ -133,6 +133,9 @@ function Row({ k, v, strong, muted }: { k: string; v: string; strong?: boolean; 
 
 function PageOne({ t }: { t: ServiceTaxInvoice }) {
   const half = t.ratePct / 2;
+  // GST is charged on services only; pass-through costs (ad spend, creator fees) are shown on their own.
+  const passThrough = t.lines.filter((l) => l.passThrough).reduce((s, l) => s + l.taxablePaise, 0);
+  const services = t.taxablePaise - passThrough;
   return (
     <section className="inv-sheet" data-testid="invoice-page-1">
       <Letterhead t={t} title="TAX INVOICE" />
@@ -199,7 +202,7 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
           )}
         </div>
         <div>
-          <Row k="Taxable value" v={formatINR(t.taxablePaise)} />
+          <Row k={passThrough ? "Taxable value (services)" : "Taxable value"} v={formatINR(services)} />
           {t.interState ? (
             <Row k={`IGST @ ${t.ratePct}%`} v={formatINR(t.igstPaise)} />
           ) : (
@@ -208,6 +211,7 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
               <Row k={`SGST @ ${half}%`} v={formatINR(t.sgstPaise)} />
             </>
           )}
+          {passThrough > 0 && <Row k="Pass-through (no GST)" v={formatINR(passThrough)} />}
           <Row k="Invoice total" v={formatINR(t.totalPaise)} strong />
           {t.paidPaise > 0 && <Row k="Received" v={`− ${formatINR(t.paidPaise)}`} muted />}
           {t.creditedPaise > 0 && <Row k="Credit notes" v={`− ${formatINR(t.creditedPaise)}`} muted />}

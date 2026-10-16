@@ -11,10 +11,10 @@ import { invoiceBrandingUrl, readInvoiceBranding } from './invoice-branding.serv
 type InvoiceLine = { label: string; amountPaise: number; title?: string; details?: string; passThrough?: boolean; kind?: string };
 
 /** The terms printed on page 2 of every invoice. */
-function invoiceTerms(t: { number: string; dueDate: Date; email: string; phone: string; legalName: string }) {
+function invoiceTerms(t: { number: string; dueDate: Date; email: string; phone: string; legalName: string; settled: boolean }) {
   const due = new Intl.DateTimeFormat('en-IN', { dateStyle: 'long', timeZone: 'Asia/Kolkata' }).format(t.dueDate);
   return [
-    `Payment is due by ${due}. Please quote invoice number ${t.number} with every payment.`,
+    t.settled ? `Nothing is payable against invoice ${t.number}. Please keep this document for your records.` : `Payment is due by ${due}. Please quote invoice number ${t.number} with every payment.`,
     'Prices are exclusive of GST; GST is charged at the rate shown. Pass-through costs (ad spend, creator fees) are billed at cost without GST.',
     'Work continues on schedule while the account is up to date; overdue invoices may pause new deliverables until they are paid.',
     `Please tell us about any question on this invoice within 7 days at ${t.email}${t.phone ? ` or ${t.phone}` : ''}.`,
@@ -57,6 +57,7 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   const email = tenant.supportEmail?.trim() || BMU_EMAIL;
   const phone = tenant.supportPhone?.trim() || BMU_PHONE;
   // The founder who signs: the name set with the signature, else the first Founder.
+  const variant = serviceInvoiceVariant({ status: inv.status, kind: inv.kind, dueDate: inv.dueDate.toISOString(), paidPaise: paid, creditedPaise: credited, balancePaise: balance });
   const founder = branding.signatoryName ? null : await prisma.user.findFirst({ where: { orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, orderBy: { createdAt: 'asc' }, select: { name: true } });
   return {
     id: inv.id,
@@ -66,7 +67,7 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
     status: inv.status,
     kind: inv.kind,
     title: 'Tax Invoice',
-    variant: serviceInvoiceVariant({ status: inv.status, kind: inv.kind, dueDate: inv.dueDate.toISOString(), paidPaise: paid, creditedPaise: credited, balancePaise: balance }),
+    variant,
     notes: inv.notes?.trim() || null,
     signatory: {
       name: branding.signatoryName || (founder?.name && !/^bmu owner$/i.test(founder.name) ? founder.name : ''),
@@ -74,7 +75,7 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
       signatureUrl: branding.signatureFileId ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
       sealUrl: branding.sealFileId ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
     },
-    terms: invoiceTerms({ number: inv.number, dueDate: inv.dueDate, email, phone, legalName: payee }),
+    terms: invoiceTerms({ number: inv.number, dueDate: inv.dueDate, email, phone, legalName: payee, settled: ['paid', 'credited', 'cancelled'].includes(variant) }),
     seller: {
       legalName: payee,
       gstin: gst.gstin,
@@ -126,6 +127,7 @@ const d = (iso: string) => new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium
 /** Compact HTML version of the tax invoice for emails (inline styles only). */
 export function taxInvoiceEmailHtml(t: ServiceTaxInvoice) {
   const cell = 'padding:6px 8px;border-bottom:1px solid #e6e4dc;font-size:13px';
+  const passThrough = t.lines.filter((l) => l.passThrough).reduce((s, l) => s + l.taxablePaise, 0);
   const right = `${cell};text-align:right`;
   const tax = t.interState
     ? `<tr><td style="${cell}">IGST ${t.ratePct}%</td><td style="${right}">${formatINR(t.igstPaise)}</td></tr>`
@@ -134,7 +136,8 @@ export function taxInvoiceEmailHtml(t: ServiceTaxInvoice) {
 <tr><td colspan="2" style="${cell};background:#f6f5f0"><strong>Tax Invoice ${escapeHtml(t.number)}</strong> · ${d(t.date)} · due ${d(t.dueDate)}<br>
 <span style="color:#6b7280">From ${escapeHtml(t.seller.legalName)}${t.seller.gstin ? ` (GSTIN ${escapeHtml(t.seller.gstin)})` : ''} to ${escapeHtml(t.buyer.legalName)}${t.buyer.gstin ? ` (GSTIN ${escapeHtml(t.buyer.gstin)})` : ''}. Place of supply: ${escapeHtml(t.buyer.placeOfSupplyName)}.</span></td></tr>
 ${t.lines.map((l) => `<tr><td style="${cell}">${escapeHtml(l.title)}${l.details ? `<br><span style="color:#6b7280;font-size:12px">${escapeHtml(l.details)}</span>` : ''}<br><span style="color:#6b7280;font-size:11px">SAC ${escapeHtml(l.sac)}</span></td><td style="${right};vertical-align:top;white-space:nowrap">${formatINR(l.taxablePaise)}</td></tr>`).join('')}
-<tr><td style="${cell}">Taxable value</td><td style="${right}">${formatINR(t.taxablePaise)}</td></tr>
+<tr><td style="${cell}">Taxable value${passThrough ? ' (services)' : ''}</td><td style="${right}">${formatINR(t.taxablePaise - passThrough)}</td></tr>
+${passThrough ? `<tr><td style="${cell}">Pass-through (no GST)</td><td style="${right}">${formatINR(passThrough)}</td></tr>` : ''}
 ${tax}
 <tr><td style="${cell}"><strong>Total</strong></td><td style="${right}"><strong>${formatINR(t.totalPaise)}</strong></td></tr>
 ${t.balancePaise > 0 && t.balancePaise !== t.totalPaise ? `<tr><td style="${cell}">Balance due</td><td style="${right}"><strong>${formatINR(t.balancePaise)}</strong></td></tr>` : ''}
@@ -147,7 +150,7 @@ export function taxInvoiceEmailText(t: ServiceTaxInvoice) {
   return [
     `Tax Invoice ${t.number} (${d(t.date)}, due ${d(t.dueDate)})`,
     ...t.lines.map((l) => `- ${l.title}: ${formatINR(l.taxablePaise)}`),
-    `Taxable value: ${formatINR(t.taxablePaise)}`,
+    `Taxable value: ${formatINR(t.taxablePaise - t.lines.filter((l) => l.passThrough).reduce((s, l) => s + l.taxablePaise, 0))}`,
     t.interState ? `IGST ${t.ratePct}%: ${formatINR(t.igstPaise)}` : `CGST ${t.ratePct / 2}%: ${formatINR(t.cgstPaise)} · SGST ${t.ratePct / 2}%: ${formatINR(t.sgstPaise)}`,
     `Total: ${formatINR(t.totalPaise)} (${t.amountInWords})`,
     ...(t.payment.upiId ? [`UPI: ${t.payment.upiId}`] : []),
