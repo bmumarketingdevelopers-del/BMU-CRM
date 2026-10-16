@@ -842,7 +842,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const input = parse(meetingRequestSchema, body);
     this.assertZone(input.timeZone);
     const startAt = new Date(input.startAt);
-    if (startAt.getTime() < Date.now() + 3_600_000) throw new BadRequestException('Pick a time at least an hour from now');
+    // A request only proposes a time: the Client Manager confirms or moves it when fixing it, so any future time will do.
+    if (startAt.getTime() <= Date.now()) throw new BadRequestException('Pick a time in the future');
     if (startAt.getTime() > Date.now() + 180 * DAY) throw new BadRequestException('Pick a time within the next six months');
     const m = await this.prisma.meeting.create({
       data: {

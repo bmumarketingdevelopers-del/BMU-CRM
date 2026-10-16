@@ -253,6 +253,16 @@ describe('Google Meet', () => {
     expect(x.google?.error).toContain('has not connected Google Calendar');
   });
 
+  it('a client can request a meeting at any future time (the Client Manager confirms it)', async () => {
+    const soon = new Date(Date.now() + 10 * 60_000).toISOString();
+    const r = (await http().post('/client/meetings/request').set(as('client')).send({ startAt: soon, timeZone: 'Asia/Kolkata', durationMin: 15, requirements: 'Short-notice call about the launch' }).expect(201)).body as MeetingView;
+    made.push(r.id);
+    expect(r.status).toBe('requested');
+    const past = new Date(Date.now() - 5 * 60_000).toISOString();
+    const no = await http().post('/client/meetings/request').set(as('client')).send({ startAt: past, timeZone: 'Asia/Kolkata', durationMin: 15, requirements: 'This time has already passed' }).expect(400);
+    expect(no.body.message).toBe('Pick a time in the future');
+  });
+
   it('connect link, sign-in return and disconnect', async () => {
     const { url } = (await http().post('/meetings/google/connect').set(as('producer')).expect(200)).body as { url: string };
     const u = new URL(url);
