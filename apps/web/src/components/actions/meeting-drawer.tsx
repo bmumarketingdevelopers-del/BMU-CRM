@@ -4,11 +4,14 @@
  * "+ New → Meeting": a real meeting (the same one the Meetings page adds), with a Google Meet link when the host's
  * Google Calendar is connected, team members invited and the client's people invited. It shows on Meetings with its
  * details and link. Without Google Calendar the host can paste a link, which is sent to everyone in the meeting.
+ * v24: for a client meeting the Client Manager can bring in one or more departments and/or a Founder; they confirm
+ * the time first (accept or ask for another time the same day) and the meeting is fixed once they all accept.
  */
 import Link from "next/link";
 import { useState } from "react";
 import { canOpenCraftManager, opsCanAddLead } from "@bmu/shared";
 import { PeoplePicker } from "@/components/comms/meetings";
+import { ApproverPicker } from "@/components/comms/meeting-requests";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { ActionDrawer, Field, TextArea, inputCls } from "./action-drawer";
@@ -25,6 +28,9 @@ export function MeetingDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
   const clients = useLoad(() => (forClients ? api.clients.list().catch(() => []) : Promise.resolve([])), { live: false });
   const leads = useLoad(() => (forLeads ? api.leads.list() : Promise.resolve([])), { live: false });
   const google = useLoad(() => api.meetings.google().catch(() => undefined), { live: false });
+  const approvers = useLoad(() => api.meetings.arrangeOptions().catch(() => undefined), { live: false });
+  const [departmentIds, setDepartmentIds] = useState<string[]>([]);
+  const [founderId, setFounderId] = useState("");
   const [about, setAbout] = useState<"client" | "lead" | "internal">(prefill?.leadId ? "lead" : forClients ? "client" : forLeads ? "lead" : "internal");
   const [clientId, setClientId] = useState(prefill?.clientId ?? "");
   const [leadId, setLeadId] = useState(prefill?.leadId ?? "");
@@ -56,6 +62,7 @@ export function MeetingDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
     const pasted = link.trim();
     if (!useMeet && pasted && !/^https:\/\/\S+$/i.test(pasted)) return setError("Paste the full meeting link, starting with https://");
     const name = title.trim() || (about === "client" && clientName ? `${clientName} meeting` : "");
+    const confirmFirst = about === "client" && (departmentIds.length > 0 || !!founderId);
     if (name.length < 2) return setError("Give the meeting a title");
     setSaving(true);
     try {
@@ -69,7 +76,15 @@ export function MeetingDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
         location: location.trim() || undefined,
         attendeeIds,
         addMeet: useMeet,
+        departmentIds: about === "client" ? departmentIds : undefined,
+        founderId: about === "client" ? founderId || null : undefined,
       });
+      if (confirmFirst) {
+        const asked = m.participants.filter((p) => p.status === "pending").map((p) => p.name);
+        onSaved(m.id, `Meeting proposed. Waiting for ${asked.join(" and ") || "their answer"} to confirm the time; it is fixed (with the link) once they accept.`);
+        onClose();
+        return;
+      }
       // No Google Meet: the pasted link becomes the meeting link and goes to everyone invited.
       if (!m.joinUrl && pasted) m = await api.meetings.shareLink(m.id, pasted);
       const invited = m.participants.length + m.attendees.length;
@@ -163,6 +178,11 @@ export function MeetingDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
       <Field label="Agenda">
         <TextArea value={agenda} onChange={(e) => setAgenda(e.target.value)} maxLength={1000} placeholder="What the meeting is about" aria-label="Agenda" />
       </Field>
+      {about === "client" && approvers.data && (
+        <Field label="Who confirms the time" hint="Optional. Department Heads and the Founder accept or ask for another time the same day; the meeting is fixed once they all accept. Each Department Head then adds their team members working on this client's projects.">
+          <ApproverPicker options={approvers.data} departmentIds={departmentIds} onDepartments={setDepartmentIds} founderId={founderId} onFounder={setFounderId} />
+        </Field>
+      )}
       <Field label="Invite team members">
         <PeoplePicker value={attendeeIds} onChange={setAttendeeIds} />
       </Field>

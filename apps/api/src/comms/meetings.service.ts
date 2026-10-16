@@ -16,6 +16,7 @@ import {
   founderMeetingSchema,
   meetingArrangeSchema,
   meetingBookSchema,
+  meetingBranchManagersSchema,
   meetingCreateSchema,
   meetingFixSchema,
   meetingJoinSchema,
@@ -33,7 +34,9 @@ import {
   type MeetingAttendeeResponse,
   type MeetingPerson,
   type MeetingArrangeOptions,
+  type MeetingBranchManagerOption,
   type MeetingList,
+  type MeetingMemberOption,
   type MeetingParticipantRole,
   type MeetingParticipantStatus,
   type MeetingView,
@@ -392,11 +395,13 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const attendees: AttendeeRec[] = list.length ? await this.prisma.meetingAttendee.findMany({ where: { meetingId: { in: list.map((m) => m.id) } }, orderBy: { createdAt: 'asc' } }) : [];
     // The Google account that organised each meeting, for the host's "Join Google Meet" (joins as the Meet host).
     const organisers = me?.type === 'staff' ? await this.prisma.calendarConnection.findMany({ where: { userId: { in: [...new Set(list.filter((m) => m.googleEventId && m.hostId === me.id).map((m) => m.googleUserId!))] } }, select: { userId: true, email: true } }) : [];
-    const [hosts, clients, leads, depts] = await Promise.all([
-      this.prisma.user.findMany({ where: { id: { in: [...new Set([...ids('hostId'), ...parts.map((p) => p.userId)])] } }, select: { id: true, name: true } }),
-      this.prisma.clientOrg.findMany({ where: { id: { in: ids('clientOrgId') } }, select: { id: true, name: true } }),
+    const deptIds = [...new Set([...ids('departmentId'), ...parts.map((p) => p.departmentId).filter((x): x is string => !!x)])];
+    const [hosts, clients, leads, depts, myBranch] = await Promise.all([
+      this.prisma.user.findMany({ where: { id: { in: [...new Set([...ids('hostId'), ...parts.map((p) => p.userId), ...parts.map((p) => p.addedById).filter((x): x is string => !!x)])] } }, select: { id: true, name: true, branchId: true } }),
+      this.prisma.clientOrg.findMany({ where: { id: { in: ids('clientOrgId') } }, select: { id: true, name: true, branchId: true } }),
       me?.type === 'staff' ? this.prisma.lead.findMany({ where: { id: { in: ids('leadId') } }, select: { id: true, contact: true } }) : [],
-      this.prisma.department.findMany({ where: { id: { in: ids('departmentId') } }, select: { id: true, name: true } }),
+      this.prisma.department.findMany({ where: { id: { in: deptIds } }, select: { id: true, name: true } }),
+      me?.type === 'staff' ? this.prisma.user.findUnique({ where: { id: me.id }, select: { branchId: true } }).then((u) => u?.branchId ?? null) : null,
     ]);
     const now = new Date();
     return list.map((m) => {
@@ -408,6 +413,13 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
       const clientCan = me?.type === 'client' && (m.status === 'booked' || open) && future && me.clientOrg?.role !== 'client_viewer';
       const people = parts.filter((p) => p.meetingId === m.id);
       const my = staff ? people.find((p) => p.userId === me.id) : undefined;
+      // v24: the departments brought in (each Department Head's), first the one stored on the meeting.
+      const meetingDepts = [...new Set([m.departmentId, ...people.filter((p) => p.role === 'department_head').map((p) => p.departmentId)].filter((x): x is string => !!x))]
+        .map((id) => depts.find((d) => d.id === id))
+        .filter((d): d is { id: string; name: string } => !!d);
+      // v24: the client's branch (else the Client Manager's): its Branch Manager can add another branch's Branch Manager.
+      const localBranch = clients.find((c) => c.id === m.clientOrgId)?.branchId ?? hosts.find((h) => h.id === m.hostId)?.branchId ?? null;
+      const localBm = my?.role === 'branch_manager' && !!localBranch && myBranch === localBranch;
       // Clients see who is joining, never the team's internal answers or who chose not to come.
       const shown = staff ? people : people.filter((p) => ['accepted', 'joined'].includes(p.status) || (p.role === 'member' && p.status === 'invited'));
       return {
@@ -425,7 +437,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
         status: m.status as MeetingView['status'],
         bookedVia: m.bookedVia as MeetingView['bookedVia'],
         timeZone: m.timeZone,
-        department: depts.find((d) => d.id === m.departmentId) ?? null,
+        department: meetingDepts[0] ?? null,
+        departments: meetingDepts,
         joinUrl: m.status === 'booked' ? m.joinUrl : null,
         joinAs: m.status === 'booked' && staff && m.hostId === me.id && m.googleEventId && m.joinUrl && /^https:\/\/meet\.google\.com\//i.test(m.joinUrl) ? (organisers.find((o) => o.userId === m.googleUserId)?.email ?? null) : null,
         rescheduledAt: m.rescheduledAt?.toISOString() ?? null,
@@ -437,6 +450,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
           proposedStartAt: staff ? (p.proposedStartAt?.toISOString() ?? null) : null,
           note: staff ? p.note : null,
           googleResponse: (p.googleResponse as MeetingAttendeeResponse | null) ?? null,
+          department: staff && p.departmentId ? (depts.find((d) => d.id === p.departmentId) ?? null) : null,
+          addedBy: staff && p.addedById ? (hosts.find((h) => h.id === p.addedById)?.name ?? null) : null,
         })),
         myRole: (my?.role as MeetingParticipantRole | undefined) ?? null,
         // Clients see the summary and action items, never the team's raw notes.
@@ -453,6 +468,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
           addMembers: m.status === 'booked' && future && my?.role === 'department_head',
           join: m.status === 'booked' && m.endAt > now && my?.role === 'branch_manager',
           shareLink: !!staff && m.status === 'booked' && m.endAt > now && (m.hostId === me.id || hasRole(me, 'am_lead')),
+          addBranchManagers: !!staff && !!m.clientOrgId && m.status === 'booked' && m.endAt > now && (m.hostId === me.id || hasRole(me, 'am_lead') || localBm),
         },
       };
     });
@@ -518,6 +534,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     // One click, one meeting: a repeat of the same meeting (same host, title and time) within two minutes, e.g. the
     // button pressed again while Google was still making the Meet link, returns the meeting already made. The lock
     // makes requests that arrive together wait for each other.
+    // v24: Department Heads and a Founder asked to confirm first: the meeting waits for their answers (fixed once all accept).
+    const confirmFirst = !!input.departmentIds?.length || !!input.founderId;
     const { m, repeat } = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`select pg_advisory_xact_lock(hashtext(${`meeting:${me.id}:${input.title}:${startAt.toISOString()}`}))::text`;
       const same = await tx.meeting.findFirst({ where: { orgId: me.orgId, hostId: me.id, title: input.title, startAt, status: { not: 'cancelled' }, createdAt: { gte: new Date(Date.now() - 2 * 60_000) } }, orderBy: { createdAt: 'asc' } });
@@ -538,18 +556,28 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
           agenda: input.agenda || null,
           location: input.location || null,
           bookedVia: 'team',
+          status: confirmFirst ? 'awaiting' : 'booked',
         },
       });
       return { m: made, repeat: false };
     });
     if (repeat) return this.view(me, m);
     // v23: invited team members join as participants; the client's people / guest are invited; Google Meet when connected.
-    if (team.length) await this.prisma.meetingParticipant.createMany({ data: team.map((userId) => ({ meetingId: m.id, userId, role: 'member', status: 'invited' })), skipDuplicates: true });
+    if (team.length) await this.prisma.meetingParticipant.createMany({ data: team.map((userId) => ({ meetingId: m.id, userId, role: 'member', status: 'invited', addedById: me.id })), skipDuplicates: true });
+    if (confirmFirst) {
+      // Nobody is invited yet: the Department Heads and Founder confirm the time first; fixing it tells everyone.
+      const asked = await this.askApprovers(me, m, input.departmentIds ?? [], input.founderId ?? null);
+      await this.audit.log(me, 'meeting.created', 'Meeting', m.id, null, { title: m.title, startAt: m.startAt, awaiting: asked }, ip);
+      if (m.leadId) await this.prisma.leadActivity.create({ data: { orgId: me.orgId, leadId: m.leadId, kind: 'meeting', body: `Meeting proposed for ${istLabel(m.startAt)}: ${m.title}` } });
+      return this.view(me, await this.prisma.meeting.findUniqueOrThrow({ where: { id: m.id } }));
+    }
+    const bms = await this.inviteBranchManagers(m, me.id);
     const outside = await this.saveOutsiders(m);
     const after = await this.toGoogle(m, input.addMeet ?? true);
     await this.audit.log(me, 'meeting.created', 'Meeting', m.id, null, { title: m.title, startAt: m.startAt, invited: team.length + outside.length, googleMeet: !!after.googleEventId }, ip);
     if (m.leadId) await this.prisma.leadActivity.create({ data: { orgId: me.orgId, leadId: m.leadId, kind: 'meeting', body: `Meeting booked for ${istLabel(m.startAt)}: ${m.title}` } });
     await this.announce(after, team, outside, me.name);
+    await this.tellBranchManagers(after, bms);
     return this.view(me, after);
   }
 
@@ -751,6 +779,25 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     return branchId ? this.usersWithRole(m.orgId, 'admin', { branchId }) : [];
   }
 
+  /**
+   * v24: brings the respective branch's Branch Manager into a fixed client meeting (Join or Ignore). Only that branch:
+   * another branch's Branch Manager is added by the Client Manager or this Branch Manager (addBranchManagers).
+   */
+  private async inviteBranchManagers(m: MeetingRec, byId: string | null) {
+    if (!m.clientOrgId) return [];
+    const taken = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: m.id }, select: { userId: true } })).map((p) => p.userId);
+    const bms = (await this.branchManagers(m)).map((b) => b.id).filter((id) => id !== m.hostId && !taken.includes(id));
+    if (bms.length) await this.prisma.meetingParticipant.createMany({ data: bms.map((userId) => ({ meetingId: m.id, userId, role: 'branch_manager', status: 'invited', addedById: byId })), skipDuplicates: true });
+    return bms;
+  }
+
+  /** v24: the Branch Manager's "join now?" for a meeting the team added (fixed client meetings say it in fixNow). */
+  private async tellBranchManagers(m: MeetingRec, bms: string[]) {
+    if (!bms.length) return;
+    const client = await this.clientName(m);
+    await this.notifications.notify(m.orgId, bms, { kind: 'meeting', title: `Meeting with client ${client}: join now?`, body: `Scheduled for ${istLabel(m.startAt)} IST. ${this.linkLine(m.joinUrl)} Join or ignore on Meetings.`, link: '/team/meetings' });
+  }
+
   /** Signed-in people of a client company (viewers included: they should know a meeting is on). */
   private async clientPeople(clientOrgId: string | null) {
     if (!clientOrgId) return [];
@@ -884,40 +931,57 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     return m;
   }
 
-  /** The Client Manager brings in a department (its head confirms) and/or a Founder. */
+  /** The Client Manager brings in one or more departments (each Department Head confirms) and/or a Founder. */
   async arrange(me: Me, id: string, body: unknown, ip?: string) {
     const m = await this.loadOpen(me, id);
     const input = parse(meetingArrangeSchema, body);
-    const want: { userId: string; role: MeetingParticipantRole }[] = [];
-    let departmentId: string | null = null;
-    if (input.departmentId) {
-      const d = await this.prisma.department.findFirst({ where: { id: input.departmentId, orgId: me.orgId, deletedAt: null }, select: { id: true, name: true, headUserId: true } });
-      if (!d) throw new BadRequestException('Department not found');
+    const departmentIds = [...(input.departmentIds ?? []), ...(input.departmentId ? [input.departmentId] : [])];
+    await this.askApprovers(me, m, departmentIds, input.founderId ?? null, ip);
+    return this.view(me, await this.prisma.meeting.findUniqueOrThrow({ where: { id } }));
+  }
+
+  /**
+   * v24: asks the Department Head of each department and/or a Founder to confirm the meeting time; the meeting waits
+   * for their answers. Asking again keeps the answers of people already asked and drops those no longer wanted.
+   */
+  private async askApprovers(me: Me, m: MeetingRec, departmentIds: string[], founderId: string | null, ip?: string) {
+    const want: { userId: string; role: MeetingParticipantRole; departmentId: string | null }[] = [];
+    const ids = [...new Set(departmentIds)];
+    const found = ids.length ? await this.prisma.department.findMany({ where: { id: { in: ids }, orgId: me.orgId, deletedAt: null }, select: { id: true, name: true, headUserId: true } }) : [];
+    if (found.length !== ids.length) throw new BadRequestException('Department not found');
+    for (const id of ids) {
+      const d = found.find((x) => x.id === id)!;
       if (!d.headUserId) throw new BadRequestException(`${d.name} has no Department Head yet. Set one in People first.`);
-      departmentId = d.id;
-      want.push({ userId: d.headUserId, role: 'department_head' });
+      // One person heading two of the departments is asked once.
+      if (!want.some((w) => w.userId === d.headUserId)) want.push({ userId: d.headUserId, role: 'department_head', departmentId: d.id });
     }
-    if (input.founderId) {
-      if (!(await this.usersWithRole(me.orgId, 'founder', { id: input.founderId })).length) throw new BadRequestException('Pick a Founder');
-      if (!want.some((w) => w.userId === input.founderId)) want.push({ userId: input.founderId, role: 'founder' });
+    if (founderId) {
+      if (!(await this.usersWithRole(me.orgId, 'founder', { id: founderId })).length) throw new BadRequestException('Pick a Founder');
+      if (!want.some((w) => w.userId === founderId)) want.push({ userId: founderId, role: 'founder', departmentId: null });
     }
-    const before = await this.prisma.meetingParticipant.findMany({ where: { meetingId: id, role: { in: APPROVERS } } });
+    if (!want.length) throw new BadRequestException('Pick a department or the Founder');
+    const before = await this.prisma.meetingParticipant.findMany({ where: { meetingId: m.id, role: { in: APPROVERS } } });
     // A Founder who asked for this meeting stays in it.
     const keep = (p: ParticipantRec) => want.some((w) => w.userId === p.userId) || (m.bookedVia === 'founder' && p.role === 'founder' && p.userId === m.bookedById);
     await this.prisma.meetingParticipant.deleteMany({ where: { id: { in: before.filter((p) => !keep(p)).map((p) => p.id) } } });
     const asked: string[] = [];
     for (const w of want) {
       const had = before.find((p) => p.userId === w.userId);
-      if (had && had.role === w.role) continue; // already asked: keep their answer
+      if (had && had.role === w.role) {
+        // Already asked: keep their answer (the department they represent may change).
+        if (had.departmentId !== w.departmentId) await this.prisma.meetingParticipant.update({ where: { id: had.id }, data: { departmentId: w.departmentId } });
+        continue;
+      }
       await this.prisma.meetingParticipant.upsert({
-        where: { meetingId_userId: { meetingId: id, userId: w.userId } },
-        create: { meetingId: id, userId: w.userId, role: w.role, status: 'pending' },
-        update: { role: w.role, status: 'pending', proposedStartAt: null, note: null, respondedAt: null },
+        where: { meetingId_userId: { meetingId: m.id, userId: w.userId } },
+        create: { meetingId: m.id, userId: w.userId, role: w.role, status: 'pending', departmentId: w.departmentId, addedById: me.id },
+        update: { role: w.role, status: 'pending', proposedStartAt: null, note: null, respondedAt: null, departmentId: w.departmentId, addedById: me.id },
       });
       asked.push(w.userId);
     }
-    const after = await this.prisma.meeting.update({ where: { id }, data: { status: 'awaiting', departmentId } });
-    await this.audit.log(me, 'meeting.arranged', 'Meeting', id, { status: m.status, departmentId: m.departmentId }, { status: 'awaiting', departmentId, asked }, ip);
+    const departmentId = want.find((w) => w.role === 'department_head')?.departmentId ?? null;
+    await this.prisma.meeting.update({ where: { id: m.id }, data: { status: 'awaiting', departmentId } });
+    await this.audit.log(me, 'meeting.arranged', 'Meeting', m.id, { status: m.status, departmentId: m.departmentId }, { status: 'awaiting', departmentIds: ids, asked }, ip);
     const client = await this.clientName(m);
     if (asked.length) {
       await this.notifications.notify(me.orgId, asked, {
@@ -927,7 +991,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
         link: '/team/meetings',
       });
     }
-    return this.view(me, after);
+    return asked;
   }
 
   /** A Department Head or Founder accepts, or asks for another time on the same day. */
@@ -993,8 +1057,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     // Anyone who asked for another time is now on the fixed time.
     await this.prisma.meetingParticipant.updateMany({ where: { meetingId: m.id, status: 'reschedule' }, data: { status: 'accepted', proposedStartAt: null } });
     const people = await this.prisma.meetingParticipant.findMany({ where: { meetingId: m.id } });
-    const bms = (await this.branchManagers(m)).filter((b) => b.id !== m.hostId && !people.some((p) => p.userId === b.id));
-    if (bms.length) await this.prisma.meetingParticipant.createMany({ data: bms.map((b) => ({ meetingId: m.id, userId: b.id, role: 'branch_manager', status: 'invited' })), skipDuplicates: true });
+    const bms = await this.inviteBranchManagers(m, null);
     // v23 Google Meet: the fixed meeting goes into the Client Manager's Google Calendar with a Meet link, and Google
     // emails the invitations to the client and everyone in it.
     await this.saveOutsiders(after);
@@ -1010,7 +1073,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     await notify(people.filter((p) => p.role === 'founder' && p.userId !== me.id).map((p) => p.userId), `Your meeting is scheduled: ${client}`, `${ist}. ${line}`);
     await notify(people.filter((p) => p.role === 'department_head' && p.userId !== me.id).map((p) => p.userId), `Your meeting is scheduled: ${client}`, `${ist}. ${line} Add your team members on Meetings.`);
     await notify(people.filter((p) => p.role === 'member').map((p) => p.userId), `Your meeting is scheduled: ${client}`, `${ist}. ${line}`);
-    await notify(bms.map((b) => b.id), `Meeting with client ${client}: join now?`, `Scheduled for ${ist}. ${line} Join or ignore on Meetings.`);
+    await notify(bms, `Meeting with client ${client}: join now?`, `Scheduled for ${ist}. ${line} Join or ignore on Meetings.`);
 
     // The client: "scheduled", or an apology with the revised time when it moved.
     const theirs = `${zonedLabel(startAt.toISOString(), m.timeZone)} (${m.timeZone})`;
@@ -1084,25 +1147,89 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     return emails;
   }
 
-  /** People of the meeting's department the Department Head can add. */
-  async memberOptions(me: Me, id: string) {
+  /**
+   * v24: people a Department Head can add: from the department(s) they represent in this meeting and, for a client
+   * meeting, only those working on that client's projects (a task on one of its projects, or in its client pod).
+   */
+  async memberOptions(me: Me, id: string): Promise<MeetingMemberOption[]> {
     const m = await this.loadForStaff(me, id);
-    if (!(await this.view(me, m)).can.addMembers || !m.departmentId) throw new ForbiddenException('Only the Department Head can add team members');
+    if (!(await this.view(me, m)).can.addMembers) throw new ForbiddenException('Only the Department Head can add team members');
+    const mine = await this.prisma.meetingParticipant.findUnique({ where: { meetingId_userId: { meetingId: id, userId: me.id } }, select: { departmentId: true } });
+    const deptIds = [...new Set([mine?.departmentId ?? m.departmentId].filter((x): x is string => !!x))];
+    // A head who also leads other departments in this meeting adds from those too.
+    const headed = await this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null, headUserId: me.id }, select: { id: true } });
+    const inMeeting = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: id, role: 'department_head' }, select: { departmentId: true } })).map((p) => p.departmentId);
+    for (const d of headed) if (inMeeting.includes(d.id) && !deptIds.includes(d.id)) deptIds.push(d.id);
+    if (!deptIds.length) return [];
     const taken = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: id }, select: { userId: true } })).map((p) => p.userId);
-    return this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: 'active', departmentId: m.departmentId, id: { notIn: [...taken, me.id, m.hostId] } }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
+    const people = await this.prisma.user.findMany({
+      where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: 'active', leftAt: null, departmentId: { in: deptIds }, id: { notIn: [...taken, me.id, m.hostId] } },
+      select: { id: true, name: true, department: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
+    if (!m.clientOrgId) return people.map((p) => ({ id: p.id, name: p.name, department: p.department?.name ?? null, why: null }));
+    const working = await this.clientWorkers(m.clientOrgId, people.map((p) => p.id));
+    return people.filter((p) => working.has(p.id)).map((p) => ({ id: p.id, name: p.name, department: p.department?.name ?? null, why: working.get(p.id) ?? null }));
+  }
+
+  /** v24: who among these people works on the client's projects, and how (e.g. "3 open tasks", "client pod"). */
+  private async clientWorkers(clientOrgId: string, userIds: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (!userIds.length) return out;
+    const projects = (await this.prisma.engagement.findMany({ where: { clientOrgId, deletedAt: null }, select: { id: true } })).map((e) => e.id);
+    const tasks = projects.length
+      ? await this.prisma.task.groupBy({
+          by: ['ownerId'],
+          where: { ownerId: { in: userIds }, archivedAt: null, OR: [{ engagementId: { in: projects } }, { deliverable: { cycle: { engagementId: { in: projects } } } }] },
+          _count: { _all: true },
+        })
+      : [];
+    for (const t of tasks) if (t.ownerId) out.set(t.ownerId, `${t._count._all} task${t._count._all === 1 ? '' : 's'} on their projects`);
+    const pods = await this.prisma.clientPod.findMany({ where: { deletedAt: null, clientIds: { has: clientOrgId } }, select: { name: true, strategistUserId: true, producerIds: true } });
+    for (const p of pods) for (const u of [p.strategistUserId, ...p.producerIds]) if (u && userIds.includes(u) && !out.has(u)) out.set(u, `In the ${p.name} pod`);
+    return out;
   }
 
   async addMembers(me: Me, id: string, body: unknown, ip?: string) {
     const options = await this.memberOptions(me, id);
     const { userIds } = parse(meetingMembersSchema, body);
     const add = [...new Set(userIds)];
-    if (add.some((u) => !options.some((o) => o.id === u))) throw new BadRequestException('Add people from your own department who are not in the meeting yet');
-    await this.prisma.meetingParticipant.createMany({ data: add.map((userId) => ({ meetingId: id, userId, role: 'member', status: 'invited' })), skipDuplicates: true });
+    if (add.some((u) => !options.some((o) => o.id === u))) throw new BadRequestException("Add people from your department who work on this client's projects and are not in the meeting yet");
+    await this.prisma.meetingParticipant.createMany({ data: add.map((userId) => ({ meetingId: id, userId, role: 'member', status: 'invited', addedById: me.id })), skipDuplicates: true });
     // v23 Google Meet: they are added to the Google event too (Google emails them the invitation).
     const m = await this.toGoogle(await this.touch(id));
     await this.audit.log(me, 'meeting.members_added', 'Meeting', id, null, { userIds: add }, ip);
     const client = await this.clientName(m);
     await this.notifications.notify(me.orgId, add, { kind: 'meeting', title: `Your meeting is scheduled: ${client}`, body: `${me.name} added you to the meeting with ${client} on ${istLabel(m.startAt)} IST. ${this.linkLine(m.joinUrl)}`, link: '/team/meetings' });
+    return this.view(me, m);
+  }
+
+  /** v24: Branch Managers of other branches who can be added (by the Client Manager or the client's Branch Manager). */
+  async branchManagerOptions(me: Me, id: string): Promise<MeetingBranchManagerOption[]> {
+    const m = await this.loadForStaff(me, id);
+    if (!(await this.view(me, m)).can.addBranchManagers) throw new ForbiddenException("Only the Client Manager or the client's Branch Manager can add another Branch Manager");
+    const taken = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: id }, select: { userId: true } })).map((p) => p.userId);
+    const rows = await this.prisma.user.findMany({
+      where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, roles: { some: { role: { baseRole: 'admin' } } }, id: { notIn: [...taken, m.hostId, me.id] } },
+      select: { id: true, name: true, branch: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
+    return rows.map((u) => ({ id: u.id, name: u.name, branch: u.branch?.name ?? null }));
+  }
+
+  /** v24: the Client Manager or the client's Branch Manager adds another branch's Branch Manager (Join or Ignore). */
+  async addBranchManagers(me: Me, id: string, body: unknown, ip?: string) {
+    const options = await this.branchManagerOptions(me, id);
+    const { userIds } = parse(meetingBranchManagersSchema, body);
+    const add = [...new Set(userIds)];
+    if (add.some((u) => !options.some((o) => o.id === u))) throw new BadRequestException('Pick Branch Managers who are not in this meeting yet');
+    await this.prisma.meetingParticipant.createMany({ data: add.map((userId) => ({ meetingId: id, userId, role: 'branch_manager', status: 'invited', addedById: me.id })), skipDuplicates: true });
+    // Google Meet: they are added to the Google event too (Google emails them the invitation).
+    const m = await this.toGoogle(await this.touch(id));
+    await this.audit.log(me, 'meeting.branch_managers_added', 'Meeting', id, null, { userIds: add }, ip);
+    const client = await this.clientName(m);
+    await this.notifications.notify(me.orgId, add, { kind: 'meeting', title: `Meeting with client ${client}: join now?`, body: `${me.name} added you to the meeting on ${istLabel(m.startAt)} IST. ${this.linkLine(m.joinUrl)} Join or ignore on Meetings.`, link: '/team/meetings' });
+    if (m.hostId !== me.id) await this.notifications.notify(me.orgId, [m.hostId], { kind: 'meeting', title: `${me.name} added a Branch Manager to the ${client} meeting`, body: options.filter((o) => add.includes(o.id)).map((o) => `${o.name}${o.branch ? ` (${o.branch})` : ''}`).join(', '), link: '/team/meetings' });
     return this.view(me, m);
   }
 

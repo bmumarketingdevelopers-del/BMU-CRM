@@ -77,7 +77,11 @@ export function ParticipantList({ m, team }: { m: MeetingView; team: boolean }) 
       {m.participants.map((p) => (
         <li key={p.userId} className="flex flex-wrap items-center gap-2">
           <span className="font-medium">{p.name}</span>
-          <span className="text-ink-muted">{MEETING_PARTICIPANT_ROLE_LABELS[p.role]}</span>
+          <span className="text-ink-muted">
+            {MEETING_PARTICIPANT_ROLE_LABELS[p.role]}
+            {p.department ? `, ${p.department.name}` : ""}
+            {team && p.addedBy && p.role !== "department_head" && p.role !== "founder" ? ` · added by ${p.addedBy}` : ""}
+          </span>
           {team && <Badge tone={STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>}
           {team && p.proposedStartAt && <span className="text-ink-muted">suggests {zonedLabel(p.proposedStartAt, IST_ZONE)} IST</span>}
           {team && p.note && <span className="text-ink-muted">“{p.note}”</span>}
@@ -245,7 +249,7 @@ export function TeamRequestCard({ m, onChanged }: { m: MeetingView; onChanged: (
           </p>
           <p className="text-xs text-ink-muted">
             {teamTime(m.startAt, m.timeZone)} · {m.durationMin} min · Client Manager: {m.host.name}
-            {m.department ? ` · ${m.department.name}` : ""}
+            {m.departments.length ? ` · ${m.departments.map((d) => d.name).join(", ")}` : ""}
           </p>
           {m.agenda && <p className="mt-1">{m.agenda}</p>}
           <ParticipantList m={m} team />
@@ -288,10 +292,43 @@ function RespondPanel({ m, onChanged }: { m: MeetingView; onChanged: () => void 
   );
 }
 
-/** Client Manager: bring in a department and/or the Founder, then fix the meeting. */
+/**
+ * v24: who confirms a meeting's time: one or more departments (each Department Head confirms, then adds their team
+ * members working on the client's projects) and/or a Founder.
+ */
+export function ApproverPicker({ options, departmentIds, onDepartments, founderId, onFounder }: { options: MeetingArrangeOptions; departmentIds: string[]; onDepartments: (ids: string[]) => void; founderId: string; onFounder: (id: string) => void }) {
+  return (
+    <div className="space-y-2" data-testid="approver-picker">
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {options.departments.map((d) => (
+          <label key={d.id} className={`flex items-center gap-1.5 text-sm ${d.head ? "" : "text-ink-muted"}`}>
+            <input
+              type="checkbox"
+              disabled={!d.head}
+              checked={departmentIds.includes(d.id)}
+              onChange={(e) => onDepartments(e.target.checked ? [...departmentIds, d.id] : departmentIds.filter((x) => x !== d.id))}
+              aria-label={`Department ${d.name}`}
+            />
+            {d.name} <span className="text-xs text-ink-muted">{d.head ? `(head: ${d.head.name})` : "(no head yet)"}</span>
+          </label>
+        ))}
+      </div>
+      <Select value={founderId} onChange={(e) => onFounder(e.target.value)} aria-label="Founder">
+        <option value="">No Founder</option>
+        {options.founders.map((f) => (
+          <option key={f.id} value={f.id}>
+            Founder: {f.name}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}
+
+/** Client Manager: bring in one or more departments and/or the Founder, then fix the meeting. */
 function ArrangePanel({ m, onChanged }: { m: MeetingView; onChanged: () => void }) {
   const opts = useLoad<MeetingArrangeOptions>(() => api.meetings.arrangeOptions(), { live: false });
-  const [departmentId, setDepartmentId] = useState(m.department?.id ?? "");
+  const [departmentIds, setDepartmentIds] = useState<string[]>(m.departments.map((d) => d.id));
   const [founderId, setFounderId] = useState(m.participants.find((p) => p.role === "founder")?.userId ?? "");
   const proposed = m.participants.find((p) => p.status === "reschedule" && p.proposedStartAt)?.proposedStartAt ?? null;
   const [date, setDate] = useState(zonedDay(proposed ?? m.startAt, IST_ZONE));
@@ -304,33 +341,17 @@ function ArrangePanel({ m, onChanged }: { m: MeetingView; onChanged: () => void 
   return (
     <div className="mt-3 space-y-3 border border-border bg-canvas/30 p-3" data-testid="arrange-panel">
       <div>
-        <p className="mb-1 text-xs font-medium">1. Who else needs to be in it? (they confirm the time)</p>
-        <div className="flex flex-wrap gap-2">
-          <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)} aria-label="Department">
-            <option value="">No department</option>
-            {opts.data.departments.map((d) => (
-              <option key={d.id} value={d.id} disabled={!d.head}>
-                {d.name} {d.head ? `(head: ${d.head.name})` : "(no head yet)"}
-              </option>
-            ))}
-          </Select>
-          <Select value={founderId} onChange={(e) => setFounderId(e.target.value)} aria-label="Founder">
-            <option value="">No Founder</option>
-            {opts.data.founders.map((f) => (
-              <option key={f.id} value={f.id}>
-                Founder: {f.name}
-              </option>
-            ))}
-          </Select>
-          <Button
-            variant="secondary"
-            disabled={busy || (!departmentId && !founderId)}
-            data-testid="send-for-confirmation"
-            onClick={() => run(() => api.meetings.arrange(m.id, { departmentId: departmentId || null, founderId: founderId || null }).then(onChanged), "Sent. They are asked to accept or suggest another time the same day.")}
-          >
-            Send for confirmation
-          </Button>
-        </div>
+        <p className="mb-1 text-xs font-medium">1. Who else needs to be in it? Pick one or more departments (each Department Head confirms the time) and/or the Founder.</p>
+        <ApproverPicker options={opts.data} departmentIds={departmentIds} onDepartments={setDepartmentIds} founderId={founderId} onFounder={setFounderId} />
+        <Button
+          className="mt-2"
+          variant="secondary"
+          disabled={busy || (!departmentIds.length && !founderId)}
+          data-testid="send-for-confirmation"
+          onClick={() => run(() => api.meetings.arrange(m.id, { departmentIds, founderId: founderId || null }).then(onChanged), "Sent. They are asked to accept or suggest another time the same day.")}
+        >
+          Send for confirmation
+        </Button>
       </div>
       <div>
         <p className="mb-1 text-xs font-medium">2. Fix the meeting{waiting.length ? ` (waiting for ${waiting.map((w) => w.name).join(" and ")})` : ""}</p>
@@ -350,9 +371,13 @@ function ArrangePanel({ m, onChanged }: { m: MeetingView; onChanged: () => void 
   );
 }
 
-/** Actions on a fixed meeting: the Branch Manager joins or ignores; the Department Head adds team members. */
+/**
+ * Actions on a fixed meeting: the Branch Manager joins or ignores; the Department Head adds team members; the Client
+ * Manager or the client's Branch Manager adds another branch's Branch Manager.
+ */
 export function FixedMeetingActions({ m, onChanged }: { m: MeetingView; onChanged: () => void }) {
   const [adding, setAdding] = useState(false);
+  const [addingBm, setAddingBm] = useState(false);
   const { busy, run, note } = useRun();
   const mine = m.participants.find((p) => p.role === "branch_manager" && m.can.join);
   return (
@@ -371,7 +396,20 @@ export function FixedMeetingActions({ m, onChanged }: { m: MeetingView; onChange
           </Button>
         </div>
       )}
-      {m.can.addMembers && (adding ? <AddMembers m={m} onDone={() => { setAdding(false); onChanged(); }} /> : <Button variant="secondary" onClick={() => setAdding(true)} data-testid="add-members">Add team members</Button>)}
+      <div className="flex flex-wrap gap-2">
+        {m.can.addMembers && !adding && (
+          <Button variant="secondary" onClick={() => setAdding(true)} data-testid="add-members">
+            Add team members
+          </Button>
+        )}
+        {m.can.addBranchManagers && !addingBm && (
+          <Button variant="secondary" onClick={() => setAddingBm(true)} data-testid="add-branch-managers">
+            Add Branch Manager
+          </Button>
+        )}
+      </div>
+      {m.can.addMembers && adding && <AddMembers m={m} onDone={() => { setAdding(false); onChanged(); }} />}
+      {m.can.addBranchManagers && addingBm && <AddBranchManagers m={m} onDone={() => { setAddingBm(false); onChanged(); }} />}
       {note}
     </div>
   );
@@ -413,14 +451,45 @@ function AddMembers({ m, onDone }: { m: MeetingView; onDone: () => void }) {
   if (!people.data) return <LoadState loading={people.loading} error={people.error} />;
   return (
     <div className="space-y-2 border border-border p-3 text-sm">
-      {!people.data.length && <p className="text-xs text-ink-muted">Everyone in your department is already in this meeting.</p>}
+      <p className="text-xs text-ink-muted">{m.client ? `People in your department working on ${m.client.name}'s projects.` : "People in your department."}</p>
+      {!people.data.length && <p className="text-xs text-ink-muted">{m.client ? `Nobody else in your department has work on ${m.client.name}'s projects, or they are already in this meeting.` : "Everyone in your department is already in this meeting."}</p>}
       {people.data.map((p) => (
         <label key={p.id} className="flex items-center gap-2">
           <input type="checkbox" checked={picked.includes(p.id)} onChange={(e) => setPicked(e.target.checked ? [...picked, p.id] : picked.filter((x) => x !== p.id))} /> {p.name}
+          <span className="text-xs text-ink-muted">{[p.department, p.why].filter(Boolean).join(" · ")}</span>
         </label>
       ))}
       <div className="flex gap-2">
         <Button disabled={busy || !picked.length} onClick={() => run(() => api.meetings.addMembers(m.id, picked).then(onDone))}>
+          Add {picked.length || ""}
+        </Button>
+        <Button variant="ghost" onClick={onDone}>
+          Close
+        </Button>
+      </div>
+      {note}
+    </div>
+  );
+}
+
+/** v24: the Client Manager or the client's Branch Manager adds another branch's Branch Manager (they join or ignore). */
+function AddBranchManagers({ m, onDone }: { m: MeetingView; onDone: () => void }) {
+  const people = useLoad(() => api.meetings.branchManagerOptions(m.id), { live: false });
+  const [picked, setPicked] = useState<string[]>([]);
+  const { busy, run, note } = useRun();
+  if (!people.data) return <LoadState loading={people.loading} error={people.error} />;
+  return (
+    <div className="space-y-2 border border-border p-3 text-sm" data-testid="branch-manager-picker">
+      <p className="text-xs text-ink-muted">Branch Managers of other branches. They are told and can join or ignore.</p>
+      {!people.data.length && <p className="text-xs text-ink-muted">Every Branch Manager is already in this meeting.</p>}
+      {people.data.map((p) => (
+        <label key={p.id} className="flex items-center gap-2">
+          <input type="checkbox" checked={picked.includes(p.id)} onChange={(e) => setPicked(e.target.checked ? [...picked, p.id] : picked.filter((x) => x !== p.id))} /> {p.name}
+          {p.branch && <span className="text-xs text-ink-muted">{p.branch}</span>}
+        </label>
+      ))}
+      <div className="flex gap-2">
+        <Button disabled={busy || !picked.length} onClick={() => run(() => api.meetings.addBranchManagers(m.id, picked).then(onDone))}>
           Add {picked.length || ""}
         </Button>
         <Button variant="ghost" onClick={onDone}>

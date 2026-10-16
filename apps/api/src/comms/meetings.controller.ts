@@ -86,6 +86,17 @@ export class MeetingsController {
     return this.meetings.shareLink(me, id, body, ip);
   }
 
+  @Get('meetings/:id/branch-manager-options')
+  branchManagerOptions(@CurrentUser() me: Me, @Param('id') id: string) {
+    return this.meetings.branchManagerOptions(me, id);
+  }
+
+  @Post('meetings/:id/branch-managers')
+  @HttpCode(200)
+  addBranchManagers(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.addBranchManagers(me, id, body, ip);
+  }
+
   @Get('meetings/:id/member-options')
   memberOptions(@CurrentUser() me: Me, @Param('id') id: string) {
     return this.meetings.memberOptions(me, id);

@@ -207,6 +207,10 @@ export type MeetingParticipantView = {
   note: string | null;
   /** v23 Google Meet: their reply to the Google Calendar invitation, when the meeting is in Google Calendar. */
   googleResponse: MeetingAttendeeResponse | null;
+  /** v24: the department a Department Head represents (team only). */
+  department: { id: string; name: string } | null;
+  /** v24: a Branch Manager from another branch, added by the Client Manager or the client's Branch Manager (team only). */
+  addedBy: string | null;
 };
 
 export const MEETING_PARTICIPANT_ROLE_LABELS: Record<MeetingParticipantRole, string> = {
@@ -233,7 +237,10 @@ export type MeetingView = {
   bookedVia: "client" | "public" | "team" | "founder";
   /** The client's time zone (IANA). */
   timeZone: string;
+  /** The first department brought in (kept for older screens); see departments for all of them. */
   department: { id: string; name: string } | null;
+  /** v24: every department brought in, each represented by its Department Head. */
+  departments: { id: string; name: string }[];
   /** The meeting link: the Google Meet link Google created, or one the Client Manager pasted. */
   joinUrl: string | null;
   /**
@@ -266,6 +273,11 @@ export type MeetingView = {
     join: boolean;
     /** Client Manager: send the meeting link to everyone once the meeting is fixed. */
     shareLink: boolean;
+    /**
+     * v24: add a Branch Manager from another branch to a fixed client meeting. Only the Client Manager (or CM Lead)
+     * and the Branch Manager of the client's own branch can.
+     */
+    addBranchManagers: boolean;
   };
 };
 
@@ -321,8 +333,14 @@ export type FounderMeetingInput = z.infer<typeof founderMeetingSchema>;
 
 /** v23: the Client Manager brings in a department (its head confirms) and/or a Founder. */
 export const meetingArrangeSchema = z
-  .object({ departmentId: z.string().nullable().optional(), founderId: z.string().nullable().optional() })
-  .refine((v) => !!v.departmentId || !!v.founderId, "Pick a department or the Founder");
+  .object({
+    /** v24: one or more departments; each Department Head confirms. */
+    departmentIds: z.array(z.string().min(1)).max(12).optional(),
+    /** Older single-department form, still accepted. */
+    departmentId: z.string().nullable().optional(),
+    founderId: z.string().nullable().optional(),
+  })
+  .refine((v) => !!v.departmentIds?.length || !!v.departmentId || !!v.founderId, "Pick a department or the Founder");
 export type MeetingArrangeInput = z.infer<typeof meetingArrangeSchema>;
 
 /** v23: a Department Head or Founder accepts, or asks for another time on the same day. */
@@ -346,6 +364,13 @@ export const meetingLinkSchema = z.object({
 export type MeetingFixInput = z.infer<typeof meetingFixSchema>;
 
 export const meetingMembersSchema = z.object({ userIds: z.array(z.string().min(1)).min(1, "Pick at least one person").max(20) });
+/** v24: Branch Managers from other branches added to a client meeting. */
+export const meetingBranchManagersSchema = z.object({ userIds: z.array(z.string().min(1)).min(1, "Pick a Branch Manager").max(10) });
+
+/** v24: someone a Department Head can add: their department, working on the client's projects. */
+export type MeetingMemberOption = { id: string; name: string; department: string | null; why: string | null };
+/** v24: a Branch Manager of another branch who can be added. */
+export type MeetingBranchManagerOption = { id: string; name: string; branch: string | null };
 export const meetingJoinSchema = z.object({ decision: z.enum(["join", "ignore"]) });
 
 /** Every IANA time zone the runtime knows, India first. */
@@ -405,6 +430,12 @@ export const meetingCreateSchema = z.object({
   attendeeIds: z.array(z.string().min(1)).max(30).optional(),
   /** v23: create a Google Meet link in the host's Google Calendar (needs a connected calendar). */
   addMeet: z.boolean().optional(),
+  /**
+   * v24: Department Heads (by department) and a Founder asked to confirm first. The meeting is then waiting for their
+   * answers and is fixed once they all accept, as for a client's request.
+   */
+  departmentIds: z.array(z.string().min(1)).max(12).optional(),
+  founderId: z.string().nullable().optional(),
 });
 export type MeetingCreate = z.input<typeof meetingCreateSchema>;
 

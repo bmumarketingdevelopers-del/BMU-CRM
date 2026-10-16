@@ -197,7 +197,9 @@ describe('Google Meet', () => {
     await http().post('/meetings').set(as('am')).send({ title: 'Kick-off', startAt, durationMin: 30, attendeeIds: ['nobody'] }).expect(400);
     const t = (await http().post('/meetings').set(as('am')).send({ title: 'Kick-off', startAt, durationMin: 30, clientOrgId: sunrise, attendeeIds: [users.producer, users.am] }).expect(201)).body as MeetingView;
     made.push(t.id);
-    expect(t.participants).toEqual([expect.objectContaining({ userId: users.producer, role: 'member', status: 'invited' })]);
+    expect(t.participants).toEqual(expect.arrayContaining([expect.objectContaining({ userId: users.producer, role: 'member', status: 'invited' })]));
+    // v24: a client meeting also asks the client's branch Branch Manager to join or ignore; nobody else is added.
+    expect(t.participants.filter((p) => p.userId !== users.producer).every((p) => p.role === 'branch_manager' && p.status === 'invited')).toBe(true);
     expect(t.attendees.some((a) => a.email === 'client@sunrise.demo')).toBe(true);
     expect(t.joinUrl).toBe(lastEvent().hangoutLink);
     expect(emailsOn(lastEvent())).toEqual(expect.arrayContaining(['producer@bmu.demo', 'client@sunrise.demo']));

@@ -144,7 +144,7 @@ export function TeamMeetings({ isFounder = false }: { isFounder?: boolean }) {
             {d.upcoming.map((m) => (
               <div key={m.id}>
                 <MeetingRow m={m} team onOpen={() => setOpen(open === m.id ? null : m.id)} onCancel={() => cancel(m.id)} />
-                {(m.participants.length > 0 || m.joinUrl || m.can.shareLink) && <FixedMeetingActions m={m} onChanged={list.reload} />}
+                {(m.participants.length > 0 || m.joinUrl || m.can.shareLink || m.can.addBranchManagers) && <FixedMeetingActions m={m} onChanged={list.reload} />}
                 {open === m.id && <MeetingNotes key={m.id} m={m} onSaved={list.reload} />}
               </div>
             ))}

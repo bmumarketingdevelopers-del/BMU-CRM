@@ -3037,6 +3037,10 @@ model MeetingParticipant {
   respondedAt     DateTime?
   /// v23 Google Meet: their reply to the Google Calendar invitation (needsAction | accepted | declined | tentative)
   googleResponse  String?
+  /// v24: for a Department Head, the department they represent (a meeting can bring in several departments)
+  departmentId    String?
+  /// v24: who brought them in (e.g. the Client Manager or Branch Manager who added another branch's Branch Manager)
+  addedById       String?
   createdAt       DateTime  @default(now())
 
   meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
