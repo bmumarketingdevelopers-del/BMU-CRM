@@ -27,7 +27,7 @@ const since = new Date();
 const EMAILS = { client: 'client@sunrise.demo', am: 'am@bmu.demo', founder: 'founder@bmu.demo', head: 'design.head@bmu.demo', producer: 'producer@bmu.demo', admin: 'admin@bmu.demo' };
 
 // ------------------------------------------------------------------------------------------------ fake Google
-type FakeEvent = { id: string; summary: string; hangoutLink: string; attendees: { email: string; displayName?: string; responseStatus: string }[]; deleted: boolean; body: Record<string, unknown> };
+type FakeEvent = { id: string; summary: string; hangoutLink: string; start?: { dateTime: string }; end?: { dateTime: string }; attendees: { email: string; displayName?: string; responseStatus: string }[]; deleted: boolean; body: Record<string, unknown>; patches: number };
 const events = new Map<string, FakeEvent>();
 const calls: { method: string; url: string }[] = [];
 const realFetch = globalThis.fetch;
@@ -43,8 +43,8 @@ function fakeGoogle(input: string | URL | Request, init?: RequestInit): Promise<
   if (!m) return Promise.resolve(json({ error: { message: 'unexpected Google call' } }, 400));
   const id = m[1] ? decodeURIComponent(m[1]) : null;
   if (!id && method === 'POST') {
-    const body = JSON.parse(String(init?.body)) as { summary: string; attendees: { email: string; displayName?: string }[] };
-    const e: FakeEvent = { id: `evt${events.size + 1}`, summary: body.summary, hangoutLink: `https://meet.google.com/bmu-test-00${events.size + 1}`, attendees: body.attendees.map((a) => ({ ...a, responseStatus: 'needsAction' })), deleted: false, body };
+    const body = JSON.parse(String(init?.body)) as { summary: string; start: { dateTime: string }; end: { dateTime: string }; attendees: { email: string; displayName?: string }[] };
+    const e: FakeEvent = { id: `evt${events.size + 1}`, summary: body.summary, hangoutLink: `https://meet.google.com/bmu-test-00${events.size + 1}`, start: body.start, end: body.end, attendees: body.attendees.map((a) => ({ ...a, responseStatus: 'needsAction' })), deleted: false, body, patches: 0 };
     events.set(e.id, e);
     return Promise.resolve(json(e));
   }
@@ -52,7 +52,11 @@ function fakeGoogle(input: string | URL | Request, init?: RequestInit): Promise<
   if (!e || e.deleted) return Promise.resolve(json({ error: { message: 'Not Found' } }, 404));
   if (method === 'GET') return Promise.resolve(json(e));
   if (method === 'PATCH') {
-    e.attendees = (JSON.parse(String(init?.body)) as { attendees: FakeEvent['attendees'] }).attendees.map((a) => ({ ...a, responseStatus: a.responseStatus ?? 'needsAction' }));
+    const patch = JSON.parse(String(init?.body)) as { attendees: FakeEvent['attendees']; start?: { dateTime: string }; end?: { dateTime: string } };
+    e.attendees = patch.attendees.map((a) => ({ ...a, responseStatus: a.responseStatus ?? 'needsAction' }));
+    if (patch.start) e.start = patch.start;
+    if (patch.end) e.end = patch.end;
+    e.patches++;
     return Promise.resolve(json(e));
   }
   if (method === 'DELETE') {
@@ -108,50 +112,72 @@ describe('Google Meet', () => {
     await http().get('/meetings/google').set(as('client')).expect(403);
   });
 
-  it('a request stays out of Google until it is fixed, then gets a Meet link and everyone is invited', async () => {
+  it('each Department Head gets the Meet link as soon as they accept; their team accepts first; the client once fixed', async () => {
     m = (await http().post('/client/meetings/request').set(as('client')).send({ startAt: zonedTimeToUtc(day, `10:${mm}`, 'Asia/Kolkata'), timeZone: 'Asia/Kolkata', durationMin: 30, requirements: 'Plan the Diwali campaign together' }).expect(201)).body;
     made.push(m.id);
     const opts = (await http().get('/meetings/arrange-options').set(as('am')).expect(200)).body as MeetingArrangeOptions;
     const design = opts.departments.find((d) => d.head?.id === users.head)!;
     m = (await http().post(`/meetings/${m.id}/arrange`).set(as('am')).send({ departmentId: design.id, founderId: users.founder }).expect(200)).body;
+    expect(events.size).toBe(0); // nobody has accepted yet: no event, no link
+
+    // The Department Head accepts: the event is made and they get the link now, without waiting for the Founder.
     m = (await http().post(`/meetings/${m.id}/respond`).set(as('head')).send({ decision: 'accept' }).expect(200)).body;
-    expect(events.size).toBe(0);
-    expect(m.joinUrl).toBeNull();
-    // The last acceptance fixes it: the Google event is made in the Client Manager's calendar.
-    m = (await http().post(`/meetings/${m.id}/respond`).set(as('founder')).send({ decision: 'accept' }).expect(200)).body;
-    expect(m.status).toBe('booked');
+    expect(m.status).toBe('awaiting');
     expect(events.size).toBe(1);
     const e = lastEvent();
     expect(m.joinUrl).toBe(e.hangoutLink);
-    expect(m.google).toEqual({ synced: true, error: null });
+    expect(m.can.respond).toBe(false); // the accept options go away
+    expect(m.can.addMembers).toBe(true);
+    expect(emailsOn(e)).toEqual(['design.head@bmu.demo']);
     const call = calls.find((c) => c.method === 'POST')!;
     expect(call.url).toContain('conferenceDataVersion=1');
     expect(call.url).toContain('sendUpdates=all');
     expect((e.body.conferenceData as { createRequest: { requestId: string } }).createRequest.requestId).toBe(`bmu-${m.id}`);
-    // Client (who asked), Founder, Department Head and the branch's Branch Manager; never the host themself.
-    expect(emailsOn(e)).toEqual(expect.arrayContaining(['client@sunrise.demo', 'founder@bmu.demo', 'design.head@bmu.demo']));
+    // Not yet for the Founder (still to answer) or the client (not fixed).
+    const founderView = (await http().get(`/meetings/${m.id}`).set(as('founder')).expect(200)).body as MeetingView;
+    expect(founderView.joinUrl).toBeNull();
+    expect(founderView.can.respond).toBe(true);
+    const clientEarly = (await http().get('/client/meetings').set(as('client')).expect(200)).body as { requests: MeetingView[] };
+    expect(clientEarly.requests.find((x) => x.id === m.id)?.joinUrl).toBeNull();
+
+    // The Department Head invites a team member: they must accept before they see the link or go on the event.
+    m = (await http().post(`/meetings/${m.id}/members`).set(as('head')).send({ userIds: [users.producer] }).expect(200)).body;
+    expect(m.participants.find((p) => p.userId === users.producer)).toMatchObject({ role: 'member', status: 'pending' });
+    expect(emailsOn(e)).not.toContain('producer@bmu.demo');
+    const invite = await prisma.notification.findFirst({ where: { userId: users.producer, createdAt: { gte: since }, title: { contains: 'invited you: meeting with' } }, orderBy: { createdAt: 'desc' } });
+    expect(invite?.body).toContain('Accept on Meetings');
+    expect(invite?.body).not.toContain(e.hangoutLink);
+    let mine = (await http().get(`/meetings/${m.id}`).set(as('producer')).expect(200)).body as MeetingView;
+    expect(mine.joinUrl).toBeNull();
+    expect(mine.can.answer).toBe(true);
+    await http().post(`/meetings/${m.id}/answer`).set(as('founder')).send({ decision: 'accept' }).expect(403);
+    mine = (await http().post(`/meetings/${m.id}/answer`).set(as('producer')).send({ decision: 'accept' }).expect(200)).body;
+    expect(mine.joinUrl).toBe(e.hangoutLink);
+    expect(mine.can.answer).toBe(false);
+    expect(emailsOn(e)).toEqual(['design.head@bmu.demo', 'producer@bmu.demo']);
+    m = (await http().get(`/meetings/${m.id}`).set(as('head')).expect(200)).body;
+    expect(m.participants.find((p) => p.userId === users.producer)?.status).toBe('accepted');
+    expect(await prisma.notification.findFirst({ where: { userId: users.head, createdAt: { gte: since }, title: { contains: 'accepted the' } } })).toBeTruthy();
+
+    // The Founder accepts last: fixed, same event; the client, Founder and Branch Manager are added; replies kept.
+    e.attendees.find((a) => a.email === 'producer@bmu.demo')!.responseStatus = 'accepted';
+    m = (await http().post(`/meetings/${m.id}/respond`).set(as('founder')).send({ decision: 'accept' }).expect(200)).body;
+    expect(m.status).toBe('booked');
+    expect(events.size).toBe(1);
+    expect(m.joinUrl).toBe(e.hangoutLink);
+    expect(m.google).toEqual({ synced: true, error: null });
+    expect(emailsOn(e)).toEqual(expect.arrayContaining(['client@sunrise.demo', 'founder@bmu.demo', 'design.head@bmu.demo', 'producer@bmu.demo']));
     expect(emailsOn(e)).not.toContain('am@bmu.demo');
+    expect(e.attendees.find((a) => a.email === 'producer@bmu.demo')!.responseStatus).toBe('accepted');
     const bm = m.participants.find((p) => p.role === 'branch_manager');
     if (bm) expect(emailsOn(e)).toContain((await prisma.user.findUniqueOrThrow({ where: { id: bm.userId } })).email!.toLowerCase());
     expect(m.attendees).toEqual([expect.objectContaining({ email: 'client@sunrise.demo', kind: 'client', response: 'needsAction' })]);
-    // Everyone hears with the link (the Founder fixed it by accepting last, so is not told their own news).
-    expect(await prisma.notification.findFirst({ where: { userId: users.head, createdAt: { gte: since }, body: { contains: e.hangoutLink } } })).toBeTruthy();
     expect(await prisma.notification.findFirst({ where: { userId: users.client, createdAt: { gte: since }, body: { contains: e.hangoutLink } } })).toBeTruthy();
     const client = (await http().get('/client/meetings').set(as('client')).expect(200)).body as { upcoming: MeetingView[] };
-    const mine = client.upcoming.find((x) => x.id === m.id)!;
-    expect(mine.joinUrl).toBe(e.hangoutLink);
-    expect(mine.google).toBeNull();
-    expect(mine.attendees.every((a) => a.email === null)).toBe(true);
-  });
-
-  it('a team member added later joins the Google event; earlier replies are kept', async () => {
-    const e = lastEvent();
-    e.attendees.find((a) => a.email === 'founder@bmu.demo')!.responseStatus = 'accepted';
-    m = (await http().post(`/meetings/${m.id}/members`).set(as('head')).send({ userIds: [users.producer] }).expect(200)).body;
-    expect(emailsOn(e)).toContain('producer@bmu.demo');
-    expect(e.attendees.find((a) => a.email === 'founder@bmu.demo')!.responseStatus).toBe('accepted');
-    expect(calls.at(-1)!.method).toBe('PATCH');
-    expect(calls.at(-1)!.url).toContain('sendUpdates=all');
+    const theirs = client.upcoming.find((x) => x.id === m.id)!;
+    expect(theirs.joinUrl).toBe(e.hangoutLink);
+    expect(theirs.google).toBeNull();
+    expect(theirs.attendees.every((a) => a.email === null)).toBe(true);
   });
 
   it('a Branch Manager who ignores it is taken off the Google event', async () => {
@@ -169,6 +195,7 @@ describe('Google Meet', () => {
     const e = lastEvent();
     e.attendees.find((a) => a.email === 'client@sunrise.demo')!.responseStatus = 'accepted';
     e.attendees.find((a) => a.email === 'producer@bmu.demo')!.responseStatus = 'declined';
+    e.attendees.find((a) => a.email === 'founder@bmu.demo')!.responseStatus = 'accepted';
     expect(await app.get(MeetingsService).syncReplies()).toBeGreaterThanOrEqual(3);
     m = (await http().get(`/meetings/${m.id}`).set(as('am')).expect(200)).body;
     expect(m.attendees.find((a) => a.email === 'client@sunrise.demo')?.response).toBe('accepted');
@@ -263,6 +290,41 @@ describe('Google Meet', () => {
     expect(no.body.message).toBe('Pick a time in the future');
   });
 
+  it('when the Client Manager fixes it at another time, the Google event moves too', async () => {
+    let r = (await http().post('/client/meetings/request').set(as('client')).send({ startAt: zonedTimeToUtc(day, `13:${mm}`, 'Asia/Kolkata'), timeZone: 'Asia/Kolkata', durationMin: 30, requirements: 'Review the new landing page' }).expect(201)).body as MeetingView;
+    made.push(r.id);
+    const opts = (await http().get('/meetings/arrange-options').set(as('am')).expect(200)).body as MeetingArrangeOptions;
+    const design = opts.departments.find((d) => d.head?.id === users.head)!;
+    await http().post(`/meetings/${r.id}/arrange`).set(as('am')).send({ departmentId: design.id, founderId: users.founder }).expect(200);
+    r = (await http().post(`/meetings/${r.id}/respond`).set(as('head')).send({ decision: 'accept' }).expect(200)).body;
+    const e = lastEvent();
+    expect(r.joinUrl).toBe(e.hangoutLink);
+    expect(new Date(e.start!.dateTime).toISOString()).toBe(r.startAt);
+    const later = new Date(new Date(r.startAt).getTime() + 2 * 3_600_000).toISOString();
+    await http().post(`/meetings/${r.id}/respond`).set(as('founder')).send({ decision: 'reschedule', proposedStartAt: later }).expect(200);
+    const patchesBefore = e.patches;
+    r = (await http().post(`/meetings/${r.id}/fix`).set(as('am')).send({ startAt: later, reason: 'The Founder is travelling until then' }).expect(200)).body;
+    expect(r.status).toBe('booked');
+    expect(events.get(e.id)).toBe(e); // the same event, moved
+    expect(new Date(e.start!.dateTime).toISOString()).toBe(later);
+    expect(e.patches).toBeGreaterThan(patchesBefore);
+    expect(emailsOn(e)).toEqual(expect.arrayContaining(['design.head@bmu.demo', 'founder@bmu.demo', 'client@sunrise.demo']));
+  });
+
+  it('after it is fixed, a team member who declines never gets the link', async () => {
+    const t = (await http().post('/meetings').set(as('am')).send({ title: `Decline check ${mm}`, startAt: zonedTimeToUtc(day, `20:${mm}`, 'Asia/Kolkata'), durationMin: 30, addMeet: false })).body as MeetingView;
+    made.push(t.id);
+    // A pending invitation (as a Department Head makes them), answered with No.
+    await prisma.meetingParticipant.create({ data: { meetingId: t.id, userId: users.producer, role: 'member', status: 'pending', addedById: users.head } });
+    await prisma.meeting.update({ where: { id: t.id }, data: { joinUrl: 'https://meet.google.com/xyz-abcd-efg' } });
+    expect(((await http().get(`/meetings/${t.id}`).set(as('producer')).expect(200)).body as MeetingView).joinUrl).toBeNull();
+    const no = (await http().post(`/meetings/${t.id}/answer`).set(as('producer')).send({ decision: 'decline' }).expect(200)).body as MeetingView;
+    expect(no.joinUrl).toBeNull();
+    expect(no.can.answer).toBe(false);
+    const host = (await http().get(`/meetings/${t.id}`).set(as('am')).expect(200)).body as MeetingView;
+    expect(host.participants.find((p) => p.userId === users.producer)?.status).toBe('declined');
+  });
+
   it('connect link, sign-in return and disconnect', async () => {
     const { url } = (await http().post('/meetings/google/connect').set(as('producer')).expect(200)).body as { url: string };
     const u = new URL(url);
@@ -272,7 +334,9 @@ describe('Google Meet', () => {
     expect(u.searchParams.get('access_type')).toBe('offline');
     const cancelled = await http().get('/integrations/oauth/callback').query({ state: u.searchParams.get('state'), error: 'access_denied' }).expect(302);
     expect(cancelled.headers.location).toContain('/team/meetings?calendarError=access_denied');
-    const forged = signToken({ k: 'calendar', o: 'x', u: users.producer, n: 'n' }, 600).replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'));
+    // Tamper with a character in the middle of the signature (the last one's final bits are not used).
+    const signed = signToken({ k: 'calendar', o: 'x', u: users.producer, n: 'n' }, 600);
+    const forged = `${signed.slice(0, -10)}${signed.at(-10) === 'A' ? 'B' : 'A'}${signed.slice(-9)}`;
     const bad = await http().get('/integrations/oauth/callback').query({ state: forged, code: 'abc' }).expect(302);
     expect(bad.headers.location).toContain('/admin/integrations?error=');
     const off = (await http().post('/meetings/google/disconnect').set(as('am')).expect(200)).body as CalendarConnectionView;

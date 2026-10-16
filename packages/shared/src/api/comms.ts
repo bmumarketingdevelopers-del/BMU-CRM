@@ -81,6 +81,8 @@ export const commsApi = (t: Transport) => ({
     addBranchManagers: (id: string, userIds: string[]) => t.post<MeetingView>(`/meetings/${id}/branch-managers`, { userIds }),
     addMembers: (id: string, userIds: string[]) => t.post<MeetingView>(`/meetings/${id}/members`, { userIds }),
     joinOrIgnore: (id: string, decision: "join" | "ignore") => t.post<MeetingView>(`/meetings/${id}/join`, { decision }),
+    /** v27: a team member accepts (then sees the Google Meet link) or declines a Department Head's invitation. */
+    answer: (id: string, decision: "accept" | "decline") => t.post<MeetingView>(`/meetings/${id}/answer`, { decision }),
     founderRequest: (body: FounderMeetingInput) => t.post<MeetingView>("/meetings/founder-request", body),
     /** v23 Google Meet: team members who can be invited, and my Google Calendar connection. */
     people: () => t.get<MeetingPerson[]>("/meetings/people"),

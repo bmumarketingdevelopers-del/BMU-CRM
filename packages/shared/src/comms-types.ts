@@ -196,7 +196,12 @@ export type BookingSlots = { host: { name: string; title: string | null }; title
 
 /** v23 meeting requests: who else is in a client meeting and what they answered. */
 export type MeetingParticipantRole = "founder" | "department_head" | "branch_manager" | "member";
-export type MeetingParticipantStatus = "pending" | "accepted" | "reschedule" | "invited" | "joined" | "ignored";
+/**
+ * pending: asked and not answered yet (a Department Head / Founder confirming the time, or a team member a Department
+ * Head invited) · accepted · reschedule (asked for another time) · invited (in it, nothing to answer) · joined / ignored
+ * (Branch Manager) · declined (a team member who is not coming)
+ */
+export type MeetingParticipantStatus = "pending" | "accepted" | "reschedule" | "invited" | "joined" | "ignored" | "declined";
 export type MeetingParticipantView = {
   userId: string;
   name: string;
@@ -275,6 +280,8 @@ export type MeetingView = {
     addMembers: boolean;
     /** Branch Manager: join or ignore the fixed meeting. */
     join: boolean;
+    /** v27: a team member a Department Head invited: accept (then they get the link) or decline. */
+    answer: boolean;
     /** Client Manager: send the meeting link to everyone once the meeting is fixed. */
     shareLink: boolean;
     /**
@@ -380,6 +387,8 @@ export type MeetingMemberOption = { id: string; name: string; department: string
 /** v24: a Branch Manager of another branch who can be added. */
 export type MeetingBranchManagerOption = { id: string; name: string; branch: string | null };
 export const meetingJoinSchema = z.object({ decision: z.enum(["join", "ignore"]) });
+/** v27: a team member's answer to a Department Head's invitation. */
+export const meetingAnswerSchema = z.object({ decision: z.enum(["accept", "decline"]) });
 
 /** Every IANA time zone the runtime knows, India first. */
 export function timeZoneList(): string[] {

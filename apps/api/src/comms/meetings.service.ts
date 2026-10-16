@@ -14,6 +14,7 @@ import {
   basicSummary,
   bookingPageSchema,
   founderMeetingSchema,
+  meetingAnswerSchema,
   meetingArrangeSchema,
   meetingBookSchema,
   meetingBranchManagersSchema,
@@ -197,11 +198,16 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     return list;
   }
 
-  /** Everyone on the Google event: team members in the meeting who are coming, and the client's people and guests. */
+  /**
+   * Everyone on the Google event. v27: while the time is still being confirmed, only the people who have accepted
+   * (Department Heads, a Founder, team members who said yes); once fixed, also the team members and Branch Managers in
+   * it and the client's people and guests. Nobody still to answer, nor anyone who declined or ignored it.
+   */
   private async guestList(m: MeetingRec): Promise<CalendarAttendee[]> {
+    const fixed = m.status === 'booked';
     const [outside, parts, host] = await Promise.all([
-      this.prisma.meetingAttendee.findMany({ where: { meetingId: m.id }, orderBy: { createdAt: 'asc' } }),
-      this.prisma.meetingParticipant.findMany({ where: { meetingId: m.id, status: { not: 'ignored' } }, select: { userId: true }, orderBy: { createdAt: 'asc' } }),
+      fixed ? this.prisma.meetingAttendee.findMany({ where: { meetingId: m.id }, orderBy: { createdAt: 'asc' } }) : [],
+      this.prisma.meetingParticipant.findMany({ where: { meetingId: m.id, status: { in: fixed ? ['accepted', 'joined', 'invited'] : ['accepted', 'joined'] } }, select: { userId: true }, orderBy: { createdAt: 'asc' } }),
       this.prisma.user.findUnique({ where: { id: m.hostId }, select: { email: true } }),
     ]);
     const team = parts.length ? await this.prisma.user.findMany({ where: { id: { in: parts.map((p) => p.userId) }, deletedAt: null }, select: { name: true, email: true } }) : [];
@@ -215,12 +221,13 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
    * and shown to the team.
    */
   private async toGoogle(m: MeetingRec, addMeet = true): Promise<MeetingRec> {
-    if (m.status !== 'booked') return m;
+    // v27: also while the time is being confirmed, as soon as someone accepted: they get the link without waiting.
+    if (m.status !== 'booked' && m.status !== 'awaiting') return m;
     if (m.googleEventId && m.googleUserId) {
       try {
         const token = await calendarToken(this.prisma, m.googleUserId).catch(() => null);
         if (!token) throw new Error('the Google Calendar connection is not working (connect it again on Meetings)');
-        if (!(await setCalendarAttendees(token, m.googleEventId, await this.guestList(m)))) throw new Error('the event was deleted in Google Calendar');
+        if (!(await setCalendarAttendees(token, m.googleEventId, await this.guestList(m), { startAt: m.startAt, endAt: m.endAt }))) throw new Error('the event was deleted in Google Calendar');
         return m.googleError ? this.prisma.meeting.update({ where: { id: m.id }, data: { googleError: null } }) : m;
       } catch (err) {
         this.log.warn(`Google Calendar guests for meeting ${m.id}: ${(err as Error).message}`);
@@ -228,6 +235,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
       }
     }
     if (!addMeet) return m;
+    // Still being confirmed and nobody has accepted yet: no event (nobody to give the link to).
+    if (m.status === 'awaiting' && !(await this.prisma.meetingParticipant.count({ where: { meetingId: m.id, status: { in: ['accepted', 'joined'] } } }))) return m;
     const token = await calendarToken(this.prisma, m.hostId).catch(() => null);
     if (!token) {
       const why = !calendarAvailable() ? 'Google Calendar is not set up on the server yet' : 'The host has not connected Google Calendar (Meetings → Connect Google Calendar)';
@@ -282,7 +291,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
   /** Reads replies (accepted / declined / maybe) from Google Calendar for upcoming meetings (every 15 minutes). */
   async syncReplies(now = new Date()) {
     const list = await this.prisma.meeting.findMany({
-      where: { status: 'booked', googleEventId: { not: null }, googleUserId: { not: null }, endAt: { gt: new Date(now.getTime() - DAY) }, startAt: { lt: new Date(now.getTime() + 30 * DAY) } },
+      where: { status: { in: ['booked', 'awaiting'] }, googleEventId: { not: null }, googleUserId: { not: null }, endAt: { gt: new Date(now.getTime() - DAY) }, startAt: { lt: new Date(now.getTime() + 30 * DAY) } },
       select: { id: true, googleEventId: true, googleUserId: true },
       orderBy: { startAt: 'asc' },
       take: 60,
@@ -422,6 +431,14 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
       const localBm = my?.role === 'branch_manager' && !!localBranch && myBranch === localBranch;
       // Clients see who is joining, never the team's internal answers or who chose not to come.
       const shown = staff ? people : people.filter((p) => ['accepted', 'joined'].includes(p.status) || (p.role === 'member' && p.status === 'invited'));
+      // v27: who sees the link. Fixed: everyone in it except a team member who has not accepted (or declined). While the
+      // time is being confirmed: the host and whoever has accepted (each Department Head as soon as they accept).
+      const live = m.endAt > now && !!m.joinUrl;
+      const seesLink =
+        live &&
+        (m.status === 'booked'
+          ? !my || !['pending', 'declined'].includes(my.status)
+          : m.status === 'awaiting' && staff && (m.hostId === me.id || (!!my && ['accepted', 'joined'].includes(my.status))));
       return {
         id: m.id,
         title: m.title,
@@ -440,9 +457,9 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
         department: meetingDepts[0] ?? null,
         departments: meetingDepts,
         // v26: the link closes when the meeting ends; the meeting is then in Past as completed.
-        joinUrl: m.status === 'booked' && m.endAt > now ? m.joinUrl : null,
+        joinUrl: seesLink ? m.joinUrl : null,
         ended: (m.status === 'booked' || m.status === 'done') && m.endAt <= now,
-        joinAs: m.status === 'booked' && m.endAt > now && staff && m.hostId === me.id && m.googleEventId && m.joinUrl && /^https:\/\/meet\.google\.com\//i.test(m.joinUrl) ? (organisers.find((o) => o.userId === m.googleUserId)?.email ?? null) : null,
+        joinAs: seesLink && staff && m.hostId === me.id && m.googleEventId && m.joinUrl && /^https:\/\/meet\.google\.com\//i.test(m.joinUrl) ? (organisers.find((o) => o.userId === m.googleUserId)?.email ?? null) : null,
         rescheduledAt: m.rescheduledAt?.toISOString() ?? null,
         rescheduleReason: m.rescheduledAt ? m.rescheduleReason : null,
         participants: shown.map((p) => ({
@@ -467,8 +484,11 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
           edit: !!mine,
           cancel: (m.status === 'booked' || open) && (!!mine || clientCan),
           arrange: !!staff && open && (m.hostId === me.id || hasRole(me, 'am_lead')),
-          respond: m.status === 'awaiting' && !!my && APPROVERS.includes(my.role as MeetingParticipantRole),
-          addMembers: m.status === 'booked' && future && my?.role === 'department_head',
+          // v27: once they accepted, the accept options go away (they get the link and add their team instead).
+          respond: m.status === 'awaiting' && !!my && APPROVERS.includes(my.role as MeetingParticipantRole) && my.status !== 'accepted',
+          // v27: a Department Head adds their team as soon as they accepted, without waiting for the other departments.
+          addMembers: future && my?.role === 'department_head' && (m.status === 'booked' || (m.status === 'awaiting' && my.status === 'accepted')),
+          answer: (m.status === 'booked' || m.status === 'awaiting') && m.endAt > now && my?.role === 'member' && my.status === 'pending',
           join: m.status === 'booked' && m.endAt > now && my?.role === 'branch_manager',
           shareLink: !!staff && m.status === 'booked' && m.endAt > now && (m.hostId === me.id || hasRole(me, 'am_lead')),
           addBranchManagers: !!staff && !!m.clientOrgId && m.status === 'booked' && m.endAt > now && (m.hostId === me.id || hasRole(me, 'am_lead') || localBm),
@@ -686,7 +706,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const who = me.type === 'client' ? `${me.name} (${me.clientOrg?.name ?? 'client'})` : me.name;
     if (m.hostId !== me.id) await this.notifications.notify(m.orgId, [m.hostId], { kind: 'meeting', title: `Meeting cancelled: ${m.title}`, body: `${who} cancelled ${istLabel(m.startAt)}.`, link: '/team/meetings' });
     // v23: everyone brought into the meeting hears too.
-    const brought = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: id, status: { not: 'ignored' } }, select: { userId: true } })).map((p) => p.userId).filter((u) => u !== me.id && u !== m.hostId);
+    const brought = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: id, status: { notIn: ['ignored', 'declined'] } }, select: { userId: true } })).map((p) => p.userId).filter((u) => u !== me.id && u !== m.hostId);
     if (brought.length) await this.notifications.notify(m.orgId, brought, { kind: 'meeting', title: `Meeting cancelled: ${m.title}`, body: `${who} cancelled ${istLabel(m.startAt)} (IST).`, link: '/team/meetings' });
     // v23 Google Meet: cancelling the Google event tells everyone on it (Google emails them).
     if (m.googleEventId && m.googleUserId) {
@@ -941,7 +961,9 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const input = parse(meetingArrangeSchema, body);
     const departmentIds = [...(input.departmentIds ?? []), ...(input.departmentId ? [input.departmentId] : [])];
     await this.askApprovers(me, m, departmentIds, input.founderId ?? null, ip);
-    return this.view(me, await this.prisma.meeting.findUniqueOrThrow({ where: { id } }));
+    const after = await this.prisma.meeting.findUniqueOrThrow({ where: { id } });
+    // v27: people no longer asked come off the Google event (it exists once someone accepted).
+    return this.view(me, after.googleEventId ? await this.toGoogle(after) : after);
   }
 
   /**
@@ -1028,7 +1050,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
   private async maybeFix(me: Me, m: MeetingRec, ip?: string) {
     const asked = await this.prisma.meetingParticipant.findMany({ where: { meetingId: m.id, role: { in: APPROVERS } } });
     if (m.status === 'awaiting' && asked.length && asked.every((p) => p.status === 'accepted')) return this.view(me, await this.fixNow(me, m, m.startAt, ip));
-    return this.view(me, m);
+    // v27: not everyone has answered yet, but whoever accepted gets the Google Meet link now (made at the first acceptance).
+    return this.view(me, asked.some((p) => p.status === 'accepted') ? await this.toGoogle(m) : m);
   }
 
   /** The Client Manager fixes the meeting, at the asked time or a new one (a Department Head's or Founder's). */
@@ -1085,7 +1108,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     await notify([m.hostId], `Meeting fixed: ${client}`, `${ist}. ${joinUrl ? line : `Everyone accepted.${synced.googleError ? ` No Google Meet link: ${synced.googleError}.` : ''} Send the meeting link from Meetings.`}`);
     await notify(people.filter((p) => p.role === 'founder' && p.userId !== me.id).map((p) => p.userId), moved ? `Meeting moved: ${client}` : `Your meeting is scheduled: ${client}`, `${when}. ${line}`);
     await notify(people.filter((p) => p.role === 'department_head' && p.userId !== me.id).map((p) => p.userId), moved ? `Meeting moved: ${client}` : `Your meeting is scheduled: ${client}`, `${when}. ${line} Add your team members on Meetings.`);
-    await notify(people.filter((p) => p.role === 'member').map((p) => p.userId), moved ? `Meeting moved: ${client}` : `Your meeting is scheduled: ${client}`, `${when}. ${line}`);
+    await notify(people.filter((p) => p.role === 'member' && ['accepted', 'invited'].includes(p.status)).map((p) => p.userId), moved ? `Meeting moved: ${client}` : `Your meeting is scheduled: ${client}`, `${when}. ${line}`);
     await notify(bms, `Meeting with client ${client}: join now?`, `Scheduled for ${ist}. ${line} Join or ignore on Meetings.`);
 
     // The client: "scheduled", or an apology with the revised time when it moved.
@@ -1128,7 +1151,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const ist = `${istLabel(m.startAt)} IST`;
     const title = `${updated ? 'Updated meeting link' : 'Meeting link'}: ${client}`;
     // Everyone in it who is coming: Founder, Department Head, team members and the Branch Manager (unless they ignored it).
-    const people = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: id, status: { not: 'ignored' } } })).filter((p) => p.userId !== me.id);
+    const people = (await this.prisma.meetingParticipant.findMany({ where: { meetingId: id, status: { notIn: ['ignored', 'pending', 'declined'] } } })).filter((p) => p.userId !== me.id);
     const bms = people.filter((p) => p.role === 'branch_manager').map((p) => p.userId);
     const others = [...new Set([...people.filter((p) => p.role !== 'branch_manager').map((p) => p.userId), ...(m.hostId !== me.id ? [m.hostId] : [])])];
     if (others.length) await this.notifications.notify(m.orgId, others, { kind: 'meeting', title, body: `${ist}. Join here: ${joinUrl}`, link: '/team/meetings' });
@@ -1211,13 +1234,29 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const { userIds } = parse(meetingMembersSchema, body);
     const add = [...new Set(userIds)];
     if (add.some((u) => !options.some((o) => o.id === u))) throw new BadRequestException('Add people from your own department who are not in the meeting yet');
-    await this.prisma.meetingParticipant.createMany({ data: add.map((userId) => ({ meetingId: id, userId, role: 'member', status: 'invited', addedById: me.id })), skipDuplicates: true });
-    // v23 Google Meet: they are added to the Google event too (Google emails them the invitation).
-    const m = await this.toGoogle(await this.touch(id));
+    // v27: they accept first; only then do they get the link and go on the Google event (answer).
+    await this.prisma.meetingParticipant.createMany({ data: add.map((userId) => ({ meetingId: id, userId, role: 'member', status: 'pending', addedById: me.id })), skipDuplicates: true });
+    const m = await this.touch(id);
     await this.audit.log(me, 'meeting.members_added', 'Meeting', id, null, { userIds: add }, ip);
     const client = await this.clientName(m);
-    await this.notifications.notify(me.orgId, add, { kind: 'meeting', title: `Your meeting is scheduled: ${client}`, body: `${me.name} added you to the meeting with ${client} on ${istLabel(m.startAt)} IST. ${this.linkLine(m.joinUrl)}`, link: '/team/meetings' });
+    await this.notifications.notify(me.orgId, add, { kind: 'meeting', title: `${me.name} invited you: meeting with ${client}`, body: `${istLabel(m.startAt)} IST. Accept on Meetings to get the Google Meet link.`, link: '/team/meetings' });
     return this.view(me, m);
+  }
+
+  /** v27: a team member a Department Head invited accepts (gets the link and the Google invitation) or declines. */
+  async answer(me: Me, id: string, body: unknown, ip?: string) {
+    const m = await this.loadForStaff(me, id);
+    if (!(await this.view(me, m)).can.answer) throw new ForbiddenException('This meeting is not waiting for your answer');
+    const { decision } = parse(meetingAnswerSchema, body);
+    const p = await this.prisma.meetingParticipant.update({ where: { meetingId_userId: { meetingId: id, userId: me.id } }, data: { status: decision === 'accept' ? 'accepted' : 'declined', respondedAt: new Date() } });
+    await this.audit.log(me, `meeting.member_${decision === 'accept' ? 'accepted' : 'declined'}`, 'Meeting', id, { status: 'pending' }, { status: p.status }, ip);
+    const touched = await this.touch(id);
+    // Google Meet: on the event now (Google emails them the invitation with the link).
+    const after = decision === 'accept' ? await this.toGoogle(touched) : touched;
+    const client = await this.clientName(m);
+    const tell = [...new Set([p.addedById, m.hostId].filter((x): x is string => !!x && x !== me.id))];
+    if (tell.length) await this.notifications.notify(me.orgId, tell, { kind: 'meeting', title: `${me.name} ${decision === 'accept' ? 'accepted' : 'declined'} the ${client} meeting`, body: `${istLabel(m.startAt)} IST.`, link: '/team/meetings' });
+    return this.view(me, after);
   }
 
   /** v24: Branch Managers of other branches who can be added (by the Client Manager or the client's Branch Manager). */

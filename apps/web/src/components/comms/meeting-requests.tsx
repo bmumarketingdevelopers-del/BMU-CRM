@@ -41,6 +41,7 @@ const STATUS_LABEL: Record<MeetingParticipantView["status"], string> = {
   invited: "Invited",
   joined: "Joining",
   ignored: "Not joining",
+  declined: "Declined",
 };
 const STATUS_TONE: Record<MeetingParticipantView["status"], "neutral" | "green" | "amber" | "red"> = {
   pending: "amber",
@@ -49,6 +50,7 @@ const STATUS_TONE: Record<MeetingParticipantView["status"], "neutral" | "green" 
   invited: "neutral",
   joined: "green",
   ignored: "neutral",
+  declined: "red",
 };
 
 function useRun() {
@@ -261,7 +263,58 @@ export function TeamRequestCard({ m, onChanged }: { m: MeetingView; onChanged: (
         <Badge tone="amber">{m.status === "requested" ? "To arrange" : "Waiting for answers"}</Badge>
       </div>
       {m.can.respond && <RespondPanel m={m} onChanged={onChanged} />}
+      <EarlyActions m={m} onChanged={onChanged} />
       {m.can.arrange && <ArrangePanel m={m} onChanged={onChanged} />}
+    </div>
+  );
+}
+
+/**
+ * v27: while the time is still being confirmed, whoever has accepted gets the Google Meet link straight away; a
+ * Department Head who accepted adds their team, and a team member they invited accepts or declines.
+ */
+function EarlyActions({ m, onChanged }: { m: MeetingView; onChanged: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const accepted = (m.myRole === "department_head" || m.myRole === "founder") && !m.can.respond && m.status === "awaiting";
+  if (!accepted && !m.joinUrl && !m.can.addMembers && !m.can.answer) return null;
+  return (
+    <div className="mt-3 space-y-2" data-testid="early-actions">
+      {accepted && <p className="text-xs">You accepted. {m.joinUrl ? "Your Google Meet link is ready; the client gets it once the meeting is fixed." : "The Google Meet link appears here once the Client Manager's Google Calendar makes it."}</p>}
+      {m.joinUrl && <JoinButton url={m.joinUrl} as={m.joinAs} />}
+      {m.can.answer && <AnswerPanel m={m} onChanged={onChanged} />}
+      {m.can.addMembers && !adding && (
+        <Button variant="secondary" onClick={() => setAdding(true)} data-testid="add-members">
+          Add team members
+        </Button>
+      )}
+      {m.can.addMembers && adding && (
+        <AddMembers
+          m={m}
+          onDone={() => {
+            setAdding(false);
+            onChanged();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** v27: a team member a Department Head invited: accept to get the link, or decline. */
+function AnswerPanel({ m, onChanged }: { m: MeetingView; onChanged: () => void }) {
+  const { busy, run, note } = useRun();
+  return (
+    <div className="space-y-2 border border-border bg-canvas/30 p-3" data-testid="answer-panel">
+      <p className="text-xs font-medium">You are invited to this meeting. Accept to get the Google Meet link.</p>
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={busy} data-testid="answer-accept" onClick={() => run(() => api.meetings.answer(m.id, "accept").then(onChanged))}>
+          Accept
+        </Button>
+        <Button variant="ghost" disabled={busy} data-testid="answer-decline" onClick={() => window.confirm("Decline this meeting?") && run(() => api.meetings.answer(m.id, "decline").then(onChanged))}>
+          Decline
+        </Button>
+      </div>
+      {note}
     </div>
   );
 }
@@ -415,7 +468,8 @@ export function FixedMeetingActions({ m, onChanged }: { m: MeetingView; onChange
   return (
     <div className="mb-3 space-y-2">
       {m.can.shareLink && <ShareLink m={m} onChanged={onChanged} />}
-      {!m.joinUrl && <JoinLine m={m} />}
+      {!m.joinUrl && !m.can.answer && <JoinLine m={m} />}
+      {m.can.answer && <AnswerPanel m={m} onChanged={onChanged} />}
       {m.rescheduledAt && m.rescheduleReason && <p className="text-xs text-ink-muted">Moved: {m.rescheduleReason}</p>}
       <ParticipantList m={m} team />
       {m.can.join && mine && (

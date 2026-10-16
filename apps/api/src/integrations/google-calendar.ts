@@ -108,6 +108,8 @@ export function buildCalendarEvent(m: CalendarEventInput) {
 
 type GoogleEvent = {
   id: string;
+  start?: { dateTime?: string };
+  end?: { dateTime?: string };
   hangoutLink?: string;
   conferenceData?: { entryPoints?: { entryPointType: string; uri: string }[] };
   attendees?: { email: string; responseStatus?: string }[];
@@ -131,18 +133,25 @@ export async function createCalendarEvent(token: string, m: CalendarEventInput) 
  * Changes who is invited (people added later, a Branch Manager who said no). Attendees still invited keep their
  * reply; Google emails only the people added or removed. Returns false when the event is gone.
  */
-export async function setCalendarAttendees(token: string, eventId: string, attendees: CalendarAttendee[]): Promise<boolean> {
+export async function setCalendarAttendees(token: string, eventId: string, attendees: CalendarAttendee[], times?: { startAt: Date; endAt: Date }): Promise<boolean> {
   const res = await fetch(`${CAL}/${encodeURIComponent(eventId)}`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
   if (res.status === 404 || res.status === 410) return false;
   if (!res.ok) throw new ProviderError(`Google Calendar: could not read the event (${res.status})`);
-  const current = ((await res.json()) as GoogleEvent).attendees ?? [];
+  const event = (await res.json()) as GoogleEvent;
+  const current = event.attendees ?? [];
   const wanted = buildCalendarEvent({ meetingId: '', title: '', startAt: new Date(0), endAt: new Date(0), description: '', location: null, attendees, addMeet: false }).attendees;
   const next = wanted.map((w) => current.find((c) => c.email.toLowerCase() === w.email) ?? w);
   await http<GoogleEvent>(`${CAL}/${encodeURIComponent(eventId)}?sendUpdates=all`, {
     label: 'Google Calendar',
     method: 'PATCH',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ attendees: next }),
+    // v27: the time too, but only when it moved (the meeting was fixed at another time), so nobody gets a needless update.
+    body: JSON.stringify({
+      attendees: next,
+      ...(times && (!event.start?.dateTime || new Date(event.start.dateTime).getTime() !== times.startAt.getTime() || !event.end?.dateTime || new Date(event.end.dateTime).getTime() !== times.endAt.getTime())
+        ? { start: { dateTime: times.startAt.toISOString(), timeZone: 'Asia/Kolkata' }, end: { dateTime: times.endAt.toISOString(), timeZone: 'Asia/Kolkata' } }
+        : {}),
+    }),
   });
   return true;
 }

@@ -108,6 +108,12 @@ export class MeetingsController {
     return this.meetings.addMembers(me, id, body, ip);
   }
 
+  @Post('meetings/:id/answer')
+  @HttpCode(200)
+  answer(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.meetings.answer(me, id, body, ip);
+  }
+
   @Post('meetings/:id/join')
   @HttpCode(200)
   join(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
