@@ -6,7 +6,7 @@ import { BMU_ADDRESS, BMU_EMAIL, BMU_PHONE, serviceAmountInWords, serviceGstStat
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { SettingsService } from '../settings/settings.service.js';
 import { escapeHtml } from './email.service.js';
-import { invoiceBrandingUrl, readInvoiceBranding } from './invoice-branding.service.js';
+import { invoiceBrandingUrl, invoiceHeld, readInvoiceBranding } from './invoice-branding.service.js';
 
 type InvoiceLine = { label: string; amountPaise: number; title?: string; details?: string; passThrough?: boolean; kind?: string };
 
@@ -58,6 +58,9 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   const phone = tenant.supportPhone?.trim() || BMU_PHONE;
   // The founder who signs: the name set with the signature, else the first Founder.
   const variant = serviceInvoiceVariant({ status: inv.status, kind: inv.kind, dueDate: inv.dueDate.toISOString(), paidPaise: paid, creditedPaise: credited, balancePaise: balance });
+  // v28: the seal and signature are printed only once the invoice is signed with the signing password.
+  const signed = !!inv.signedAt;
+  const signer = inv.signedById ? await prisma.user.findUnique({ where: { id: inv.signedById }, select: { name: true } }) : null;
   const founder = branding.signatoryName ? null : await prisma.user.findFirst({ where: { orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, orderBy: { createdAt: 'asc' }, select: { name: true } });
   return {
     id: inv.id,
@@ -72,9 +75,10 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
     signatory: {
       name: branding.signatoryName || (founder?.name && !/^bmu owner$/i.test(founder.name) ? founder.name : ''),
       designation: branding.designation || 'Founder',
-      signatureUrl: branding.signatureFileId ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
-      sealUrl: branding.sealFileId ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
+      signatureUrl: signed && branding.signatureFileId ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
+      sealUrl: signed && branding.sealFileId ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
     },
+    signing: { signed, signedAt: inv.signedAt?.toISOString() ?? null, signedBy: signer?.name ?? null, held: invoiceHeld(branding, inv), canSign: false },
     terms: invoiceTerms({ number: inv.number, dueDate: inv.dueDate, email, phone, legalName: payee, settled: ['paid', 'credited', 'cancelled'].includes(variant) }),
     seller: {
       legalName: payee,

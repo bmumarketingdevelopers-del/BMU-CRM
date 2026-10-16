@@ -24,6 +24,7 @@ import {
   sum,
   workDays,
 } from './common.js';
+import { clientVisibleInvoiceWhere, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CLIENT_MONEY_ROLES = ['client_owner', 'client_finance'];
@@ -199,7 +200,7 @@ export class OpsSelfService {
       delivs.length ? this.prisma.approval.findMany({ where: { targetType: 'deliverable', gate: 'G4', targetId: { in: delivs.map((d) => d.id) } }, select: { targetId: true, at: true }, orderBy: { at: 'asc' } }) : [],
       engagementIds.length ? this.prisma.request.findMany({ where: { engagementId: { in: engagementIds }, createdAt: { gte: r.prevFrom, lt: r.to } }, select: { type: true, createdAt: true, firstReplyAt: true } }) : [],
       money
-        ? this.prisma.invoice.findMany({ where: { orgId: me.orgId, clientOrgId, status: { notIn: ['draft', 'void'] } }, select: { createdAt: true, totalPaise: true, payments: { select: { at: true, amountPaise: true } } } })
+        ? readInvoiceBranding(this.prisma, me.orgId).then((b) => this.prisma.invoice.findMany({ where: { orgId: me.orgId, clientOrgId, status: { notIn: ['draft', 'void'] }, ...clientVisibleInvoiceWhere(b) }, select: { createdAt: true, totalPaise: true, payments: { select: { at: true, amountPaise: true } } } }))
         : Promise.resolve(null),
     ]);
     const approvedMap = new Map<string, Date>();

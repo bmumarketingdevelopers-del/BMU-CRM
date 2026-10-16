@@ -34,6 +34,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { ServiceBillingService } from '../service/service-billing.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { day, isFounderAdmin, istDay, todayIst } from './ops-util.js';
+import { invoiceHeld, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 const TDS_RATE = 0.1;
 const DAY = 86_400_000;
@@ -297,7 +298,7 @@ export class OpsFinanceService implements OnModuleInit {
     const next = istDay(dueDate);
     await this.prisma.invoice.update({ where: { id }, data: { dueDate: next, dueDateChanges: { increment: 1 }, ...(inv.status === 'overdue' ? { status: 'issued' } : {}) } });
     await this.audit.log(me, 'invoice.due_date_changed', 'Invoice', id, { dueDate: inv.dueDate }, { dueDate: next, reason }, ip);
-    if (inv.clientOrgId && inv.status !== 'draft') {
+    if (inv.clientOrgId && inv.status !== 'draft' && !invoiceHeld(await readInvoiceBranding(this.prisma, me.orgId), inv)) {
       await this.notifications.notify(me.orgId, await this.notifications.clientBilling(inv.clientOrgId), { kind: 'invoice_reminder', title: `New due date for invoice ${inv.number}`, body: `It is now due on ${day(next)}.`, link: `/client/billing/${id}`, noEmail: true });
     }
     const undo = await this.undo.create(me, `Due date of ${inv.number} changed`, [{ model: 'invoice', id, data: { dueDate: inv.dueDate.toISOString(), dueDateChanges: inv.dueDateChanges, status: inv.status } }]);

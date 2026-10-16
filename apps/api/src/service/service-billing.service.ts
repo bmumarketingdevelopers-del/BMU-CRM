@@ -17,6 +17,7 @@ import { PaymentsService } from '../proposals/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { EmailService } from './email.service.js';
+import { clientVisibleInvoiceWhere, invoiceHeld, readInvoiceBranding } from './invoice-branding.service.js';
 import { buildTaxInvoice, taxInvoiceEmailHtml, taxInvoiceEmailText } from './tax-invoice.js';
 
 const BILLING_ROLES = ['client_owner', 'client_finance'];
@@ -46,7 +47,8 @@ export class ServiceBillingService {
 
   async clientBilling(me: Me): Promise<ServiceClientBilling> {
     const clientOrgId = this.clientOrgId(me);
-    const ledger = await loadLedger(this.prisma, me.orgId, { clientOrgId });
+    // v28: invoices waiting for the seal and signature are not shown to the client yet.
+    const ledger = await loadLedger(this.prisma, me.orgId, { clientOrgId, ...clientVisibleInvoiceWhere(await readInvoiceBranding(this.prisma, me.orgId)) });
     const fyStart = (() => {
       const n = new Date();
       const y = n.getUTCMonth() >= 3 ? n.getUTCFullYear() : n.getUTCFullYear() - 1;
@@ -83,7 +85,7 @@ export class ServiceBillingService {
 
   async clientTaxInvoice(me: Me, id: string): Promise<ServiceTaxInvoice> {
     const clientOrgId = this.clientOrgId(me);
-    const inv = await this.prisma.invoice.findFirst({ where: { id, clientOrgId, status: { not: 'draft' } }, select: { id: true } });
+    const inv = await this.prisma.invoice.findFirst({ where: { id, clientOrgId, status: { not: 'draft' }, ...clientVisibleInvoiceWhere(await readInvoiceBranding(this.prisma, me.orgId)) }, select: { id: true } });
     if (!inv) throw new NotFoundException('Invoice not found');
     return (await buildTaxInvoice(this.prisma, this.settings, me.orgId, id, `/client/billing/${id}`))!;
   }
@@ -118,6 +120,9 @@ export class ServiceBillingService {
     assertFinanceRead(me);
     const t = await buildTaxInvoice(this.prisma, this.settings, me.orgId, id, `/client/billing/${id}`);
     if (!t) throw new NotFoundException('Invoice not found');
+    // v28: people who handle invoices can add the seal and signature (with the signing password).
+    const b = await readInvoiceBranding(this.prisma, me.orgId);
+    t.signing.canSign = canWriteFinance(me) && !t.signing.signed && t.status !== 'void' && !!b.passwordHash;
     return t;
   }
 
@@ -142,6 +147,7 @@ export class ServiceBillingService {
     if (!inv) throw new NotFoundException('Invoice not found');
     if (!inv.clientOrgId) throw new BadRequestException('This invoice has no client account yet');
     if (inv.status === 'void') throw new BadRequestException('This invoice was cancelled');
+    if (invoiceHeld(await readInvoiceBranding(this.prisma, inv.orgId), inv)) throw new BadRequestException(`Sign invoice ${inv.number} first: it goes to the client once the seal and signature are on it`);
     const sent = await this.invoiceIssued(id, { force: true });
     await this.audit.log(me, 'invoice.emailed', 'Invoice', id, undefined, { recipients: sent }, ip);
     return { sent };
@@ -154,6 +160,18 @@ export class ServiceBillingService {
   async invoiceIssued(invoiceId: string, opts: { force?: boolean } = {}) {
     const inv = await this.prisma.invoice.findUnique({ where: { id: invoiceId }, include: { clientOrg: true } });
     if (!inv?.clientOrgId) return 0;
+    // v28: while it waits for the seal and signature, nothing goes to the client; the people who sign are told instead.
+    if (invoiceHeld(await readInvoiceBranding(this.prisma, inv.orgId), inv)) {
+      if (!inv.deliveryHeldAt) await this.prisma.invoice.update({ where: { id: inv.id }, data: { deliveryHeldAt: new Date() } });
+      const signers = await this.prisma.user.findMany({ where: { orgId: inv.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, roles: { some: { role: { baseRole: 'founder' } } } }, select: { id: true } });
+      await this.notifications.notify(inv.orgId, signers.map((u) => u.id), {
+        kind: 'invoice_signature',
+        title: `Invoice ${inv.number} is waiting for your signature`,
+        body: `${inv.clientOrg?.name ?? 'Client'}, ${formatINR(inv.totalPaise)}. It goes to the client once the seal and signature are added with the signing password.`,
+        link: `/admin/finance/invoices/${inv.id}`,
+      });
+      return 0;
+    }
     const t = await buildTaxInvoice(this.prisma, this.settings, inv.orgId, inv.id, `/client/billing/${inv.id}`);
     if (!t) return 0;
     const people = await this.notifications.clientBilling(inv.clientOrgId);

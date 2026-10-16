@@ -7,13 +7,14 @@
  * the invoice (a clear service name and one or two sentences, AI-written when AI is on), which they can edit.
  * Without it, the wording is written when the invoice is saved.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { formatINR, OPS_INVOICE_LINE_KINDS, opsInvoiceLineKindLabels, opsInvoiceTotals, type OpsInvoiceLineKind } from "@bmu/shared";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { ActionDrawer, Field, inputCls, TextArea, type SaveMode } from "@/components/actions/action-drawer";
 import type { NewDrawerProps } from "@/components/actions/new-registry";
 import { dayAhead, errMsg, todayIst } from "./kit";
+import { SignInvoiceDialog } from "@/components/service/sign-invoice-dialog";
 
 type Line = { label: string; kind: OpsInvoiceLineKind; amount: string; title: string; details: string };
 const newLine = (kind: OpsInvoiceLineKind = "service"): Line => ({ label: "", kind, amount: "", title: "", details: "" });
@@ -21,6 +22,10 @@ const toPaise = (s: string) => Math.round(Number(s.replace(/[,₹\s]/g, "")) * 1
 
 export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
   const opts = useLoad(() => api.ops.finance.options());
+  // v28: when invoices must be signed, issuing one opens the signing pop-up (closing it leaves the invoice unsent).
+  const signing = useLoad(() => api.service.invoiceBranding().catch(() => null), { live: false });
+  const [toSign, setToSign] = useState<{ id: string; number: string; totalPaise: number; client: string | null; another: boolean } | null>(null);
+  const signedRef = useRef(false);
   const [clientOrgId, setClient] = useState(prefill?.clientId ?? "");
   const [engagementId, setEngagement] = useState("");
   const [dueDate, setDue] = useState(dayAhead(15));
@@ -69,10 +74,16 @@ export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
     setSaving(true);
     try {
       const r = await api.ops.finance.createInvoice({ clientOrgId, engagementId: engagementId || undefined, dueDate, notes: notes.trim() || undefined, issue: mode !== "draft", lines: valid.map((l) => ({ label: l.label.trim(), kind: l.kind, amountPaise: toPaise(l.amount), title: l.title.trim() || undefined, details: l.title.trim() ? l.details.trim() || undefined : undefined })) });
-      onSaved(r.id, r.message);
       setLines([newLine()]);
       setNotes("");
       setWordingNote(undefined);
+      if (mode !== "draft" && signing.data?.requireSignature) {
+        // Held until signed: ask for the signing password now.
+        signedRef.current = false;
+        setToSign({ id: r.id, number: r.number, totalPaise: r.totalPaise, client: client?.name ?? null, another: mode === "another" });
+        return;
+      }
+      onSaved(r.id, r.message);
       if (mode !== "another") onClose();
     } catch (err) {
       setError(errMsg(err));
@@ -182,6 +193,21 @@ export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
         </div>
         <p className="text-xs text-ink-muted">Pass-through lines are billed at cost with no GST and stay separate from service lines.</p>
       </fieldset>
+      {toSign && (
+        <SignInvoiceDialog
+          invoice={toSign}
+          onSigned={(m) => {
+            signedRef.current = true;
+            onSaved(toSign.id, m);
+          }}
+          onClose={() => {
+            const t = toSign;
+            setToSign(null);
+            if (!signedRef.current) onSaved(t.id, `Invoice ${t.number} saved but not sent: it is waiting for the seal and signature. Sign it from the invoice page or GST & Invoice Settings.`);
+            if (!t.another) onClose();
+          }}
+        />
+      )}
     </ActionDrawer>
   );
 }

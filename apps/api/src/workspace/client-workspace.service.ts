@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { PrismaService } from '../prisma/prisma.service.js';
 import { trackFor } from './team.service.js';
 import { canSeeBilling, isUniqueError, monthRange } from './util.js';
+import { clientVisibleInvoiceWhere, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 const APPROVED = ['approved', 'scheduled', 'published'];
 const monthLabel = new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
@@ -57,7 +58,7 @@ export class ClientWorkspaceService {
     let spend: ClientReport['spend'] = null;
     if (canSeeBilling(me)) {
       const [invoices, payments] = await Promise.all([
-        this.prisma.invoice.findMany({ where: { clientOrgId, createdAt: within, status: { notIn: ['draft', 'void'] } }, orderBy: { createdAt: 'desc' } }),
+        this.prisma.invoice.findMany({ where: { clientOrgId, createdAt: within, status: { notIn: ['draft', 'void'] }, ...clientVisibleInvoiceWhere(await readInvoiceBranding(this.prisma, me.orgId)) }, orderBy: { createdAt: 'desc' } }),
         this.prisma.payment.findMany({ where: { invoice: { clientOrgId }, at: within } }),
       ]);
       spend = {

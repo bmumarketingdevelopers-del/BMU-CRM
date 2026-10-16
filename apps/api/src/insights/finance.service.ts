@@ -36,6 +36,7 @@ import { assertFinanceRead, assertFinanceWrite, canWriteFinance } from './access
 import { isoDay, monthLabel, startOfMonth } from './ist.js';
 import { isBillable, loadLedger, toRow, type LedgerInvoice } from './ledger.js';
 import { tallyXml, zohoInvoiceRows, zohoPaymentRows } from './accounting-formats.js';
+import { invoiceHeld, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 const TDS_RATE = 0.1;
 
@@ -169,6 +170,7 @@ export class FinanceService implements OnModuleInit {
     const inv = await this.ledgerOne(me, id);
     if (inv.balancePaise <= 0) throw new BadRequestException('Nothing is due on this invoice');
     if (!inv.clientOrgId) throw new BadRequestException('This invoice has no client account yet');
+    if (invoiceHeld(await readInvoiceBranding(this.prisma, me.orgId), inv)) throw new BadRequestException(`Sign invoice ${inv.number} first: the client has not received it yet`);
     const people = await this.prisma.clientUser.findMany({
       where: { clientOrgId: inv.clientOrgId, clientRole: { in: ['client_owner', 'client_finance'] }, user: { status: 'active', deletedAt: null } },
       select: { userId: true },

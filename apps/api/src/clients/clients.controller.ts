@@ -21,6 +21,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { generateProductionTasks } from '../production/generate.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { approvalStatus, pendingUserIds, planRound } from '../deliver/approval-policy.js';
+import { clientVisibleInvoiceWhere, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 const trackFor = (currentGate: string, status?: string): GateTrack => {
   if (status === 'delivered') return Object.fromEntries(GATES.map((g) => [g.id, 'passed'])) as GateTrack;
@@ -71,7 +72,7 @@ export class ClientPortalController {
     const canSeeBilling = (me.permissions.invoices_payments?.scope ?? 'none') !== 'none';
     const invoices = canSeeBilling
       ? await this.prisma.invoice.findMany({
-          where: { clientOrgId, status: { in: ['issued', 'partially_paid', 'overdue'] } },
+          where: { clientOrgId, status: { in: ['issued', 'partially_paid', 'overdue'] }, ...clientVisibleInvoiceWhere(await readInvoiceBranding(this.prisma, me.orgId)) },
           include: { payments: true },
           orderBy: { dueDate: 'asc' },
         })
@@ -97,7 +98,8 @@ export class ClientPortalController {
   async invoices(@CurrentUser() me: Me): Promise<ClientInvoice[]> {
     const clientOrgId = this.clientOrgId(me);
     if ((me.permissions.invoices_payments?.scope ?? 'none') === 'none') throw new ForbiddenException('Billing is not part of your access');
-    const rows = await this.prisma.invoice.findMany({ where: { clientOrgId }, include: { payments: true }, orderBy: { createdAt: 'desc' } });
+    // v28: no drafts, and nothing still waiting for the seal and signature.
+    const rows = await this.prisma.invoice.findMany({ where: { clientOrgId, status: { not: 'draft' }, ...clientVisibleInvoiceWhere(await readInvoiceBranding(this.prisma, me.orgId)) }, include: { payments: true }, orderBy: { createdAt: 'desc' } });
     return rows.map(toInvoice);
   }
 

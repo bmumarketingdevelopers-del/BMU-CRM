@@ -964,6 +964,11 @@ model Invoice {
   createdById    String?
   notes          String?
   dueDateChanges Int           @default(0)
+  /// v28: when the seal and the Founder's signature were added (with the signing password), and by whom
+  signedAt       DateTime?
+  signedById     String?
+  /// v28: delivery to the client is held until the invoice is signed (set when it was due to be sent)
+  deliveryHeldAt DateTime?
 
   clientOrg ClientOrg? @relation(fields: [clientOrgId], references: [id])
   proposal  Proposal?  @relation(fields: [proposalId], references: [id])

@@ -2,8 +2,12 @@
 
 // v27: the Founder's signature and the company seal printed on every invoice (above "Authorised Signatory").
 // Founders upload or change them at any time; others see what is in use.
+// v28: the signing password, the rule "invoices reach the client only after they are signed", and the invoices
+// waiting for the seal and signature.
+import Link from "next/link";
 import { useRef, useState } from "react";
-import { INVOICE_IMAGE_MAX_BYTES, INVOICE_IMAGE_TYPES, type InvoiceBrandingKind, type InvoiceBrandingView } from "@bmu/shared";
+import { formatINR, INVOICE_IMAGE_MAX_BYTES, INVOICE_IMAGE_TYPES, type InvoiceBrandingKind, type InvoiceBrandingView } from "@bmu/shared";
+import { SignInvoiceDialog } from "./sign-invoice-dialog";
 import { Panel } from "@/components/dash";
 import { Button, Input, LoadState } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -66,7 +70,146 @@ function Editor({ initial }: { initial: InvoiceBrandingView }) {
         )}
       </div>
       {msg && <p className={`mt-3 text-sm ${msg.error ? "text-red" : "text-ink-muted"}`}>{msg.text}</p>}
+      <Signing b={b} onChange={setB} />
     </Panel>
+  );
+}
+
+const day = new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeZone: "Asia/Kolkata" });
+
+/** v28: signing password, the rule, and the invoices waiting for the seal and signature. */
+function Signing({ b, onChange }: { b: InvoiceBrandingView; onChange: (v: InvoiceBrandingView) => void }) {
+  const [pw, setPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [changing, setChanging] = useState(!b.passwordSet);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; error: boolean }>();
+  const [signing, setSigning] = useState<InvoiceBrandingView["waiting"][number] | null>(null);
+  const run = async (fn: () => Promise<InvoiceBrandingView>, ok: string) => {
+    setBusy(true);
+    setMsg(undefined);
+    try {
+      onChange(await fn());
+      setMsg({ text: ok, error: false });
+      return true;
+    } catch (e) {
+      setMsg({ text: (e as Error).message, error: true });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const ready = b.passwordSet && !!b.signature && !!b.seal;
+  return (
+    <div className="mt-8 border-t border-border pt-6" data-testid="invoice-signing">
+      <p className="text-sm font-medium">Signing password</p>
+      <p className="mt-1 text-xs text-ink-muted">
+        The seal and signature go on an invoice only when someone enters this password. Share it only with the people you trust to sign invoices. It is stored encrypted and can be changed any time.
+      </p>
+      {b.canEdit ? (
+        changing ? (
+          <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <label className="block text-sm">
+              <span className="text-xs font-medium">{b.passwordSet ? "New signing password" : "Signing password"}</span>
+              <Input type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} aria-label="New signing password" placeholder="At least 8 characters" />
+            </label>
+            <label className="block text-sm">
+              <span className="text-xs font-medium">Type it again</span>
+              <Input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="Confirm signing password" />
+            </label>
+            <div className="flex gap-2">
+              <Button
+                disabled={busy || pw.length < 8 || pw !== confirm}
+                data-testid="save-signing-password"
+                onClick={async () => {
+                  if (await run(() => api.service.setSigningPassword(pw, confirm), b.passwordSet ? "Signing password changed." : "Signing password set.")) {
+                    setPw("");
+                    setConfirm("");
+                    setChanging(false);
+                  }
+                }}
+              >
+                Save password
+              </Button>
+              {b.passwordSet && (
+                <Button variant="ghost" onClick={() => setChanging(false)}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 flex items-center gap-3 text-sm">
+            <span>A signing password is set.</span>
+            <Button variant="secondary" onClick={() => setChanging(true)}>
+              Change password
+            </Button>
+          </div>
+        )
+      ) : (
+        <p className="mt-2 text-sm">{b.passwordSet ? "A signing password is set. Ask a Founder for it to sign invoices." : "No signing password yet. A Founder sets it here."}</p>
+      )}
+
+      <label className={`mt-6 flex items-start gap-3 text-sm ${b.canEdit ? "" : "opacity-70"}`}>
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={b.requireSignature}
+          disabled={!b.canEdit || busy || (!b.requireSignature && !ready)}
+          onChange={(e) => run(() => api.service.setSigningRule(e.target.checked), e.target.checked ? "From now on, invoices go to clients only after they are signed." : "Invoices go to clients straight away again (without seal and signature).")}
+          aria-label="Require signature before invoices go to clients"
+          data-testid="require-signature"
+        />
+        <span>
+          <span className="font-medium">Invoices go to clients only after they are signed</span>
+          <span className="block text-xs text-ink-muted">
+            {b.requireSignature && b.requiredSince
+              ? `On since ${day.format(new Date(b.requiredSince))}. Every invoice made since then (by hand or automatically) waits here until the seal and signature are added with the password; then it is sent.`
+              : ready
+                ? "When on, new invoices (by hand or automatic) are held until someone signs them with the password. Invoices made before stay as they are."
+                : "Set the signing password and upload the signature and seal first."}
+          </span>
+        </span>
+      </label>
+
+      {b.requireSignature && (
+        <div className="mt-6">
+          <p className="text-sm font-medium">Waiting for signature ({b.waiting.length})</p>
+          {!b.waiting.length ? (
+            <p className="mt-1 text-xs text-ink-muted">Nothing waiting. New invoices appear here until they are signed.</p>
+          ) : (
+            <ul className="mt-2 divide-y divide-border border border-border" data-testid="waiting-for-signature">
+              {b.waiting.map((w) => (
+                <li key={w.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm">
+                  <span className="min-w-0">
+                    <Link href={`/admin/finance/invoices/${w.id}`} className="font-medium underline">
+                      {w.number}
+                    </Link>{" "}
+                    <span className="text-ink-muted">
+                      · {w.client} · {formatINR(w.totalPaise)} · {day.format(new Date(w.createdAt))}
+                    </span>
+                  </span>
+                  <Button variant="secondary" disabled={!b.passwordSet} onClick={() => setSigning(w)}>
+                    Sign
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+      {msg && <p className={`mt-3 text-sm ${msg.error ? "text-red" : "text-ink-muted"}`}>{msg.text}</p>}
+      {signing && (
+        <SignInvoiceDialog
+          invoice={{ id: signing.id, number: signing.number, totalPaise: signing.totalPaise, client: signing.client }}
+          onClose={() => setSigning(null)}
+          onSigned={async (m) => {
+            setMsg({ text: m, error: false });
+            onChange(await api.service.invoiceBranding());
+          }}
+        />
+      )}
+    </div>
   );
 }
 

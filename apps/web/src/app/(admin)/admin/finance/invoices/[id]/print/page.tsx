@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { SigningStatus } from "@/components/service/signing-status";
 import { TaxInvoice } from "@/components/service/tax-invoice";
 import { LoadState } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -15,7 +16,14 @@ export default function FinanceTaxInvoicePage() {
       <Link href={`/admin/finance/invoices/${id}`} className="no-print mb-4 inline-block text-sm underline">
         ← Back to the invoice
       </Link>
-      {state.data ? <TaxInvoice t={state.data} /> : <LoadState loading={state.loading} error={state.error} />}
+      {state.data ? (
+        <>
+          <SigningStatus id={id} invoice={state.data} onSigned={state.reload} />
+          <TaxInvoice t={state.data} />
+        </>
+      ) : (
+        <LoadState loading={state.loading} error={state.error} />
+      )}
     </>
   );
 }

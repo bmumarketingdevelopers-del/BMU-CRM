@@ -24,6 +24,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { BillingService } from '../requests/billing.service.js';
 import { isLeadership, visibleEngagementWhere } from '../engagements/engagement-access.js';
+import { invoiceHeld, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 /** Statuses of a retainer that is running (new months start automatically). */
 const RUNNING = ['planning', 'awaiting_plan_approval', 'in_production', 'in_review', 'active_retainer', 'delivered', 'awaiting_final_payment'];
@@ -320,7 +321,9 @@ export class DeliverCyclesService implements OnModuleInit {
       link: `/team/projects/${engagementId}`,
       critical: !!held,
     });
-    if (created.invoiceId) {
+    // v28: a monthly invoice waiting for the seal and signature is announced when it is signed, not now.
+    const heldInvoice = created.invoiceId ? await this.prisma.invoice.findUnique({ where: { id: created.invoiceId }, select: { createdAt: true, signedAt: true } }) : null;
+    if (created.invoiceId && heldInvoice && !invoiceHeld(await readInvoiceBranding(this.prisma, e.orgId), heldInvoice)) {
       await this.notifications.notify(e.orgId, await this.notifications.clientBilling(e.clientOrgId), {
         kind: 'invoice_issued',
         title: `Invoice ${created.invoiceNumber} for ${e.service.name}, ${label}`,

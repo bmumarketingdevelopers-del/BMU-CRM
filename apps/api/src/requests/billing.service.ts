@@ -7,6 +7,7 @@ import { PaymentsService } from '../proposals/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { InvoiceEvents, type PaidHandler } from '../service/invoice-events.js';
+import { clientVisibleInvoiceWhere, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 type Tx = Prisma.TransactionClient;
 export type InvoiceLine = { label: string; amountPaise: number };
@@ -67,7 +68,8 @@ export class BillingService {
   private async clientInvoice(me: Me, id: string) {
     if (!me.clientOrg) throw new ForbiddenException('Client accounts only');
     if ((me.permissions.invoices_payments?.scope ?? 'none') === 'none') throw new ForbiddenException('Billing is not part of your access');
-    const inv = await this.prisma.invoice.findFirst({ where: { id, clientOrgId: me.clientOrg.id }, include: { payments: true } });
+    // v28: an invoice still waiting for the seal and signature cannot be seen or paid yet.
+    const inv = await this.prisma.invoice.findFirst({ where: { id, clientOrgId: me.clientOrg.id, ...clientVisibleInvoiceWhere(await readInvoiceBranding(this.prisma, me.orgId)) }, include: { payments: true } });
     if (!inv) throw new NotFoundException('Invoice not found');
     const credited = (await this.prisma.creditNote.aggregate({ where: { invoiceId: id }, _sum: { totalPaise: true } }))._sum.totalPaise ?? 0;
     const paid = inv.payments.reduce((s, p) => s + p.amountPaise, 0);

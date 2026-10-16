@@ -2,6 +2,7 @@
 // can check conditions on and act on. Sweep-based, so no other area's service has to call us.
 import { aiToneOf, formatINR, LEAD_STAGES, leadStageLabels, requestTypeLabels, services as catalogue, type AutomationTriggerKey, type RequestType } from '@bmu/shared';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import { clientVisibleInvoiceWhere, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 export type SubjectPeople = { am?: string | null; owner?: string | null; assignee?: string | null; manager?: string | null; department_head?: string | null };
 
@@ -109,8 +110,10 @@ const finders: Record<AutomationTriggerKey, (ctx: Ctx) => Promise<Subject[]>> = 
 
   // ------------------------------------------------------------------- Money
   async invoice_issued({ prisma, orgId, from }) {
+    // v28: an invoice waiting for the seal and signature has not been issued to the client yet.
+    const visible = clientVisibleInvoiceWhere(await readInvoiceBranding(prisma, orgId));
     const rows = await prisma.invoice.findMany({
-      where: { orgId, createdAt: { gte: from }, status: { notIn: ['draft', 'void'] } },
+      where: { orgId, createdAt: { gte: from }, status: { notIn: ['draft', 'void'] }, ...visible },
       include: { clientOrg: { select: { id: true, name: true, amUserId: true } }, proposal: { select: { lead: { select: { contact: true, ownerId: true } } } } },
       take: TAKE,
     });
@@ -119,8 +122,9 @@ const finders: Record<AutomationTriggerKey, (ctx: Ctx) => Promise<Subject[]>> = 
 
   async invoice_overdue({ prisma, orgId, args, from, now }) {
     const days = num(args, 'days', 3);
+    const visible = clientVisibleInvoiceWhere(await readInvoiceBranding(prisma, orgId));
     const rows = await prisma.invoice.findMany({
-      where: { orgId, status: { in: ['issued', 'partially_paid', 'overdue'] }, dueDate: { lte: new Date(now.getTime() - days * DAY), gte: new Date(from.getTime() - days * DAY) } },
+      where: { orgId, status: { in: ['issued', 'partially_paid', 'overdue'] }, dueDate: { lte: new Date(now.getTime() - days * DAY), gte: new Date(from.getTime() - days * DAY) }, ...visible },
       include: { payments: { select: { amountPaise: true } }, clientOrg: { select: { id: true, name: true, amUserId: true } }, proposal: { select: { lead: { select: { contact: true, ownerId: true } } } } },
       take: TAKE,
     });

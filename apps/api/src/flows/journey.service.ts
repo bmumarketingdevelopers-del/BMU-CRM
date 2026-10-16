@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { fmtDay, istDayDiff, maxDate, minDate } from './flow-util.js';
+import { clientVisibleInvoiceWhere, readInvoiceBranding } from '../service/invoice-branding.service.js';
 
 export const JOURNEY_GATES = [
   { gate: 'G1', name: 'Requirements complete' },
@@ -80,7 +81,8 @@ export class JourneyService {
     const sold = proposals.filter((p) => ((p.lines ?? []) as { kind?: string; key?: string }[]).some((l) => l.kind === 'service' && l.key === e.service.key));
     const proposal = [...sold].reverse().find((p) => p.acceptedAt && p.acceptedAt.getTime() <= started.getTime() + 86_400_000) ?? null;
     const invoices = await this.prisma.invoice.findMany({
-      where: { orgId: e.orgId, OR: [{ engagementId: e.id }, ...(proposal ? [{ proposalId: proposal.id, kind: 'first_payment' }] : [])], status: { notIn: ['draft', 'void'] } },
+      // v28: clients do not see invoices still waiting for the seal and signature.
+      where: { orgId: e.orgId, OR: [{ engagementId: e.id }, ...(proposal ? [{ proposalId: proposal.id, kind: 'first_payment' }] : [])], status: { notIn: ['draft', 'void'] }, ...(me.type === 'client' ? { AND: [clientVisibleInvoiceWhere(await readInvoiceBranding(this.prisma, e.orgId))] } : {}) },
       include: { payments: { orderBy: { at: 'asc' } } },
       orderBy: { createdAt: 'asc' },
     });

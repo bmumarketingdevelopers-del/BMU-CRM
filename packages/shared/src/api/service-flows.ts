@@ -19,7 +19,7 @@ import type {
   ServiceTaxInvoice,
   ServiceUnread,
 } from "../service-flows.js";
-import type { InvoiceBrandingInput, InvoiceBrandingKind, InvoiceBrandingView } from "../invoice-branding.js";
+import type { InvoiceBrandingInput, InvoiceBrandingKind, InvoiceBrandingView, InvoiceSignResult } from "../invoice-branding.js";
 import type { RequestView, ThreadAttachment } from "../requests.js";
 
 export * from "../service-flows.js";
@@ -62,6 +62,10 @@ export const serviceFlowsApi = (t: Transport) => ({
       return t.request<InvoiceBrandingView>(`/finance/invoice-branding/${kind}`, { method: "POST", body: form });
     },
     removeInvoiceBranding: (kind: InvoiceBrandingKind) => t.del<InvoiceBrandingView>(`/finance/invoice-branding/${kind}`),
+    /** v28: the signing password (Founders), the "require signature" rule, and signing an invoice with the password. */
+    setSigningPassword: (password: string, confirm: string) => t.put<InvoiceBrandingView>("/finance/invoice-branding/password", { password, confirm }),
+    setSigningRule: (requireSignature: boolean) => t.put<InvoiceBrandingView>("/finance/invoice-branding/rule", { requireSignature }),
+    signInvoice: (id: string, password: string) => t.post<InvoiceSignResult>(`/finance/invoices/${id}/sign`, { password }),
     clientBillingDetails: (clientId: string) => t.get<ServiceBillingDetails>(`/service/finance/clients/${clientId}/billing-details`),
     saveBillingDetails: (clientId: string, body: ServiceBillingDetailsInput) => t.put<ServiceBillingDetails>(`/service/finance/clients/${clientId}/billing-details`, body),
     collectionsActions: () => t.get<ServiceCollectionsActions>("/service/finance/collections"),

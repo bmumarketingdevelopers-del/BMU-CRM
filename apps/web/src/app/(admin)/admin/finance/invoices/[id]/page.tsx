@@ -9,6 +9,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { OPS_CONVERT_METHODS, invoiceKindLabels, paymentMethodLabels, type FinanceInvoiceDetail } from "@bmu/shared";
 import { ClientBillingDetails, InvoiceTools } from "@/components/service/invoice-tools";
+import { SigningStatus } from "@/components/service/signing-status";
 import { DataTable, Grid, KeyValues, Panel, StatRow, StatTile } from "@/components/dash";
 import { PayLinks } from "@/components/money/pay-links";
 import { Button, Input, PageTitle, Select } from "@/components/ui";
@@ -85,6 +86,7 @@ function Detail({ inv, reload }: { inv: FinanceInvoiceDetail; reload: () => void
           }}
         />
       )}
+      {inv.status !== "draft" && <SigningStatus key={`${inv.id}-${inv.status}`} id={inv.id} onSigned={reload} />}
       <div className="space-y-8">
         <InvoiceTools id={inv.id} canEdit={inv.canEdit} hasClient={!!inv.clientId} voided={inv.status === "void"} />
         <StatRow cols={4}>

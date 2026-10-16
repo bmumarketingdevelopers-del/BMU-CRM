@@ -100,9 +100,14 @@ describe('invoice wording, design and signature', () => {
     expect(b).toMatchObject({ signatoryName: 'Mukesh', designation: 'Founder & CEO', canEdit: true });
     await http().put('/finance/invoice-branding').set(as('admin')).send({ signatoryName: 'Someone', designation: 'x' }).expect(403);
     expect(((await http().get('/finance/invoice-branding').set(as('admin')).expect(200)).body as InvoiceBrandingView).canEdit).toBe(false);
-    // Printed on the invoice, and the client can load the images.
-    const t = (await http().get(`/service/client/invoices/${ids.issued}/tax-invoice`).set(as('client')).expect(200)).body as ServiceTaxInvoice;
-    expect(t.signatory).toMatchObject({ name: 'Mukesh', designation: 'Founder & CEO' });
+    // v28: printed only once the invoice is signed with the signing password; the client can load the images.
+    let t = (await http().get(`/service/client/invoices/${ids.issued}/tax-invoice`).set(as('client')).expect(200)).body as ServiceTaxInvoice;
+    expect(t.signatory).toMatchObject({ name: 'Mukesh', designation: 'Founder & CEO', signatureUrl: null, sealUrl: null });
+    expect(t.signing.signed).toBe(false);
+    await http().put('/finance/invoice-branding/password').set(as('founder')).send({ password: `sign-${stamp}`, confirm: `sign-${stamp}` }).expect(200);
+    await http().post(`/finance/invoices/${ids.issued}/sign`).set(as('founder')).send({ password: `sign-${stamp}` }).expect(200);
+    t = (await http().get(`/service/client/invoices/${ids.issued}/tax-invoice`).set(as('client')).expect(200)).body as ServiceTaxInvoice;
+    expect(t.signing.signed).toBe(true);
     expect(t.signatory.signatureUrl).toBe(b.signature!.url);
     expect(t.signatory.sealUrl).toBe(b.seal!.url);
     const img = await http().get('/invoice-branding/signature').set(as('client'));

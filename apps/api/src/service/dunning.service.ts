@@ -24,6 +24,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { buildTaxInvoice, taxInvoiceEmailHtml, taxInvoiceEmailText } from './tax-invoice.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
+import { clientVisibleInvoiceWhere, invoiceHeld, readInvoiceBranding } from './invoice-branding.service.js';
 
 const DAY = 86_400_000;
 const INTERVAL_MS = 15 * 60_000;
@@ -102,7 +103,8 @@ export class DunningService implements OnModuleInit, OnModuleDestroy {
       const steps = [...new Set(cfg.steps)].sort((a, b) => a - b);
       const now = new Date();
       const holidays = await holidaysFor(this.prisma, orgId);
-      const ledger = (await loadLedger(this.prisma, orgId, { clientOrgId: { not: null } })).filter((i) => i.balancePaise > 0 && i.dueDate < now);
+      // v28: no reminders for invoices the client has not received yet (waiting for the seal and signature).
+      const ledger = (await loadLedger(this.prisma, orgId, { clientOrgId: { not: null }, ...clientVisibleInvoiceWhere(await readInvoiceBranding(this.prisma, orgId)) })).filter((i) => i.balancePaise > 0 && i.dueDate < now);
       if (!ledger.length) return out;
       const ids = ledger.map((i) => i.id);
       const [reminders, promises] = await Promise.all([
@@ -233,6 +235,7 @@ export class DunningService implements OnModuleInit, OnModuleDestroy {
     assertFinanceWrite(me);
     const [inv] = await loadLedger(this.prisma, me.orgId, { id: invoiceId });
     if (!inv) throw new NotFoundException('Invoice not found');
+    if (invoiceHeld(await readInvoiceBranding(this.prisma, me.orgId), inv)) throw new BadRequestException(`Sign invoice ${inv.number} first: the client has not received it yet`);
     if (inv.balancePaise <= 0) throw new BadRequestException('Nothing is due on this invoice');
     if (!inv.clientOrgId) throw new BadRequestException('This invoice has no client account yet');
     const people = await this.notifications.clientBilling(inv.clientOrgId);

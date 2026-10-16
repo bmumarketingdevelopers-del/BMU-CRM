@@ -5,6 +5,7 @@ import { INVOICE_BRANDING_KINDS, type InvoiceBrandingKind, type Me } from '@bmu/
 import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { opsUpload, type OpsUpload } from '../ops-actions/ops-util.js';
 import { InvoiceBrandingService } from './invoice-branding.service.js';
+import { InvoiceSigningService } from './invoice-signing.service.js';
 
 const kindOf = (k: string): InvoiceBrandingKind => {
   if (!(INVOICE_BRANDING_KINDS as readonly string[]).includes(k)) throw new BadRequestException('Use signature or seal');
@@ -13,7 +14,17 @@ const kindOf = (k: string): InvoiceBrandingKind => {
 
 @Controller()
 export class InvoiceBrandingController {
-  constructor(private readonly branding: InvoiceBrandingService) {}
+  constructor(
+    private readonly branding: InvoiceBrandingService,
+    private readonly signing: InvoiceSigningService,
+  ) {}
+
+  /** v28: add the seal and signature to an invoice with the signing password (a held invoice is then sent). */
+  @Post('finance/invoices/:id/sign')
+  @HttpCode(200)
+  sign(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.signing.sign(me, id, body, ip);
+  }
 
   @Get('finance/invoice-branding')
   view(@CurrentUser() me: Me) {
@@ -23,6 +34,17 @@ export class InvoiceBrandingController {
   @Put('finance/invoice-branding')
   save(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.branding.save(me, body, ip);
+  }
+
+  // v28: the signing password and the "require signature" rule (declared before :kind so they are not read as a kind).
+  @Put('finance/invoice-branding/password')
+  password(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.branding.setPassword(me, body, ip);
+  }
+
+  @Put('finance/invoice-branding/rule')
+  rule(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.branding.setRule(me, body, ip);
   }
 
   @Post('finance/invoice-branding/:kind')

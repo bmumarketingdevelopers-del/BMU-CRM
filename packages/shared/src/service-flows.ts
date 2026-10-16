@@ -220,6 +220,11 @@ export type ServiceTaxInvoice = {
   notes: string | null;
   /** v27: who signs it, with the Founder's uploaded signature and company seal (image links), when set. */
   signatory: { name: string; designation: string; signatureUrl: string | null; sealUrl: string | null };
+  /**
+   * v28: the seal and signature are on the invoice only once it is signed with the signing password. held: it has not
+   * gone to the client yet because it is waiting to be signed. canSign: the viewer may sign it (with the password).
+   */
+  signing: { signed: boolean; signedAt: string | null; signedBy: string | null; held: boolean; canSign: boolean };
   /** v27: the terms printed on page 2. */
   terms: string[];
   seller: { legalName: string; gstin: string; address: string; state: string; stateCode: string; email: string; phone: string; website: string };
