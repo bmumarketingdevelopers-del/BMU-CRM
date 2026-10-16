@@ -35,6 +35,7 @@ import { ServiceBillingService } from '../service/service-billing.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { day, isFounderAdmin, istDay, todayIst } from './ops-util.js';
 import { invoiceHeld, readInvoiceBranding } from '../service/invoice-branding.service.js';
+import { cmClientWhere, cmOwnsClient } from '../service/cm-signing.service.js';
 
 const TDS_RATE = 0.1;
 const DAY = 86_400_000;
@@ -59,7 +60,8 @@ export class OpsFinanceService implements OnModuleInit {
 
   /** v27: invoice wording for the Founder's short descriptions, to review and edit before the invoice is made. */
   async describe(me: Me, body: unknown): Promise<OpsInvoiceDescribeResult> {
-    this.assertFinance(me);
+    // v29: Client Managers write invoices for their clients too.
+    if (!opsCanFinance(me) && !cmClientWhere(me)) this.assertFinance(me);
     const input = parse(opsInvoiceDescribeSchema, body);
     return this.describeLines(me, input.lines, input.clientOrgId, input.engagementId);
   }
@@ -151,10 +153,12 @@ export class OpsFinanceService implements OnModuleInit {
   // Manual invoice
 
   async options(me: Me) {
-    this.assertFinance(me);
+    // v29: a Client Manager picks from their own clients (the CM Lead from every client).
+    const cm = opsCanFinance(me) ? null : cmClientWhere(me);
+    if (!opsCanFinance(me) && !cm) this.assertFinance(me);
     const [clients, gst] = await Promise.all([
       this.prisma.clientOrg.findMany({
-        where: { orgId: me.orgId, deletedAt: null, archivedAt: null },
+        where: { orgId: me.orgId, deletedAt: null, archivedAt: null, ...(cm ?? {}) },
         select: { id: true, name: true, gstin: true, engagements: { where: { deletedAt: null }, select: { id: true, service: { select: { name: true } } } } },
         orderBy: { name: 'asc' },
       }),
@@ -172,10 +176,11 @@ export class OpsFinanceService implements OnModuleInit {
   }
 
   async createInvoice(me: Me, body: unknown, ip?: string) {
-    this.assertFinance(me);
+    if (!opsCanFinance(me) && !cmClientWhere(me)) this.assertFinance(me);
     const input = parse(opsInvoiceCreateSchema, body);
     const client = await this.prisma.clientOrg.findFirst({ where: { id: input.clientOrgId, orgId: me.orgId, deletedAt: null } });
     if (!client) throw new BadRequestException('Pick a client');
+    if (!opsCanFinance(me) && !(await cmOwnsClient(this.prisma, me, client.id))) throw new ForbiddenException(`${client.name} is not one of your clients`);
     if (client.archivedAt) throw new BadRequestException(`${client.name} is archived. Restore the client first.`);
     if (input.engagementId) {
       const e = await this.prisma.engagement.findFirst({ where: { id: input.engagementId, clientOrgId: client.id, deletedAt: null } });
@@ -232,9 +237,10 @@ export class OpsFinanceService implements OnModuleInit {
   }
 
   async issue(me: Me, id: string, ip?: string) {
-    this.assertFinance(me);
+    if (!opsCanFinance(me) && !cmClientWhere(me)) this.assertFinance(me);
     const inv = await this.prisma.invoice.findFirst({ where: { id, orgId: me.orgId } });
     if (!inv) throw new NotFoundException('Invoice not found');
+    if (!opsCanFinance(me) && !(await cmOwnsClient(this.prisma, me, inv.clientOrgId))) throw new ForbiddenException('This invoice is not for one of your clients');
     if (inv.status !== 'draft') throw new BadRequestException('Only draft invoices can be issued');
     if (!inv.clientOrgId) throw new BadRequestException('Pick a client for this invoice first');
     const due = inv.dueDate < new Date() ? istDay(new Date(Date.now() + 7 * DAY + 5.5 * 3_600_000).toISOString().slice(0, 10)) : inv.dueDate;

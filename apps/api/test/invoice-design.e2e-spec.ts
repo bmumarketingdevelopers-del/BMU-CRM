@@ -35,7 +35,7 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
-  for (const [k, email] of Object.entries({ founder: 'founder@bmu.demo', admin: 'admin@bmu.demo', client: 'client@sunrise.demo', am: 'am@bmu.demo' })) tokens[k] = await signIn(email);
+  for (const [k, email] of Object.entries({ founder: 'founder@bmu.demo', admin: 'admin@bmu.demo', client: 'client@sunrise.demo', am: 'am@bmu.demo', producer: 'producer@bmu.demo' })) tokens[k] = await signIn(email);
   const client = await prisma.user.findFirstOrThrow({ where: { email: 'client@sunrise.demo' }, select: { clientUser: { select: { clientOrgId: true } } } });
   ids.sunrise = client.clientUser!.clientOrgId;
 });
@@ -51,7 +51,9 @@ describe('invoice wording, design and signature', () => {
     expect(r.lines[0].title).toBe('Website redesign');
     expect(r.lines[0].details).toContain('Sunrise Realty');
     expect(r.lines[1].details).toMatch(/at cost/);
-    await http().post('/ops/finance/invoices/describe').set(as('am')).send({ lines: [{ label: 'seo', kind: 'service' }] }).expect(403);
+    // v29: Client Managers write invoices for their clients too; other team members cannot.
+    await http().post('/ops/finance/invoices/describe').set(as('am')).send({ lines: [{ label: 'seo', kind: 'service' }] }).expect(200);
+    await http().post('/ops/finance/invoices/describe').set(as('producer')).send({ lines: [{ label: 'seo', kind: 'service' }] }).expect(403);
   });
 
   it('saves the reviewed wording, or writes it when it was skipped', async () => {
@@ -108,17 +110,20 @@ describe('invoice wording, design and signature', () => {
     await http().post(`/finance/invoices/${ids.issued}/sign`).set(as('founder')).send({ password: `sign-${stamp}` }).expect(200);
     t = (await http().get(`/service/client/invoices/${ids.issued}/tax-invoice`).set(as('client')).expect(200)).body as ServiceTaxInvoice;
     expect(t.signing.signed).toBe(true);
-    expect(t.signatory.signatureUrl).toBe(b.signature!.url);
-    expect(t.signatory.sealUrl).toBe(b.seal!.url);
+    // v29: the signed invoice keeps the signature and seal it was signed with (their files).
+    const fileOf = (url: string) => new URL(url, 'http://x').searchParams.get('v');
+    expect(t.signatory.signatureUrl).toBe(`/api/invoice-branding/file/${fileOf(b.signature!.url)}`);
+    expect(t.signatory.sealUrl).toBe(`/api/invoice-branding/file/${fileOf(b.seal!.url)}`);
     const img = await http().get('/invoice-branding/signature').set(as('client'));
     expect([200, 302]).toContain(img.status);
     await http().get('/invoice-branding/signature').expect(401);
-    // Changing it is reflected straight away; removing takes it off the invoice.
+    // Changing the signature or removing the seal applies to invoices signed from now on; a signed one stays as signed.
     const again = (await http().post('/finance/invoice-branding/signature').set(as('founder')).attach('file', png, { filename: 'sign2.png', contentType: 'image/png' }).expect(200)).body as InvoiceBrandingView;
     expect(again.signature!.url).not.toBe(b.signature!.url);
     await http().delete('/finance/invoice-branding/seal').set(as('founder')).expect(200);
     const after = (await http().get(`/service/finance/invoices/${ids.issued}/tax-invoice`).set(as('founder')).expect(200)).body as ServiceTaxInvoice;
-    expect(after.signatory.sealUrl).toBeNull();
-    expect(after.signatory.signatureUrl).toBe(again.signature!.url);
+    expect(after.signatory.signatureUrl).toBe(t.signatory.signatureUrl);
+    expect(after.signatory.sealUrl).toBe(t.signatory.sealUrl);
+    await http().get(t.signatory.signatureUrl!.replace(/^\/api/, '')).set(as('client')).expect((r) => expect([200, 302]).toContain(r.status));
   });
 });

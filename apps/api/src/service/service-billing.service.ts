@@ -170,6 +170,16 @@ export class ServiceBillingService {
         body: `${inv.clientOrg?.name ?? 'Client'}, ${formatINR(inv.totalPaise)}. It goes to the client once the seal and signature are added with the signing password.`,
         link: `/admin/finance/invoices/${inv.id}`,
       });
+      // v29: the client's Client Manager can sign it too (with their own signature and password).
+      const cm = inv.clientOrg?.amUserId;
+      if (cm && !signers.some((u) => u.id === cm)) {
+        await this.notifications.notify(inv.orgId, [cm], {
+          kind: 'invoice_signature',
+          title: `Invoice ${inv.number} is waiting for your signature`,
+          body: `${inv.clientOrg?.name ?? 'Client'}, ${formatINR(inv.totalPaise)}. Sign it with your signing password to send it to the client.`,
+          link: `/team/invoices/${inv.id}`,
+        });
+      }
       return 0;
     }
     const t = await buildTaxInvoice(this.prisma, this.settings, inv.orgId, inv.id, `/client/billing/${inv.id}`);

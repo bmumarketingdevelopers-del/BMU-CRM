@@ -19,7 +19,7 @@ import type {
   ServiceTaxInvoice,
   ServiceUnread,
 } from "../service-flows.js";
-import type { InvoiceBrandingInput, InvoiceBrandingKind, InvoiceBrandingView, InvoiceSignResult } from "../invoice-branding.js";
+import type { CmInvoiceList, InvoiceBrandingInput, InvoiceBrandingKind, InvoiceBrandingView, InvoiceSignResult, SigningProfileView } from "../invoice-branding.js";
 import type { RequestView, ThreadAttachment } from "../requests.js";
 
 export * from "../service-flows.js";
@@ -66,6 +66,17 @@ export const serviceFlowsApi = (t: Transport) => ({
     setSigningPassword: (password: string, confirm: string) => t.put<InvoiceBrandingView>("/finance/invoice-branding/password", { password, confirm }),
     setSigningRule: (requireSignature: boolean) => t.put<InvoiceBrandingView>("/finance/invoice-branding/rule", { requireSignature }),
     signInvoice: (id: string, password: string) => t.post<InvoiceSignResult>(`/finance/invoices/${id}/sign`, { password }),
+    /** v29: a Client Manager's own signature and signing password, and the invoices of their clients. */
+    mySigning: () => t.get<SigningProfileView>("/finance/my-signing"),
+    uploadMySignature: (file: Blob) => {
+      const form = new FormData();
+      form.append("file", file);
+      return t.request<SigningProfileView>("/finance/my-signing/signature", { method: "POST", body: form });
+    },
+    removeMySignature: () => t.del<SigningProfileView>("/finance/my-signing/signature"),
+    setMySigningPassword: (password: string, confirm: string) => t.put<SigningProfileView>("/finance/my-signing/password", { password, confirm }),
+    cmInvoices: () => t.get<CmInvoiceList>("/finance/cm/invoices"),
+    cmTaxInvoice: (id: string) => t.get<ServiceTaxInvoice>(`/finance/cm/invoices/${id}/tax-invoice`),
     clientBillingDetails: (clientId: string) => t.get<ServiceBillingDetails>(`/service/finance/clients/${clientId}/billing-details`),
     saveBillingDetails: (clientId: string, body: ServiceBillingDetailsInput) => t.put<ServiceBillingDetails>(`/service/finance/clients/${clientId}/billing-details`, body),
     collectionsActions: () => t.get<ServiceCollectionsActions>("/service/finance/collections"),

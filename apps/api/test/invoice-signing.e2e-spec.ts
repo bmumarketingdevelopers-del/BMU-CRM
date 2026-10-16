@@ -7,7 +7,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
-import type { InvoiceBrandingView, InvoiceSignResult, ServiceClientBilling, ServiceTaxInvoice } from '@bmu/shared';
+import type { CmInvoiceList, InvoiceBrandingView, InvoiceSignResult, ServiceClientBilling, ServiceTaxInvoice, SigningProfileView } from '@bmu/shared';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { ServiceBillingService } from '../src/service/service-billing.service.js';
@@ -38,7 +38,7 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
-  for (const [k, email] of Object.entries({ founder: 'founder@bmu.demo', admin: 'admin@bmu.demo', client: 'client@sunrise.demo' })) {
+  for (const [k, email] of Object.entries({ founder: 'founder@bmu.demo', admin: 'admin@bmu.demo', client: 'client@sunrise.demo', cm: 'am@bmu.demo', producer: 'producer@bmu.demo' })) {
     tokens[k] = await signIn(email);
     users[k] = (await prisma.user.findFirstOrThrow({ where: { email } })).id;
   }
@@ -130,5 +130,52 @@ describe('invoice signing', () => {
     const r = (await http().post(`/finance/invoices/${auto.id}/sign`).set(as('founder')).send({ password: PASSWORD }).expect(200)).body as InvoiceSignResult;
     expect(r.delivered).toBe(true);
     await http().get(`/service/client/invoices/${auto.id}/tax-invoice`).set(as('client')).expect(200);
+  });
+
+  it('a Client Manager creates and signs invoices for their own clients with their own signature and password', async () => {
+    // Neha (Client Manager) manages Sunrise; another client is not hers.
+    await prisma.clientOrg.update({ where: { id: ids.sunrise }, data: { amUserId: users.cm } });
+    const other = await prisma.clientOrg.create({ data: { orgId: (await prisma.clientOrg.findUniqueOrThrow({ where: { id: ids.sunrise } })).orgId, name: `Not hers ${stamp}` } });
+    await prisma.signingProfile.deleteMany({ where: { userId: users.cm } }); // a clean start on every run
+    await http().get('/finance/my-signing').set(as('producer')).expect(403);
+    let p = (await http().get('/finance/my-signing').set(as('cm')).expect(200)).body as SigningProfileView;
+    expect(p).toMatchObject({ designation: 'Client Manager', passwordSet: false, ready: false });
+    p = (await http().post('/finance/my-signing/signature').set(as('cm')).attach('file', png, { filename: 'neha.png', contentType: 'image/png' }).expect(200)).body;
+    p = (await http().put('/finance/my-signing/password').set(as('cm')).send({ password: `Neha-${stamp}`, confirm: `Neha-${stamp}` }).expect(200)).body;
+    expect(p.ready).toBe(true);
+    // The New invoice form lists only her clients; she cannot invoice another client.
+    const opts = (await http().get('/ops/finance/options').set(as('cm')).expect(200)).body as { clients: { id: string }[] };
+    expect(opts.clients.some((c) => c.id === ids.sunrise)).toBe(true);
+    expect(opts.clients.some((c) => c.id === other.id)).toBe(false);
+    await http().post('/ops/finance/invoices').set(as('cm')).send({ clientOrgId: other.id, dueDate: dueIn(10), issue: true, lines: [{ label: 'x', kind: 'service', amountPaise: 100000 }] }).expect((r) => expect([400, 403]).toContain(r.status));
+    const made = (await http().post('/ops/finance/invoices').set(as('cm')).send({ clientOrgId: ids.sunrise, dueDate: dueIn(10), issue: true, lines: [{ label: `cm work ${stamp}`, kind: 'service', amountPaise: 2500000 }] }).expect(201)).body as { id: string; number: string };
+    // Held, and she is told it waits for her signature.
+    expect(await prisma.notification.findFirst({ where: { userId: users.cm, createdAt: { gte: since }, title: `Invoice ${made.number} is waiting for your signature`, link: `/team/invoices/${made.id}` } })).toBeTruthy();
+    const list = (await http().get('/finance/cm/invoices').set(as('cm')).expect(200)).body as CmInvoiceList;
+    expect(list.waiting.some((w) => w.id === made.id)).toBe(true);
+    const view = (await http().get(`/finance/cm/invoices/${made.id}/tax-invoice`).set(as('cm')).expect(200)).body as ServiceTaxInvoice;
+    expect(view.signing).toMatchObject({ held: true, canSign: true });
+    // The company password is not hers; her own one signs.
+    await http().post(`/finance/invoices/${made.id}/sign`).set(as('cm')).send({ password: PASSWORD }).expect(403);
+    const r = (await http().post(`/finance/invoices/${made.id}/sign`).set(as('cm')).send({ password: `Neha-${stamp}` }).expect(200)).body as InvoiceSignResult;
+    expect(r.delivered).toBe(true);
+    const inv = await prisma.invoice.findUniqueOrThrow({ where: { id: made.id } });
+    expect(inv).toMatchObject({ signedRole: 'client_manager', signedById: users.cm, signatoryDesignation: 'Client Manager' });
+    const t = (await http().get(`/service/client/invoices/${made.id}/tax-invoice`).set(as('client')).expect(200)).body as ServiceTaxInvoice;
+    expect(t.signatory).toMatchObject({ name: 'Neha Iyer', designation: 'Client Manager', signatureUrl: `/api/invoice-branding/file/${p.signature!.url.split('/').pop()}` });
+    expect(t.signatory.sealUrl).toBeTruthy();
+    const img = await http().get(t.signatory.signatureUrl!.replace(/^\/api/, '')).set(as('client'));
+    expect([200, 302]).toContain(img.status);
+    // A signed invoice keeps the signature it was signed with.
+    await http().post('/finance/my-signing/signature').set(as('cm')).attach('file', png, { filename: 'neha2.png', contentType: 'image/png' }).expect(200);
+    const again = (await http().get(`/service/client/invoices/${made.id}/tax-invoice`).set(as('client')).expect(200)).body as ServiceTaxInvoice;
+    expect(again.signatory.signatureUrl).toBe(t.signatory.signatureUrl);
+    // She cannot see or sign another client's invoice.
+    const theirs = await prisma.invoice.create({ data: { orgId: inv.orgId, clientOrgId: other.id, number: `OTHER-${stamp}`, lines: [{ label: 'x', amountPaise: 100000 }], subtotalPaise: 100000, gstPaise: 18000, totalPaise: 118000, dueDate: new Date(Date.now() + 7 * 86_400_000), status: 'issued', kind: 'standard' } });
+    await http().get(`/finance/cm/invoices/${theirs.id}/tax-invoice`).set(as('cm')).expect(404);
+    await http().post(`/finance/invoices/${theirs.id}/sign`).set(as('cm')).send({ password: `Neha-${stamp}` }).expect(403);
+    // When the Founder signs, the invoice says "Founder".
+    await http().post(`/finance/invoices/${theirs.id}/sign`).set(as('founder')).send({ password: PASSWORD }).expect(200);
+    expect(await prisma.invoice.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ signedRole: 'founder', signatoryDesignation: expect.any(String) });
   });
 });

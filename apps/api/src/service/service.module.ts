@@ -8,6 +8,7 @@ import { InvoiceBrandingController } from './invoice-branding.controller.js';
 import { InvoiceBrandingService } from './invoice-branding.service.js';
 import { InvoiceEvents } from './invoice-events.js';
 import { InvoiceSigningService } from './invoice-signing.service.js';
+import { CmSigningService } from './cm-signing.service.js';
 import { ServiceBillingService } from './service-billing.service.js';
 import { ServiceController } from './service.controller.js';
 
@@ -19,7 +20,7 @@ import { ServiceController } from './service.controller.js';
 @Module({
   imports: [ProposalsModule],
   controllers: [ServiceController, InvoiceBrandingController],
-  providers: [EmailService, InvoiceEvents, NotificationsService, ServiceBillingService, DunningService, BillingRunService, InvoiceBrandingService, InvoiceSigningService],
+  providers: [EmailService, InvoiceEvents, NotificationsService, ServiceBillingService, DunningService, BillingRunService, InvoiceBrandingService, InvoiceSigningService, CmSigningService],
   exports: [EmailService, InvoiceEvents, NotificationsService, ServiceBillingService, DunningService],
 })
 export class ServiceModule {}

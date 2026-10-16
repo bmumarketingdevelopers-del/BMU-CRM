@@ -25,6 +25,10 @@ export const opsCanAddLead = (me: Who) => staff(me) && hasAny(me.roles, OPS_LEAD
 export const opsLeadReferralOnly = (me: Who) => !hasAny(me.roles, ["founder", "admin", "sales_manager", "sales_executive"]) && me.roles.includes("account_manager");
 export const opsIsSalesManager = (me: Who) => staff(me) && hasAny(me.roles, OPS_LEAD_MANAGER_ROLES);
 export const opsCanFinance = (me: Who) => staff(me) && hasAny(me.roles, OPS_FINANCE_ROLES);
+/** v29: Client Managers (and the CM Lead) create and sign invoices for their own clients (the CM Lead for all clients). */
+export const OPS_CM_INVOICE_ROLES = ["account_manager", "am_lead"];
+export const opsCanInvoiceAsCm = (me: Who) => staff(me) && hasAny(me.roles, OPS_CM_INVOICE_ROLES);
+export const opsCanCreateInvoice = (me: Who) => opsCanFinance(me) || opsCanInvoiceAsCm(me);
 export const opsCanManageCreators = (me: Who) => staff(me) && hasAny(me.roles, OPS_CREATOR_ROLES);
 export const opsCanAnnounce = (me: Who) => staff(me) && hasAny(me.roles, OPS_ANNOUNCE_ROLES);
 export const opsCanUploadFiles = (me: Who) => staff(me);

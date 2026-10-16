@@ -26,6 +26,36 @@ export const invoiceSigningRuleSchema = z.object({ requireSignature: z.boolean()
 export const invoiceSignSchema = z.object({ password: z.string().min(1, "Enter the signing password").max(128) });
 export type InvoiceSignResult = { signed: true; number: string; delivered: boolean; message: string };
 
+/** v29: a Client Manager's own signature and signing password (for invoices of their own clients). */
+export type SigningProfileView = {
+  name: string;
+  /** Printed under the signature, e.g. "Client Manager". */
+  designation: string;
+  signature: { url: string; name: string; updatedAt: string } | null;
+  passwordSet: boolean;
+  /** The company seal the Founder uploaded (added next to the signature). */
+  companySeal: boolean;
+  /** Ready to sign: signature, password and company seal are all there. */
+  ready: boolean;
+};
+
+/** v29: a Client Manager's invoices (their own clients; the CM Lead sees every client). */
+export type CmInvoiceRow = {
+  id: string;
+  number: string;
+  client: string;
+  kind: string;
+  status: string;
+  totalPaise: number;
+  dueDate: string;
+  createdAt: string;
+  signed: boolean;
+  signedBy: string | null;
+  /** Waiting for a signature before it goes to the client. */
+  held: boolean;
+};
+export type CmInvoiceList = { waiting: CmInvoiceRow[]; recent: CmInvoiceRow[]; requireSignature: boolean };
+
 export const invoiceBrandingSchema = z.object({
   signatoryName: z.string().trim().max(120),
   designation: z.string().trim().max(80),

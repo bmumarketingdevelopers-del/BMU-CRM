@@ -6,6 +6,7 @@ import { BMU_ADDRESS, BMU_EMAIL, BMU_PHONE, serviceAmountInWords, serviceGstStat
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { SettingsService } from '../settings/settings.service.js';
 import { escapeHtml } from './email.service.js';
+import { signingFileUrl } from './cm-signing.service.js';
 import { invoiceBrandingUrl, invoiceHeld, readInvoiceBranding } from './invoice-branding.service.js';
 
 type InvoiceLine = { label: string; amountPaise: number; title?: string; details?: string; passThrough?: boolean; kind?: string };
@@ -72,12 +73,20 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
     title: 'Tax Invoice',
     variant,
     notes: inv.notes?.trim() || null,
-    signatory: {
-      name: branding.signatoryName || (founder?.name && !/^bmu owner$/i.test(founder.name) ? founder.name : ''),
-      designation: branding.designation || 'Founder',
-      signatureUrl: signed && branding.signatureFileId ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
-      sealUrl: signed && branding.sealFileId ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
-    },
+    // v29: a signed invoice prints what it was signed with (Founder or Client Manager); older ones the current branding.
+    signatory: inv.signedRole
+      ? {
+          name: inv.signatoryName ?? '',
+          designation: inv.signatoryDesignation ?? (inv.signedRole === 'client_manager' ? 'Client Manager' : 'Founder'),
+          signatureUrl: inv.signatureFileId ? signingFileUrl(inv.signatureFileId) : null,
+          sealUrl: inv.sealFileId ? signingFileUrl(inv.sealFileId) : null,
+        }
+      : {
+          name: branding.signatoryName || (founder?.name && !/^bmu owner$/i.test(founder.name) ? founder.name : ''),
+          designation: branding.designation || 'Founder',
+          signatureUrl: signed && branding.signatureFileId ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
+          sealUrl: signed && branding.sealFileId ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
+        },
     signing: { signed, signedAt: inv.signedAt?.toISOString() ?? null, signedBy: signer?.name ?? null, held: invoiceHeld(branding, inv), canSign: false },
     terms: invoiceTerms({ number: inv.number, dueDate: inv.dueDate, email, phone, legalName: payee, settled: ['paid', 'credited', 'cancelled'].includes(variant) }),
     seller: {

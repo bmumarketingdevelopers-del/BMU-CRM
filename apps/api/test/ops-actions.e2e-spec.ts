@@ -271,9 +271,10 @@ describe('leads: manual convert to client with payment proof', () => {
 
 // ---------------------------------------------------------------------------
 describe('finance', () => {
-  it('manual invoice: Finance/Admin only, pass-through lines without GST and on their own lines', async () => {
+  it('manual invoice: Finance/Admin (and Client Managers for their clients), pass-through lines without GST and on their own lines', async () => {
     await http().post('/ops/finance/invoices').set(as('producer')).send({}).expect(403);
-    await http().post('/ops/finance/invoices').set(as('am')).send({}).expect(403);
+    // v29: Client Managers may invoice their own clients (an empty form is just invalid).
+    await http().post('/ops/finance/invoices').set(as('am')).send({}).expect(400);
     const due = dayAhead(15);
     await http()
       .post('/ops/finance/invoices')
