@@ -116,15 +116,18 @@ describe('meetings with several departments', () => {
     expect(await prisma.notification.findFirst({ where: { userId: users.otherBm, createdAt: { gte: since }, title: { contains: 'join now' } } })).toBeNull();
   });
 
-  it("each Department Head adds only their people who work on the client's projects", async () => {
+  it('each Department Head adds anyone from their own department; people on the client projects come first', async () => {
     const design = (await http().get(`/meetings/${m.id}/member-options`).set(as('designHead')).expect(200)).body as MeetingMemberOption[];
-    expect(design.map((o) => o.id)).toContain(users.worker);
-    expect(design.map((o) => o.id)).not.toContain(users.idle); // same department, no work for this client
-    expect(design.map((o) => o.id)).not.toContain(users.devWorker); // other department
+    const ids2 = design.map((o) => o.id);
+    expect(ids2).toContain(users.worker);
+    expect(ids2).toContain(users.idle); // v25: same department, even without work for this client
+    expect(ids2).not.toContain(users.devWorker); // other department
     expect(design.find((o) => o.id === users.worker)?.why).toMatch(/task/);
+    expect(design.find((o) => o.id === users.idle)?.why).toBeNull();
+    expect(ids2.indexOf(users.worker)).toBeLessThan(ids2.indexOf(users.idle));
     const dev = (await http().get(`/meetings/${m.id}/member-options`).set(as('devHead')).expect(200)).body as MeetingMemberOption[];
     expect(dev.map((o) => o.id)).toEqual([users.devWorker]);
-    await http().post(`/meetings/${m.id}/members`).set(as('designHead')).send({ userIds: [users.idle] }).expect(400);
+    await http().post(`/meetings/${m.id}/members`).set(as('designHead')).send({ userIds: [users.devWorker] }).expect(400);
     await http().get(`/meetings/${m.id}/member-options`).set(as('am')).expect(403);
     m = (await http().post(`/meetings/${m.id}/members`).set(as('designHead')).send({ userIds: [users.worker] }).expect(200)).body;
     expect(m.participants.find((p) => p.userId === users.worker)).toMatchObject({ role: 'member', addedBy: 'Arjun Das' });
@@ -165,5 +168,32 @@ describe('meetings with several departments', () => {
     await http().post(`/meetings/${r.id}/respond`).set(as('designHead')).send({ decision: 'accept' }).expect(200);
     r = (await http().post(`/meetings/${r.id}/arrange`).set(as('am')).send({ departmentIds: [ids.design] }).expect(200)).body;
     expect(r.participants.filter((p) => p.role === 'department_head').map((p) => [p.userId, p.status])).toEqual([[users.designHead, 'accepted']]);
+  });
+
+  it('two departments: one head asks for another time; the Client Manager moves it the same day and tells the client why', async () => {
+    const start = zonedTimeToUtc(day, `11:${mm}`, 'Asia/Kolkata');
+    let r = (await http().post('/meetings').set(as('am')).send({ title: `Two teams ${stamp}`, startAt: start, durationMin: 45, clientOrgId: ids.client, departmentIds: [ids.design, ids.dev], addMeet: false }).expect(201)).body as MeetingView;
+    await http().post(`/meetings/${r.id}/respond`).set(as('designHead')).send({ decision: 'accept' }).expect(200);
+    const later = zonedTimeToUtc(day, `14:${mm}`, 'Asia/Kolkata');
+    r = (await http().post(`/meetings/${r.id}/respond`).set(as('devHead')).send({ decision: 'reschedule', proposedStartAt: later, note: 'Release in the morning' }).expect(200)).body;
+    expect(r.status).toBe('awaiting');
+    expect(await prisma.notification.findFirst({ where: { userId: users.am, createdAt: { gte: since }, title: { contains: 'asks to move' }, body: { contains: 'Release in the morning' } } })).toBeTruthy();
+    // Same day only, and a reason is required.
+    const nextDay = new Date(new Date(later).getTime() + 86_400_000).toISOString();
+    await http().post(`/meetings/${r.id}/fix`).set(as('am')).send({ startAt: nextDay, reason: 'Release in the morning' }).expect(400);
+    await http().post(`/meetings/${r.id}/fix`).set(as('am')).send({ startAt: later }).expect(400);
+    r = (await http().post(`/meetings/${r.id}/fix`).set(as('am')).send({ startAt: later, reason: 'Our developers have a release in the morning' }).expect(200)).body;
+    expect(r.status).toBe('booked');
+    expect(r.startAt).toBe(later);
+    expect(r.rescheduleReason).toBe('Our developers have a release in the morning');
+    // The client (Cara, from the request above) gets the apology with the reason, in the app and by email.
+    const cara = await prisma.user.findFirstOrThrow({ where: { email: `v24.client.${stamp}@example.com` } });
+    const sorry = await prisma.notification.findFirst({ where: { userId: cara.id, createdAt: { gte: since }, title: 'Sorry, we had to move your meeting' }, orderBy: { createdAt: 'desc' } });
+    expect(sorry?.body).toContain('Reason: Our developers have a release in the morning');
+    expect(await prisma.emailOutbox.findFirst({ where: { toEmail: `v24.client.${stamp}@example.com`, createdAt: { gte: since }, text: { contains: 'Reason: Our developers have a release in the morning' } } })).toBeTruthy();
+    const mine = ((await http().get('/client/meetings').set(as('client')).expect(200)).body as MeetingList).upcoming.find((x) => x.id === r.id)!;
+    expect(mine.rescheduleReason).toBe('Our developers have a release in the morning');
+    // The head who had accepted the old time hears it moved, and why.
+    expect(await prisma.notification.findFirst({ where: { userId: users.designHead, createdAt: { gte: since }, title: { startsWith: 'Meeting moved' }, body: { contains: 'release in the morning' } } })).toBeTruthy();
   });
 });

@@ -3000,6 +3000,8 @@ model Meeting {
   joinUrl      String?
   /// v23: when the fixed time moved away from what the client asked for (client gets an apology)
   rescheduledAt DateTime?
+  /// v25: why it moved (the Client Manager's words, shown to the client with the apology)
+  rescheduleReason String?
   notes       String?
   summary     String?
   /// [{ text, taskId? }]

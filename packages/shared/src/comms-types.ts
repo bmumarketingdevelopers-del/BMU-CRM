@@ -250,6 +250,8 @@ export type MeetingView = {
   joinAs: string | null;
   /** Set when the fixed time differs from the time first asked for. */
   rescheduledAt: string | null;
+  /** v25: why the meeting moved, as the Client Manager told the client. */
+  rescheduleReason: string | null;
   participants: MeetingParticipantView[];
   /** The viewer's own place in the meeting, when they were brought in. */
   myRole: MeetingParticipantRole | null;
@@ -350,7 +352,11 @@ export const meetingRespondSchema = z
 export type MeetingRespondInput = z.infer<typeof meetingRespondSchema>;
 
 /** v23: the Client Manager fixes the meeting, optionally at a new time (the client gets an apology). */
-export const meetingFixSchema = z.object({ startAt: z.string().datetime({ offset: true }).optional() });
+export const meetingFixSchema = z.object({
+  startAt: z.string().datetime({ offset: true }).optional(),
+  /** v25: why it moved (required when the time changes); the client sees it with the apology. */
+  reason: z.string().trim().max(500).optional(),
+});
 
 /** v23: once everyone accepted and the meeting is fixed, the Client Manager sends the link to everyone in one click. */
 export const meetingLinkSchema = z.object({

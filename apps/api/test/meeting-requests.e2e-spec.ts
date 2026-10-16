@@ -97,8 +97,11 @@ describe('meeting requests', () => {
     await http().post(`/meetings/${m.id}/fix`).set(as('am')).send({}).expect(400);
     // No link before everyone has accepted and the meeting is fixed.
     await http().post(`/meetings/${m.id}/link`).set(as('am')).send({ joinUrl: 'https://meet.google.com/abc-defg-hij' }).expect(403);
-    m = (await http().post(`/meetings/${m.id}/fix`).set(as('am')).send({ startAt: later }).expect(200)).body;
+    // v25: moving it needs a reason for the client.
+    await http().post(`/meetings/${m.id}/fix`).set(as('am')).send({ startAt: later }).expect(400);
+    m = (await http().post(`/meetings/${m.id}/fix`).set(as('am')).send({ startAt: later, reason: 'Our team stand-up runs at that time' }).expect(200)).body;
     expect(m.status).toBe('booked');
+    expect(m.rescheduleReason).toBe('Our team stand-up runs at that time');
     expect(m.startAt).toBe(later);
     expect(m.durationMin).toBe(45);
     expect(m.rescheduledAt).toBeTruthy();
@@ -109,8 +112,9 @@ describe('meeting requests', () => {
     const branchId = (await prisma.clientOrg.findFirstOrThrow({ where: { id: m.client!.id }, select: { branchId: true } })).branchId ?? (await prisma.user.findUniqueOrThrow({ where: { id: users.am } })).branchId;
     for (const b of bms) expect((await prisma.user.findUniqueOrThrow({ where: { id: b.userId } })).branchId).toBe(branchId);
     expect(bms.find((b) => b.userId === users.admin)?.status).toBe('invited');
-    expect(await prisma.notification.findFirst({ where: { userId: users.client, kind: 'meeting', createdAt: { gte: since }, title: 'Sorry, we had to move your meeting' } })).toBeTruthy();
-    expect(await prisma.notification.findFirst({ where: { userId: users.founder, createdAt: { gte: since }, title: { startsWith: 'Your meeting is scheduled' } } })).toBeTruthy();
+    const sorry = await prisma.notification.findFirst({ where: { userId: users.client, kind: 'meeting', createdAt: { gte: since }, title: 'Sorry, we had to move your meeting' } });
+    expect(sorry?.body).toContain('Reason: Our team stand-up runs at that time');
+    expect(await prisma.notification.findFirst({ where: { userId: users.founder, createdAt: { gte: since }, title: { startsWith: 'Meeting moved' }, body: { contains: 'Our team stand-up runs at that time' } } })).toBeTruthy();
   });
 
   it('the Client Manager sends the meeting link to everyone in one click', async () => {

@@ -216,7 +216,11 @@ export function ClientMeetingRow({ m, onCancel }: { m: MeetingView; onCancel?: (
           </p>
           {m.agenda && <p className="mt-1 text-ink-muted">{m.agenda}</p>}
           {open && <p className="mt-1 text-xs text-ink-muted">{m.status === "requested" ? "Your Client Manager is arranging this meeting." : "Your Client Manager is confirming the time with the team."}</p>}
-          {m.status === "booked" && m.rescheduledAt && <p className="mt-1 text-xs">We are sorry: this meeting had to move to the time above.</p>}
+          {m.status === "booked" && m.rescheduledAt && (
+            <p className="mt-1 text-xs" data-testid="reschedule-reason">
+              We are sorry: this meeting had to move to the time above.{m.rescheduleReason ? ` Reason: ${m.rescheduleReason}` : ""}
+            </p>
+          )}
           <div className="mt-1">
             <JoinLine m={m} />
           </div>
@@ -330,14 +334,22 @@ function ArrangePanel({ m, onChanged }: { m: MeetingView; onChanged: () => void 
   const opts = useLoad<MeetingArrangeOptions>(() => api.meetings.arrangeOptions(), { live: false });
   const [departmentIds, setDepartmentIds] = useState<string[]>(m.departments.map((d) => d.id));
   const [founderId, setFounderId] = useState(m.participants.find((p) => p.role === "founder")?.userId ?? "");
-  const proposed = m.participants.find((p) => p.status === "reschedule" && p.proposedStartAt)?.proposedStartAt ?? null;
-  const [date, setDate] = useState(zonedDay(proposed ?? m.startAt, IST_ZONE));
+  const asking = m.participants.filter((p) => p.status === "reschedule" && p.proposedStartAt);
+  const proposed = asking[0]?.proposedStartAt ?? null;
+  // v25: a moved meeting stays on the same day; the client is told why (prefilled from the Department Head's note).
+  const day = zonedDay(m.startAt, IST_ZONE);
   const [time, setTime] = useState(hhmm(proposed ?? m.startAt, IST_ZONE));
+  const [reason, setReason] = useState(asking.map((p) => p.note).filter(Boolean).join("; "));
   const { busy, run, note } = useRun();
   if (!opts.data) return <LoadState loading={opts.loading} error={opts.error} />;
-  const newStart = zonedTimeToUtc(date, time, IST_ZONE);
+  const newStart = zonedTimeToUtc(day, time, IST_ZONE);
   const moved = newStart !== new Date(m.startAt).toISOString();
   const waiting = m.participants.filter((p) => (p.role === "founder" || p.role === "department_head") && p.status === "pending");
+  // v25: departments or a Founder ticked but not sent yet: fixing now would leave them out.
+  const sentDepts = m.departments.map((d) => d.id).sort().join(",");
+  const sentFounder = m.participants.find((p) => p.role === "founder")?.userId ?? "";
+  const unsent = [...departmentIds].sort().join(",") !== sentDepts || founderId !== sentFounder;
+  const unsentNames = [...opts.data.departments.filter((d) => departmentIds.includes(d.id) && !m.departments.some((x) => x.id === d.id)).map((d) => d.name), ...(founderId && founderId !== sentFounder ? [opts.data.founders.find((f) => f.id === founderId)?.name ?? "the Founder"] : [])];
   return (
     <div className="mt-3 space-y-3 border border-border bg-canvas/30 p-3" data-testid="arrange-panel">
       <div>
@@ -356,14 +368,34 @@ function ArrangePanel({ m, onChanged }: { m: MeetingView; onChanged: () => void 
       <div>
         <p className="mb-1 text-xs font-medium">2. Fix the meeting{waiting.length ? ` (waiting for ${waiting.map((w) => w.name).join(" and ")})` : ""}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Fixed date (IST)" />
+          <span className="text-sm">{zonedLabel(m.startAt, IST_ZONE).split(",").slice(0, 2).join(",")}</span>
           <Input className="w-28" type="time" value={time} onChange={(e) => setTime(e.target.value)} aria-label="Fixed time (IST)" />
-          <span className="text-xs text-ink-muted">IST</span>
-          <Button disabled={busy || waiting.length > 0} data-testid="fix-meeting" onClick={() => run(() => api.meetings.fix(m.id, { startAt: moved ? newStart : undefined }).then(onChanged))}>
-            {moved ? "Fix at new time" : "Fix meeting"}
+          <span className="text-xs text-ink-muted">IST (same day)</span>
+          <Button
+            disabled={busy || waiting.length > 0 || unsent || (moved && reason.trim().length < 5)}
+            data-testid="fix-meeting"
+            onClick={() => run(() => api.meetings.fix(m.id, { startAt: moved ? newStart : undefined, reason: moved ? reason.trim() : undefined }).then(onChanged))}
+          >
+            {moved ? "Reschedule and tell the client" : "Fix meeting"}
           </Button>
         </div>
-        {moved && <p className="mt-1 text-xs text-ink-muted">The client gets an apology with the new time ({zonedLabel(newStart, m.timeZone)} their time).</p>}
+        {unsent && (
+          <p className="mt-1 text-xs text-amber" data-testid="unsent-warning">
+            {unsentNames.length ? `You picked ${unsentNames.join(" and ")}. ` : "You changed who confirms. "}Send for confirmation first, or untick them to fix without them.
+          </p>
+        )}
+        {!!asking.length && (
+          <p className="mt-1 text-xs">
+            {asking.map((p) => `${p.name} asks for ${zonedLabel(p.proposedStartAt!, IST_ZONE)} IST${p.note ? ` (“${p.note}”)` : ""}`).join("; ")}.
+          </p>
+        )}
+        {moved && (
+          <label className="mt-2 block">
+            <span className="text-xs font-medium">Reason for the change (the client sees this with our apology)</span>
+            <textarea className="mt-1 h-16 w-full border border-border bg-surface-raised p-2 text-sm" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder="e.g. Our development team is in a client launch at that time." aria-label="Reason for the change" />
+            <span className="text-xs text-ink-muted">The client gets an apology with the new time ({zonedLabel(newStart, m.timeZone)} their time) and this reason. Everyone in the meeting is told too.</span>
+          </label>
+        )}
         <p className="mt-1 text-xs text-ink-muted">Once it is fixed, the Google Meet link is created and Google sends the invitations (when your Google Calendar is connected). Otherwise you send a meeting link to everyone in one click.</p>
       </div>
       {note}
@@ -384,6 +416,7 @@ export function FixedMeetingActions({ m, onChanged }: { m: MeetingView; onChange
     <div className="mb-3 space-y-2">
       {m.can.shareLink && <ShareLink m={m} onChanged={onChanged} />}
       {!m.joinUrl && <JoinLine m={m} />}
+      {m.rescheduledAt && m.rescheduleReason && <p className="text-xs text-ink-muted">Moved: {m.rescheduleReason}</p>}
       <ParticipantList m={m} team />
       {m.can.join && mine && (
         <div className="flex flex-wrap items-center gap-2" data-testid="branch-join">
@@ -451,8 +484,8 @@ function AddMembers({ m, onDone }: { m: MeetingView; onDone: () => void }) {
   if (!people.data) return <LoadState loading={people.loading} error={people.error} />;
   return (
     <div className="space-y-2 border border-border p-3 text-sm">
-      <p className="text-xs text-ink-muted">{m.client ? `People in your department working on ${m.client.name}'s projects.` : "People in your department."}</p>
-      {!people.data.length && <p className="text-xs text-ink-muted">{m.client ? `Nobody else in your department has work on ${m.client.name}'s projects, or they are already in this meeting.` : "Everyone in your department is already in this meeting."}</p>}
+      <p className="text-xs text-ink-muted">{m.client ? `Anyone in your department. People working on ${m.client.name}'s projects are listed first.` : "Anyone in your department."}</p>
+      {!people.data.length && <p className="text-xs text-ink-muted">Everyone in your department is already in this meeting.</p>}
       {people.data.map((p) => (
         <label key={p.id} className="flex items-center gap-2">
           <input type="checkbox" checked={picked.includes(p.id)} onChange={(e) => setPicked(e.target.checked ? [...picked, p.id] : picked.filter((x) => x !== p.id))} /> {p.name}

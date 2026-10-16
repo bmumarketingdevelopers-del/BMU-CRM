@@ -442,6 +442,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
         joinUrl: m.status === 'booked' ? m.joinUrl : null,
         joinAs: m.status === 'booked' && staff && m.hostId === me.id && m.googleEventId && m.joinUrl && /^https:\/\/meet\.google\.com\//i.test(m.joinUrl) ? (organisers.find((o) => o.userId === m.googleUserId)?.email ?? null) : null,
         rescheduledAt: m.rescheduledAt?.toISOString() ?? null,
+        rescheduleReason: m.rescheduledAt ? m.rescheduleReason : null,
         participants: shown.map((p) => ({
           userId: p.userId,
           name: hosts.find((h) => h.id === p.userId)?.name ?? 'BMU team',
@@ -1040,19 +1041,25 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     if (asked.some((p) => p.status === 'reschedule') && !input.startAt) throw new BadRequestException('Someone asked for another time. Pick the time to fix.');
     const startAt = input.startAt ? new Date(input.startAt) : m.startAt;
     if (startAt.getTime() < Date.now()) throw new BadRequestException('That time has passed. Pick a new time.');
-    return this.view(me, await this.fixNow(me, m, startAt, ip));
+    const moved = startAt.getTime() !== m.startAt.getTime();
+    // v25: a moved meeting stays on the same day, and the client is told why.
+    if (moved && zonedDay(startAt.toISOString(), 'Asia/Kolkata') !== zonedDay(m.startAt.toISOString(), 'Asia/Kolkata')) {
+      throw new BadRequestException(`Keep the meeting on the same day (${istLabel(m.startAt).split(',').slice(0, 2).join(',')}): pick another time that day`);
+    }
+    if (moved && (input.reason ?? '').trim().length < 5) throw new BadRequestException('Tell the client why the meeting moved (a short reason)');
+    return this.view(me, await this.fixNow(me, m, startAt, ip, moved ? input.reason!.trim() : null));
   }
 
   /**
    * Fixes the meeting and tells the client, the Client Manager, the Founder, the Department Head and the Branch Manager
    * that it is scheduled. The meeting link follows in one click from the Client Manager (shareLink).
    */
-  private async fixNow(me: Me, m: MeetingRec, startAt: Date, ip?: string) {
+  private async fixNow(me: Me, m: MeetingRec, startAt: Date, ip?: string, reason: string | null = null) {
     const moved = startAt.getTime() !== m.startAt.getTime();
     const durationMs = m.endAt.getTime() - m.startAt.getTime();
     const after = await this.prisma.meeting.update({
       where: { id: m.id },
-      data: { status: 'booked', startAt, endAt: new Date(startAt.getTime() + durationMs), rescheduledAt: moved ? new Date() : m.rescheduledAt, reminderAt: null },
+      data: { status: 'booked', startAt, endAt: new Date(startAt.getTime() + durationMs), rescheduledAt: moved ? new Date() : m.rescheduledAt, rescheduleReason: moved ? reason : m.rescheduleReason, reminderAt: null },
     });
     // Anyone who asked for another time is now on the fixed time.
     await this.prisma.meetingParticipant.updateMany({ where: { meetingId: m.id, status: 'reschedule' }, data: { status: 'accepted', proposedStartAt: null } });
@@ -1063,22 +1070,25 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     await this.saveOutsiders(after);
     const synced = await this.toGoogle(after);
     const joinUrl = synced.joinUrl;
-    await this.audit.log(me, 'meeting.fixed', 'Meeting', m.id, { status: m.status, startAt: m.startAt }, { status: 'booked', startAt, moved, googleMeet: !!synced.googleEventId }, ip);
+    await this.audit.log(me, 'meeting.fixed', 'Meeting', m.id, { status: m.status, startAt: m.startAt }, { status: 'booked', startAt, moved, reason, googleMeet: !!synced.googleEventId }, ip);
 
     const client = await this.clientName(m);
     const ist = `${istLabel(startAt)} IST`;
     const line = this.linkLine(joinUrl);
+    // v25: when it moved, the team hears the new time and why (the other Department Heads had accepted the old time).
+    const ist0 = moved ? `Moved from ${istLabel(m.startAt)} to ${istLabel(startAt)} IST${reason ? ` (${reason})` : ''}` : null;
     const notify = (ids: string[], title: string, body: string) => (ids.length ? this.notifications.notify(m.orgId, ids, { kind: 'meeting', title, body, link: '/team/meetings' }) : null);
+    const when = ist0 ?? ist;
     await notify([m.hostId], `Meeting fixed: ${client}`, `${ist}. ${joinUrl ? line : `Everyone accepted.${synced.googleError ? ` No Google Meet link: ${synced.googleError}.` : ''} Send the meeting link from Meetings.`}`);
-    await notify(people.filter((p) => p.role === 'founder' && p.userId !== me.id).map((p) => p.userId), `Your meeting is scheduled: ${client}`, `${ist}. ${line}`);
-    await notify(people.filter((p) => p.role === 'department_head' && p.userId !== me.id).map((p) => p.userId), `Your meeting is scheduled: ${client}`, `${ist}. ${line} Add your team members on Meetings.`);
-    await notify(people.filter((p) => p.role === 'member').map((p) => p.userId), `Your meeting is scheduled: ${client}`, `${ist}. ${line}`);
+    await notify(people.filter((p) => p.role === 'founder' && p.userId !== me.id).map((p) => p.userId), moved ? `Meeting moved: ${client}` : `Your meeting is scheduled: ${client}`, `${when}. ${line}`);
+    await notify(people.filter((p) => p.role === 'department_head' && p.userId !== me.id).map((p) => p.userId), moved ? `Meeting moved: ${client}` : `Your meeting is scheduled: ${client}`, `${when}. ${line} Add your team members on Meetings.`);
+    await notify(people.filter((p) => p.role === 'member').map((p) => p.userId), moved ? `Meeting moved: ${client}` : `Your meeting is scheduled: ${client}`, `${when}. ${line}`);
     await notify(bms, `Meeting with client ${client}: join now?`, `Scheduled for ${ist}. ${line} Join or ignore on Meetings.`);
 
     // The client: "scheduled", or an apology with the revised time when it moved.
     const theirs = `${zonedLabel(startAt.toISOString(), m.timeZone)} (${m.timeZone})`;
     const title = moved ? 'Sorry, we had to move your meeting' : 'Your meeting is scheduled';
-    const body = moved ? `We are sorry: your meeting moved from ${zonedLabel(m.startAt.toISOString(), m.timeZone)} to ${theirs}. ${line}` : `${theirs}. ${line}`;
+    const body = moved ? `We are sorry: your meeting moved from ${zonedLabel(m.startAt.toISOString(), m.timeZone)} to ${theirs}.${reason ? ` Reason: ${reason}.` : ''} ${line}` : `${theirs}. ${line}`;
     const clientUsers = await this.clientPeople(m.clientOrgId);
     if (clientUsers.length) await this.notifications.notify(m.orgId, clientUsers.map((u) => u.id), { kind: 'meeting', title, body, link: '/client/meetings' });
     for (const [to, toName] of this.clientEmails(m, clientUsers)) {
@@ -1091,6 +1101,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
         paragraphs: [
           `Hi ${toName?.split(' ')[0] ?? 'there'},`,
           moved ? `We are sorry for the change. Your meeting with BMU Marketing moved from ${zonedLabel(m.startAt.toISOString(), m.timeZone)} to ${theirs}.` : `Your meeting with BMU Marketing is on ${theirs}, for ${Math.round(durationMs / 60_000)} minutes.`,
+          ...(moved && reason ? [`Reason: ${reason}`] : []),
           joinUrl ? `Join here: ${joinUrl}` : 'Your meeting is scheduled. We will share the meeting link before the call.',
         ],
         button: { label: 'Add to calendar', url: this.icsUrl(m.id) },
@@ -1148,8 +1159,9 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * v24: people a Department Head can add: from the department(s) they represent in this meeting and, for a client
-   * meeting, only those working on that client's projects (a task on one of its projects, or in its client pod).
+   * v24/v25: people a Department Head can add: anyone active in the department(s) they represent in this meeting. For a
+   * client meeting, those working on that client's projects (a task on one of its projects, or in its client pod) are
+   * listed first and marked.
    */
   async memberOptions(me: Me, id: string): Promise<MeetingMemberOption[]> {
     const m = await this.loadForStaff(me, id);
@@ -1169,7 +1181,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     });
     if (!m.clientOrgId) return people.map((p) => ({ id: p.id, name: p.name, department: p.department?.name ?? null, why: null }));
     const working = await this.clientWorkers(m.clientOrgId, people.map((p) => p.id));
-    return people.filter((p) => working.has(p.id)).map((p) => ({ id: p.id, name: p.name, department: p.department?.name ?? null, why: working.get(p.id) ?? null }));
+    const rows = people.map((p) => ({ id: p.id, name: p.name, department: p.department?.name ?? null, why: working.get(p.id) ?? null }));
+    return [...rows.filter((r) => r.why), ...rows.filter((r) => !r.why)];
   }
 
   /** v24: who among these people works on the client's projects, and how (e.g. "3 open tasks", "client pod"). */
@@ -1194,7 +1207,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const options = await this.memberOptions(me, id);
     const { userIds } = parse(meetingMembersSchema, body);
     const add = [...new Set(userIds)];
-    if (add.some((u) => !options.some((o) => o.id === u))) throw new BadRequestException("Add people from your department who work on this client's projects and are not in the meeting yet");
+    if (add.some((u) => !options.some((o) => o.id === u))) throw new BadRequestException('Add people from your own department who are not in the meeting yet');
     await this.prisma.meetingParticipant.createMany({ data: add.map((userId) => ({ meetingId: id, userId, role: 'member', status: 'invited', addedById: me.id })), skipDuplicates: true });
     // v23 Google Meet: they are added to the Google event too (Google emails them the invitation).
     const m = await this.toGoogle(await this.touch(id));
