@@ -4,6 +4,8 @@ import { ProposalsModule } from '../proposals/proposals.module.js';
 import { BillingRunService } from './billing-run.service.js';
 import { DunningService } from './dunning.service.js';
 import { EmailService } from './email.service.js';
+import { InvoiceBrandingController } from './invoice-branding.controller.js';
+import { InvoiceBrandingService } from './invoice-branding.service.js';
 import { InvoiceEvents } from './invoice-events.js';
 import { ServiceBillingService } from './service-billing.service.js';
 import { ServiceController } from './service.controller.js';
@@ -15,8 +17,8 @@ import { ServiceController } from './service.controller.js';
 @Global()
 @Module({
   imports: [ProposalsModule],
-  controllers: [ServiceController],
-  providers: [EmailService, InvoiceEvents, NotificationsService, ServiceBillingService, DunningService, BillingRunService],
+  controllers: [ServiceController, InvoiceBrandingController],
+  providers: [EmailService, InvoiceEvents, NotificationsService, ServiceBillingService, DunningService, BillingRunService, InvoiceBrandingService],
   exports: [EmailService, InvoiceEvents, NotificationsService, ServiceBillingService, DunningService],
 })
 export class ServiceModule {}

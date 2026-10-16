@@ -38,7 +38,7 @@ const built: Record<string, string> = {
   Payments: "/admin/finance/payments",
   "Credit Notes": "/admin/finance/credit-notes",
   "Creator Payouts": "/admin/finance/payouts",
-  "GST Settings": "/admin/finance/gst",
+  "GST & Invoice Settings": "/admin/finance/gst",
   "Accounting Sync": "/admin/finance/accounting",
   "Notification Templates": "/admin/notification-templates",
   Integrations: "/admin/integrations",
@@ -117,7 +117,7 @@ const spec: [string, string[]][] = [
   ["Clients", ["Clients", "Engagements", "CM Assignment", "Requests & Add-ons", "Offboarding"]],
   ["Catalogue", ["Services & Tiers", "Bundles", "Add-ons", "Discount Limits", "Proposal & Agreement Templates"]],
   ["Operations", ["SOP Library", "Requirement Checklists", "Department Flow Templates", "QC Checklists", "Gate Rules", "SLA Rules", "Error Log"]],
-  ["Finance", ["Invoices", "Invoice Plans", "Billing Run", "Payments", "Payments to Match", "Expenses & Bills", "Credit Notes", "Creator Payouts", "Profit", "Cash Flow", "GST Settings", "Accounting Sync"]],
+  ["Finance", ["Invoices", "Invoice Plans", "Billing Run", "Payments", "Payments to Match", "Expenses & Bills", "Credit Notes", "Creator Payouts", "Profit", "Cash Flow", "GST & Invoice Settings", "Accounting Sync"]],
   ["Platform", ["System Health", "AI Copilot", "Notification Templates", "Outbox", "Integrations", "API & Webhooks", "Branding & Theme", "Security", "Audit Log", "Privacy (DPDP)", "Data Export / Deletion (DPDP)", "Tenant Settings"]],
 ];
 
@@ -148,7 +148,7 @@ const restricted: Record<string, string[]> = {
   Payments: MONEY,
   "Credit Notes": MONEY,
   "Creator Payouts": MONEY,
-  "GST Settings": MONEY,
+  "GST & Invoice Settings": MONEY,
   "Accounting Sync": MONEY,
   "Payments to Match": MONEY,
   "Invoice Plans": MONEY,

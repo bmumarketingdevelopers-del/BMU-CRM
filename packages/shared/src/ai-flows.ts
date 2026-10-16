@@ -41,6 +41,7 @@ export const AI_FEATURE_KEYS = [
   "agent_run",
   "agent_ask",
   "asset_tags",
+  "invoice_lines",
 ] as const;
 export type AiFeature = (typeof AI_FEATURE_KEYS)[number];
 
@@ -66,12 +67,13 @@ export const aiFeatureInfo: Record<AiFeature, { label: string; group: AiFeatureG
   agent_run: { label: "AI agent run", group: "agents" },
   agent_ask: { label: "Ask the Analyst", group: "agents" },
   asset_tags: { label: "Asset library: tags from the picture", group: "delivery", fast: true },
+  invoice_lines: { label: "Invoice line descriptions", group: "management", fast: true },
 };
 
 /** Features started from a screen with POST /ai/generate (Ask BMU and the client panel use /ai/ask). */
-export const AI_GENERATE_FEATURES = AI_FEATURE_KEYS.filter((f) => !["copilot", "client_ask", "automation_draft", "weekly_digest", "agent_run", "agent_ask", "asset_tags"].includes(f)) as Exclude<
+export const AI_GENERATE_FEATURES = AI_FEATURE_KEYS.filter((f) => !["copilot", "client_ask", "automation_draft", "weekly_digest", "agent_run", "agent_ask", "asset_tags", "invoice_lines"].includes(f)) as Exclude<
   AiFeature,
-  "copilot" | "client_ask" | "automation_draft" | "weekly_digest" | "agent_run" | "agent_ask" | "asset_tags"
+  "copilot" | "client_ask" | "automation_draft" | "weekly_digest" | "agent_run" | "agent_ask" | "asset_tags" | "invoice_lines"
 >[];
 export type AiGenerateFeature = (typeof AI_GENERATE_FEATURES)[number];
 
@@ -124,7 +126,8 @@ export type AiStructured =
   | { kind: "triage"; value: AiTriage }
   | { kind: "plan"; value: PlanContent }
   | { kind: "tone"; value: AiToneResult & { items?: { id: string; tone: AiTone }[] } }
-  | { kind: "qc"; value: AiQcIssue[] };
+  | { kind: "qc"; value: AiQcIssue[] }
+  | { kind: "invoice_lines"; value: { lines: { title: string; details: string }[] } };
 
 export type AiResult = {
   feature: AiFeature;

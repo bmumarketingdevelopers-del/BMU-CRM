@@ -3,6 +3,11 @@ import { z } from "zod";
 import type { Capability } from "./permissions.js";
 import { REQUEST_TYPES, SLA_FIRST_REPLY_MIN } from "./requests.js";
 
+/** BMU Marketing's registered office and contact (shown on invoices, emails and receipts). */
+export const BMU_ADDRESS = "376, Phase 9, Royal Park Residency Layout, JP Nagar 9th Phase, J. P. Nagar, Bengaluru, Karnataka 560108";
+export const BMU_EMAIL = "buildmyuniversee@gmail.com";
+export const BMU_PHONE = "+91 8105491414";
+
 const hhmm = z.string().regex(/^\d{2}:\d{2}$/, "Use HH:MM");
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
@@ -131,7 +136,7 @@ export const settingsDefaults: AllSettings = {
   },
   sla: { firstReplyMinutes: { ...SLA_FIRST_REPLY_MIN }, messageReply: "same_working_day" },
   gateRules: { planDeadlineWorkingDays: 4, blockProductionOnOverdueInvoice: true, requireQcBeforeSend: true, releaseFilesAfterFinalPayment: true },
-  gst: { gstin: "", legalName: "BMU Marketing", state: "Karnataka", stateCode: "29", ratePct: 18, sacCode: "998361", invoicePrefix: "BMU", address: "", upiId: "", bankName: "", bankAccount: "", bankIfsc: "", bankBranch: "" },
+  gst: { gstin: "", legalName: "BMU Marketing", state: "Karnataka", stateCode: "29", ratePct: 18, sacCode: "998361", invoicePrefix: "BMU", address: BMU_ADDRESS, upiId: "", bankName: "", bankAccount: "", bankIfsc: "", bankBranch: "" },
   dunning: { enabled: true, steps: [1, 7, 14], workingDays: true, emailClient: true, messageClient: true, alertFinance: true },
   accounting: { tool: "none", lastExportAt: null },
   notificationTemplates: Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k.key, { inApp: true, email: k.audience === "client", whatsapp: false, text: "" }])),
@@ -156,5 +161,5 @@ export const settingsDefaults: AllSettings = {
   fieldAccess: {},
   // Two-factor is required for these roles once someone turns it on (Founder, Branch Manager and Finance recommended).
   security: { require2faRoles: [], sessionDays: 30 },
-  tenant: { name: "BMU Marketing", supportEmail: "hello@bmumarketing.in", supportPhone: "", website: "https://bmumarketing.in", address: "Bengaluru, Karnataka", dataRetentionDays: 730 },
+  tenant: { name: "BMU Marketing", supportEmail: BMU_EMAIL, supportPhone: BMU_PHONE, website: "https://bmumarketing.in", address: BMU_ADDRESS, dataRetentionDays: 730 },
 };

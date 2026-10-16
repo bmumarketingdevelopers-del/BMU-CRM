@@ -112,10 +112,32 @@ export const opsIsPassThrough = (k: string) => k !== "service";
 const paise = z.number().int("Amount must be in whole paise").positive("Enter an amount above zero").max(1_000_000_000_00, "Amount is too large");
 
 export const opsInvoiceLineSchema = z.object({
+  /** The Founder's short description, e.g. "website redesign". */
   label: z.string().trim().min(2, "Describe the line").max(200),
   kind: z.enum(OPS_INVOICE_LINE_KINDS),
   amountPaise: paise,
+  /** v27: the line as printed on the invoice: a clear service name and one or two sentences (AI-written, editable). */
+  title: z.string().trim().max(120).optional(),
+  details: z.string().trim().max(600).optional(),
 });
+
+/** v27: ask for invoice wording before creating the invoice (the Founder reviews and edits it). */
+export const opsInvoiceDescribeSchema = z.object({
+  clientOrgId: z.string().optional(),
+  engagementId: z.string().optional(),
+  lines: z.array(z.object({ label: z.string().trim().min(2, "Describe the line").max(200), kind: z.enum(OPS_INVOICE_LINE_KINDS) })).min(1).max(30),
+});
+export type OpsInvoiceDescribe = z.infer<typeof opsInvoiceDescribeSchema>;
+export type OpsInvoiceLineText = { title: string; details: string };
+export type OpsInvoiceDescribeResult = { lines: OpsInvoiceLineText[]; basic: boolean };
+
+/** Plain wording when AI is off: the short description as a title, and a neutral sentence. */
+export function opsBasicLineText(label: string, kind: string, client?: string | null): OpsInvoiceLineText {
+  const clean = label.trim().replace(/\s+/g, " ");
+  const title = clean.charAt(0).toUpperCase() + clean.slice(1);
+  if (opsIsPassThrough(kind)) return { title, details: `${opsInvoiceLineKindLabels[kind as OpsInvoiceLineKind]?.replace(/ \(pass-through\)/, "") ?? "Cost"} paid on ${client ? `${client}'s` : "the client's"} behalf, billed at cost without GST.` };
+  return { title, details: `Professional ${clean.toLowerCase()} services delivered by BMU Marketing${client ? ` for ${client}` : ""}, as agreed.` };
+}
 export const opsInvoiceCreateSchema = z.object({
   clientOrgId: z.string().min(1, "Pick the client"),
   engagementId: z.string().optional(),

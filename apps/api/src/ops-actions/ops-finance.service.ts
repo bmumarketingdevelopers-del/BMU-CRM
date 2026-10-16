@@ -1,7 +1,7 @@
 // v11 ops: finance actions. Manual invoice (service lines with GST, pass-through lines for ad spend / creator fees
 // at cost), drafts, offline payment with proof, due-date extension (> 7 days needs Branch Manager approval) and creator payout
 // proposals (the UGC coordinator proposes, Finance approves). Credit notes with Branch Manager approval live in FinanceService.
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import {
   financialYear,
   formatINR,
@@ -9,15 +9,20 @@ import {
   opsCanFinance,
   opsCanManageCreators,
   opsDueDateSchema,
+  opsBasicLineText,
   opsInvoiceCreateSchema,
+  opsInvoiceDescribeSchema,
   opsInvoiceLineKindLabels,
   opsInvoiceTotals,
   opsIsPassThrough,
   opsOfflinePaymentSchema,
   opsPayoutProposeSchema,
   type Me,
+  type OpsInvoiceDescribeResult,
+  type OpsInvoiceLineText,
   type OpsMaybeApproval,
 } from '@bmu/shared';
+import { AiService, jsonOf, textOf } from '../ai/ai.service.js';
 import { ApprovalsService } from '../actions/approvals.service.js';
 import { ActionsRegistry } from '../actions/registry.js';
 import { UndoService } from '../actions/undo.service.js';
@@ -46,7 +51,74 @@ export class OpsFinanceService implements OnModuleInit {
     private readonly settings: SettingsService,
     private readonly finance: FinanceService,
     private readonly billing: ServiceBillingService,
+    private readonly ai: AiService,
   ) {}
+
+  private readonly log = new Logger('OpsFinance');
+
+  /** v27: invoice wording for the Founder's short descriptions, to review and edit before the invoice is made. */
+  async describe(me: Me, body: unknown): Promise<OpsInvoiceDescribeResult> {
+    this.assertFinance(me);
+    const input = parse(opsInvoiceDescribeSchema, body);
+    return this.describeLines(me, input.lines, input.clientOrgId, input.engagementId);
+  }
+
+  /**
+   * v27: turns short descriptions ("website redesign") into the line as printed on the invoice: a clear service name and
+   * one or two sentences. AI when it is on (Command Centre → AI Copilot, Management), otherwise plain wording.
+   */
+  private async describeLines(me: Me, lines: { label: string; kind: string }[], clientOrgId?: string | null, engagementId?: string | null): Promise<OpsInvoiceDescribeResult> {
+    const [client, eng] = await Promise.all([
+      clientOrgId ? this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId }, select: { name: true, industry: true } }) : null,
+      engagementId ? this.prisma.engagement.findFirst({ where: { id: engagementId, orgId: me.orgId }, select: { tier: true, service: { select: { name: true } } } }) : null,
+    ]);
+    const basic = lines.map((l) => opsBasicLineText(l.label, l.kind, client?.name));
+    const service = lines.map((l, i) => ({ i, l })).filter((x) => !opsIsPassThrough(x.l.kind));
+    if (!service.length) return { lines: basic, basic: true };
+    try {
+      const r = await this.ai.execute({ orgId: me.orgId, userId: me.id, me }, 'invoice_lines', {
+        basic: () => ({ text: basic.map((b) => b.title).join('\n'), data: { kind: 'invoice_lines', value: { lines: basic } } }),
+        ai: async (run) => {
+          const msg = await run({
+            fast: true,
+            system:
+              'You write the line items of GST tax invoices for BMU Marketing, a digital marketing agency in Bengaluru (branding, websites, SEO, social media, ads, video). ' +
+              'For each short description write: title, the service as it should be printed (3 to 8 words, Title Case, no price, no dates unless given); ' +
+              'details, one or two plain sentences (at most 40 words) saying what was delivered for the client. Use only what is given; do not invent quantities, dates or results. Indian English.',
+            messages: [
+              {
+                role: 'user',
+                content: `Client: ${client?.name ?? 'not given'}${client?.industry ? ` (${client.industry})` : ''}\nService: ${eng ? `${eng.service.name} (${eng.tier})` : 'not given'}\n\nLines:\n${service.map((x, n) => `${n + 1}. ${x.l.label}`).join('\n')}\n\nReturn JSON with "lines": one { title, details } per line, in the same order.`,
+              },
+            ],
+            maxTokens: 1500,
+            schema: {
+              type: 'object',
+              properties: { lines: { type: 'array', items: { type: 'object', properties: { title: { type: 'string' }, details: { type: 'string' } }, required: ['title', 'details'], additionalProperties: false } } },
+              required: ['lines'],
+              additionalProperties: false,
+            },
+          });
+          const j = jsonOf<{ lines: OpsInvoiceLineText[] }>(msg);
+          if (!j?.lines || j.lines.length !== service.length) return { text: textOf(msg) };
+          return { text: j.lines.map((x) => x.title).join('\n'), data: { kind: 'invoice_lines', value: { lines: j.lines } } };
+        },
+      });
+      const v = r.data?.kind === 'invoice_lines' ? r.data.value.lines : null;
+      if (r.mode === 'ai' && v && v.length === service.length) {
+        const out = [...basic];
+        service.forEach((x, n) => {
+          const title = v[n].title?.trim().slice(0, 120);
+          const details = v[n].details?.trim().slice(0, 600);
+          if (title) out[x.i] = { title, details: details || basic[x.i].details };
+        });
+        return { lines: out, basic: false };
+      }
+    } catch (e) {
+      this.log.warn(`Invoice wording fell back to plain text: ${(e as Error).message}`);
+    }
+    return { lines: basic, basic: true };
+  }
 
   onModuleInit() {
     this.registry.registerUndoModel('invoice');
@@ -117,10 +189,16 @@ export class OpsFinanceService implements OnModuleInit {
     }
     const gst = await this.settings.get(me.orgId, 'gst');
     const totals = opsInvoiceTotals(input.lines, gst.ratePct);
-    const lines = input.lines.map((l) => {
+    // v27: the wording printed on the invoice: what the Founder reviewed, else written now (AI when it is on).
+    const missing = input.lines.map((l, i) => ({ l, i })).filter((x) => !x.l.title?.trim());
+    const written = missing.length ? (await this.describeLines(me, missing.map((x) => x.l), client.id, input.engagementId)).lines : [];
+    const lines = input.lines.map((l, i) => {
       const pass = opsIsPassThrough(l.kind);
       const label = pass ? `${l.label} (${opsInvoiceLineKindLabels[l.kind].replace(/ \(pass-through\)/, '')}, at cost, no GST)` : l.label;
-      return { label, name: label, amountPaise: l.amountPaise, kind: l.kind, passThrough: pass };
+      const auto = written[missing.findIndex((x) => x.i === i)];
+      const title = l.title?.trim() || auto?.title || label;
+      const details = l.title?.trim() ? l.details?.trim() || null : (auto?.details ?? null);
+      return { label, name: label, title: pass && !/\bat cost\b/i.test(title) ? `${title} (at cost, no GST)` : title, details, amountPaise: l.amountPaise, kind: l.kind, passThrough: pass };
     });
     const inv = await this.prisma.$transaction(async (tx) =>
       tx.invoice.create({

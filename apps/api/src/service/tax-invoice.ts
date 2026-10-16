@@ -1,11 +1,26 @@
 // GST tax invoice: seller details from settings.gst + tenant, buyer from the client's billing details,
 // CGST + SGST inside the same state, IGST across states, amount in words in the Indian format.
-import { serviceAmountInWords, serviceGstStateName, formatINR, type ServiceTaxInvoice } from '@bmu/shared';
+// v27: the design (new subscription, due, overdue, part paid, paid, credited), the printed wording of each line
+// (AI-written for manual invoices), the Founder's signature and company seal, and the terms on page 2.
+import { BMU_ADDRESS, BMU_EMAIL, BMU_PHONE, serviceAmountInWords, serviceGstStateName, serviceInvoiceVariant, formatINR, type ServiceTaxInvoice } from '@bmu/shared';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { SettingsService } from '../settings/settings.service.js';
 import { escapeHtml } from './email.service.js';
+import { invoiceBrandingUrl, readInvoiceBranding } from './invoice-branding.service.js';
 
-type InvoiceLine = { label: string; amountPaise: number };
+type InvoiceLine = { label: string; amountPaise: number; title?: string; details?: string; passThrough?: boolean; kind?: string };
+
+/** The terms printed on page 2 of every invoice. */
+function invoiceTerms(t: { number: string; dueDate: Date; email: string; phone: string; legalName: string }) {
+  const due = new Intl.DateTimeFormat('en-IN', { dateStyle: 'long', timeZone: 'Asia/Kolkata' }).format(t.dueDate);
+  return [
+    `Payment is due by ${due}. Please quote invoice number ${t.number} with every payment.`,
+    'Prices are exclusive of GST; GST is charged at the rate shown. Pass-through costs (ad spend, creator fees) are billed at cost without GST.',
+    'Work continues on schedule while the account is up to date; overdue invoices may pause new deliverables until they are paid.',
+    `Please tell us about any question on this invoice within 7 days at ${t.email}${t.phone ? ` or ${t.phone}` : ''}.`,
+    `Subject to Bengaluru jurisdiction. This invoice is issued by ${t.legalName}.`,
+  ];
+}
 
 export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsService, orgId: string, invoiceId: string, payLink: string): Promise<ServiceTaxInvoice | null> {
   const inv = await prisma.invoice.findFirst({
@@ -13,13 +28,14 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
     include: { payments: { orderBy: { at: 'asc' } }, clientOrg: true },
   });
   if (!inv) return null;
-  const [gst, tenant, notes, firstOwner] = await Promise.all([
+  const [gst, tenant, notes, firstOwner, branding] = await Promise.all([
     settings.get(orgId, 'gst'),
     settings.get(orgId, 'tenant'),
     prisma.creditNote.findMany({ where: { invoiceId }, orderBy: { createdAt: 'asc' } }),
     inv.clientOrgId
       ? prisma.clientUser.findFirst({ where: { clientOrgId: inv.clientOrgId, clientRole: { in: ['client_owner', 'client_finance'] } }, select: { user: { select: { email: true } } } })
       : null,
+    readInvoiceBranding(prisma, orgId),
   ]);
   const c = inv.clientOrg;
   // Place of supply: the client's chosen state, else the state in their GSTIN, else the seller's own state.
@@ -38,6 +54,10 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   const payee = gst.legalName || tenant.name;
   const upiId = gst.upiId?.trim() || null;
   const upiUri = upiId && balance > 0 ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payee)}&am=${(balance / 100).toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Invoice ${inv.number}`)}` : null;
+  const email = tenant.supportEmail?.trim() || BMU_EMAIL;
+  const phone = tenant.supportPhone?.trim() || BMU_PHONE;
+  // The founder who signs: the name set with the signature, else the first Founder.
+  const founder = branding.signatoryName ? null : await prisma.user.findFirst({ where: { orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, orderBy: { createdAt: 'asc' }, select: { name: true } });
   return {
     id: inv.id,
     number: inv.number,
@@ -46,14 +66,23 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
     status: inv.status,
     kind: inv.kind,
     title: 'Tax Invoice',
+    variant: serviceInvoiceVariant({ status: inv.status, kind: inv.kind, dueDate: inv.dueDate.toISOString(), paidPaise: paid, creditedPaise: credited, balancePaise: balance }),
+    notes: inv.notes?.trim() || null,
+    signatory: {
+      name: branding.signatoryName || (founder?.name && !/^bmu owner$/i.test(founder.name) ? founder.name : ''),
+      designation: branding.designation || 'Founder',
+      signatureUrl: branding.signatureFileId ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
+      sealUrl: branding.sealFileId ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
+    },
+    terms: invoiceTerms({ number: inv.number, dueDate: inv.dueDate, email, phone, legalName: payee }),
     seller: {
       legalName: payee,
       gstin: gst.gstin,
-      address: gst.address?.trim() || tenant.address,
+      address: gst.address?.trim() || tenant.address?.trim() || BMU_ADDRESS,
       state: gst.state,
       stateCode: gst.stateCode,
-      email: tenant.supportEmail,
-      phone: tenant.supportPhone,
+      email,
+      phone,
       website: tenant.website,
     },
     buyer: {
@@ -66,7 +95,7 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
       email: c?.billingEmail ?? firstOwner?.user.email ?? null,
     },
     sacCode: gst.sacCode,
-    lines: lines.map((l) => ({ label: l.label, sac: gst.sacCode, taxablePaise: l.amountPaise })),
+    lines: lines.map((l) => ({ label: l.label, title: l.title?.trim() || l.label, details: l.details?.trim() || null, sac: gst.sacCode, taxablePaise: l.amountPaise, passThrough: !!l.passThrough })),
     taxablePaise: taxable,
     ratePct: taxable ? Math.round((gstPaise / taxable) * 1000) / 10 : gst.ratePct,
     interState,
@@ -104,7 +133,7 @@ export function taxInvoiceEmailHtml(t: ServiceTaxInvoice) {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:8px 0 16px;border:1px solid #e6e4dc">
 <tr><td colspan="2" style="${cell};background:#f6f5f0"><strong>Tax Invoice ${escapeHtml(t.number)}</strong> · ${d(t.date)} · due ${d(t.dueDate)}<br>
 <span style="color:#6b7280">From ${escapeHtml(t.seller.legalName)}${t.seller.gstin ? ` (GSTIN ${escapeHtml(t.seller.gstin)})` : ''} to ${escapeHtml(t.buyer.legalName)}${t.buyer.gstin ? ` (GSTIN ${escapeHtml(t.buyer.gstin)})` : ''}. Place of supply: ${escapeHtml(t.buyer.placeOfSupplyName)}.</span></td></tr>
-${t.lines.map((l) => `<tr><td style="${cell}">${escapeHtml(l.label)} <span style="color:#6b7280">(SAC ${escapeHtml(l.sac)})</span></td><td style="${right}">${formatINR(l.taxablePaise)}</td></tr>`).join('')}
+${t.lines.map((l) => `<tr><td style="${cell}">${escapeHtml(l.title)}${l.details ? `<br><span style="color:#6b7280;font-size:12px">${escapeHtml(l.details)}</span>` : ''}<br><span style="color:#6b7280;font-size:11px">SAC ${escapeHtml(l.sac)}</span></td><td style="${right};vertical-align:top;white-space:nowrap">${formatINR(l.taxablePaise)}</td></tr>`).join('')}
 <tr><td style="${cell}">Taxable value</td><td style="${right}">${formatINR(t.taxablePaise)}</td></tr>
 ${tax}
 <tr><td style="${cell}"><strong>Total</strong></td><td style="${right}"><strong>${formatINR(t.totalPaise)}</strong></td></tr>
@@ -117,7 +146,7 @@ ${t.payment.upiId || t.payment.bank ? `<tr><td colspan="2" style="${cell}">${t.p
 export function taxInvoiceEmailText(t: ServiceTaxInvoice) {
   return [
     `Tax Invoice ${t.number} (${d(t.date)}, due ${d(t.dueDate)})`,
-    ...t.lines.map((l) => `- ${l.label}: ${formatINR(l.taxablePaise)}`),
+    ...t.lines.map((l) => `- ${l.title}: ${formatINR(l.taxablePaise)}`),
     `Taxable value: ${formatINR(t.taxablePaise)}`,
     t.interState ? `IGST ${t.ratePct}%: ${formatINR(t.igstPaise)}` : `CGST ${t.ratePct / 2}%: ${formatINR(t.cgstPaise)} · SGST ${t.ratePct / 2}%: ${formatINR(t.sgstPaise)}`,
     `Total: ${formatINR(t.totalPaise)} (${t.amountInWords})`,

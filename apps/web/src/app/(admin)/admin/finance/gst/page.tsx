@@ -6,6 +6,7 @@ import { DataTable, Panel, StatRow, StatTile } from "@/components/dash";
 import { Button, Input, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
+import { InvoiceBrandingPanel } from "@/components/service/invoice-branding";
 import { Field, FormNote, InvoiceStatus, WithData, fmtDate, inr, todayIst } from "../../_insights/kit";
 
 type Gst = SettingsValue<"gst">;
@@ -15,7 +16,7 @@ export default function GstPage() {
   const settings = useLoad(() => api.settings.all());
   return (
     <>
-      <PageTitle title="GST" subtitle="Your GST registration details and what GST was charged on invoices each month." />
+      <PageTitle title="GST & invoices" subtitle="Your GST registration details, the signature and seal on invoices, and what GST was charged each month." />
       <div className="space-y-8">
         <Panel className="min-w-0"
           title="Monthly summary"
@@ -32,6 +33,8 @@ export default function GstPage() {
         >
           <Summary key={month} month={month} />
         </Panel>
+
+        <InvoiceBrandingPanel />
 
         <WithData state={settings}>{(s) => <GstForm value={s.gst} canEdit={s.canEdit.gst} />}</WithData>
       </div>

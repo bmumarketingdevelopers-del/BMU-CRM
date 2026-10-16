@@ -81,6 +81,13 @@ export class OpsFinanceController {
     return this.finance.createInvoice(me, body, ip);
   }
 
+  /** v27: invoice wording (AI when on) for the Founder's short descriptions, before the invoice is made. */
+  @Post('invoices/describe')
+  @HttpCode(200)
+  describe(@CurrentUser() me: Me, @Body() body: unknown) {
+    return this.finance.describe(me, body);
+  }
+
   @Get('drafts')
   drafts(@CurrentUser() me: Me) {
     return this.finance.drafts(me);

@@ -19,6 +19,8 @@ import type {
   OpsFileUpdate,
   OpsIntegrationRow,
   OpsInvoiceCreate,
+  OpsInvoiceDescribe,
+  OpsInvoiceDescribeResult,
   OpsLeadBulk,
   OpsLeadConvert,
   OpsLeadCreate,
@@ -69,6 +71,8 @@ export const opsActionsApi = (t: Transport) => ({
     finance: {
       options: () => t.get<OpsFinanceOptions>("/ops/finance/options"),
       createInvoice: (body: OpsInvoiceCreate) => t.post<Msg & { id: string; number: string; status: string; totalPaise: number }>("/ops/finance/invoices", body),
+      /** v27: invoice wording (AI when on) for short line descriptions, to review before creating the invoice. */
+      describe: (body: OpsInvoiceDescribe) => t.post<OpsInvoiceDescribeResult>("/ops/finance/invoices/describe", body),
       drafts: () => t.get<OpsDraftInvoice[]>("/ops/finance/drafts"),
       issue: (id: string) => t.post<Msg & { id: string }>(`/ops/finance/invoices/${id}/issue`),
       offlinePayment: (id: string, body: OpsOfflinePayment) => t.post<FinanceInvoiceDetail>(`/ops/finance/invoices/${id}/offline-payment`, body),

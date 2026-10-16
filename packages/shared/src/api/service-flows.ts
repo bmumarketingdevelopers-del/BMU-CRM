@@ -19,6 +19,7 @@ import type {
   ServiceTaxInvoice,
   ServiceUnread,
 } from "../service-flows.js";
+import type { InvoiceBrandingInput, InvoiceBrandingKind, InvoiceBrandingView } from "../invoice-branding.js";
 import type { RequestView, ThreadAttachment } from "../requests.js";
 
 export * from "../service-flows.js";
@@ -52,6 +53,15 @@ export const serviceFlowsApi = (t: Transport) => ({
     // Finance
     taxInvoice: (id: string) => t.get<ServiceTaxInvoice>(`/service/finance/invoices/${id}/tax-invoice`),
     emailInvoice: (id: string) => t.post<{ sent: number }>(`/service/finance/invoices/${id}/email`),
+    /** v27: the Founder's signature and company seal on invoices. */
+    invoiceBranding: () => t.get<InvoiceBrandingView>("/finance/invoice-branding"),
+    saveInvoiceBranding: (body: InvoiceBrandingInput) => t.put<InvoiceBrandingView>("/finance/invoice-branding", body),
+    uploadInvoiceBranding: (kind: InvoiceBrandingKind, file: Blob) => {
+      const form = new FormData();
+      form.append("file", file);
+      return t.request<InvoiceBrandingView>(`/finance/invoice-branding/${kind}`, { method: "POST", body: form });
+    },
+    removeInvoiceBranding: (kind: InvoiceBrandingKind) => t.del<InvoiceBrandingView>(`/finance/invoice-branding/${kind}`),
     clientBillingDetails: (clientId: string) => t.get<ServiceBillingDetails>(`/service/finance/clients/${clientId}/billing-details`),
     saveBillingDetails: (clientId: string, body: ServiceBillingDetailsInput) => t.put<ServiceBillingDetails>(`/service/finance/clients/${clientId}/billing-details`, body),
     collectionsActions: () => t.get<ServiceCollectionsActions>("/service/finance/collections"),

@@ -3,6 +3,9 @@
 /**
  * "+ New → Invoice": a manual invoice by Finance / Admin. Client, lines and due date are required. Service lines
  * carry GST; ad spend and creator fees go on their own pass-through lines, billed at cost without GST.
+ * v27: the Founder types a short description per line; "Write invoice wording" turns it into the line as printed on
+ * the invoice (a clear service name and one or two sentences, AI-written when AI is on), which they can edit.
+ * Without it, the wording is written when the invoice is saved.
  */
 import { useState } from "react";
 import { formatINR, OPS_INVOICE_LINE_KINDS, opsInvoiceLineKindLabels, opsInvoiceTotals, type OpsInvoiceLineKind } from "@bmu/shared";
@@ -12,8 +15,8 @@ import { ActionDrawer, Field, inputCls, TextArea, type SaveMode } from "@/compon
 import type { NewDrawerProps } from "@/components/actions/new-registry";
 import { dayAhead, errMsg, todayIst } from "./kit";
 
-type Line = { label: string; kind: OpsInvoiceLineKind; amount: string };
-const newLine = (kind: OpsInvoiceLineKind = "service"): Line => ({ label: "", kind, amount: "" });
+type Line = { label: string; kind: OpsInvoiceLineKind; amount: string; title: string; details: string };
+const newLine = (kind: OpsInvoiceLineKind = "service"): Line => ({ label: "", kind, amount: "", title: "", details: "" });
 const toPaise = (s: string) => Math.round(Number(s.replace(/[,₹\s]/g, "")) * 100);
 
 export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
@@ -26,10 +29,32 @@ export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const [wordingNote, setWordingNote] = useState<string>();
   const o = opts.data;
   const client = o?.clients.find((c) => c.id === clientOrgId);
   const valid = lines.filter((l) => l.label.trim() && toPaise(l.amount) > 0);
   const totals = opsInvoiceTotals(valid.map((l) => ({ kind: l.kind, amountPaise: toPaise(l.amount) })), o?.gstRatePct ?? 18);
+
+  /** v27: the wording printed on the invoice for every line with a short description. */
+  async function writeWording() {
+    const todo = lines.map((l, i) => ({ l, i })).filter((x) => x.l.label.trim().length >= 2);
+    if (!todo.length) return setErrors({ ...errors, lines: "Type a short description on a line first" });
+    setWriting(true);
+    setWordingNote(undefined);
+    try {
+      const r = await api.ops.finance.describe({ clientOrgId: clientOrgId || undefined, engagementId: engagementId || undefined, lines: todo.map((x) => ({ label: x.l.label.trim(), kind: x.l.kind })) });
+      setLines((ls) => ls.map((l, i) => {
+        const n = todo.findIndex((x) => x.i === i);
+        return n < 0 ? l : { ...l, title: r.lines[n].title, details: r.lines[n].details };
+      }));
+      setWordingNote(r.basic ? "Plain wording (AI is off: turn on AI Copilot → Management in Command Centre for AI wording). Edit it below." : "AI-written wording. Check and edit it before saving.");
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setWriting(false);
+    }
+  }
 
   async function save(mode: SaveMode) {
     setError(undefined);
@@ -43,10 +68,11 @@ export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
     if (Object.keys(e).length) return;
     setSaving(true);
     try {
-      const r = await api.ops.finance.createInvoice({ clientOrgId, engagementId: engagementId || undefined, dueDate, notes: notes.trim() || undefined, issue: mode !== "draft", lines: valid.map((l) => ({ label: l.label.trim(), kind: l.kind, amountPaise: toPaise(l.amount) })) });
+      const r = await api.ops.finance.createInvoice({ clientOrgId, engagementId: engagementId || undefined, dueDate, notes: notes.trim() || undefined, issue: mode !== "draft", lines: valid.map((l) => ({ label: l.label.trim(), kind: l.kind, amountPaise: toPaise(l.amount), title: l.title.trim() || undefined, details: l.title.trim() ? l.details.trim() || undefined : undefined })) });
       onSaved(r.id, r.message);
       setLines([newLine()]);
       setNotes("");
+      setWordingNote(undefined);
       if (mode !== "another") onClose();
     } catch (err) {
       setError(errMsg(err));
@@ -115,7 +141,7 @@ export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
         </legend>
         {lines.map((l, i) => (
           <div key={i} className="grid gap-2 border border-border p-2 sm:grid-cols-[1fr_170px_110px_auto]" data-testid="invoice-line">
-            <input className={inputCls} placeholder="Description" value={l.label} onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} aria-label={`Line ${i + 1} description`} />
+            <input className={inputCls} placeholder="Short description, e.g. website redesign" value={l.label} onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} aria-label={`Line ${i + 1} description`} />
             <select className={inputCls} value={l.kind} onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, kind: e.target.value as OpsInvoiceLineKind } : x)))} aria-label={`Line ${i + 1} type`}>
               {OPS_INVOICE_LINE_KINDS.map((k) => (
                 <option key={k} value={k}>
@@ -127,9 +153,22 @@ export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
             <button type="button" className="px-2 text-sm text-ink-muted hover:text-ink disabled:opacity-30" disabled={lines.length === 1} onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} aria-label={`Remove line ${i + 1}`}>
               ✕
             </button>
+            {(l.title || l.details) && (
+              <div className="grid gap-1 sm:col-span-4" data-testid="invoice-line-wording">
+                <span className="text-[11px] font-medium text-ink-muted">As printed on the invoice</span>
+                <input className={inputCls} value={l.title} maxLength={120} onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} aria-label={`Line ${i + 1} printed title`} />
+                <textarea className={`${inputCls} h-16`} value={l.details} maxLength={600} onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, details: e.target.value } : x)))} aria-label={`Line ${i + 1} printed details`} />
+              </div>
+            )}
           </div>
         ))}
         {errors.lines && <p className="text-xs text-red">{errors.lines}</p>}
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" className="border border-border px-3 py-1.5 text-sm font-medium hover:border-ink disabled:opacity-50" disabled={writing} onClick={writeWording} data-testid="write-wording">
+            {writing ? "Writing…" : lines.some((l) => l.title) ? "Rewrite invoice wording" : "Write invoice wording"}
+          </button>
+          <span className="text-xs text-ink-muted">{wordingNote ?? "Turns each short description into the line printed on the invoice. Skipped? It is written when you save."}</span>
+        </div>
         <div className="flex flex-wrap gap-3 text-sm">
           <button type="button" className="underline" onClick={() => setLines((ls) => [...ls, newLine()])}>
             + Service line

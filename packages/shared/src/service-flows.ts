@@ -180,6 +180,32 @@ export function serviceAmountInWords(paise: number): string {
   return `Rupees ${serviceNumberInWords(rupees)}${p ? ` and ${twoDigits(p)} Paise` : ""} Only`;
 }
 
+/** v27: which invoice design applies (title, stamp colour and what page 2 shows). */
+export const SERVICE_INVOICE_VARIANTS = ["new_subscription", "due", "overdue", "part_paid", "paid", "credited", "draft", "cancelled"] as const;
+export type ServiceInvoiceVariant = (typeof SERVICE_INVOICE_VARIANTS)[number];
+export const serviceInvoiceVariantInfo: Record<ServiceInvoiceVariant, { stamp: string; tone: "green" | "amber" | "red" | "blue" | "grey"; page2: string }> = {
+  new_subscription: { stamp: "New subscription", tone: "blue", page2: "Welcome and payment details" },
+  due: { stamp: "Payment due", tone: "amber", page2: "Payment details" },
+  overdue: { stamp: "Overdue", tone: "red", page2: "Payment details" },
+  part_paid: { stamp: "Part paid", tone: "amber", page2: "Payment receipt" },
+  paid: { stamp: "Paid", tone: "green", page2: "Payment receipt" },
+  credited: { stamp: "Credited", tone: "grey", page2: "Credit note" },
+  draft: { stamp: "Draft", tone: "grey", page2: "Payment details" },
+  cancelled: { stamp: "Cancelled", tone: "grey", page2: "Cancelled" },
+};
+
+/** v27: the design for an invoice from its status, kind, payments and credit notes. */
+export function serviceInvoiceVariant(i: { status: string; kind: string; dueDate: string; paidPaise: number; creditedPaise: number; balancePaise: number }, now = new Date()): ServiceInvoiceVariant {
+  if (i.status === "draft") return "draft";
+  if (i.status === "void") return "cancelled";
+  if (i.status === "credit_noted" || (i.creditedPaise > 0 && i.balancePaise === 0 && i.status !== "paid")) return "credited";
+  if (i.status === "paid" || (i.balancePaise === 0 && i.paidPaise > 0)) return "paid";
+  if (i.paidPaise > 0) return "part_paid";
+  if (i.status === "overdue" || new Date(i.dueDate).getTime() < now.getTime() - 86_400_000) return "overdue";
+  if (i.kind === "first_payment") return "new_subscription";
+  return "due";
+}
+
 export type ServiceTaxInvoice = {
   id: string;
   number: string;
@@ -188,10 +214,19 @@ export type ServiceTaxInvoice = {
   status: string;
   kind: string;
   title: "Tax Invoice";
+  /** v27: the design: title stamp and what page 2 shows. */
+  variant: ServiceInvoiceVariant;
+  /** v27: the invoice's note to the client, if any. */
+  notes: string | null;
+  /** v27: who signs it, with the Founder's uploaded signature and company seal (image links), when set. */
+  signatory: { name: string; designation: string; signatureUrl: string | null; sealUrl: string | null };
+  /** v27: the terms printed on page 2. */
+  terms: string[];
   seller: { legalName: string; gstin: string; address: string; state: string; stateCode: string; email: string; phone: string; website: string };
   buyer: { name: string; legalName: string; gstin: string | null; address: string | null; placeOfSupply: string; placeOfSupplyName: string; email: string | null };
   sacCode: string;
-  lines: { label: string; sac: string; taxablePaise: number }[];
+  /** title: the service as printed (AI-written for manual invoices); details: one or two sentences, or null. */
+  lines: { label: string; title: string; details: string | null; sac: string; taxablePaise: number; passThrough: boolean }[];
   taxablePaise: number;
   ratePct: number;
   interState: boolean;
