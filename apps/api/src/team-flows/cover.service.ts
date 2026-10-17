@@ -47,7 +47,7 @@ export class CoverService {
     });
     const [load, away] = await Promise.all([
       this.prisma.task.groupBy({ by: ['ownerId'], where: { orgId: me.orgId, ownerId: { in: staff.map((s) => s.id) }, status: { in: [...OPEN] } }, _count: true }),
-      this.prisma.leaveRequest.findMany({ where: { orgId: me.orgId, status: 'approved', from: { lte: l.to }, to: { gte: l.from }, userId: { in: staff.map((s) => s.id) } }, select: { userId: true } }),
+      this.prisma.leaveRequest.findMany({ where: { orgId: me.orgId, status: 'approved', type: { not: 'wfh' }, from: { lte: l.to }, to: { gte: l.from }, userId: { in: staff.map((s) => s.id) } }, select: { userId: true } }),
     ]);
     const people = staff
       .map((s) => ({ id: s.id, name: s.name, onLeave: away.some((a) => a.userId === s.id), openTasks: load.find((x) => x.ownerId === s.id)?._count ?? 0, same: s.departmentId === user.departmentId }))
@@ -90,7 +90,7 @@ export class CoverService {
     let to = valid(toRaw) ?? addDays(from, 13);
     if (to < from) throw new BadRequestException('The end date is before the start date');
     if (dbDay(to).getTime() - dbDay(from).getTime() > 62 * DAY) to = addDays(from, 62);
-    const leaves = await this.prisma.leaveRequest.findMany({ where: { orgId: me.orgId, status: 'approved', from: { lte: dbDay(to) }, to: { gte: dbDay(from) } } });
+    const leaves = await this.prisma.leaveRequest.findMany({ where: { orgId: me.orgId, status: 'approved', type: { not: 'wfh' }, from: { lte: dbDay(to) }, to: { gte: dbDay(from) } } });
     const users = await this.prisma.user.findMany({ where: { id: { in: [...new Set(leaves.map((l) => l.userId))] }, deletedAt: null }, select: { id: true, name: true } });
     const out: TeamWhoIsOut = [];
     for (let d = from; d <= to; d = addDays(d, 1)) {

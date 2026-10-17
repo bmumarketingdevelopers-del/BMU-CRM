@@ -61,12 +61,17 @@ export function lateMinutes(checkIn: Date | null | undefined, cal: WorkCalendar)
 /** "Wed 21 Oct" for messages. */
 export const dayLabel = (ymd: string) => new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(dbDate(ymd));
 
-/** v30: whether today's check-in / check-out buttons are open for this person (working day, once a day). */
-export function checkWindow(att: { checkIn: Date | null; checkOut: Date | null } | null | undefined, ymd: string, cal: WorkCalendar) {
+/** v30: whether today's check-in / check-out buttons are open for this person (working day, once a day; v31: not on leave). */
+export function checkWindow(att: { checkIn: Date | null; checkOut: Date | null } | null | undefined, ymd: string, cal: WorkCalendar, leave?: { type: string } | null) {
   const k = dayKind(ymd, cal);
   return {
-    canCheckIn: k.kind === 'working' && !att?.checkIn,
-    canCheckOut: !!att?.checkIn && !att.checkOut,
-    offDay: k.kind === 'holiday' ? `Holiday: ${k.label}` : k.kind === 'weekend' ? 'Weekly off' : null,
+    canCheckIn: k.kind === 'working' && !leave && !att?.checkIn,
+    canCheckOut: !leave && !!att?.checkIn && !att.checkOut,
+    offDay: k.kind === 'holiday' ? `Holiday: ${k.label}` : k.kind === 'weekend' ? 'Weekly off' : leave ? 'On leave' : null,
   };
+}
+
+/** v31: the person's approved leave covering a day (work from home doesn't count: they check in as usual). */
+export function leaveOn(prisma: { leaveRequest: { findFirst: (a: object) => Promise<{ type: string; to: Date } | null> } }, userId: string, ymd: string) {
+  return prisma.leaveRequest.findFirst({ where: { userId, status: 'approved', type: { not: 'wfh' }, from: { lte: dbDate(ymd) }, to: { gte: dbDate(ymd) } }, select: { type: true, to: true } });
 }

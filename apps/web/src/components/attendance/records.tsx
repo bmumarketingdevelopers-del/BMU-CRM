@@ -20,7 +20,8 @@ function statusText(d: AttendanceRecordDay) {
   if (d.status === "holiday") return d.label ? `Holiday: ${d.label}` : "Holiday";
   if (d.status === "leave") return d.leaveType ? `On leave (${d.leaveType})` : "On leave";
   const base = attendanceStatusLabels[d.status];
-  return d.corrected && base ? `${base} (corrected)` : base;
+  const where = d.wfh && base ? `${base} (work from home)` : base;
+  return d.corrected && where ? `${where} (corrected)` : where;
 }
 const tone = (d: AttendanceRecordDay) =>
   d.status === "absent" ? "red" : d.status === "late" || d.status === "missed_out" || d.status === "late_missed_out" ? "amber" : d.status === "present" || d.status === "worked_off_day" ? "green" : "neutral";

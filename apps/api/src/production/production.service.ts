@@ -26,6 +26,9 @@ import {
   type TaskView,
   type UpdateTask,
   type VersionView,
+  leaveDecisionMessage,
+  leaveTypeLabels,
+  type LeaveType,
 } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -39,7 +42,7 @@ import { DeliverSlaService } from '../deliver/deliver-sla.service.js';
 import { carryOpenComments, proofRounds, ProofingService } from '../creative/proofing.service.js';
 import { AssetsService } from '../creative/assets.service.js';
 import { SettingsService } from '../settings/settings.service.js';
-import { addDays, dayKind, dayLabel, dbDate, lateMinutes, loadWorkCalendar, nextWorkingDay } from '../admin-org/work-calendar.js';
+import { addDays, dayKind, dayLabel, dbDate, lateMinutes, leaveOn, loadWorkCalendar, nextWorkingDay } from '../admin-org/work-calendar.js';
 
 const OPEN: TaskStatus[] = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
 const DONE: TaskStatus[] = ['done', 'cancelled'];
@@ -779,14 +782,30 @@ export class ProductionService {
       select: { date: true },
     });
     const missedAsked = missed ? await this.prisma.attendanceCorrection.count({ where: { userId: me.id, date: missed.date, status: { in: ['pending', 'approved'] } } }) : 0;
+    // v31: on approved leave check-in is closed like a holiday; work from home checks in as usual.
+    const leave = await leaveOn(this.prisma, me.id, todayStr);
+    const wfh = await this.prisma.leaveRequest.count({ where: { userId: me.id, status: 'approved', type: 'wfh', from: { lte: date }, to: { gte: date } } });
+    const leaveUntil = leave ? leave.to.toISOString().slice(0, 10) : null;
+    // v31: the final decision on the latest request, worded for its type (never who decided), for 3 days.
+    const decided = await this.prisma.leaveRequest.findFirst({
+      where: { userId: me.id, status: { in: ['approved', 'rejected'] }, decidedAt: { gte: new Date(Date.now() - 3 * 86_400_000) } },
+      orderBy: { decidedAt: 'desc' },
+    });
+    const range = (f: Date, t: Date) => (f.getTime() === t.getTime() ? dayLabel(f.toISOString().slice(0, 10)) : `${dayLabel(f.toISOString().slice(0, 10))} to ${dayLabel(t.toISOString().slice(0, 10))}`);
+    const notice = decided
+      ? { status: decided.status as 'approved' | 'rejected', type: decided.type, ...leaveDecisionMessage(decided.type, decided.status as 'approved' | 'rejected', range(decided.from, decided.to), decided.paidDays !== null && decided.unpaidDays !== null ? { paid: decided.paidDays, unpaid: decided.unpaidDays } : undefined) }
+      : null;
     return {
       date: todayStr,
       checkIn: att?.checkIn?.toISOString() ?? null,
       checkOut: att?.checkOut?.toISOString() ?? null,
       workday,
-      canCheckIn: workday.kind === 'working' && !att?.checkIn,
-      canCheckOut: !!att?.checkIn && !att.checkOut,
-      nextCheckIn: workday.kind !== 'working' || att?.checkOut ? nextWorkingDay(todayStr, cal) : null,
+      canCheckIn: workday.kind === 'working' && !leave && !att?.checkIn,
+      canCheckOut: !leave && !!att?.checkIn && !att.checkOut,
+      nextCheckIn: leaveUntil ? nextWorkingDay(leaveUntil, cal) : workday.kind !== 'working' || att?.checkOut ? nextWorkingDay(todayStr, cal) : null,
+      onLeave: leave ? { type: leave.type, label: leaveTypeLabels[leave.type as LeaveType] ?? 'Leave', until: leaveUntil! } : null,
+      wfh: wfh > 0,
+      leaveNotice: notice,
       late: lateMinutes(att?.checkIn, cal) > 0,
       workingHours: { start: cal.start, end: cal.end, graceMinutes: cal.graceMinutes },
       missedCheckOut: missed && !missedAsked ? missed.date.toISOString().slice(0, 10) : null,
@@ -824,6 +843,12 @@ export class ProductionService {
     const next = nextWorkingDay(todayStr, cal);
     const opens = next ? ` Check-in opens on ${dayLabel(next)}.` : '';
     if (!out && kind.kind !== 'working') throw new BadRequestException(`Today is ${kind.kind === 'holiday' ? `a holiday (${kind.label})` : 'a weekly off'}. No check-in is needed.${opens}`);
+    // v31: approved leave closes check-in and check-out like a holiday (work from home checks in as usual).
+    const leave = await leaveOn(this.prisma, me.id, todayStr);
+    if (leave) {
+      const back = nextWorkingDay(leave.to.toISOString().slice(0, 10), cal);
+      throw new BadRequestException(`You are on ${leaveTypeLabels[leave.type as LeaveType] ?? 'leave'} today. No check-in is needed.${back ? ` Check-in opens on ${dayLabel(back)}.` : ''}`);
+    }
     if (!out && existing?.checkOut) throw new BadRequestException(`You have already checked in and out today.${opens}`);
     if (!out && existing?.checkIn) throw new BadRequestException('Already checked in today');
     if (out && !existing?.checkIn) throw new BadRequestException('Check in first');

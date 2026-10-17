@@ -12,5 +12,6 @@ const peopleCap = (me: Me) => (me.permissions.users_roles_hierarchy?.scope ?? "n
 export const peopleNewEntries: NewEntry[] = [
   { id: "person", label: "Person", hint: "Add someone to the team", allowed: (me) => has(me, "founder", "admin", "hr_ops", "department_head") && peopleCap(me), Drawer: AddPersonDrawer },
   { id: "team", label: "Team or pod", hint: "Branch, department, team or client pod", allowed: (me) => (has(me, "founder", "admin") && peopleCap(me)) || has(me, "am_lead"), Drawer: AddUnitDrawer },
-  { id: "leave", label: "Leave request", hint: "Apply for time off", allowed: (me) => staff(me), Drawer: LeaveDrawer },
+  // v31: Founders don't request leave.
+  { id: "leave", label: "Leave request", hint: "Apply for time off or work from home", allowed: (me) => staff(me) && !me.roles.includes("founder"), Drawer: LeaveDrawer },
 ];

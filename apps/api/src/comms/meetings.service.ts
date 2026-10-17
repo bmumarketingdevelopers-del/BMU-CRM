@@ -363,7 +363,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     const from = new Date(now.getTime() + b.noticeHours * 3_600_000);
     const until = new Date(now.getTime() + (SLOT_DAYS + 1) * DAY);
     const busy = await this.prisma.meeting.findMany({ where: { hostId: b.userId, status: 'booked', endAt: { gt: now }, startAt: { lt: until } }, select: { startAt: true, endAt: true } });
-    const leave = await this.prisma.leaveRequest.findMany({ where: { userId: b.userId, status: 'approved', to: { gte: new Date(now.getTime() - DAY) }, from: { lte: until } }, select: { from: true, to: true } });
+    const leave = await this.prisma.leaveRequest.findMany({ where: { userId: b.userId, status: 'approved', type: { not: 'wfh' }, to: { gte: new Date(now.getTime() - DAY) }, from: { lte: until } }, select: { from: true, to: true } });
     const out: { day: string; slots: string[] }[] = [];
     const todayIst = new Date(Math.floor((now.getTime() + IST) / DAY) * DAY); // midnight IST, as a UTC-shifted date
     for (let i = 0; i < SLOT_DAYS; i++) {

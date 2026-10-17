@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   ATTENDANCE_CORRECTION_DAYS,
-  LEAVE_ALLOWANCE,
   craftSpecialtyLabel,
   istDate,
   type AttendanceCell,
@@ -19,12 +18,15 @@ import {
   type DecideLeave,
   type LeaveRow,
   type Me,
+  leaveDecisionMessage,
+  isAwayLeave,
 } from '@bmu/shared';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { assertOrgReader, isLeaveDecider } from './access.js';
+import { AWAY_LEAVE, loadLeaveRouting, paidAccrued, type LeaveRouting } from './leave-flow.js';
 import { addDays, dayKind, dayLabel, dbDate, hhmmToMin, istMinutes, lateMinutes, loadWorkCalendar, previousWorkingDay, ymdOf, type WorkCalendar } from './work-calendar.js';
 
 const DAY = 86_400_000;
@@ -33,8 +35,6 @@ const RECORD_KEEPERS = ['founder', 'hr_ops'];
 const hasRole = (me: Me, roles: string[]) => me.type === 'staff' && me.roles.some((r) => roles.includes(r));
 /** India time on a day, e.g. ("2026-10-21", "09:40") -> Date. */
 const istAt = (ymd: string, hhmm: string) => new Date(`${ymd}T${hhmm}:00+05:30`);
-/** Leave longer than this many working days also needs HR after the manager. */
-export const LONG_LEAVE_DAYS = 3;
 type Calendar = WorkCalendar;
 
 /** Today's attendance board, the month grid, late check-ins, leave requests and balances. */
@@ -133,7 +133,9 @@ export class AttendanceService {
       }),
     );
     const att = new Map(rows.map((r) => [`${r.userId}|${ymdOf(r.date)}`, r]));
-    const onLeave = (userId: string, ymd: string) => leaves.some((l) => l.userId === userId && ymdOf(l.from) <= ymd && ymdOf(l.to) >= ymd);
+    const covers = (l: (typeof leaves)[number], userId: string, ymd: string) => l.userId === userId && ymdOf(l.from) <= ymd && ymdOf(l.to) >= ymd;
+    const onLeave = (userId: string, ymd: string) => leaves.some((l) => isAwayLeave(l.type) && covers(l, userId, ymd));
+    const onWfh = (userId: string, ymd: string) => leaves.some((l) => l.type === 'wfh' && covers(l, userId, ymd));
     // v30: late only after the start time plus the grace (15 minutes by default).
     const isLate = (checkIn: Date | null) => lateMinutes(checkIn, cal) > 0;
 
@@ -156,6 +158,7 @@ export class AttendanceService {
         checkIn: r?.checkIn?.toISOString() ?? null,
         checkOut: r?.checkOut?.toISOString() ?? null,
         late: isLate(r?.checkIn ?? null),
+        wfh: onWfh(u.id, today),
       };
     });
 
@@ -196,20 +199,30 @@ export class AttendanceService {
     late.sort((a, b) => b.date.localeCompare(a.date) || b.minutesLate - a.minutesLate);
 
     // Leave balances for the year of the chosen month
+    // v31: 1 paid casual + 1 paid sick day a month, carried over within the year; unpaid days counted separately.
+    const monthsSoFar = String(y) < today.slice(0, 4) ? 12 : String(y) > today.slice(0, 4) ? 0 : Number(today.slice(5, 7));
     const balances = users.map((u) => {
-      const used = { casual: 0, sick: 0, other: 0 };
-      for (const l of leaves.filter((x) => x.userId === u.id)) {
+      const used = { casual: 0, sick: 0, other: 0, wfh: 0 };
+      for (const l of leaves.filter((x) => x.userId === u.id && ymdOf(x.to) >= yearStart && ymdOf(x.from) <= yearEnd)) {
         const n = this.workingDays(l.from, l.to, cal, [yearStart, yearEnd]);
-        const key = l.type === 'casual' || l.type === 'sick' ? l.type : 'other';
-        used[key] += n;
+        if (l.type === 'wfh') used.wfh += n;
+        else if (l.type === 'casual' || l.type === 'sick') {
+          used[l.type] += l.paidDays ?? n;
+          used.other += l.unpaidDays ?? 0;
+        } else used.other += l.unpaidDays ?? n;
       }
+      const casualAccrued = paidAccrued('casual', monthsSoFar);
+      const sickAccrued = paidAccrued('sick', monthsSoFar);
       return {
         user: { id: u.id, name: u.name },
         casualUsed: used.casual,
         sickUsed: used.sick,
         otherUsed: used.other,
-        casualLeft: Math.max(0, LEAVE_ALLOWANCE.casual - used.casual),
-        sickLeft: Math.max(0, LEAVE_ALLOWANCE.sick - used.sick),
+        casualLeft: Math.max(0, casualAccrued - used.casual),
+        sickLeft: Math.max(0, sickAccrued - used.sick),
+        casualAccrued,
+        sickAccrued,
+        wfhDays: used.wfh,
       };
     });
 
@@ -244,7 +257,7 @@ export class AttendanceService {
     const ids = users.map((u) => u.id);
     const [rows, leaves, prevRows] = await Promise.all([
       this.prisma.attendance.findMany({ where: { orgId: me.orgId, userId: { in: ids }, date: dbDate(today) } }),
-      this.prisma.leaveRequest.findMany({ where: { orgId: me.orgId, userId: { in: ids }, status: 'approved', from: { lte: dbDate(today) }, to: { gte: dbDate(today) } }, select: { userId: true } }),
+      this.prisma.leaveRequest.findMany({ where: { orgId: me.orgId, userId: { in: ids }, status: 'approved', ...AWAY_LEAVE, from: { lte: dbDate(today) }, to: { gte: dbDate(today) } }, select: { userId: true } }),
       prev ? this.prisma.attendance.findMany({ where: { orgId: me.orgId, userId: { in: ids }, date: dbDate(prev), checkIn: { not: null }, checkOut: null }, select: { userId: true } }) : Promise.resolve([]),
     ]);
     const att = new Map(rows.map((r) => [r.userId, r]));
@@ -346,9 +359,11 @@ export class AttendanceService {
       const days = dates.map((date): AttendanceRecordDay => {
         const k = kinds.get(date)!;
         const r = att.get(`${u.id}|${date}`);
-        const leave = leaves.find((l) => l.userId === u.id && ymdOf(l.from) <= date && ymdOf(l.to) >= date);
+        const covering = leaves.filter((l) => l.userId === u.id && ymdOf(l.from) <= date && ymdOf(l.to) >= date);
+        const leave = covering.find((l) => isAwayLeave(l.type));
+        const wfh = covering.some((l) => l.type === 'wfh');
         const hours = r?.checkIn && r.checkOut ? Math.round(((r.checkOut.getTime() - r.checkIn.getTime()) / 3_600_000) * 100) / 100 : 0;
-        const base = { date, kind: k.kind, label: k.label, checkIn: r?.checkIn?.toISOString() ?? null, checkOut: r?.checkOut?.toISOString() ?? null, hours, lateMinutes: 0, corrected: !!r?.corrected, leaveType: null as string | null };
+        const base = { date, kind: k.kind, label: k.label, checkIn: r?.checkIn?.toISOString() ?? null, checkOut: r?.checkOut?.toISOString() ?? null, hours, lateMinutes: 0, corrected: !!r?.corrected, leaveType: null as string | null, wfh };
         const tracked = date >= (since.get(u.id) ?? from);
         if (k.kind === 'working' && tracked && date <= today) totals.workingDays++;
         totals.hours += hours;
@@ -532,31 +547,41 @@ export class AttendanceService {
     return reports.map((r) => r.id);
   }
 
-  /** v10 chain: the manager decides first; leave over 3 working days then needs HR. HR, Admin and the Founder can decide at any stage. */
-  private canDecide(me: Me, requester: { id: string; managerId: string | null }, stage = 'manager') {
+  /** Attendance corrections: the person's manager, or HR, Branch Manager and the Founder. */
+  private canDecide(me: Me, requester: { id: string; managerId: string | null }) {
     if (me.type !== 'staff' || requester.id === me.id) return false;
     if (isLeaveDecider(me)) return true;
-    return stage === 'manager' && requester.managerId === me.id;
+    return requester.managerId === me.id;
   }
 
+  /** v31: the step a pending request is at: the Department Head ("head"; older rows say "manager"), then HR. */
+  private leaveStage(l: { userId: string; stage: string }, routing: LeaveRouting): 'head' | 'hr' {
+    return l.stage === 'hr' || !routing.headOf(l.userId) ? 'hr' : 'head';
+  }
+
+  /** v31: the Department Head decides first; then HR (HR of the same branch for a Department Head's own leave). */
+  private canDecideLeave(me: Me, l: { userId: string; stage: string; status: string }, routing: LeaveRouting) {
+    if (me.type !== 'staff' || l.status !== 'pending' || l.userId === me.id) return false;
+    return this.leaveStage(l, routing) === 'head' ? routing.headOf(l.userId) === me.id : routing.hrFor(l.userId).includes(me.id);
+  }
+
+  /** Founder, Branch Manager and HR see every request; a Department Head sees their department's. */
   async leave(me: Me): Promise<LeaveRow[]> {
     if (me.type !== 'staff') throw new ForbiddenException('Team only');
+    const routing = await loadLeaveRouting(this.prisma, me.orgId);
     const all = isLeaveDecider(me);
-    const reports = all ? [] : await this.reportIds(me);
-    if (!all && !reports.length) return [];
-    const list = await this.prisma.leaveRequest.findMany({
-      where: { orgId: me.orgId, ...(all ? {} : { userId: { in: reports } }) },
-      orderBy: { createdAt: 'desc' },
-      take: 300,
-    });
-    return this.rows(me, list);
+    const list = await this.prisma.leaveRequest.findMany({ where: { orgId: me.orgId }, orderBy: { createdAt: 'desc' }, take: 500 });
+    const mine = all ? list : list.filter((l) => routing.headOf(l.userId) === me.id || this.canDecideLeave(me, l, routing));
+    return this.rows(me, mine.slice(0, 300), routing);
   }
 
   private async rows(
     me: Me,
-    list: { id: string; userId: string; from: Date; to: Date; type: string; reason: string | null; status: LeaveRow['status']; decidedById: string | null; decidedAt: Date | null; createdAt: Date; stage: string; managerDecidedById: string | null; decisionNote: string | null }[],
+    list: { id: string; userId: string; from: Date; to: Date; type: string; reason: string | null; status: LeaveRow['status']; decidedById: string | null; decidedAt: Date | null; createdAt: Date; stage: string; managerDecidedById: string | null; decisionNote: string | null; paidDays: number | null; unpaidDays: number | null }[],
+    routingIn?: LeaveRouting,
   ) {
     const cal = await this.calendar(me.orgId);
+    const routing = routingIn ?? (await loadLeaveRouting(this.prisma, me.orgId));
     const userIds = [...new Set(list.flatMap((l) => [l.userId, l.decidedById, l.managerDecidedById].filter(Boolean) as string[]))];
     const live = list.filter((l) => l.status === 'pending' || (l.status === 'approved' && ymdOf(l.to) >= istDate(new Date())));
     const openTasks = live.length
@@ -582,8 +607,10 @@ export class AttendanceService {
         decidedBy: d ? { id: d.id, name: d.name } : null,
         decidedAt: l.decidedAt?.toISOString() ?? null,
         createdAt: l.createdAt.toISOString(),
-        canDecide: l.status === 'pending' && !!u && this.canDecide(me, u, l.stage),
-        stage: (l.status === 'pending' ? (l.stage === 'hr' ? 'hr' : 'manager') : 'done') as LeaveRow['stage'],
+        canDecide: !!u && this.canDecideLeave(me, l, routing),
+        stage: l.status === 'pending' ? this.leaveStage(l, routing) : 'done',
+        paidDays: l.paidDays ?? (l.type === 'casual' || l.type === 'sick' ? this.workingDays(l.from, l.to, cal) : 0),
+        unpaidDays: l.unpaidDays ?? (l.type === 'unpaid' ? this.workingDays(l.from, l.to, cal) : 0),
         managerDecidedBy: l.managerDecidedById && byId.get(l.managerDecidedById) ? { id: l.managerDecidedById, name: byId.get(l.managerDecidedById)!.name } : null,
         decisionNote: l.decisionNote,
         tasksDuringLeave: openTasks.filter((t) => t.ownerId === l.userId && istDate(t.deadline!) >= ymdOf(l.from) && istDate(t.deadline!) <= ymdOf(l.to)).length,
@@ -597,42 +624,46 @@ export class AttendanceService {
     if (!l) throw new NotFoundException('Leave request not found');
     const requester = await this.prisma.user.findUniqueOrThrow({ where: { id: l.userId }, select: { id: true, name: true, managerId: true } });
     if (l.status !== 'pending') throw new ConflictException(`This leave was already ${l.status}`);
-    if (!this.canDecide(me, requester, l.stage)) {
-      throw new ForbiddenException(l.stage === 'hr' ? 'This leave is waiting for HR. Only HR, Branch Manager or the Founder can decide it now.' : 'Only HR, Branch Manager, the Founder or their manager can decide this leave');
+    const routing = await loadLeaveRouting(this.prisma, me.orgId);
+    const stage = this.leaveStage(l, routing);
+    if (!this.canDecideLeave(me, l, routing)) {
+      throw new ForbiddenException(stage === 'hr' ? 'This request is waiting for HR to make the final decision.' : 'This request is waiting for the Department Head first.');
     }
     const cal = await this.calendar(me.orgId);
     const days = this.workingDays(l.from, l.to, cal);
-    const range = ymdOf(l.from) === ymdOf(l.to) ? ymdOf(l.from) : `${ymdOf(l.from)} to ${ymdOf(l.to)}`;
+    const range = ymdOf(l.from) === ymdOf(l.to) ? dayLabel(ymdOf(l.from)) : `${dayLabel(ymdOf(l.from))} to ${dayLabel(ymdOf(l.to))}`;
     const note = input.note?.trim() || null;
+    const what = l.type === 'wfh' ? 'work from home' : `${l.type} leave`;
 
-    // Manager approves a long leave: it moves on to HR instead of being final.
-    if (input.decision === 'approve' && l.stage !== 'hr' && days > LONG_LEAVE_DAYS && !isLeaveDecider(me)) {
+    // v31: the Department Head approves: it goes on to HR for the final call. The employee is not told about this step.
+    if (stage === 'head' && input.decision === 'approve') {
       const updated = await this.prisma.leaveRequest.update({ where: { id }, data: { stage: 'hr', managerDecidedById: me.id, managerDecidedAt: new Date(), decisionNote: note } });
-      await this.audit.log(me, 'leave.manager_approved', 'LeaveRequest', id, { stage: l.stage }, { stage: 'hr', note }, ip);
-      const hr = await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'hr_ops' } } } }, select: { id: true } });
-      await this.notifications.notify(me.orgId, hr.map((h) => h.id), { kind: 'leave_request', title: `${requester.name}'s ${days}-day ${l.type} leave needs HR approval`, body: `${range}. Approved by ${me.name}.`, link: '/admin/attendance#leave' });
-      await this.notifications.notify(me.orgId, [l.userId], { kind: 'leave_request', title: `${me.name} approved your leave (${range}). It now goes to HR.`, body: note ?? undefined, link: '/team/profile' });
-      return (await this.rows(me, [updated]))[0];
+      await this.audit.log(me, 'leave.head_approved', 'LeaveRequest', id, { stage: l.stage }, { stage: 'hr', note }, ip);
+      await this.notifications.notify(me.orgId, routing.hrFor(l.userId), {
+        kind: 'leave_request',
+        title: `${requester.name}'s ${days}-day ${what} needs your final decision`,
+        body: `${range}. Approved by the Department Head (${me.name}).${note ? ` Note: ${note}` : ''}`,
+        link: '/admin/attendance#leave',
+      });
+      return (await this.rows(me, [updated], routing))[0];
     }
 
+    // Final: HR decides, or the Department Head rejects (a rejection ends it).
     const status = input.decision === 'approve' ? 'approved' : 'rejected';
     const updated = await this.prisma.leaveRequest.update({
       where: { id },
-      data: { status, stage: 'done', decidedById: me.id, decidedAt: new Date(), decisionNote: note, ...(l.stage === 'manager' && requester.managerId === me.id ? { managerDecidedById: me.id, managerDecidedAt: new Date() } : {}) },
+      data: { status, stage: 'done', decidedById: me.id, decidedAt: new Date(), decisionNote: note, ...(stage === 'head' ? { managerDecidedById: me.id, managerDecidedAt: new Date() } : {}) },
     });
-    await this.audit.log(me, `leave.${status}`, 'LeaveRequest', id, { status: l.status, stage: l.stage }, { status, note }, ip);
-    await this.notifications.notify(me.orgId, [l.userId], {
-      kind: 'leave_request',
-      title: `Your ${l.type} leave (${range}) was ${status}`,
-      body: note ? `${me.name}: ${note}` : `Decided by ${me.name}`,
-      link: '/team/profile',
-    });
-    if (status === 'approved') await this.flagCover(me, updated, requester, range);
-    return (await this.rows(me, [updated]))[0];
+    await this.audit.log(me, `leave.${status}`, 'LeaveRequest', id, { status: l.status, stage: l.stage }, { status, stage, note }, ip);
+    // The employee sees only the result, worded for the kind of request; never who decided or the steps in between.
+    const msg = leaveDecisionMessage(l.type, status, range, l.paidDays !== null && l.unpaidDays !== null ? { paid: l.paidDays, unpaid: l.unpaidDays } : undefined);
+    await this.notifications.notify(me.orgId, [l.userId], { kind: 'leave_request', title: msg.title, body: msg.body, link: '/team/profile' });
+    if (status === 'approved' && isAwayLeave(l.type)) await this.flagCover(me, updated, requester, range, routing);
+    return (await this.rows(me, [updated], routing))[0];
   }
 
   /** Tasks due while someone is away: tell their manager (or HR) so the work gets reassigned. */
-  private async flagCover(me: Me, l: { id: string; userId: string; from: Date; to: Date }, requester: { name: string; managerId: string | null }, range: string) {
+  private async flagCover(me: Me, l: { id: string; userId: string; from: Date; to: Date }, requester: { name: string; managerId: string | null }, range: string, routing: LeaveRouting) {
     const tasks = await this.prisma.task.count({
       where: {
         orgId: me.orgId,
@@ -642,7 +673,9 @@ export class AttendanceService {
       },
     });
     if (!tasks) return;
-    const to = requester.managerId ? [requester.managerId] : (await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', status: 'active', roles: { some: { role: { baseRole: 'hr_ops' } } } }, select: { id: true } })).map((u) => u.id);
+    // v31: the Department Head reassigns the work (HR when there is none).
+    const head = routing.headOf(l.userId);
+    const to = head ? [head] : routing.hrFor(l.userId);
     await this.notifications.notify(me.orgId, to, {
       kind: 'leave_cover',
       title: `${requester.name} is on leave ${range}: ${tasks} task${tasks > 1 ? 's' : ''} due. Reassign?`,

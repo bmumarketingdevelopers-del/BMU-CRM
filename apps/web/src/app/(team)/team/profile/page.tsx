@@ -26,13 +26,22 @@ export default function ProfilePage() {
     );
   const casual = p.leave.balance.find((b) => b.type === "casual")!;
   const sick = p.leave.balance.find((b) => b.type === "sick")!;
+  // v31: Founders don't request leave.
+  const canApply = p.leave.canApply !== false;
 
   return (
     <div className="[&_.grid>*]:min-w-0">
-      <PageTitle title="Profile, leave & attendance" subtitle="Your details, time off and working hours. Leave requests go to your manager; leave over 3 working days then goes to HR." />
+      <PageTitle
+        title={canApply ? "Profile, leave & attendance" : "Profile & attendance"}
+        subtitle={canApply ? "Your details, time off and working hours. Leave and work-from-home requests are approved by your Department Head and HR; you are told the final decision." : "Your details and working hours."}
+      />
       <StatRow cols={4}>
-        <StatTile label="Casual leave left" value={casual.left} hint={`of ${casual.allowed} in ${p.leave.year}${casual.pending ? ` · ${casual.pending} pending` : ""}`} tone={casual.left <= 2 ? "warn" : "default"} />
-        <StatTile label="Sick leave left" value={sick.left} hint={`of ${sick.allowed} in ${p.leave.year}${sick.pending ? ` · ${sick.pending} pending` : ""}`} />
+        {canApply ? (
+          <>
+            <StatTile label="Paid casual leave left" value={casual.left} hint={`${casual.allowed} built up in ${p.leave.year} (1 a month)${casual.pending ? ` · ${casual.pending} pending` : ""}`} tone={casual.left === 0 ? "warn" : "default"} />
+            <StatTile label="Paid sick leave left" value={sick.left} hint={`${sick.allowed} built up in ${p.leave.year} (1 a month)${sick.pending ? ` · ${sick.pending} pending` : ""}`} tone={sick.left === 0 ? "warn" : "default"} />
+          </>
+        ) : null}
         <StatTile label="Hours this month" value={p.attendance.totalHours} hint={monthLabel(p.attendance.month)} />
         <StatTile label="Days present" value={`${p.attendance.daysPresent}/${p.attendance.workingDaysSoFar}`} hint="Working days so far" tone={p.attendance.daysPresent >= p.attendance.workingDaysSoFar ? "good" : "default"} />
       </StatRow>
@@ -40,7 +49,7 @@ export default function ProfilePage() {
       <div className="mt-6 grid gap-6">
         <Grid>
           <DetailsPanel p={p} onSaved={() => api.workspace.profile().then(setFresh)} />
-          <LeaveForm p={p} onDone={setFresh} />
+          {canApply && <LeaveForm p={p} onDone={setFresh} />}
         </Grid>
 
         <Panel title="Attendance" subtitle={`${monthLabel(p.attendance.month)} · from your My Day check-ins`}>
@@ -49,9 +58,11 @@ export default function ProfilePage() {
 
         <MyCorrections />
 
-        <Panel title="My leave requests" flush>
-          <LeaveTable p={p} onDone={setFresh} />
-        </Panel>
+        {canApply && (
+          <Panel title="My leave and work-from-home requests" flush>
+            <LeaveTable p={p} onDone={setFresh} />
+          </Panel>
+        )}
 
         <NotificationPrefsPanel />
 
@@ -170,20 +181,24 @@ function LeaveForm({ p, onDone }: { p: MyProfile; onDone: (p: MyProfile) => void
     }
   }
   return (
-    <Panel title="Apply for leave" subtitle={p.user.manager ? `${p.user.manager.name} will be notified` : "Your manager will be notified"}>
+    <Panel title="Apply for leave or work from home" subtitle="Your Department Head approves first, then HR. You will be told the final decision.">
       <div className="mb-5 grid gap-3">
         {p.leave.balance.map((b) => (
           <div key={b.type}>
             <div className="mb-1 flex justify-between text-xs">
               <span>{leaveTypeLabels[b.type]}</span>
               <span className="text-ink-muted tabular-nums">
-                {b.used} used · {b.left} left
+                {b.used} used · {b.left} paid left
               </span>
             </div>
-            <Meter value={(b.used / b.allowed) * 100} tone={b.left <= 2 ? "warn" : "default"} />
+            <Meter value={b.allowed ? (b.used / b.allowed) * 100 : 0} tone={b.left === 0 ? "warn" : "default"} />
           </div>
         ))}
-        {p.leave.unpaidUsed > 0 && <p className="text-xs text-ink-muted">{p.leave.unpaidUsed} unpaid day(s) taken this year.</p>}
+        <p className="text-xs text-ink-muted">
+          You get 1 paid casual and 1 paid sick day each month; unused days carry over within the year. Days beyond that are unpaid.
+          {p.leave.unpaidUsed > 0 ? ` ${p.leave.unpaidUsed} unpaid day(s) taken this year.` : ""}
+          {p.leave.wfhDays ? ` ${p.leave.wfhDays} work-from-home day(s) this year.` : ""}
+        </p>
       </div>
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">
@@ -212,7 +227,10 @@ function LeaveForm({ p, onDone }: { p: MyProfile; onDone: (p: MyProfile) => void
           {error && <p className="mb-2 text-sm text-red">{error}</p>}
           {ok && <p className="mb-2 text-sm text-[#5f8a12]">Request sent. You will be notified when it is decided.</p>}
           <Button disabled={busy}>Send request</Button>
-          <p className="mt-2 text-xs text-ink-muted">Only working days count. Sundays and holidays are skipped.</p>
+          <p className="mt-2 text-xs text-ink-muted">
+            Only working days count; weekly offs and holidays are skipped.{" "}
+            {v.type === "wfh" ? "On work-from-home days, check in and out from My Day as usual." : "Check-in is closed on approved leave days."}
+          </p>
         </div>
       </form>
     </Panel>
@@ -239,16 +257,29 @@ function LeaveTable({ p, onDone }: { p: MyProfile; onDone: (p: MyProfile) => voi
         columns={[
           { key: "d", header: "Dates", cell: (r) => <span className="font-medium whitespace-nowrap">{r.from === r.to ? fmtIsoDay(r.from, true) : `${fmtIsoDay(r.from)} – ${fmtIsoDay(r.to, true)}`}</span> },
           { key: "t", header: "Type", cell: (r) => leaveTypeLabels[r.type] },
-          { key: "n", header: "Working days", align: "right", cell: (r) => r.days },
+          {
+            key: "n",
+            header: "Working days",
+            align: "right",
+            cell: (r) => (
+              <div>
+                <div>{r.days}</div>
+                {(r.type === "casual" || r.type === "sick") && !!r.unpaidDays && (
+                  <div className="text-xs text-ink-muted">
+                    {r.paidDays} paid · {r.unpaidDays} unpaid
+                  </div>
+                )}
+              </div>
+            ),
+          },
           { key: "r", header: "Reason", cell: (r) => <span className="text-ink-muted">{r.reason ?? "—"}</span> },
           {
             key: "s",
             header: "Status",
             cell: (r) => (
               <div>
-                <Badge tone={statusTone[r.status]}>{r.status[0].toUpperCase() + r.status.slice(1)}</Badge>
-                {r.status === "pending" && r.waitingOn && <div className="mt-1 text-xs text-ink-muted">Waiting for {r.waitingOn}</div>}
-                {r.decisionNote && <div className="mt-1 text-xs text-ink-muted">“{r.decisionNote}”</div>}
+                {/* v31: only the final result; who decided and the steps in between stay confidential. */}
+                <Badge tone={statusTone[r.status]}>{{ pending: "Waiting for approval", approved: "Approved", rejected: "Not approved", cancelled: "Cancelled" }[r.status]}</Badge>
               </div>
             ),
           },

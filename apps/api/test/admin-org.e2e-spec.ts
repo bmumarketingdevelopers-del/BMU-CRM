@@ -100,7 +100,10 @@ describe('attendance and leave', () => {
 
   beforeAll(async () => {
     const manager = await userId('design.head@bmu.demo');
-    staffId = (await prisma.user.create({ data: { orgId, type: 'staff', name: `Leave Tester ${stamp}`, email: `leave.${stamp}@example.com`, status: 'active', managerId: manager } })).id;
+    // v31: leave goes to the Department Head of the person's department first.
+    const headed = await prisma.department.findFirst({ where: { headUserId: manager, deletedAt: null } });
+    const dept = headed?.id ?? (await prisma.user.findUniqueOrThrow({ where: { id: manager } })).departmentId;
+    staffId = (await prisma.user.create({ data: { orgId, type: 'staff', name: `Leave Tester ${stamp}`, email: `leave.${stamp}@example.com`, status: 'active', managerId: manager, departmentId: dept } })).id;
     testUsers.push(staffId);
   });
 
@@ -114,19 +117,22 @@ describe('attendance and leave', () => {
     await http().get('/admin-org/attendance?month=2026-13').set(as('hr')).expect(400);
   });
 
-  it('lets the manager or HR decide, notifies the requester and counts working days', async () => {
+  it('the Department Head decides first, then HR; the requester hears only the result', async () => {
     // Mon 2 Nov 2026 to Sat 7 Nov 2026: 6 working days; Sun 8 Nov (Diwali) is excluded.
     const leave = await prisma.leaveRequest.create({ data: { orgId, userId: staffId, from: new Date('2026-11-02T00:00:00Z'), to: new Date('2026-11-08T00:00:00Z'), type: 'casual' } });
     await http().post(`/admin-org/leave/${leave.id}/decide`).set(as('producer')).send({ decision: 'approve' }).expect(403);
     await http().post(`/admin-org/leave/${leave.id}/decide`).set(as('am')).send({ decision: 'approve' }).expect(403);
+    await http().post(`/admin-org/leave/${leave.id}/decide`).set(as('hr')).send({ decision: 'approve' }).expect(403);
+    await http().post(`/admin-org/leave/${leave.id}/decide`).set(as('admin')).send({ decision: 'approve' }).expect(403);
     const managerList = await http().get('/admin-org/leave').set(as('design.head')).expect(200);
     const mine = managerList.body.find((l: { id: string }) => l.id === leave.id);
-    expect(mine.canDecide).toBe(true);
+    expect(mine).toMatchObject({ canDecide: true, stage: 'head' });
     expect(mine.workingDays).toBe(6);
 
-    // v10 chain: more than 3 working days, so the manager's approval sends it on to HR.
+    // v31 chain: the Department Head's approval sends it on to HR for the final call.
     const first = await http().post(`/admin-org/leave/${leave.id}/decide`).set(as('design.head')).send({ decision: 'approve', note: 'Enjoy' }).expect(201);
     expect(first.body).toMatchObject({ status: 'pending', stage: 'hr', canDecide: false });
+    expect(await prisma.notification.count({ where: { userId: staffId } })).toBe(0);
     expect(first.body.managerDecidedBy.id).toBe(await userId('design.head@bmu.demo'));
     await http().post(`/admin-org/leave/${leave.id}/decide`).set(as('design.head')).send({ decision: 'approve' }).expect(403);
     const ok = await http().post(`/admin-org/leave/${leave.id}/decide`).set(as('hr')).send({ decision: 'approve' }).expect(201);
@@ -134,13 +140,16 @@ describe('attendance and leave', () => {
     expect(ok.body.decidedBy.id).toBe(await userId('hr@bmu.demo'));
     await http().post(`/admin-org/leave/${leave.id}/decide`).set(as('hr')).send({ decision: 'reject' }).expect(409);
     const note = await prisma.notification.findFirstOrThrow({ where: { userId: staffId }, orderBy: { createdAt: 'desc' } });
-    expect(note.title).toMatch(/approved/);
+    expect(note.title).toMatch(/Your casual leave .* is approved/);
+    expect(note.body).not.toMatch(/Enjoy$|HR|design/i);
     expect(note.link).toBe('/team/profile');
 
     const nov = await http().get('/admin-org/attendance?month=2026-11').set(as('hr')).expect(200);
     const bal = nov.body.balances.find((b: { user: { id: string } }) => b.user.id === staffId);
-    expect(bal.casualUsed).toBe(6);
-    expect(bal.casualLeft).toBe(6);
+    // v31: 1 paid casual day a month, carried over (older requests without a split count as paid).
+    const nowIst = new Date(Date.now() + 330 * 60_000).toISOString();
+    const accrued = nowIst.startsWith('2026') ? Number(nowIst.slice(5, 7)) : 12;
+    expect(bal).toMatchObject({ casualUsed: 6, casualAccrued: accrued, casualLeft: Math.max(0, accrued - 6) });
     const row = nov.body.grid.find((g: { user: { id: string } }) => g.user.id === staffId);
     expect(row.cells[1]).toBe('leave');
   });
@@ -308,8 +317,13 @@ describe('attendance and leave', () => {
     hrId = hr;
     const own = await prisma.leaveRequest.create({ data: { orgId, userId: hr, from: new Date('2026-12-01T00:00:00Z'), to: new Date('2026-12-01T00:00:00Z'), type: 'sick' } });
     await http().post(`/admin-org/leave/${own.id}/decide`).set(as('hr')).send({ decision: 'approve' }).expect(403);
-    const r = await http().post(`/admin-org/leave/${own.id}/decide`).set(as('admin')).send({ decision: 'reject' }).expect(201);
-    expect(r.body.status).toBe('rejected');
+    // v31: Branch Managers are not in the leave flow; another HR (or the Founder when there is none) decides.
+    await http().post(`/admin-org/leave/${own.id}/decide`).set(as('admin')).send({ decision: 'reject' }).expect(403);
+    const founderView = (await http().get('/admin-org/leave').set(as('founder')).expect(200)).body.find((l: { id: string }) => l.id === own.id);
+    if (founderView.canDecide) {
+      const r = await http().post(`/admin-org/leave/${own.id}/decide`).set(as('founder')).send({ decision: 'reject' }).expect(201);
+      expect(r.body.status).toBe('rejected');
+    }
   });
 });
 

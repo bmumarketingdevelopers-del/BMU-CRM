@@ -54,6 +54,7 @@ afterAll(async () => {
   // Put settings back and keep test staff out of other specs' assignment pools.
   await prisma.organisation.update({ where: { id: orgId }, data: { settings: savedSettings as object } });
   await prisma.user.updateMany({ where: { email: { contains: `.${stamp}@example.com` } }, data: { deletedAt: new Date(), status: 'suspended' } });
+  await prisma.department.updateMany({ where: { orgId, name: `Leave Pod ${stamp}` }, data: { deletedAt: new Date(), headUserId: null } });
   await app.close();
 });
 
@@ -148,39 +149,63 @@ describe('users, roles and permissions', () => {
 });
 
 describe('leave approval chain and cover', () => {
+  // v31: the Department Head first (a rejection is final), then HR for the final call; the employee sees only the result.
   let managerToken: string;
   let staffId: string;
   let managerId: string;
+  let deptId: string;
+  let hrBranch: string;
 
   beforeAll(async () => {
     const producerRole = await role('producer');
-    managerId = (await prisma.user.create({ data: { orgId, type: 'staff', name: `Pod Lead ${stamp}`, email: mail('lead'), status: 'active', roles: { create: { roleId: producerRole.id } } } })).id;
-    staffId = (await prisma.user.create({ data: { orgId, type: 'staff', name: `Leaver Test ${stamp}`, email: mail('staff'), status: 'active', managerId, roles: { create: { roleId: producerRole.id } } } })).id;
+    const hr = await prisma.user.findFirstOrThrow({ where: { email: 'hr@bmu.demo' }, include: { department: true } });
+    hrBranch = hr.branchId ?? hr.department?.branchId ?? (await prisma.branch.findFirstOrThrow({ where: { orgId } })).id;
+    managerId = (await prisma.user.create({ data: { orgId, type: 'staff', name: `Pod Lead ${stamp}`, email: mail('lead'), status: 'active', branchId: hrBranch, roles: { create: { roleId: producerRole.id } } } })).id;
+    deptId = (await prisma.department.create({ data: { orgId, branchId: hrBranch, name: `Leave Pod ${stamp}`, headUserId: managerId } })).id;
+    await prisma.user.update({ where: { id: managerId }, data: { departmentId: deptId } });
+    staffId = (await prisma.user.create({ data: { orgId, type: 'staff', name: `Leaver Test ${stamp}`, email: mail('staff'), status: 'active', managerId, departmentId: deptId, branchId: hrBranch, roles: { create: { roleId: producerRole.id } } } })).id;
     managerToken = await signIn(mail('lead'));
     tokens.staff = await signIn(mail('staff'));
     tokens.lead = managerToken;
   });
 
-  it('long leave: manager first, then HR; manager notified on the team Approvals page', async () => {
+  const staffNotices = () => prisma.notification.findMany({ where: { userId: staffId, kind: 'leave_request' }, orderBy: { createdAt: 'desc' } });
+
+  it('Department Head first, then HR; the employee is told only the final result, worded for the leave type', async () => {
     const mon = futureMonday(3);
     const r = await http().post('/workspace/leave').set(as('staff')).send({ from: mon, to: addDays(mon, 4), type: 'casual', reason: 'Trip' }).expect(201);
     const req = r.body.leave.requests[0];
-    expect(req).toMatchObject({ status: 'pending', stage: 'manager', days: 5 });
+    expect(req).toMatchObject({ status: 'pending', days: 5, paidDays: 5, unpaidDays: 0 });
+    // Confidential: no stage, approver or note for the employee.
+    expect(req.stage).toBeUndefined();
+    expect(req.waitingOn).toBeUndefined();
+    expect(req.decisionNote).toBeUndefined();
     const note = await prisma.notification.findFirstOrThrow({ where: { userId: managerId, kind: 'leave_request' }, orderBy: { createdAt: 'desc' } });
     expect(note.link).toBe('/team/approvals');
 
+    // HR waits for the Department Head.
+    await http().post(`/admin-org/leave/${req.id}/decide`).set(as('hr')).send({ decision: 'approve' }).expect(403);
     const list = await http().get('/admin-org/leave').set(as('lead')).expect(200);
-    expect(list.body.find((l: { id: string }) => l.id === req.id).canDecide).toBe(true);
-    const step1 = await http().post(`/admin-org/leave/${req.id}/decide`).set(as('lead')).send({ decision: 'approve' }).expect(201);
+    expect(list.body.find((l: { id: string }) => l.id === req.id)).toMatchObject({ canDecide: true, stage: 'head' });
+    const step1 = await http().post(`/admin-org/leave/${req.id}/decide`).set(as('lead')).send({ decision: 'approve', note: 'Fine by me' }).expect(201);
     expect(step1.body).toMatchObject({ status: 'pending', stage: 'hr' });
     await http().post(`/admin-org/leave/${req.id}/decide`).set(as('lead')).send({ decision: 'approve' }).expect(403);
-    const mine = await http().get('/workspace/profile').set(as('staff')).expect(200);
-    expect(mine.body.leave.requests[0]).toMatchObject({ stage: 'hr', waitingOn: 'HR' });
+    expect(await staffNotices()).toHaveLength(0);
+    const mine = (await http().get('/workspace/profile').set(as('staff')).expect(200)).body.leave.requests[0];
+    expect(mine.status).toBe('pending');
+    expect(mine.stage).toBeUndefined();
 
-    // A task due during the leave gets flagged to the manager for cover.
+    // A task due during the leave gets flagged to the Department Head for cover.
     const task = await prisma.task.create({ data: { orgId, title: `Cover me ${stamp}`, ownerId: staffId, deadline: new Date(`${addDays(mon, 2)}T15:00:00+05:30`) } });
     const ok = await http().post(`/admin-org/leave/${req.id}/decide`).set(as('hr')).send({ decision: 'approve' }).expect(201);
     expect(ok.body).toMatchObject({ status: 'approved', stage: 'done', tasksDuringLeave: 1 });
+    const [told] = await staffNotices();
+    expect(told.title).toMatch(/Your casual leave .* is approved/);
+    expect(told.body).toMatch(/Enjoy your time off/);
+    expect(`${told.title} ${told.body}`).not.toMatch(/Pod Lead|HR|Fine by me/);
+    const after = (await http().get('/workspace/profile').set(as('staff')).expect(200)).body.leave.requests[0];
+    expect(after.status).toBe('approved');
+    expect(after.decisionNote).toBeUndefined();
     const cover = await prisma.notification.findFirstOrThrow({ where: { userId: managerId, kind: 'leave_cover' } });
     expect(cover.link).toBe(`/team/leave/${req.id}/cover`);
 
@@ -195,17 +220,72 @@ describe('leave approval chain and cover', () => {
     const out = await http().get(`/team-flows/leave/out?from=${mon}&to=${addDays(mon, 6)}`).set(as('producer')).expect(200);
     expect(out.body[0].people.some((p: { id: string }) => p.id === staffId)).toBe(true);
     const profile = await http().get('/workspace/profile').set(as('staff')).expect(200);
-    expect(profile.body.leave.balance[0]).toMatchObject({ type: 'casual', used: 5 });
+    expect(profile.body.leave.balance[0]).toMatchObject({ type: 'casual', used: 5, allowed: Number(today.slice(5, 7)) });
+    expect(profile.body.leave.canApply).toBe(true);
   });
 
-  it('short leave is final with the manager; rejection is final at any stage', async () => {
-    const mon = futureMonday(5);
-    const a = (await http().post('/workspace/leave').set(as('staff')).send({ from: mon, to: mon, type: 'sick' }).expect(201)).body.leave.requests[0];
-    const r1 = await http().post(`/admin-org/leave/${a.id}/decide`).set(as('lead')).send({ decision: 'approve' }).expect(201);
-    expect(r1.body.status).toBe('approved');
-    const b = (await http().post('/workspace/leave').set(as('staff')).send({ from: addDays(mon, 1), to: addDays(mon, 1), type: 'sick' }).expect(201)).body.leave.requests.find((x: { from: string }) => x.from === addDays(mon, 1));
-    const r2 = await http().post(`/admin-org/leave/${b.id}/decide`).set(as('lead')).send({ decision: 'reject', note: 'Deadline week' }).expect(201);
-    expect(r2.body).toMatchObject({ status: 'rejected', decisionNote: 'Deadline week' });
+  it('a Department Head rejection is final; sick days beyond the paid ones are unpaid; work from home follows the same flow', async () => {
+    // January: 1 paid sick day built up, so 3 days = 1 paid + 2 unpaid.
+    const jan = (await http().post('/workspace/leave').set(as('staff')).send({ from: '2027-01-04', to: '2027-01-06', type: 'sick' }).expect(201)).body.leave.requests.find((x: { from: string }) => x.from === '2027-01-04');
+    expect(jan).toMatchObject({ days: 3, paidDays: 1, unpaidDays: 2 });
+    const r = await http().post(`/admin-org/leave/${jan.id}/decide`).set(as('lead')).send({ decision: 'reject', note: 'Deadline week' }).expect(201);
+    expect(r.body).toMatchObject({ status: 'rejected', stage: 'done' });
+    await http().post(`/admin-org/leave/${jan.id}/decide`).set(as('hr')).send({ decision: 'approve' }).expect(409);
+    const [told] = await staffNotices();
+    expect(told.title).toMatch(/Your sick leave request .* was not approved/);
+    expect(told.body).toMatch(/take care of yourself/);
+    expect(`${told.title} ${told.body}`).not.toMatch(/Pod Lead|Deadline week/);
+
+    // Work from home: same approvals; the employee still checks in.
+    const mon = futureMonday(6);
+    const w = (await http().post('/workspace/leave').set(as('staff')).send({ from: mon, to: mon, type: 'wfh', reason: 'Plumber visit' }).expect(201)).body.leave.requests.find((x: { from: string }) => x.from === mon);
+    expect(w).toMatchObject({ type: 'wfh', paidDays: 0, unpaidDays: 0 });
+    await http().post(`/admin-org/leave/${w.id}/decide`).set(as('lead')).send({ decision: 'approve' }).expect(201);
+    await http().post(`/admin-org/leave/${w.id}/decide`).set(as('hr')).send({ decision: 'approve' }).expect(201);
+    const [wfh] = await staffNotices();
+    expect(wfh.title).toMatch(/Your work from home .* is approved/);
+    expect(wfh.body).toMatch(/check in and out/);
+    // Work from home is not "away" for cover and capacity.
+    const out = await http().get(`/team-flows/leave/out?from=${mon}&to=${mon}`).set(as('producer')).expect(200);
+    expect(out.body.flatMap((d: { people: { id: string }[] }) => d.people).some((p: { id: string }) => p.id === staffId)).toBe(false);
+
+    // Founders don't request leave.
+    await http().post('/workspace/leave').set(as('founder')).send({ from: mon, to: mon, type: 'casual' }).expect(403);
+    expect((await http().get('/workspace/profile').set(as('founder')).expect(200)).body.leave.canApply).toBe(false);
+  });
+
+  it("a Department Head's own leave goes to HR of the same branch", async () => {
+    const mon = futureMonday(8);
+    const req = (await http().post('/workspace/leave').set(as('lead')).send({ from: mon, to: mon, type: 'casual' }).expect(201)).body.leave.requests[0];
+    const hrView = (await http().get('/admin-org/leave').set(as('hr')).expect(200)).body.find((l: { id: string }) => l.id === req.id);
+    expect(hrView).toMatchObject({ stage: 'hr', canDecide: true });
+    // HR of another branch cannot decide it.
+    const other = await prisma.branch.findFirst({ where: { orgId, id: { not: hrBranch }, deletedAt: null } });
+    if (other) {
+      const hrRole = await role('hr_ops');
+      await prisma.user.create({ data: { orgId, type: 'staff', name: `Far HR ${stamp}`, email: mail('farhr'), status: 'active', branchId: other.id, roles: { create: { roleId: hrRole.id } } } });
+      tokens.farhr = await signIn(mail('farhr'));
+      await http().post(`/admin-org/leave/${req.id}/decide`).set(as('farhr')).send({ decision: 'approve' }).expect(403);
+    }
+    // The Founder steps in only when no HR can decide.
+    await http().post(`/admin-org/leave/${req.id}/decide`).set(as('founder')).send({ decision: 'approve' }).expect(403);
+    const ok = await http().post(`/admin-org/leave/${req.id}/decide`).set(as('hr')).send({ decision: 'approve' }).expect(201);
+    expect(ok.body.status).toBe('approved');
+  });
+
+  it('closes check-in and check-out on an approved leave day, like a holiday', async () => {
+    const leave = await prisma.leaveRequest.create({ data: { orgId, userId: staffId, from: new Date(`${today}T00:00:00Z`), to: new Date(`${today}T00:00:00Z`), type: 'sick', status: 'approved', stage: 'done', paidDays: 1, unpaidDays: 0 } });
+    try {
+      const day = (await http().get('/my-day').set(as('staff')).expect(200)).body;
+      expect(day.canCheckIn).toBe(false);
+      if (day.workday.kind === 'working') {
+        expect(day.onLeave).toMatchObject({ type: 'sick' });
+        const r = await http().post('/my-day/check-in').set(as('staff')).expect(400);
+        expect(r.body.message).toMatch(/You are on Sick leave today/);
+      }
+    } finally {
+      await prisma.leaveRequest.delete({ where: { id: leave.id } });
+    }
   });
 });
 
@@ -381,7 +461,8 @@ describe('settings take effect', () => {
     const mon = futureMonday(7);
     await http().post('/workspace/leave').set(as('staff')).send({ from: mon, to: mon, type: 'casual' }).expect(201);
     const lead = await userId(mail('lead'));
-    const n1 = await prisma.notification.findFirstOrThrow({ where: { userId: lead, kind: 'leave_request' }, orderBy: { createdAt: 'desc' } });
+    // The request sent to the Department Head (not the decision on their own leave).
+    const n1 = await prisma.notification.findFirstOrThrow({ where: { userId: lead, kind: 'leave_request', title: { contains: 'Leaver Test' } }, orderBy: { createdAt: 'desc' } });
     expect(n1.body).toBe('Please review this leave in BMU Hub.');
     await http().put('/admin-platform/settings/notificationTemplates').set(as('founder')).send({ ...templates, leave_request: { ...templates.leave_request, inApp: false } }).expect(200);
     const count = await prisma.notification.count({ where: { userId: lead, kind: 'leave_request' } });

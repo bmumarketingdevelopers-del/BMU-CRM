@@ -53,20 +53,23 @@ export function MyDayPanel({ layout, wrap, hasLeads }: DashLayoutProps & { hasLe
           <div>
             <p className="text-[13px] text-ink-muted">Attendance</p>
             {!day.checkIn ? (
-              <p className="mt-2 text-[28px] leading-none font-semibold tracking-tight">{day.workday && day.workday.kind !== "working" ? (day.workday.kind === "holiday" ? "Holiday" : "Weekly off") : "Not in yet"}</p>
+              <p className="mt-2 text-[28px] leading-none font-semibold tracking-tight">{day.onLeave ? "On leave" : day.workday && day.workday.kind !== "working" ? (day.workday.kind === "holiday" ? "Holiday" : "Weekly off") : "Not in yet"}</p>
             ) : (
               <p className="mt-2 text-[28px] leading-none font-semibold tracking-tight tabular-nums">{Math.floor(hours)}h {Math.round((hours % 1) * 60)}m</p>
             )}
             <p className="mt-2 text-xs text-ink-muted">
               {day.checkIn
                 ? `In at ${time.format(new Date(day.checkIn))}`
-                : day.workday && day.workday.kind !== "working"
+                : day.onLeave
+                  ? `${day.onLeave.label} until ${dayName(day.onLeave.until)}. No check-in needed.`
+                  : day.workday && day.workday.kind !== "working"
                   ? `${day.workday.label ? `${day.workday.label}. ` : ""}No check-in today.`
                   : day.workingHours
                     ? `Office starts ${day.workingHours.start}. Check in by ${addMin(day.workingHours.start, day.workingHours.graceMinutes)} to be on time.`
                     : "Check in when you start work"}
               {day.checkOut && ` · out at ${time.format(new Date(day.checkOut))}`}
               {day.late && " · late"}
+              {day.wfh && " · working from home"}
             </p>
           </div>
           {day.canCheckIn ?? !day.checkIn ? (
@@ -159,6 +162,13 @@ export function MyDayPanel({ layout, wrap, hasLeads }: DashLayoutProps & { hasLe
   return (
     <div className="grid gap-6 [&_.grid>*]:min-w-0 [&>*]:min-w-0">
       {error && <p className="border border-red bg-red/10 px-4 py-2 text-sm">{error}</p>}
+      {/* v31: the final decision on the latest leave request, worded for its type. */}
+      {day.leaveNotice && (
+        <div className={`border px-4 py-3 text-sm ${day.leaveNotice.status === "approved" ? "border-green bg-green/10" : "border-amber bg-amber/10"}`} role="status" data-testid="leave-notice">
+          <p className="font-medium">{day.leaveNotice.title}</p>
+          <p className="mt-0.5 text-ink-muted">{day.leaveNotice.body}</p>
+        </div>
+      )}
       <DashGrid host="my_day" items={layout ?? dashboardDefaultLayout("my_day")} sections={sections} wrap={wrap} />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-/** LeaveDrawer: "+ New → Leave request" (same as Team → Profile, leave & attendance). Goes to the manager, then HR for long leave. */
+/** LeaveDrawer: "+ New → Leave request" (same as Team → Profile, leave & attendance). v31: the Department Head, then HR. */
 import { useState } from "react";
 import { LEAVE_TYPES, leaveTypeLabels, type LeaveType } from "@bmu/shared";
 import { api } from "@/lib/api";
@@ -13,12 +13,12 @@ export function LeaveDrawer({ open, onClose, onSaved }: NewDrawerProps) {
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   async function save() {
-    if (v.reason.trim().length < 3) return setError("Add a short note for your manager");
+    if (v.reason.trim().length < 3) return setError("Add a short note for your Department Head and HR");
     setSaving(true);
     setError(undefined);
     try {
       await api.workspace.applyLeave({ from: v.from, to: v.to, type: v.type, reason: v.reason.trim() });
-      onSaved(undefined, "Leave request sent to your manager");
+      onSaved(undefined, "Request sent. You will be told the final decision.");
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -27,7 +27,7 @@ export function LeaveDrawer({ open, onClose, onSaved }: NewDrawerProps) {
     }
   }
   return (
-    <ActionDrawer open={open} title="Apply for leave" subtitle="Your manager decides; leave over 3 working days then goes to HR." onClose={onClose} onSubmit={save} saving={saving} error={error} saveLabel="Send request" testId="leave-drawer">
+    <ActionDrawer open={open} title="Apply for leave or work from home" subtitle="Your Department Head approves first, then HR. 1 paid casual and 1 paid sick day a month; extra days are unpaid." onClose={onClose} onSubmit={save} saving={saving} error={error} saveLabel="Send request" testId="leave-drawer">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="From" required htmlFor="lv-from">
           <input id="lv-from" type="date" className={inputCls} value={v.from} onChange={(e) => setV({ ...v, from: e.target.value, to: e.target.value > v.to ? e.target.value : v.to })} />

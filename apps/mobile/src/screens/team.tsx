@@ -88,7 +88,9 @@ export function MyDay({ me }: { me: Me }) {
       <Card tone={day0.checkIn && !day0.checkOut ? 'good' : undefined}>
         <Body bold>
           {!day0.checkIn
-            ? day0.workday && day0.workday.kind !== 'working'
+            ? day0.onLeave
+              ? `${day0.onLeave.label} today. No check-in needed.`
+              : day0.workday && day0.workday.kind !== 'working'
               ? `${day0.workday.kind === 'holiday' ? `Holiday${day0.workday.label ? `: ${day0.workday.label}` : ''}` : 'Weekly off'}. No check-in today.`
               : 'Not checked in yet'
             : day0.checkOut

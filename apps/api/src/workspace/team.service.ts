@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   GATES,
-  LEAVE_ALLOWANCE,
+  LEAVE_TYPES,
   istDate,
   normaliseIdentifier,
   type CalendarItem,
@@ -24,6 +24,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { applyNotificationTemplate } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
+import { AWAY_LEAVE, loadLeaveRouting, paidAccrued, splitPaid } from '../admin-org/leave-flow.js';
 import { assertStaff, canSeeBilling, currentWeek, dayOf, dbDate, eachDay, excerpt, hasRole, isUniqueError, isWorkDay, monthRange, workingDaysIn } from './util.js';
 
 const OPEN: TaskStatus[] = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
@@ -247,7 +248,7 @@ export class TeamWorkspaceService {
         include: { engagement: { include: { clientOrg: { select: { name: true } }, service: { select: { name: true } } } } },
       }),
       this.prisma.leaveRequest.findMany({
-        where: { orgId: me.orgId, status: 'approved', from: { lte: dbDate(range.lastDay) }, to: { gte: dbDate(range.firstDay) }, ...(all ? {} : { userId: { in: ids } }) },
+        where: { orgId: me.orgId, status: 'approved', ...AWAY_LEAVE, from: { lte: dbDate(range.lastDay) }, to: { gte: dbDate(range.firstDay) }, ...(all ? {} : { userId: { in: ids } }) },
       }),
       this.holidays(me.orgId),
     ]);
@@ -315,7 +316,7 @@ export class TeamWorkspaceService {
     const ids = [...new Set([...users.map((u) => u.id), me.id])];
     const [tasks, leave] = await Promise.all([
       this.prisma.task.findMany({ where: { orgId: me.orgId, ownerId: { in: ids }, status: { in: OPEN } }, select: { ownerId: true, deadline: true, status: true } }),
-      this.prisma.leaveRequest.findMany({ where: { userId: { in: ids }, status: 'approved', from: { lte: dbDate(week.today) }, to: { gte: dbDate(week.today) } }, select: { userId: true } }),
+      this.prisma.leaveRequest.findMany({ where: { userId: { in: ids }, status: 'approved', ...AWAY_LEAVE, from: { lte: dbDate(week.today) }, to: { gte: dbDate(week.today) } }, select: { userId: true } }),
     ]);
     const row = (u: { id: string; name: string; department: { name: string } | null }): TeamCapacityPerson => {
       const mine = tasks.filter((t) => t.ownerId === u.id);
@@ -404,7 +405,12 @@ export class TeamWorkspaceService {
       return { date: dayOf(a.date), checkIn: a.checkIn?.toISOString() ?? null, checkOut: a.checkOut?.toISOString() ?? null, hours: Math.round(hours * 10) / 10 };
     });
     const daysIn = (r: (typeof requests)[number]) => workingDaysIn(dayOf(r.from), dayOf(r.to), holidayDates, yearWindow, workDays);
-    const used = (type: LeaveType, status: 'approved' | 'pending') => requests.filter((r) => r.type === type && r.status === status).reduce((s, r) => s + daysIn(r), 0);
+    const inYear = (r: (typeof requests)[number]) => dayOf(r.to) >= yearWindow.from && dayOf(r.from) <= yearWindow.to;
+    // v31: paid days of casual / sick (older requests without the split count as paid); unpaid days of any type.
+    const paidOf = (r: (typeof requests)[number]) => r.paidDays ?? (r.type === 'casual' || r.type === 'sick' ? daysIn(r) : 0);
+    const unpaidOf = (r: (typeof requests)[number]) => r.unpaidDays ?? (r.type === 'unpaid' ? daysIn(r) : 0);
+    const used = (type: LeaveType, status: 'approved' | 'pending') => requests.filter((r) => inYear(r) && r.type === type && r.status === status).reduce((s, r) => s + paidOf(r), 0);
+    const accrued = paidAccrued('casual', Number(today.slice(5, 7)));
     return {
       user: {
         id: user.id,
@@ -431,42 +437,41 @@ export class TeamWorkspaceService {
         balance: (['casual', 'sick'] as const).map((type) => {
           const u = used(type, 'approved');
           const p = used(type, 'pending');
-          return { type, allowed: LEAVE_ALLOWANCE[type], used: u, pending: p, left: Math.max(0, LEAVE_ALLOWANCE[type] - u) };
+          const allowed = type === 'casual' ? accrued : paidAccrued('sick', Number(today.slice(5, 7)));
+          return { type, allowed, used: u, pending: p, left: Math.max(0, allowed - u) };
         }),
-        unpaidUsed: used('unpaid', 'approved'),
+        unpaidUsed: requests.filter((r) => inYear(r) && r.status === 'approved').reduce((s, r) => s + unpaidOf(r), 0),
+        wfhDays: requests.filter((r) => inYear(r) && r.status === 'approved' && r.type === 'wfh').reduce((s, r) => s + daysIn(r), 0),
+        canApply: !me.roles.includes('founder'),
         requests: await Promise.all(requests.map((r) => this.toLeave(r, holidayDates, workDays))),
       },
       holidays: holidays.filter((h) => h.date.startsWith(String(year))),
     };
   }
 
+  /** v31: the employee sees only the final result; the approvers, steps and notes stay confidential. */
   private async toLeave(r: Prisma.LeaveRequestGetPayload<object>, holidays: string[], workDays?: readonly number[]): Promise<LeaveRequestView> {
-    let waitingOn: string | null = null;
-    if (r.status === 'pending') {
-      if (r.stage === 'hr') waitingOn = 'HR';
-      else {
-        const u = await this.prisma.user.findUnique({ where: { id: r.userId }, select: { manager: { select: { name: true } } } });
-        waitingOn = u?.manager?.name ?? 'HR';
-      }
-    }
+    const days = workingDaysIn(dayOf(r.from), dayOf(r.to), holidays, undefined, workDays);
+    const type = ((LEAVE_TYPES as readonly string[]).includes(r.type) ? r.type : 'casual') as LeaveType;
     return {
       id: r.id,
       from: dayOf(r.from),
       to: dayOf(r.to),
-      type: (['casual', 'sick', 'unpaid'].includes(r.type) ? r.type : 'casual') as LeaveType,
+      type,
       reason: r.reason,
       status: r.status,
-      days: workingDaysIn(dayOf(r.from), dayOf(r.to), holidays, undefined, workDays),
+      days,
+      paidDays: r.paidDays ?? (type === 'casual' || type === 'sick' ? days : 0),
+      unpaidDays: r.unpaidDays ?? (type === 'unpaid' ? days : 0),
       createdAt: r.createdAt.toISOString(),
-      decidedAt: r.decidedAt?.toISOString() ?? null,
-      stage: r.status === 'pending' ? (r.stage === 'hr' ? 'hr' : 'manager') : 'done',
-      waitingOn,
-      decisionNote: r.decisionNote,
+      decidedAt: r.status === 'pending' ? null : (r.decidedAt?.toISOString() ?? null),
     };
   }
 
   async applyLeave(me: Me, input: LeaveRequestInput, ip?: string) {
     assertStaff(me);
+    // v31: Founders are the top of the company and don't request leave.
+    if (me.roles.includes('founder')) throw new ForbiddenException('Founders do not need to request leave.');
     const holidays = (await this.holidays(me.orgId)).map((h) => h.date);
     const workDays = await this.workDays(me.orgId);
     const days = workingDaysIn(input.from, input.to, holidays, undefined, workDays);
@@ -476,24 +481,31 @@ export class TeamWorkspaceService {
       where: { userId: me.id, status: { in: ['pending', 'approved'] }, from: { lte: dbDate(input.to) }, to: { gte: dbDate(input.from) } },
     });
     if (overlap) throw new BadRequestException(`You already have a ${overlap.status} leave request from ${dayOf(overlap.from)} to ${dayOf(overlap.to)}`);
-    if (input.type !== 'unpaid') {
-      const profile = await this.profile(me);
-      const bal = profile.leave.balance.find((b) => b.type === input.type)!;
-      const left = bal.allowed - bal.used - bal.pending;
-      if (days > left) throw new BadRequestException(`You have ${Math.max(0, left)} ${input.type} day${left === 1 ? '' : 's'} left (including pending requests). Choose unpaid leave for the rest.`);
+    // v31: 1 paid casual and 1 paid sick day a month, carried over within the year; the rest of the days are unpaid.
+    const dayList: string[] = [];
+    for (let t = dbDate(input.from).getTime(); t <= dbDate(input.to).getTime(); t += 86_400_000) {
+      const d = new Date(t).toISOString().slice(0, 10);
+      if (workDays.includes(new Date(t).getUTCDay()) && !holidays.includes(d)) dayList.push(d);
     }
-    // v10 approval chain: the manager first (HR as well for long leave); people without a manager go straight to HR.
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: me.id }, select: { managerId: true, manager: { select: { status: true, deletedAt: true } } } });
-    const hasManager = !!user.managerId && user.manager?.status !== 'suspended' && !user.manager?.deletedAt;
-    const row = await this.prisma.leaveRequest.create({
-      data: { orgId: me.orgId, userId: me.id, from: dbDate(input.from), to: dbDate(input.to), type: input.type, reason: input.reason || null, stage: hasManager ? 'manager' : 'hr' },
+    const year = input.from.slice(0, 4);
+    const others = await this.prisma.leaveRequest.findMany({
+      where: { userId: me.id, type: input.type, status: { in: ['pending', 'approved'] }, from: { lte: dbDate(`${year}-12-31`) }, to: { gte: dbDate(`${year}-01-01`) } },
     });
-    await this.audit.log(me, 'leave.requested', 'LeaveRequest', row.id, undefined, { ...input, days, stage: row.stage }, ip);
-    const title = `${me.name} asked for ${days} day${days > 1 ? 's' : ''} of ${input.type} leave`;
-    const body = `${input.from} to ${input.to}${input.reason ? `: ${input.reason}` : ''}${days > 3 && hasManager ? ' (HR approves after you)' : ''}`;
-    const hr = hasManager ? [] : await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, id: { not: me.id }, roles: { some: { role: { baseRole: 'hr_ops' } } } }, select: { id: true } });
-    const notice = await applyNotificationTemplate(this.prisma, me.orgId, { kind: 'leave_request', title, body, link: hasManager ? '/team/approvals' : '/admin/attendance#leave' });
-    const to = hasManager ? [user.managerId!] : hr.map((h) => h.id);
+    const otherPaid = others.reduce((s, r) => s + (r.paidDays ?? workingDaysIn(dayOf(r.from), dayOf(r.to), holidays, { from: `${year}-01-01`, to: `${year}-12-31` }, workDays)), 0);
+    const split = splitPaid(input.type, dayList, otherPaid);
+    // v31 approval chain: the Department Head first, then HR. A Department Head's own leave goes to HR of their branch.
+    const routing = await loadLeaveRouting(this.prisma, me.orgId);
+    const head = routing.headOf(me.id);
+    const row = await this.prisma.leaveRequest.create({
+      data: { orgId: me.orgId, userId: me.id, from: dbDate(input.from), to: dbDate(input.to), type: input.type, reason: input.reason || null, stage: head ? 'head' : 'hr', paidDays: split.paid, unpaidDays: split.unpaid },
+    });
+    await this.audit.log(me, 'leave.requested', 'LeaveRequest', row.id, undefined, { ...input, days, stage: row.stage, paidDays: split.paid, unpaidDays: split.unpaid }, ip);
+    const what = input.type === 'wfh' ? 'work from home' : `${input.type} leave`;
+    const title = `${me.name} asked for ${days} day${days > 1 ? 's' : ''} of ${what}`;
+    const splitText = input.type === 'casual' || input.type === 'sick' ? ` (${split.paid} paid, ${split.unpaid} unpaid)` : '';
+    const body = `${input.from} to ${input.to}${splitText}${input.reason ? `: ${input.reason}` : ''}${head ? ' · HR makes the final call after you' : ''}`;
+    const notice = await applyNotificationTemplate(this.prisma, me.orgId, { kind: 'leave_request', title, body, link: head ? '/team/approvals' : '/admin/attendance#leave' });
+    const to = head ? [head] : routing.hrFor(me.id);
     if (notice?.channels.includes('inApp') && to.length) {
       await this.prisma.notification.createMany({ data: to.map((userId) => ({ orgId: me.orgId, userId, kind: notice.kind, title: notice.title, body: notice.body, link: notice.link })) });
     }

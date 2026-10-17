@@ -191,7 +191,7 @@ export async function producerBasic(h: PlanHelpers): Promise<BasicResult> {
   }
 
   // People on approved leave when their work is due.
-  const leaves = await h.prisma.leaveRequest.findMany({ where: { orgId, status: 'approved', to: { gte: new Date(`${today}T00:00:00Z`) }, from: { lte: new Date(h.now.getTime() + 7 * DAY) } }, select: { userId: true, from: true, to: true } });
+  const leaves = await h.prisma.leaveRequest.findMany({ where: { orgId, status: 'approved', type: { not: 'wfh' }, to: { gte: new Date(`${today}T00:00:00Z`) }, from: { lte: new Date(h.now.getTime() + 7 * DAY) } }, select: { userId: true, from: true, to: true } });
   let proposed = 0;
   for (const lv of leaves) {
     const tasks = await h.prisma.task.findMany({ where: { orgId, ownerId: lv.userId, status: OPEN_TASK, archivedAt: null, isDraft: false, deadline: { gte: lv.from, lte: new Date(lv.to.getTime() + DAY) } }, select: { id: true, title: true }, take: 5 });

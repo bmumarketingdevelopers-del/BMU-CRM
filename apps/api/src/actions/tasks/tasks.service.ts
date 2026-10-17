@@ -1079,7 +1079,7 @@ export class TasksActionsService implements OnModuleInit {
     for (const org of orgs) {
       const cal = await calendarFor(this.prisma, org.id);
       const soon = addWorkingDays(now, 2, cal);
-      const leaves = await this.prisma.leaveRequest.findMany({ where: { orgId: org.id, status: 'approved', from: { lte: dbDay(istDate(soon)) }, to: { gte: dbDay(istDate(now)) } }, take: 200 });
+      const leaves = await this.prisma.leaveRequest.findMany({ where: { orgId: org.id, status: 'approved', type: { not: 'wfh' }, from: { lte: dbDay(istDate(soon)) }, to: { gte: dbDay(istDate(now)) } }, take: 200 });
       if (!leaves.length) continue;
       const done = await this.prisma.auditEvent.findMany({ where: { orgId: org.id, action: 'leave.cover_suggested', entityId: { in: leaves.map((l) => l.id) } }, select: { entityId: true } });
       for (const l of leaves.filter((x) => !done.some((d) => d.entityId === x.id))) {

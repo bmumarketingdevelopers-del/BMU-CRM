@@ -131,39 +131,45 @@ describe('calendar, capacity and SOPs', () => {
 describe('profile and leave', () => {
   let leaveId: string;
 
-  it('starts with 12 casual and 12 sick days', async () => {
+  it('builds up 1 paid casual and 1 paid sick day a month', async () => {
     const r = await http().get('/workspace/profile').set(as('staff')).expect(200);
+    const month = Number(new Date(Date.now() + 330 * 60_000).toISOString().slice(5, 7));
     expect(r.body.leave.balance).toEqual([
-      expect.objectContaining({ type: 'casual', allowed: 12, used: 0, left: 12 }),
-      expect.objectContaining({ type: 'sick', allowed: 12, used: 0, left: 12 }),
+      expect.objectContaining({ type: 'casual', allowed: month, used: 0, left: month }),
+      expect.objectContaining({ type: 'sick', allowed: month, used: 0, left: month }),
     ]);
+    expect(r.body.leave.canApply).toBe(true);
     expect(r.body.user.manager.name).toBe('Neha Iyer');
   });
 
-  it('applies for leave, counts working days only and notifies the manager', async () => {
+  it('applies for leave, counts working days only and notifies HR when there is no Department Head', async () => {
     // Mon 16 Nov – Sun 22 Nov 2026: six working days (Sunday is off).
     const r = await http().post('/workspace/leave').set(as('staff')).send({ from: '2026-11-16', to: '2026-11-22', type: 'casual', reason: 'Trip' }).expect(201);
     const req = r.body.leave.requests[0];
-    expect(req).toMatchObject({ status: 'pending', days: 6 });
+    expect(req).toMatchObject({ status: 'pending', days: 6, paidDays: 6, unpaidDays: 0 });
     leaveId = req.id;
     expect(r.body.leave.balance[0]).toMatchObject({ pending: 6, used: 0 });
-    const note = await prisma.notification.findFirst({ where: { userId: amId, kind: 'leave_request' }, orderBy: { createdAt: 'desc' } });
+    // v31: no department (so no Department Head): straight to HR.
+    const hr = await prisma.user.findFirstOrThrow({ where: { email: 'hr@bmu.demo' } });
+    const note = await prisma.notification.findFirst({ where: { userId: hr.id, kind: 'leave_request' }, orderBy: { createdAt: 'desc' } });
     expect(note?.title).toContain('Leave Tester');
-    // v10: the manager decides first, on the team Approvals page.
-    expect(note?.link).toBe('/team/approvals');
+    expect(note?.link).toBe('/admin/attendance#leave');
   });
 
-  it('rejects overlapping, Sunday-only, backwards and over-balance requests', async () => {
+  it('rejects overlapping, Sunday-only and backwards requests; days beyond the paid ones are unpaid', async () => {
     await http().post('/workspace/leave').set(as('staff')).send({ from: '2026-11-20', to: '2026-11-24', type: 'sick' }).expect(400);
     await http().post('/workspace/leave').set(as('staff')).send({ from: '2026-11-29', to: '2026-11-29', type: 'casual' }).expect(400);
     await http().post('/workspace/leave').set(as('staff')).send({ from: '2026-12-10', to: '2026-12-01', type: 'casual' }).expect(400);
-    await http().post('/workspace/leave').set(as('staff')).send({ from: '2026-12-01', to: '2026-12-10', type: 'casual' }).expect(400);
+    // v31: 12 paid casual days built up by December, 6 already asked for: 9 working days = 6 paid + 3 unpaid.
+    const dec = (await http().post('/workspace/leave').set(as('staff')).send({ from: '2026-12-01', to: '2026-12-10', type: 'casual' }).expect(201)).body.leave.requests.find((x: { from: string }) => x.from === '2026-12-01');
+    expect(dec).toMatchObject({ days: 9, paidDays: 6, unpaidDays: 3 });
+    await http().post(`/workspace/leave/${dec.id}/cancel`).set(as('staff')).expect(200);
     await http().post('/workspace/leave').set(as('owner')).send({ from: '2026-12-01', to: '2026-12-02', type: 'casual' }).expect(403);
   });
 
   it('cancels a pending request, but not twice', async () => {
     const r = await http().post(`/workspace/leave/${leaveId}/cancel`).set(as('staff')).expect(200);
-    expect(r.body.leave.requests[0].status).toBe('cancelled');
+    expect(r.body.leave.requests.find((x: { id: string }) => x.id === leaveId).status).toBe('cancelled');
     await http().post(`/workspace/leave/${leaveId}/cancel`).set(as('staff')).expect(400);
     await http().post(`/workspace/leave/${leaveId}/cancel`).set(as('producer')).expect(404);
   });

@@ -39,6 +39,7 @@ export type MoveMember = z.infer<typeof moveMemberSchema>;
 // ---------------------------------------------------------------------------
 // Attendance & leave
 
+/** Paid days a year per type (v31: 1 a month, carried over within the year; see PAID_LEAVE_PER_MONTH). */
 export const LEAVE_ALLOWANCE = { casual: 12, sick: 12 } as const;
 
 export type AttendanceToday = "checked_in" | "checked_out" | "absent" | "on_leave" | "holiday" | "day_off" | "not_yet";
@@ -50,6 +51,8 @@ export const ATTENDANCE_GRACE_DEFAULT = 15;
 export type AttendanceBoardRow = {
   user: PersonRef & { department: string | null };
   status: AttendanceToday;
+  /** v31: approved work from home today. */
+  wfh?: boolean;
   checkIn: string | null;
   checkOut: string | null;
   late: boolean;
@@ -64,7 +67,8 @@ export type AttendanceView = {
   days: { date: string; kind: "working" | "weekend" | "holiday"; label: string | null }[];
   grid: { user: PersonRef; cells: AttendanceCell[]; present: number; leave: number; absent: number; missedOut?: number }[];
   late: { user: PersonRef; date: string; checkIn: string; minutesLate: number }[];
-  balances: { user: PersonRef; casualUsed: number; sickUsed: number; casualLeft: number; sickLeft: number; otherUsed: number }[];
+  /** v31: casual / sick: paid days used and left of those built up so far (1 a month); otherUsed = unpaid days. */
+  balances: { user: PersonRef; casualUsed: number; sickUsed: number; casualLeft: number; sickLeft: number; otherUsed: number; casualAccrued?: number; sickAccrued?: number; wfhDays?: number }[];
   /** v30: whose attendance this is: everyone (Founder, Branch Manager, HR) or a Department Head's own department(s). */
   scope?: { all: boolean; departments: string[] };
   /** v30: the attendance records sheet (Founder, HR; Department Heads for their team) and its download (Founder, HR). */
@@ -103,6 +107,8 @@ export type AttendanceRecordDay = {
   /** Times changed through an approved correction request. */
   corrected: boolean;
   leaveType?: string | null;
+  /** v31: approved work from home that day. */
+  wfh?: boolean;
 };
 export type AttendanceRecordTotals = { workingDays: number; present: number; late: number; missedOut: number; leave: number; absent: number; hours: number };
 export type AttendanceRecordPerson = { user: PersonRef & { email: string }; designation: string; days: AttendanceRecordDay[]; totals: AttendanceRecordTotals };
@@ -172,9 +178,13 @@ export type LeaveRow = {
   decidedAt: string | null;
   createdAt: string;
   canDecide: boolean;
-  /** v10 approval chain: who decides next ("manager" or "hr"); "done" once decided. */
-  stage?: "manager" | "hr" | "done";
+  /** v31 approval chain: the Department Head ("head") first, then HR ("hr"); "done" once decided. Approvers only. */
+  stage?: "head" | "hr" | "done";
+  /** The Department Head who approved it before HR. */
   managerDecidedBy?: PersonRef | null;
+  /** v31: working days paid from the balance and unpaid. */
+  paidDays?: number;
+  unpaidDays?: number;
   decisionNote?: string | null;
   /** Open tasks of this person due while they are away. */
   tasksDuringLeave?: number;

@@ -126,7 +126,7 @@ export class PeopleDirectory {
         select: { ownerId: true, deadline: true, estimateMin: true },
       }),
       this.prisma.leaveRequest.findMany({
-        where: { orgId, userId: { in: ids }, status: 'approved', to: { gte: dbDay(today) }, from: { lte: dbDay(ymd(new Date(now.getTime() + 60 * DAY_MS))) } },
+        where: { orgId, userId: { in: ids }, status: 'approved', type: { not: 'wfh' }, to: { gte: dbDay(today) }, from: { lte: dbDay(ymd(new Date(now.getTime() + 60 * DAY_MS))) } },
         select: { userId: true, from: true, to: true },
       }),
     ]);

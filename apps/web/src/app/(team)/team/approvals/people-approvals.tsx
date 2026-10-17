@@ -11,7 +11,7 @@ import { CorrectionsToDecide } from "@/components/attendance/corrections";
 import { useLoad } from "@/lib/use-load";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
-const stageLabel = (l: LeaveRow) => (l.status !== "pending" ? l.status : l.stage === "hr" ? `Waiting for HR${l.managerDecidedBy ? ` (manager OK: ${l.managerDecidedBy.name})` : ""}` : "Waiting for manager");
+const stageLabel = (l: LeaveRow) => (l.status !== "pending" ? l.status : l.stage === "hr" ? `Waiting for HR${l.managerDecidedBy ? ` (Department Head OK: ${l.managerDecidedBy.name})` : ""}` : "Waiting for Department Head");
 
 /** Everything waiting on me: leave from my team (manager, then HR for long leave) and submitted timesheets. */
 export function PeopleApprovals() {
@@ -38,7 +38,7 @@ export function PeopleApprovals() {
         decision === "reject"
           ? `Leave for ${l.user.name} rejected.`
           : row.status === "pending"
-            ? `Approved by you. ${l.workingDays} working days is over 3, so HR now makes the final call.`
+            ? `Approved by you. HR now makes the final call; ${l.user.name} is told only the final decision.`
             : `Leave for ${l.user.name} approved.${row.tasksDuringLeave ? ` They have ${row.tasksDuringLeave} task(s) due while away.` : ""}`,
       );
       if (decision === "approve" && row.status === "approved" && row.tasksDuringLeave) setCoverFor(l.id);

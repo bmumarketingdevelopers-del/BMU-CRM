@@ -1268,11 +1268,14 @@ model LeaveRequest {
   decidedById        String?
   decidedAt          DateTime?
   createdAt          DateTime    @default(now())
-  /// v10 team approval chain: manager -> hr (leave over 3 working days) -> done
+  /// v31 approval chain: head (Department Head) -> hr -> done; older rows may say "manager" (same as head)
   stage              String      @default("manager")
   managerDecidedById String?
   managerDecidedAt   DateTime?
   decisionNote       String?
+  /// v31: working days paid from the leave balance and unpaid (loss of pay); null on older requests
+  paidDays           Int?
+  unpaidDays         Int?
 
   @@index([orgId, status])
   @@index([userId])

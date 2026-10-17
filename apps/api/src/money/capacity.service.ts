@@ -49,7 +49,7 @@ export class CapacityService {
     const last = addDays(weeks[weeks.length - 1], 6);
     const [users, leaves, bookings, tasks] = await Promise.all([
       this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, weeklyHours: true } }),
-      this.prisma.leaveRequest.findMany({ where: { orgId, userId: { in: userIds }, status: 'approved', from: { lte: dbDate(last) }, to: { gte: dbDate(first) } }, select: { userId: true, from: true, to: true } }),
+      this.prisma.leaveRequest.findMany({ where: { orgId, userId: { in: userIds }, status: 'approved', type: { not: 'wfh' }, from: { lte: dbDate(last) }, to: { gte: dbDate(first) } }, select: { userId: true, from: true, to: true } }),
       this.prisma.resourceBooking.findMany({ where: { orgId, userId: { in: userIds }, status: 'booked', weekStart: { gte: dbDate(first), lte: dbDate(weeks[weeks.length - 1]) } }, select: { userId: true, weekStart: true, hours: true } }),
       this.prisma.task.findMany({ where: { orgId, ownerId: { in: userIds }, status: { in: OPEN_TASK as never }, archivedAt: null, isDraft: false, deadline: { not: null, lt: new Date(dbDate(addDays(last, 1)).getTime() - 330 * 60_000) } }, select: { ownerId: true, deadline: true, estimateMin: true } }),
     ]);

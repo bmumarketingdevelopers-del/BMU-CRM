@@ -32,7 +32,7 @@ import type { EngagementStatus, Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { ReassignService } from '../actions/reassign.service.js';
 import { SettingsService } from '../settings/settings.service.js';
-import { checkWindow, loadWorkCalendar } from '../admin-org/work-calendar.js';
+import { checkWindow, leaveOn, loadWorkCalendar } from '../admin-org/work-calendar.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { DAY, pct, plural, shortDay, weekStart } from './craft-util.js';
@@ -193,7 +193,7 @@ export class CraftManagerService {
   private async leaveDays(orgId: string, userIds: string[], from: Date, to: Date) {
     if (!userIds.length) return new Map<string, Set<string>>();
     const rows = await this.prisma.leaveRequest.findMany({
-      where: { orgId, userId: { in: userIds }, status: 'approved', from: { lte: dateOnly(istDay(to)) }, to: { gte: dateOnly(istDay(from)) } },
+      where: { orgId, userId: { in: userIds }, status: 'approved', type: { not: 'wfh' }, from: { lte: dateOnly(istDay(to)) }, to: { gte: dateOnly(istDay(from)) } },
       select: { userId: true, from: true, to: true },
     });
     const map = new Map<string, Set<string>>();
@@ -428,7 +428,7 @@ export class CraftManagerService {
     return {
       checkIn: att?.checkIn?.toISOString() ?? null,
       checkOut: att?.checkOut?.toISOString() ?? null,
-      ...checkWindow(att, today, await loadWorkCalendar(this.settings, me.orgId)),
+      ...checkWindow(att, today, await loadWorkCalendar(this.settings, me.orgId), await leaveOn(this.prisma, me.id, today)),
       overdue: mine.filter((t) => t.status !== 'blocked' && t.deadline && t.deadline < now).length,
       dueToday: mine.filter((t) => t.status !== 'blocked' && t.deadline && t.deadline >= now && istDay(t.deadline) === today).length,
       blocked: mine.filter((t) => t.status === 'blocked').length,

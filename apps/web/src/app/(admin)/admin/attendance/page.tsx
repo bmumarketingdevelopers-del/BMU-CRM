@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, useSyncExternalStore } from "react";
-import { LEAVE_ALLOWANCE, type AttendanceBoardRow, type AttendanceCell, type AttendanceToday, type AttendanceView, type LeaveRow } from "@bmu/shared";
+import { leaveTypeLabels, type LeaveType, type AttendanceBoardRow, type AttendanceCell, type AttendanceToday, type AttendanceView, type LeaveRow } from "@bmu/shared";
 import { DataTable, Empty, Meter, Panel, StatRow, StatTile, Tabs, type Column } from "@/components/dash";
 import { Badge, Button, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -194,6 +194,7 @@ function TodayBoard({ data }: { data: AttendanceView }) {
         <span className="flex flex-wrap gap-1.5">
           <Badge tone={TODAY_LABEL[r.status].tone}>{TODAY_LABEL[r.status].text}</Badge>
           {r.late && <Badge tone="amber">Late</Badge>}
+          {r.wfh && <Badge>Work from home</Badge>}
         </span>
       ),
     },
@@ -298,7 +299,7 @@ function LeaveList({ rows, decide }: { rows: LeaveRow[]; decide: (l: LeaveRow, d
   return (
     <Panel
       title="Leave requests"
-      subtitle="The manager decides first. Leave over 3 working days then needs HR (HR, Branch Manager or the Founder can decide at any stage). The person is notified."
+      subtitle="The Department Head decides first (a rejection is final); approved requests then go to HR for the final call. A Department Head's own leave goes to HR of their branch. The employee is told only the final result."
       action={<Tabs value={show} onChange={setShow} options={[{ value: "pending", label: "Waiting" }, { value: "all", label: "All" }]} />}
       flush
     >
@@ -320,15 +321,28 @@ function LeaveList({ rows, decide }: { rows: LeaveRow[]; decide: (l: LeaveRow, d
               </div>
             ),
           },
-          { key: "type", header: "Type", cell: (r) => <span className="capitalize">{r.type}</span> },
+          {
+            key: "type",
+            header: "Type",
+            cell: (r) => (
+              <div>
+                <span>{leaveTypeLabels[r.type as LeaveType] ?? r.type}</span>
+                {(r.type === "casual" || r.type === "sick") && !!r.unpaidDays && (
+                  <div className="text-xs text-ink-muted">
+                    {r.paidDays} paid · {r.unpaidDays} unpaid
+                  </div>
+                )}
+              </div>
+            ),
+          },
           { key: "reason", header: "Reason", cell: (r) => <span className="text-ink-muted">{r.reason ?? "—"}</span>, className: "max-w-xs" },
           {
             key: "status",
             header: "Status",
             cell: (r) => (
               <div>
-                <Badge tone={tone[r.status]}>{r.status === "pending" ? (r.stage === "hr" ? "Waiting for HR" : "Waiting for manager") : r.status}</Badge>
-                {r.managerDecidedBy && r.status === "pending" && <div className="mt-1 text-xs text-ink-muted">manager OK: {r.managerDecidedBy.name}</div>}
+                <Badge tone={tone[r.status]}>{r.status === "pending" ? (r.stage === "hr" ? "Waiting for HR" : "Waiting for Department Head") : r.status}</Badge>
+                {r.managerDecidedBy && <div className="mt-1 text-xs text-ink-muted">Department Head OK: {r.managerDecidedBy.name}</div>}
                 {r.decidedBy && <div className="mt-1 text-xs text-ink-muted">by {r.decidedBy.name}</div>}
                 {r.decisionNote && <div className="mt-1 text-xs text-ink-muted">“{r.decisionNote}”</div>}
                 {!!r.tasksDuringLeave && r.status !== "rejected" && r.status !== "cancelled" && (
@@ -364,7 +378,7 @@ function LeaveList({ rows, decide }: { rows: LeaveRow[]; decide: (l: LeaveRow, d
 function Balances({ data }: { data: AttendanceView }) {
   const year = data.month.slice(0, 4);
   return (
-    <Panel title={`Leave balances · ${year}`} subtitle={`${LEAVE_ALLOWANCE.casual} casual + ${LEAVE_ALLOWANCE.sick} sick days a year, minus approved leave (working days only).`} flush>
+    <Panel title={`Leave balances · ${year}`} subtitle="1 paid casual + 1 paid sick day a month, carried over within the year, minus approved paid leave (working days only). Extra days are unpaid." flush>
       <DataTable
         rows={data.balances}
         rowKey={(r) => r.user.id}
@@ -376,9 +390,9 @@ function Balances({ data }: { data: AttendanceView }) {
             header: "Casual left",
             cell: (r) => (
               <div className="min-w-40">
-                <Meter value={(r.casualLeft / LEAVE_ALLOWANCE.casual) * 100} tone={r.casualLeft <= 2 ? "warn" : "default"} label={`${r.casualUsed} used`} />
+                <Meter value={r.casualAccrued ? (r.casualLeft / r.casualAccrued) * 100 : 0} tone={r.casualLeft === 0 ? "warn" : "default"} label={`${r.casualUsed} used`} />
                 <div className="mt-1 text-xs text-ink-muted">
-                  {r.casualLeft} of {LEAVE_ALLOWANCE.casual} days
+                  {r.casualLeft} of {r.casualAccrued ?? 0} built up
                 </div>
               </div>
             ),
@@ -388,14 +402,15 @@ function Balances({ data }: { data: AttendanceView }) {
             header: "Sick left",
             cell: (r) => (
               <div className="min-w-40">
-                <Meter value={(r.sickLeft / LEAVE_ALLOWANCE.sick) * 100} tone={r.sickLeft <= 2 ? "warn" : "default"} label={`${r.sickUsed} used`} />
+                <Meter value={r.sickAccrued ? (r.sickLeft / r.sickAccrued) * 100 : 0} tone={r.sickLeft === 0 ? "warn" : "default"} label={`${r.sickUsed} used`} />
                 <div className="mt-1 text-xs text-ink-muted">
-                  {r.sickLeft} of {LEAVE_ALLOWANCE.sick} days
+                  {r.sickLeft} of {r.sickAccrued ?? 0} built up
                 </div>
               </div>
             ),
           },
-          { key: "other", header: "Other leave taken", align: "right", cell: (r) => (r.otherUsed ? `${r.otherUsed} days` : "—") },
+          { key: "other", header: "Unpaid days", align: "right", cell: (r) => (r.otherUsed ? `${r.otherUsed} days` : "—") },
+          { key: "wfh", header: "Work from home", align: "right", cell: (r) => (r.wfhDays ? `${r.wfhDays} days` : "—") },
         ]}
       />
     </Panel>

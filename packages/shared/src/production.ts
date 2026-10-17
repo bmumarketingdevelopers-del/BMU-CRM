@@ -362,6 +362,11 @@ export type MyDayView = {
   workingHours?: { start: string; end: string; graceMinutes: number };
   /** v30: the latest recent working day with a check-in and no check-out (and no correction asked yet). */
   missedCheckOut?: string | null;
+  /** v31: approved leave today (check-in is closed, like a holiday); wfh = working from home (check in as usual). */
+  onLeave?: { type: string; label: string; until: string } | null;
+  wfh?: boolean;
+  /** v31: the final decision on the person's latest leave request (shown for 3 days). */
+  leaveNotice?: { status: "approved" | "rejected"; type: string; title: string; body: string } | null;
   tasks: { overdue: TaskView[]; today: TaskView[]; upcoming: TaskView[]; blocked: TaskView[] };
   qcWaiting: number;
   sendToClientWaiting: number;
