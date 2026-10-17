@@ -155,6 +155,19 @@ export const invoiceStatusLabels: Record<InvoiceDisplayStatus, string> = {
   credit_noted: "Credited",
 };
 
+/** v30: who made or signed an invoice: Founder, Client Manager, Branch Manager, Finance, another team member, or the CRM itself (automatic). */
+export const INVOICE_PERSON_ROLES = ["founder", "client_manager", "branch_manager", "finance", "team", "system"] as const;
+export type InvoicePersonRole = (typeof INVOICE_PERSON_ROLES)[number];
+export const invoicePersonRoleLabels: Record<InvoicePersonRole, string> = {
+  founder: "Founder",
+  client_manager: "Client Manager",
+  branch_manager: "Branch Manager",
+  finance: "Finance",
+  team: "Team",
+  system: "CRM (automatic)",
+};
+export type InvoicePerson = { id: string | null; name: string; role: InvoicePersonRole };
+
 export type FinanceInvoiceRow = {
   id: string;
   number: string;
@@ -170,13 +183,28 @@ export type FinanceInvoiceRow = {
   paidPaise: number;
   creditedPaise: number;
   balancePaise: number;
+  /** v30: who created it (null = the CRM made it automatically). */
+  createdBy?: InvoicePerson | null;
+  /** v30: who signed it (seal + signature), and as whom; null = not signed. */
+  signedBy?: InvoicePerson | null;
+  /** v30: waiting for a signature before it goes to the client. */
+  held?: boolean;
+  /** v30: who issued it: the signer, else the creator, else the CRM. */
+  issuedBy?: InvoicePerson;
 };
+
+/** v30: one person's (or the CRM's) invoices in the list: count, billed, paid, still due and waiting for signature. */
+export type InvoicePersonSummary = InvoicePerson & { count: number; totalPaise: number; paidPaise: number; balancePaise: number; waiting: number };
 
 export type FinanceInvoiceList = {
   rows: FinanceInvoiceRow[];
   totals: { count: number; totalPaise: number; paidPaise: number; balancePaise: number };
   clients: { id: string; name: string }[];
   canEdit: boolean;
+  /** v30: everyone who issued, created or signed invoices (for the Person filter). */
+  people?: InvoicePerson[];
+  /** v30: the shown invoices grouped by who issued them. */
+  byPerson?: InvoicePersonSummary[];
 };
 
 export type PaymentRow = { id: string; invoiceId: string; invoiceNumber: string; client: string; amountPaise: number; method: string; ref: string | null; at: string };

@@ -7,7 +7,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
-import type { CmInvoiceList, InvoiceBrandingView, InvoiceSignResult, ServiceClientBilling, ServiceTaxInvoice, SigningProfileView } from '@bmu/shared';
+import type { CmInvoiceList, FinanceInvoiceList, InvoiceBrandingView, InvoiceSignResult, ServiceClientBilling, ServiceTaxInvoice, SigningProfileView } from '@bmu/shared';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { ServiceBillingService } from '../src/service/service-billing.service.js';
@@ -177,5 +177,34 @@ describe('invoice signing', () => {
     // When the Founder signs, the invoice says "Founder".
     await http().post(`/finance/invoices/${theirs.id}/sign`).set(as('founder')).send({ password: PASSWORD }).expect(200);
     expect(await prisma.invoice.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ signedRole: 'founder', signatoryDesignation: expect.any(String) });
+  });
+
+  it('the Founder tracks who created, signed and issued each invoice, with a summary per person', async () => {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const all = (await http().get(`/finance/invoices?from=${today}&to=${today}`).set(as('founder')).expect(200)).body as FinanceInvoiceList;
+    const cmRow = all.rows.find((r) => r.signedBy?.id === users.cm)!;
+    expect(cmRow).toBeTruthy();
+    expect(cmRow.signedBy).toMatchObject({ name: 'Neha Iyer', role: 'client_manager' });
+    expect(cmRow.createdBy).toMatchObject({ id: users.cm, role: 'client_manager' });
+    expect(cmRow.issuedBy).toMatchObject({ id: users.cm, role: 'client_manager' });
+    const auto = all.rows.find((r) => r.number === `AUTO-${stamp}`)!;
+    expect(auto.createdBy).toBeNull();
+    expect(auto.signedBy).toMatchObject({ role: 'founder' });
+    // Summary per person, and the Person filter lists her.
+    const neha = all.byPerson!.find((p) => p.id === users.cm)!;
+    expect(neha).toMatchObject({ role: 'client_manager' });
+    expect(neha.count).toBeGreaterThanOrEqual(1);
+    expect(all.people!.some((p) => p.id === users.cm)).toBe(true);
+    // Filters: by person, by role, signed / waiting.
+    const hers = (await http().get(`/finance/invoices?person=${users.cm}&from=${today}`).set(as('founder')).expect(200)).body as FinanceInvoiceList;
+    expect(hers.rows.length).toBeGreaterThan(0);
+    expect(hers.rows.every((r) => r.issuedBy?.id === users.cm || r.createdBy?.id === users.cm || r.signedBy?.id === users.cm)).toBe(true);
+    const cms = (await http().get(`/finance/invoices?role=client_manager&from=${today}`).set(as('founder')).expect(200)).body as FinanceInvoiceList;
+    expect(cms.rows.every((r) => r.issuedBy?.role === 'client_manager')).toBe(true);
+    const signedOnly = (await http().get(`/finance/invoices?signing=signed&from=${today}`).set(as('founder')).expect(200)).body as FinanceInvoiceList;
+    expect(signedOnly.rows.every((r) => !!r.signedBy)).toBe(true);
+    const waiting = (await http().get(`/finance/invoices?signing=waiting&from=${today}`).set(as('founder')).expect(200)).body as FinanceInvoiceList;
+    expect(waiting.rows.every((r) => r.held && !r.signedBy)).toBe(true);
+    await http().get('/finance/invoices').set(as('cm')).expect(403);
   });
 });

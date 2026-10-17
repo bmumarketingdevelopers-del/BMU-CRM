@@ -19,6 +19,10 @@ import {
   type PaymentsView,
   type PayoutsView,
   type RecordPayment,
+  invoicePersonRoleLabels,
+  type InvoicePerson,
+  type InvoicePersonRole,
+  type InvoicePersonSummary,
 } from '@bmu/shared';
 import {
   cancelInvoiceSchema,
@@ -68,19 +72,62 @@ export class FinanceService implements OnModuleInit {
   // -------------------------------------------------------------------------
   // Invoices
 
-  async invoices(me: Me, f: { status?: string; kind?: string; clientId?: string; q?: string }): Promise<FinanceInvoiceList> {
+  async invoices(me: Me, f: { status?: string; kind?: string; clientId?: string; q?: string; person?: string; role?: string; signing?: string; from?: string; to?: string }): Promise<FinanceInvoiceList> {
     assertFinanceRead(me);
+    const day = (d: string | undefined, end = false) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T${end ? '23:59:59.999' : '00:00:00'}+05:30`) : undefined);
+    const from = day(f.from);
+    const to = day(f.to, true);
     const ledger = await loadLedger(this.prisma, me.orgId, {
       ...(f.kind ? { kind: f.kind } : {}),
       ...(f.clientId ? { clientOrgId: f.clientId } : {}),
+      ...(from || to ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
     });
+    // v30: who created, signed and issued each invoice (Founder, Client Manager, ... or the CRM automatically).
+    const branding = await readInvoiceBranding(this.prisma, me.orgId);
+    const ids = [...new Set(ledger.flatMap((i) => [i.createdById, i.signedById]).filter((x): x is string => !!x))];
+    const users = ids.length ? await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, roles: { select: { role: { select: { baseRole: true } } } } } }) : [];
+    const roleOf = (roles: string[]): InvoicePersonRole =>
+      roles.includes('founder') ? 'founder' : roles.includes('admin') ? 'branch_manager' : roles.includes('finance') ? 'finance' : roles.some((r) => r === 'account_manager' || r === 'am_lead') ? 'client_manager' : 'team';
+    const person = (id: string | null, asRole?: string | null): InvoicePerson | null => {
+      if (!id) return null;
+      const u = users.find((x) => x.id === id);
+      const roles = u?.roles.map((r) => r.role.baseRole) ?? [];
+      return { id, name: u?.name ?? 'Former team member', role: asRole === 'client_manager' ? 'client_manager' : roleOf(roles) };
+    };
+    const SYSTEM: InvoicePerson = { id: null, name: invoicePersonRoleLabels.system, role: 'system' };
     const q = f.q?.trim().toLowerCase();
-    const rows = ledger
+    const enriched = ledger
       .filter((i) => !f.status || i.displayStatus === f.status || (f.status === 'unpaid' && i.balancePaise > 0))
       .filter((i) => !q || i.number.toLowerCase().includes(q) || (i.clientOrg?.name ?? '').toLowerCase().includes(q))
-      .map(toRow);
+      .map((i) => {
+        const createdBy = person(i.createdById);
+        const signedBy = i.signedAt ? person(i.signedById, i.signedRole) : null;
+        const held = invoiceHeld(branding, i);
+        return { ...toRow(i), createdBy, signedBy, held, issuedBy: signedBy ?? createdBy ?? SYSTEM };
+      });
+    // Everyone in the list before narrowing by person, role or signing (for the Person filter).
+    const peopleMap = new Map<string, InvoicePerson>();
+    for (const r of enriched) for (const p of [r.issuedBy, r.createdBy, r.signedBy]) if (p) peopleMap.set(p.id ?? 'system', p);
+    const people = [...peopleMap.values()].sort((a, b) => (a.role === 'system' ? 1 : b.role === 'system' ? -1 : a.name.localeCompare(b.name)));
+    const rows = enriched
+      .filter((r) => !f.person || (f.person === 'system' ? r.issuedBy.role === 'system' : r.issuedBy.id === f.person || r.createdBy?.id === f.person || r.signedBy?.id === f.person))
+      .filter((r) => !f.role || r.issuedBy.role === f.role)
+      .filter((r) => !f.signing || (f.signing === 'signed' ? !!r.signedBy : f.signing === 'waiting' ? r.held : !r.signedBy && !r.held));
     const clients = await this.prisma.clientOrg.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } });
     const billable = rows.filter((r) => r.status !== 'void');
+    // v30: the shown invoices grouped by who issued them.
+    const groups = new Map<string, InvoicePersonSummary>();
+    for (const r of billable) {
+      const key = r.issuedBy.id ?? 'system';
+      const g = groups.get(key) ?? { ...r.issuedBy, count: 0, totalPaise: 0, paidPaise: 0, balancePaise: 0, waiting: 0 };
+      g.count += 1;
+      g.totalPaise += r.totalPaise - r.creditedPaise;
+      g.paidPaise += r.paidPaise;
+      g.balancePaise += r.balancePaise;
+      if (r.held) g.waiting += 1;
+      groups.set(key, g);
+    }
+    const byPerson = [...groups.values()].sort((a, b) => b.totalPaise - a.totalPaise);
     return {
       rows,
       totals: {
@@ -91,6 +138,8 @@ export class FinanceService implements OnModuleInit {
       },
       clients,
       canEdit: canWriteFinance(me),
+      people,
+      byPerson,
     };
   }
 

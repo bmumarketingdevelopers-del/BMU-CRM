@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { invoiceKindLabels, invoiceStatusLabels, type FinanceInvoiceList, type FinanceInvoiceRow, type InvoiceFilters } from "@bmu/shared";
+import { invoiceKindLabels, invoicePersonRoleLabels, invoiceStatusLabels, type FinanceInvoiceList, type FinanceInvoiceRow, type InvoiceFilters, type InvoicePerson } from "@bmu/shared";
 import { Panel, StatRow, StatTile } from "@/components/dash";
 import { Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -81,7 +81,9 @@ export default function InvoicesPage() {
   const addInvoice = canNew("invoice") ? () => openNew("invoice", filters.clientId ? { clientId: filters.clientId } : undefined, reload) : null;
 
 
-  const set = (k: keyof InvoiceFilters) => (e: React.ChangeEvent<HTMLSelectElement>) => setFilters((f) => ({ ...f, [k]: e.target.value || undefined }));
+  const set = (k: keyof InvoiceFilters) => (e: React.ChangeEvent<HTMLSelectElement | HTMLInputElement>) => setFilters((f) => ({ ...f, [k]: e.target.value || undefined }));
+  // v30: "Name (Client Manager)", or "CRM (automatic)".
+  const who = (p: InvoicePerson | null | undefined) => (!p ? "" : p.role === "system" ? p.name : `${p.name} (${invoicePersonRoleLabels[p.role]})`);
 
   return (
     <>
@@ -111,6 +113,9 @@ export default function InvoicesPage() {
                 { header: "Total (₹)", value: (r) => r.totalPaise / 100 },
                 { header: "Paid (₹)", value: (r) => r.paidPaise / 100 },
                 { header: "Balance (₹)", value: (r) => r.balancePaise / 100 },
+                { header: "Issued by", value: (r) => who(r.issuedBy) },
+                { header: "Created by", value: (r) => (r.createdBy ? who(r.createdBy) : "CRM (automatic)") },
+                { header: "Signed by", value: (r) => (r.signedBy ? who(r.signedBy) : r.held ? "Waiting for signature" : "Not signed") },
               ]}
             />
             <SavedViewsMenu entity="invoices" filters={{ ...filters, q }} onApply={(x) => {
@@ -130,6 +135,41 @@ export default function InvoicesPage() {
             <StatTile label="Still due" value={inr(data.totals.balancePaise)} tone={data.totals.balancePaise ? "warn" : "default"} href="/admin/collections" />
           </StatRow>
         </div>
+      )}
+      {data?.byPerson && data.byPerson.length > 0 && (
+        <Panel className="mb-6 min-w-0" flush title="By person" subtitle="Who issued the invoices shown (the person who signed, else who created it; unsigned automatic ones count as the CRM). Use the filters below to pick a period.">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm" data-testid="invoices-by-person">
+              <thead>
+                <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.12em] text-ink-muted">
+                  <th className="px-4 py-2">Issued by</th>
+                  <th className="px-4 py-2 text-right">Invoices</th>
+                  <th className="px-4 py-2 text-right">Billed</th>
+                  <th className="px-4 py-2 text-right">Paid</th>
+                  <th className="px-4 py-2 text-right">Still due</th>
+                  <th className="px-4 py-2 text-right">Waiting for signature</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.byPerson.map((p) => (
+                  <tr key={p.id ?? "system"} className="border-b border-border">
+                    <td className="px-4 py-2">
+                      <button type="button" className="text-left underline-offset-2 hover:underline" onClick={() => setFilters((f) => ({ ...f, person: p.id ?? "system" }))}>
+                        <span className="font-medium">{p.name}</span>
+                        {p.role !== "system" && <span className="text-ink-muted"> · {invoicePersonRoleLabels[p.role]}</span>}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2 text-right tabular-nums">{p.count}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{inr(p.totalPaise)}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-ink-muted">{inr(p.paidPaise)}</td>
+                    <td className="px-4 py-2 text-right font-medium tabular-nums">{p.balancePaise ? inr(p.balancePaise) : "—"}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{p.waiting ? <span className="font-medium text-[#975a16]">{p.waiting}</span> : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
       )}
       {drafts.length > 0 && (
         <Panel className="mb-6 min-w-0" flush title={`Drafts ${drafts.length}`} subtitle="Not sent yet. Issuing emails the invoice to the client.">
@@ -183,6 +223,30 @@ export default function InvoicesPage() {
                 </option>
               ))}
             </Select>
+            <Select value={filters.person ?? ""} onChange={set("person")} aria-label="Person">
+              <option value="">Anyone</option>
+              {data?.people?.map((p) => (
+                <option key={p.id ?? "system"} value={p.id ?? "system"}>
+                  {who(p)}
+                </option>
+              ))}
+            </Select>
+            <Select value={filters.role ?? ""} onChange={set("role")} aria-label="Issued by role">
+              <option value="">Any role</option>
+              {(["founder", "client_manager", "branch_manager", "finance", "system"] as const).map((r) => (
+                <option key={r} value={r}>
+                  {r === "system" ? "CRM (automatic, unsigned)" : `Issued by ${invoicePersonRoleLabels[r]}`}
+                </option>
+              ))}
+            </Select>
+            <Select value={filters.signing ?? ""} onChange={set("signing")} aria-label="Signing">
+              <option value="">Signed or not</option>
+              <option value="signed">Signed</option>
+              <option value="waiting">Waiting for signature</option>
+              <option value="unsigned">Not signed (sent before signing was required)</option>
+            </Select>
+            <Input type="date" value={filters.from ?? ""} onChange={set("from")} className="!w-40" aria-label="Raised from" title="Raised from" />
+            <Input type="date" value={filters.to ?? ""} onChange={set("to")} className="!w-40" aria-label="Raised until" title="Raised until" />
           </div>
         }
       >
@@ -208,7 +272,7 @@ export default function InvoicesPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] text-sm" data-testid="invoice-table">
+                <table className="w-full min-w-[1180px] text-sm" data-testid="invoice-table">
                   <thead>
                     <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.12em] text-ink-muted">
                       <th className="w-8 px-3 py-2">
@@ -220,6 +284,8 @@ export default function InvoicesPage() {
                       <th className="px-3 py-2">Raised</th>
                       <th className="px-3 py-2">Due</th>
                       <th className="px-3 py-2">Status</th>
+                      <th className="px-3 py-2">Created by</th>
+                      <th className="px-3 py-2">Signed by</th>
                       <th className="px-3 py-2 text-right">Total</th>
                       <th className="px-3 py-2 text-right">Paid</th>
                       <th className="px-3 py-2 text-right">Balance</th>
@@ -245,6 +311,28 @@ export default function InvoicesPage() {
                           <td className="whitespace-nowrap px-3 py-2 text-ink-muted">{fmtDate(r.dueDate)}</td>
                           <td className="px-3 py-2">
                             <InvoiceStatus status={r.status} />
+                          </td>
+                          <td className="px-3 py-2 text-ink-muted">
+                            {r.createdBy ? (
+                              <>
+                                {r.createdBy.name}
+                                <span className="block text-[11px]">{invoicePersonRoleLabels[r.createdBy.role]}</span>
+                              </>
+                            ) : (
+                              <span className="text-[11px]">CRM (automatic)</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2" data-testid="signed-by">
+                            {r.signedBy ? (
+                              <>
+                                {r.signedBy.name}
+                                <span className="block text-[11px] text-ink-muted">{invoicePersonRoleLabels[r.signedBy.role]}</span>
+                              </>
+                            ) : r.held ? (
+                              <span className="text-[11px] font-medium text-[#975a16]">Waiting for signature</span>
+                            ) : (
+                              <span className="text-[11px] text-ink-muted">Not signed</span>
+                            )}
                           </td>
                           <td className={`px-3 py-2 text-right tabular-nums ${r.status === "void" ? "text-ink-muted line-through" : ""}`}>{inr(r.totalPaise)}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-ink-muted">{inr(r.paidPaise)}</td>

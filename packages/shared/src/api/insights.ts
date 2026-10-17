@@ -25,7 +25,21 @@ const qs = (params: Record<string, string | undefined>) => {
   return s ? `?${s}` : "";
 };
 
-export type InvoiceFilters = { status?: string; kind?: string; clientId?: string; q?: string };
+export type InvoiceFilters = {
+  status?: string;
+  kind?: string;
+  clientId?: string;
+  q?: string;
+  /** v30: issued, created or signed by this person ("system" = made by the CRM and not signed). */
+  person?: string;
+  /** v30: issued by a Founder, Client Manager, Branch Manager, Finance, team or the CRM. */
+  role?: string;
+  /** v30: signed | waiting (for a signature) | unsigned */
+  signing?: string;
+  /** v30: raised from / to (YYYY-MM-DD, India time). */
+  from?: string;
+  to?: string;
+};
 
 /** Command Centre analytics and the Finance desk. */
 export const insightsApi = (t: Transport) => ({

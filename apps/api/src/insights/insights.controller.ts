@@ -49,8 +49,19 @@ export class FinanceController {
   constructor(private readonly finance: FinanceService) {}
 
   @Get('invoices')
-  invoices(@CurrentUser() me: Me, @Query('status') status?: string, @Query('kind') kind?: string, @Query('clientId') clientId?: string, @Query('q') q?: string) {
-    return this.finance.invoices(me, { status, kind, clientId, q });
+  invoices(
+    @CurrentUser() me: Me,
+    @Query('status') status?: string,
+    @Query('kind') kind?: string,
+    @Query('clientId') clientId?: string,
+    @Query('q') q?: string,
+    @Query('person') person?: string,
+    @Query('role') role?: string,
+    @Query('signing') signing?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.finance.invoices(me, { status, kind, clientId, q, person, role, signing, from, to });
   }
 
   @Get('invoices/:id')
