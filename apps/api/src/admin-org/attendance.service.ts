@@ -455,6 +455,8 @@ export class AttendanceService {
 
   async requestCorrection(me: Me, input: AttendanceCorrectionInput, ip?: string): Promise<AttendanceCorrectionRow[]> {
     if (me.type !== 'staff') throw new ForbiddenException('Team only');
+    // v32: Founders are the top of the company and don't ask for corrections.
+    if (me.roles.includes('founder')) throw new ForbiddenException('Founders do not need to ask for attendance corrections.');
     const today = istDate(new Date());
     if (input.date > today) throw new BadRequestException('You can only correct today or an earlier day');
     if (input.date < addDays(today, -ATTENDANCE_CORRECTION_DAYS)) throw new BadRequestException(`Corrections can go back ${ATTENDANCE_CORRECTION_DAYS} days`);

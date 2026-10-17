@@ -42,6 +42,7 @@ import { DeliverSlaService } from '../deliver/deliver-sla.service.js';
 import { carryOpenComments, proofRounds, ProofingService } from '../creative/proofing.service.js';
 import { AssetsService } from '../creative/assets.service.js';
 import { SettingsService } from '../settings/settings.service.js';
+import { assertAssignee, assignScope } from '../actions/tasks/assign-rules.js';
 import { addDays, dayKind, dayLabel, dbDate, lateMinutes, leaveOn, loadWorkCalendar, nextWorkingDay } from '../admin-org/work-calendar.js';
 
 const OPEN: TaskStatus[] = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
@@ -361,6 +362,8 @@ export class ProductionService {
     if (input.ownerId) {
       const owner = await this.prisma.user.findFirst({ where: { id: input.ownerId, orgId: me.orgId, type: 'staff' } });
       if (!owner) throw new BadRequestException('Unknown team member');
+      // v32: Department Heads give work to their team; others to the department's head.
+      await assertAssignee(this.prisma, me, await assignScope(this.prisma, me), owner.id, task.departmentId ?? null);
       data.ownerId = owner.id;
     }
     const updated = await this.prisma.task.update({ where: { id }, data, include: taskInclude });
@@ -808,7 +811,8 @@ export class ProductionService {
       leaveNotice: notice,
       late: lateMinutes(att?.checkIn, cal) > 0,
       workingHours: { start: cal.start, end: cal.end, graceMinutes: cal.graceMinutes },
-      missedCheckOut: missed && !missedAsked ? missed.date.toISOString().slice(0, 10) : null,
+      // v32: Founders don't ask for corrections, so no reminder for them.
+      missedCheckOut: missed && !missedAsked && !me.roles.includes('founder') ? missed.date.toISOString().slice(0, 10) : null,
       tasks: {
         overdue: open.filter((t) => t.overdue && t.status !== 'blocked'),
         today: open.filter((t) => !t.overdue && dueToday(t) && t.status !== 'blocked'),

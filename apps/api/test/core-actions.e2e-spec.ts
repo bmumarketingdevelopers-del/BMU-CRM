@@ -133,12 +133,12 @@ describe('Task create rules', () => {
   it('needs Gate 3 for client tasks unless it is pre-production work', async () => {
     const r = await http().post('/tasks').set(as('founder')).send({ title: tag('Early task'), engagementId: ids.preEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2 }).expect(400);
     expect(r.body.message).toMatch(/Gate 3/);
-    const ok = await createTask('founder', { title: tag('Onboarding prep'), engagementId: ids.preEng, departmentId: ids.dept, ownerId: ids.uxui, deadline: D2, preProduction: true });
+    const ok = await createTask('head', { title: tag('Onboarding prep'), engagementId: ids.preEng, departmentId: ids.dept, ownerId: ids.uxui, deadline: D2, preProduction: true });
     expect(ok.task.preProduction).toBe(true);
   });
 
   it('saves out-of-scope work as a draft without an approved add-on', async () => {
-    const r = await createTask('am', { title: tag('Extra reel'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2, outOfScope: true });
+    const r = await createTask('head', { title: tag('Extra reel'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2, outOfScope: true });
     expect(r.task.isDraft).toBe(true);
     expect(r.task.draftReason).toBe('out_of_scope');
     expect(r.message).toMatch(/draft/i);
@@ -148,9 +148,9 @@ describe('Task create rules', () => {
   });
 
   it('creates an internal task with subtasks and enforces the parent-done rule', async () => {
-    const r = await createTask('am', { title: tag('Internal pitch deck'), internal: true, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2, subtasks: [{ title: tag('Collect logos') }], checklist: [{ id: 'a', label: 'Outline', done: false }] });
+    const r = await createTask('head', { title: tag('Internal pitch deck'), internal: true, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2, subtasks: [{ title: tag('Collect logos') }], checklist: [{ id: 'a', label: 'Outline', done: false }] });
     ids.parent = r.task.id;
-    const detail = await http().get(`/tasks/${ids.parent}`).set(as('am')).expect(200);
+    const detail = await http().get(`/tasks/${ids.parent}`).set(as('head')).expect(200);
     expect(detail.body.subtasks).toHaveLength(1);
     ids.subtask = detail.body.subtasks[0].id;
     await http().post(`/tasks/${ids.parent}/status`).set(as('temp3')).send({ status: 'in_progress' }).expect(200);
@@ -160,10 +160,9 @@ describe('Task create rules', () => {
     await http().patch(`/tasks/${ids.parent}`).set(as('temp3')).send({ status: 'done' }).expect(400);
   });
 
-  it('blocks or routes a new task for someone on leave on the deadline', async () => {
-    const r = await createTask('am', { title: tag('Leave day task'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp1, deadline: D });
-    expect(r.approval?.id).toBeTruthy();
-    expect(r.task.owner).toBeNull();
+  it('blocks a new task for someone on leave on the deadline unless the head overrides', async () => {
+    // v32: a Client Manager can't give work to a team member at all (only to the Department Head).
+    await http().post('/tasks').set(as('am')).send({ title: tag('Leave day task'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp1, deadline: D }).expect(403);
     const blocked = await http().post('/tasks').set(as('head')).send({ title: tag('Head leave task'), internal: true, departmentId: ids.dept, ownerId: ids.temp1, deadline: D }).expect(400);
     expect(blocked.body.message).toMatch(/leave/);
     const over = await createTask('head', { title: tag('Head override task'), internal: true, departmentId: ids.dept, ownerId: ids.temp1, deadline: D, overrideLeave: true });
@@ -173,40 +172,41 @@ describe('Task create rules', () => {
 
 describe('Reassignment engine', () => {
   beforeAll(async () => {
-    ids.rTask = (await createTask('am', { title: tag('Reassign me'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D })).task.id;
-    ids.bigTask = (await createTask('am', { title: tag('Huge job'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2, estimateHours: 200 })).task.id;
+    ids.rTask = (await createTask('head', { title: tag('Reassign me'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D })).task.id;
+    ids.bigTask = (await createTask('head', { title: tag('Huge job'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2, estimateHours: 200 })).task.id;
   });
 
   it('lists candidates with load, leave and the current owner', async () => {
-    const r = await http().get(`/actions/reassign/task/candidates?ids=${ids.rTask}`).set(as('am')).expect(200);
+    const r = await http().get(`/actions/reassign/task/candidates?ids=${ids.rTask}`).set(as('head')).expect(200);
     const t1 = r.body.candidates.find((c: { id: string }) => c.id === ids.temp1);
     expect(t1.onLeave).toBe(true);
     expect(r.body.candidates.find((c: { id: string }) => c.id === ids.temp3).current).toBe(true);
     expect(r.body.reasons.length).toBeGreaterThan(3);
+    // v32: a Client Manager sees only the task department's head.
+    const cm = await http().get(`/actions/reassign/task/candidates?ids=${ids.rTask}`).set(as('am')).expect(200);
+    expect(cm.body.candidates.map((c: { id: string }) => c.id)).toEqual([ids.head]);
   });
 
   it('requires a reason and a handover note once work has started', async () => {
-    await http().post('/actions/reassign/task/apply').set(as('am')).send({ ids: [ids.rTask], toUserId: ids.temp2 }).expect(400);
+    await http().post('/actions/reassign/task/apply').set(as('head')).send({ ids: [ids.rTask], toUserId: ids.temp2 }).expect(400);
     await prisma.task.update({ where: { id: ids.rTask }, data: { status: 'in_progress' } });
-    const r = await http().post('/actions/reassign/task/apply').set(as('am')).send({ ids: [ids.rTask], toUserId: ids.temp2, reason: 'overload' }).expect(400);
+    const r = await http().post('/actions/reassign/task/apply').set(as('head')).send({ ids: [ids.rTask], toUserId: ids.temp2, reason: 'overload' }).expect(400);
     expect(r.body.message).toMatch(/handover/i);
     await prisma.task.update({ where: { id: ids.rTask }, data: { status: 'todo' } });
   });
 
-  it('sends a move onto leave for approval (non-heads) and blocks heads without override', async () => {
-    const r = await http().post('/actions/reassign/task/apply').set(as('am')).send({ ids: [ids.rTask], toUserId: ids.temp1, reason: 'overload' }).expect(200);
-    expect(r.body.applied).toBe(0);
-    expect(r.body.approval.id).toBeTruthy();
-    ids.leaveApproval = r.body.approval.id;
+  it('keeps Client Managers to the Department Head and blocks heads moving work onto leave without override', async () => {
+    const cm = await http().post('/actions/reassign/task/apply').set(as('am')).send({ ids: [ids.rTask], toUserId: ids.temp1, reason: 'overload' }).expect(400);
+    expect(cm.body.message).toMatch(/can't take this kind of work/);
     const h = await http().post('/actions/reassign/task/apply').set(as('head')).send({ ids: [ids.rTask], toUserId: ids.temp1, reason: 'overload' }).expect(400);
     expect(h.body.message).toMatch(/leave/);
-    await http().post(`/actions/approvals/${ids.leaveApproval}/cancel`).set(as('am')).expect(200);
   });
 
   it('needs Department Head approval above 120% and applies it on approve', async () => {
-    const p = await http().post('/actions/reassign/task/preview').set(as('am')).send({ ids: [ids.bigTask], toUserId: ids.temp2 }).expect(200);
+    // v32: a Client Manager can move work only to the Department Head; above 120% that needs the head's approval.
+    const p = await http().post('/actions/reassign/task/preview').set(as('am')).send({ ids: [ids.bigTask], toUserId: ids.head }).expect(200);
     expect(p.body.needsApproval).toBeTruthy();
-    const r = await http().post('/actions/reassign/task/apply').set(as('am')).send({ ids: [ids.bigTask], toUserId: ids.temp2, reason: 'skill_fit' }).expect(200);
+    const r = await http().post('/actions/reassign/task/apply').set(as('am')).send({ ids: [ids.bigTask], toUserId: ids.head, reason: 'skill_fit' }).expect(200);
     expect(r.body.approval.id).toBeTruthy();
     const box = await http().get('/actions/approvals?box=mine').set(as('head')).expect(200);
     expect(box.body.some((a: { id: string }) => a.id === r.body.approval.id)).toBe(true);
@@ -216,8 +216,8 @@ describe('Reassignment engine', () => {
     const d = await http().post(`/actions/approvals/${r.body.approval.id}/decide`).set(as('head')).send({ decision: 'approve', note: 'OK this once' }).expect(200);
     expect(d.body.status).toBe('approved');
     const t = await prisma.task.findUniqueOrThrow({ where: { id: ids.bigTask } });
-    expect(t.ownerId).toBe(ids.temp2);
-    const trail = await prisma.assignment.findMany({ where: { targetId: ids.bigTask, toUserId: ids.temp2 } });
+    expect(t.ownerId).toBe(ids.head);
+    const trail = await prisma.assignment.findMany({ where: { targetId: ids.bigTask, toUserId: ids.head } });
     expect(trail.length).toBeGreaterThan(0);
   });
 
@@ -239,9 +239,9 @@ describe('Reassignment engine', () => {
   });
 
   it('moves all of one person’s open work (bulk) for heads only', async () => {
-    const w = await http().get(`/actions/reassign/open-work/${ids.temp2}`).set(as('head')).expect(200);
+    const w = await http().get(`/actions/reassign/open-work/${ids.temp3}`).set(as('head')).expect(200);
     expect(w.body.groups.find((g: { type: string }) => g.type === 'task').items.length).toBeGreaterThan(0);
-    await http().post('/actions/reassign/bulk').set(as('design')).send({ fromUserId: ids.temp2, reason: 'leave', moves: [{ toUserId: ids.uxui, items: [{ type: 'task', id: ids.bigTask }] }] }).expect(403);
+    await http().post('/actions/reassign/bulk').set(as('design')).send({ fromUserId: ids.temp3, reason: 'leave', moves: [{ toUserId: ids.uxui, items: [{ type: 'task', id: ids.rTask }] }] }).expect(403);
   });
 });
 
@@ -263,7 +263,7 @@ describe('Approvals', () => {
   });
 
   it('routes "Can’t take this" to the head, who picks the new owner', async () => {
-    const t = (await createTask('am', { title: tag('Hand back'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.design, deadline: D2 })).task;
+    const t = (await createTask('head', { title: tag('Hand back'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.design, deadline: D2 })).task;
     const r = await http().post(`/tasks/${t.id}/handback`).set(as('design')).send({ reason: 'Too much on this week' }).expect(200);
     const view = await http().get(`/actions/approvals/${r.body.approval.id}`).set(as('head')).expect(200);
     expect(view.body.approveNeeds).toBe('assignee');
@@ -276,8 +276,8 @@ describe('Approvals', () => {
 
 describe('Task actions', () => {
   beforeAll(async () => {
-    ids.a = (await createTask('am', { title: tag('Action A'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2 })).task.id;
-    ids.b = (await createTask('am', { title: tag('Action B'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2 })).task.id;
+    ids.a = (await createTask('head', { title: tag('Action A'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2 })).task.id;
+    ids.b = (await createTask('head', { title: tag('Action B'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2 })).task.id;
   });
 
   it('needs blocked details and records them', async () => {
@@ -332,7 +332,7 @@ describe('Task actions', () => {
   it('routes Done on an ad-hoc deliverable task to QC', async () => {
     const del = await prisma.deliverable.findFirst({ where: { cycle: { engagementId: ids.amEng }, tasks: { none: { kind: 'qc', status: { in: ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'] } } } } });
     if (!del) return;
-    const t = (await createTask('am', { title: tag('Deliverable touch-up'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2, deliverableId: del.id })).task;
+    const t = (await createTask('head', { title: tag('Deliverable touch-up'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp3, deadline: D2, deliverableId: del.id })).task;
     await http().post(`/tasks/${t.id}/status`).set(as('temp3')).send({ status: 'in_progress' }).expect(200);
     const r = await http().post(`/tasks/${t.id}/status`).set(as('temp3')).send({ status: 'done' }).expect(200);
     expect(r.body.message).toMatch(/QC/);
@@ -363,7 +363,7 @@ describe('Templates and recurring tasks', () => {
   });
 
   it('creates recurring instances 7 days ahead, skipping Sundays, idempotently', async () => {
-    const r = await createTask('am', { title: tag('Daily check'), internal: true, departmentId: ids.dept, ownerId: ids.temp3, deadline: dayAhead(1), repeat: { rule: 'daily', end: dayAhead(20) } });
+    const r = await createTask('head', { title: tag('Daily check'), internal: true, departmentId: ids.dept, ownerId: ids.temp3, deadline: dayAhead(1), repeat: { rule: 'daily', end: dayAhead(20) } });
     const rec = await prisma.task.findUniqueOrThrow({ where: { id: r.task.id } });
     expect(rec.recurrenceId).toBeTruthy();
     recIds.push(rec.recurrenceId!);
@@ -372,10 +372,10 @@ describe('Templates and recurring tasks', () => {
     expect(instances.every((t) => new Date(t.deadline!.getTime() + 5.5 * 3600_000).getUTCDay() !== 0)).toBe(true);
     const again = await app.get(TasksActionsService).generateFor(rec.recurrenceId!);
     expect(again).toHaveLength(0);
-    const list = await http().get('/tasks/recurring').set(as('am')).expect(200);
+    const list = await http().get('/tasks/recurring').set(as('head')).expect(200);
     expect(list.body.some((x: { id: string }) => x.id === rec.recurrenceId)).toBe(true);
     await http().post('/tasks').set(as('design')).send({ title: tag('Producer repeat'), internal: true, departmentId: ids.dept, ownerId: ids.design, deadline: dayAhead(1), repeat: { rule: 'daily', end: dayAhead(9) } }).expect(403);
-    await http().delete(`/tasks/recurring/${rec.recurrenceId}`).set(as('am')).expect(200);
+    await http().delete(`/tasks/recurring/${rec.recurrenceId}`).set(as('head')).expect(200);
   });
 });
 
@@ -383,16 +383,17 @@ describe('CSV import', () => {
   it('previews with errors and duplicates, commits the good rows and reports the rest', async () => {
     const csv = ['Title,Client,Department,Assignee,Deadline', `${tag('Imported one')},Internal,Creative / Design,uxui@bmu.demo,${D2}`, `${tag('Imported bad')},Internal,Nowhere,uxui@bmu.demo,not-a-date`].join('\n');
     await http().post('/imports/tasks').set(as('design')).send({ csv }).expect(403);
-    const p = await http().post('/imports/tasks').set(as('am')).send({ csv, fileName: `tasks-${stamp}.csv` }).expect(200);
+    // v32: the Department Head imports work for their team.
+    const p = await http().post('/imports/tasks').set(as('head')).send({ csv, fileName: `tasks-${stamp}.csv` }).expect(200);
     expect(p.body.rowsTotal).toBe(2);
     expect(p.body.rowsOk).toBe(1);
     expect(p.body.rows[1].errors.length).toBeGreaterThan(0);
-    const c = await http().post(`/imports/jobs/${p.body.id}/commit`).set(as('am')).send({ skipDuplicates: true }).expect(200);
+    const c = await http().post(`/imports/jobs/${p.body.id}/commit`).set(as('head')).send({ skipDuplicates: true }).expect(200);
     expect(c.body.status).toBe('committed');
     expect(await prisma.task.count({ where: { title: tag('Imported one') } })).toBe(1);
-    const report = await http().get(`/imports/jobs/${p.body.id}/errors.csv`).set(as('am')).expect(200);
+    const report = await http().get(`/imports/jobs/${p.body.id}/errors.csv`).set(as('head')).expect(200);
     expect(report.text).toMatch(/Problem/);
-    await http().post(`/imports/jobs/${p.body.id}/commit`).set(as('am')).send({}).expect(400);
+    await http().post(`/imports/jobs/${p.body.id}/commit`).set(as('head')).send({}).expect(400);
   });
 });
 

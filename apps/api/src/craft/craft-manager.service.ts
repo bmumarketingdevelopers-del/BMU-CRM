@@ -33,6 +33,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { ReassignService } from '../actions/reassign.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { checkWindow, leaveOn, loadWorkCalendar } from '../admin-org/work-calendar.js';
+import { assertAssignee, assignScope } from '../actions/tasks/assign-rules.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { DAY, pct, plural, shortDay, weekStart } from './craft-util.js';
@@ -298,6 +299,23 @@ export class CraftManagerService {
     return new Map(deps.map((d) => [d.id, { title: d.title, status: d.status }]));
   }
 
+  /** v32: who each task may go to: Department Heads their team (or themselves); others the task department's head. */
+  private async assignBlocks(me: Me, members: MemberRow[]) {
+    const scope = await assignScope(this.prisma, me);
+    const heads = scope.kind === 'heads' ? await this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { id: true, headUserId: true } }) : [];
+    const ok = (m: MemberRow, departmentId: string | null) =>
+      scope.kind === 'self' ? m.id === me.id : scope.kind === 'team' ? m.id === me.id || (!!m.departmentId && scope.departmentIds.includes(m.departmentId)) : !!departmentId && heads.some((d) => d.id === departmentId && d.headUserId === m.id);
+    return (t: CraftBoardTask, departmentId: string | null): CraftBoardTask => ({ ...t, cannotAssignTo: [...new Set([...t.cannotAssignTo, ...members.filter((m) => !ok(m, departmentId)).map((m) => m.id)])] });
+  }
+
+  private async assignableIds(me: Me, members: MemberRow[]) {
+    const scope = await assignScope(this.prisma, me);
+    if (scope.kind === 'self') return [me.id];
+    if (scope.kind === 'team') return members.filter((m) => m.id === me.id || (!!m.departmentId && scope.departmentIds.includes(m.departmentId))).map((m) => m.id);
+    const heads = await this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null, headUserId: { not: null } }, select: { headUserId: true } });
+    return members.filter((m) => heads.some((d) => d.headUserId === m.id)).map((m) => m.id);
+  }
+
   /** One task as the board shows it, with a fresh suggestion (used after every change). */
   private async oneBoardTask(me: Me, s: Scope, id: string): Promise<CraftBoardTask> {
     const t = await this.scopedTask(me, s, id);
@@ -306,7 +324,8 @@ export class CraftManagerService {
     const open = await this.prisma.task.findMany({ where: { orgId: me.orgId, ownerId: { in: members.map((m) => m.id) }, status: { in: [...OPEN] } }, select: { ownerId: true, status: true, deadline: true } });
     const leave = await this.leaveDays(me.orgId, members.map((m) => m.id), weekStart(now), new Date(weekStart(now).getTime() + 7 * DAY));
     const cards = new Map(this.memberCards(members, open, leave, now).map((c) => [c.id, c]));
-    return this.boardTask(t, now, await this.depTitles([t]), members, cards, await this.engMap([t]));
+    const blocks = await this.assignBlocks(me, members);
+    return blocks(this.boardTask(t, now, await this.depTitles([t]), members, cards, await this.engMap([t])), t.departmentId ?? t.deliverable?.departmentId ?? null);
   }
 
   // -------------------------------------------------------------------------
@@ -340,8 +359,9 @@ export class CraftManagerService {
     const cards = new Map(cardList.map((c) => [c.id, c]));
     const deps = await this.depTitles(rows);
     const engMap = await this.engMap(rows);
+    const blocks = await this.assignBlocks(me, members);
     const board = rows
-      .map((t) => this.boardTask(t, now, deps, members, cards, engMap))
+      .map((t) => blocks(this.boardTask(t, now, deps, members, cards, engMap), t.departmentId ?? t.deliverable?.departmentId ?? null))
       .sort((a, b) => Number(!!a.owner) - Number(!!b.owner) || priorityRank(a.priority) - priorityRank(b.priority) || (a.deadline ?? '9').localeCompare(b.deadline ?? '9'));
 
     // Clients
@@ -409,6 +429,8 @@ export class CraftManagerService {
       insights,
       board,
       members: cardList.sort((a, b) => a.loadPct - b.loadPct),
+      // v32: who new work may go to (Department Heads: their team; others: Department Heads).
+      assignableIds: await this.assignableIds(me, members),
       filters,
       engagements: engs.map((e) => ({ id: e.id, label: `${e.clientOrg.name} · ${e.service.name}`, clientId: e.clientOrg.id })),
       deliverables: engs.flatMap((e) => e.cycles.flatMap((c) => c.deliverables.map((d) => ({ id: d.id, title: d.title, engagementId: e.id })))),
@@ -658,6 +680,7 @@ export class CraftManagerService {
     const t = await this.scopedTask(me, s, taskId);
     const u = await this.assignee(me, s, input.ownerId);
     this.checkAssignable(t, u);
+    await assertAssignee(this.prisma, me, await assignScope(this.prisma, me), u.id, t.departmentId ?? t.deliverable?.departmentId ?? null);
     const deadline = parseDeadline(input.deadline);
     const data: Prisma.TaskUncheckedUpdateInput = { ownerId: u.id };
     if (deadline !== undefined) data.deadline = deadline;
@@ -677,6 +700,7 @@ export class CraftManagerService {
     for (const id of ids) {
       const t = await this.scopedTask(me, s, id);
       this.checkAssignable(t, u);
+      await assertAssignee(this.prisma, me, await assignScope(this.prisma, me), u.id, t.departmentId ?? t.deliverable?.departmentId ?? null);
       tasks.push(t);
     }
     await this.prisma.task.updateMany({ where: { id: { in: tasks.map((t) => t.id) } }, data: { ownerId: u.id } });
@@ -750,6 +774,7 @@ export class CraftManagerService {
     }
     let owner: MemberRow | null = null;
     if (input.ownerId) owner = await this.assignee(me, s, input.ownerId);
+    if (owner) await assertAssignee(this.prisma, me, await assignScope(this.prisma, me), owner.id, departmentId);
     const deadline = parseDeadline(input.deadline) ?? null;
     const created = await this.prisma.task.create({
       data: {

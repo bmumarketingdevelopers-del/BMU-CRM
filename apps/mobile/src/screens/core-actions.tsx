@@ -84,6 +84,8 @@ function QuickTask({ onClose }: { onClose: (message?: string) => void }) {
   const [internal, setInternal] = useState<'client' | 'internal'>('client');
   const [engagementId, setEngagementId] = useState('');
   const [ownerId, setOwnerId] = useState('');
+  // v32: the Founder, Branch Manager and client leads send tasks to a department's head.
+  const [headDept, setHeadDept] = useState('');
   const [deadline, setDeadline] = useState(todayIst());
   const { busy, error, setError, run } = useRun();
   useEffect(() => {
@@ -107,7 +109,7 @@ function QuickTask({ onClose }: { onClose: (message?: string) => void }) {
         title: title.trim(),
         internal: internal === 'internal',
         engagementId: internal === 'client' ? engagementId : null,
-        departmentId: eng?.departmentIds.find((d) => d === opts?.me.departmentId) ?? opts?.me.departmentId ?? eng?.departmentIds[0] ?? opts?.departments[0]?.id ?? '',
+        departmentId: headDept || (eng?.departmentIds.find((d) => d === opts?.me.departmentId) ?? opts?.me.departmentId ?? eng?.departmentIds[0] ?? opts?.departments[0]?.id ?? ''),
         ownerId,
         deadline,
         // Before Gate 3 only planning work can be added.
@@ -130,10 +132,33 @@ function QuickTask({ onClose }: { onClose: (message?: string) => void }) {
             {!e.productionOpen && <Text style={s.muted}>Before production: only planning work</Text>}
           </Pressable>
         ))}
-      {opts?.canAssignOthers ? (
+      {opts?.assignMode === 'heads' ? (
+        <>
+          <Muted style={{ marginTop: 12 }}>Department (goes to its Department Head)</Muted>
+          {opts.departments
+            .filter((d) => d.head)
+            .map((d) => (
+              <Pressable
+                key={d.id}
+                onPress={() => {
+                  setHeadDept(d.id);
+                  setOwnerId(d.head!.id);
+                }}
+                style={[st.choice, headDept === d.id && st.choiceOn]}
+              >
+                <Text style={s.text}>
+                  {d.name} · {d.head!.name}
+                </Text>
+              </Pressable>
+            ))}
+        </>
+      ) : opts?.canAssignOthers ? (
         <>
           <Muted style={{ marginTop: 12 }}>Who does it</Muted>
-          {opts.people.slice(0, 40).map((p) => (
+          {opts.people
+            .filter((p) => opts.assignMode !== 'team' || p.id === opts.me.id || (!!p.departmentId && (opts.teamDepartmentIds ?? []).includes(p.departmentId)))
+            .slice(0, 40)
+            .map((p) => (
             <Pressable key={p.id} onPress={() => setOwnerId(p.id)} style={[st.choice, ownerId === p.id && st.choiceOn]}>
               <Text style={s.text}>{p.name}</Text>
             </Pressable>

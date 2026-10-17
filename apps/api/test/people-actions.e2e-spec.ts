@@ -339,7 +339,9 @@ describe('offboarding', () => {
     await http().post(`/team-flows/people/${s.processId}/complete`).set(as('admin')).expect(400);
 
     // Hand everything over: the task through the engine, clients and leads through the v10 handover, the approval here.
-    await http().post('/actions/reassign/task/apply').set(as('founder')).send({ ids: [task.id], toUserId: ids.designer, reason: 'offboarding' }).expect(want(200));
+    // v32: the Founder hands work only to a Department Head; the Design head gives it to the team.
+    await http().post('/actions/reassign/task/apply').set(as('founder')).send({ ids: [task.id], toUserId: ids.designer, reason: 'offboarding' }).expect(400);
+    await http().post('/actions/reassign/task/apply').set(as('head')).send({ ids: [task.id], toUserId: ids.designer, reason: 'offboarding' }).expect(want(200));
     await http().post(`/team-flows/people/${s.processId}/reassign`).set(as('hr')).send({ kind: 'clients', ids: [client.id], toUserId: ids.am }).expect(200);
     await http().post(`/team-flows/people/${s.processId}/reassign`).set(as('hr')).send({ kind: 'leads', ids: [lead.id], toUserId: ids.am }).expect(200);
     await http().post(`/people-actions/people/${leaver.id}/handover`).set(as('hr')).send({ kind: 'approvals', toUserId: ids.producer }).expect(400);

@@ -7,6 +7,7 @@ import { calendarFor } from '../../production/generate.js';
 import { hasRole, isLeader, OPEN_TASK } from '../people.js';
 import { ActionsRegistry, type ReassignApplyInput, type ReassignItem, type ReassignTarget, type UndoRow } from '../registry.js';
 import { TaskAccess, type TaskFull } from './task-access.js';
+import { assigneeWhere, assignScope } from './assign-rules.js';
 
 /** Base roles that make up the assignable team (same as the Manager workspace). */
 export const TASK_TEAM_ROLES = ['producer', 'strategist', 'qc_reviewer', 'intern', 'account_manager', 'am_lead', 'department_head'];
@@ -106,13 +107,22 @@ export class TaskTargets implements OnModuleInit {
           await this.access.assertManage(me, t);
         }
       },
-      eligibility: async (me, items) => {
+      eligibility: async (me, items, ctx) => {
         const rows = items.map((i) => rowsById.get(i.id)).filter((x): x is TaskFull => !!x);
         const kinds = new Set(rows.map((r) => r.kind));
         const roles = type === 'qc' || kinds.has('qc') ? QC_ROLES : kinds.has('client_review') ? REVIEW_ROLES : TASK_TEAM_ROLES;
         const uploaders = new Set(rows.filter((r) => r.kind === 'qc').map((r) => r.deliverable?.versions[0]?.uploadedById).filter(Boolean));
         return {
-          where: { AND: [{ roles: { some: { role: { baseRole: { in: roles } } } } }, await this.deptScope(me)] },
+          // v32: heads of the chosen department (Founder, Branch Manager, client leads) or a Department Head's own team.
+          where: {
+            AND: [
+              { roles: { some: { role: { baseRole: { in: roles } } } } },
+              await this.deptScope(me),
+              ...(type === 'task' && !kinds.has('qc') && !kinds.has('client_review')
+                ? [await assigneeWhere(this.prisma, me, await assignScope(this.prisma, me), ctx?.departmentId ?? items[0]?.departmentId ?? null)]
+                : []),
+            ],
+          },
           departmentId: items[0]?.departmentId ?? null,
           specialty: items[0]?.specialty ?? null,
           blocked: (u) => {

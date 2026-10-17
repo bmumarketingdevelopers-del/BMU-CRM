@@ -582,6 +582,8 @@ export type CraftManagerView = {
   insights: string[];
   board: CraftBoardTask[];
   members: CraftMember[];
+  /** v32: who new work may go to (Department Heads: their team; others: Department Heads). */
+  assignableIds?: string[];
   filters: { clients: { id: string; name: string }[]; services: { id: string; name: string }[]; specialties: { id: string; label: string }[] };
   /** Engagements and open deliverables the manager can attach an ad-hoc task to. */
   engagements: { id: string; label: string; clientId: string }[];

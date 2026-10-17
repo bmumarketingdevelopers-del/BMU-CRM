@@ -131,7 +131,9 @@ export function AssignmentBoard({ v, onChanged }: { v: CraftManagerView; onChang
           <span className="font-medium">{selected.size} selected</span>
           <Select aria-label="Reassign selected to" value={bulkTo} onChange={(e) => setBulkTo(e.target.value)}>
             <option value="">Assign to…</option>
-            {v.members.map((m) => (
+            {v.members
+              .filter((m) => [...selected].every((id) => !v.board.find((t) => t.id === id)?.cannotAssignTo.includes(m.id)))
+              .map((m) => (
               <option key={m.id} value={m.id} disabled={m.onLeaveToday}>
                 {m.name} · {m.specialtyLabel} · {m.loadPct}%{m.onLeaveToday ? " · on leave" : ""}
               </option>
@@ -394,7 +396,9 @@ function AdhocTask({ v, onDone }: { v: CraftManagerView; onDone: (msg: string) =
   const [priority, setPriority] = useState<CraftPriority>("normal");
   const { busy, error, run } = useAction();
   const dels = v.deliverables.filter((d) => d.engagementId === engagementId);
-  const people = specialty ? [...v.members].sort((a, b) => Number(b.specialty === specialty) - Number(a.specialty === specialty)) : v.members;
+  // v32: only the people new work may go to.
+  const allowed = v.assignableIds ? v.members.filter((m) => v.assignableIds!.includes(m.id)) : v.members;
+  const people = specialty ? [...allowed].sort((a, b) => Number(b.specialty === specialty) - Number(a.specialty === specialty)) : allowed;
   return (
     <form
       className="mb-5 grid gap-3 border border-border bg-canvas/40 p-4 md:grid-cols-6"

@@ -44,6 +44,7 @@ import { ActionsRegistry, type UndoRow } from '../registry.js';
 import { UndoService } from '../undo.service.js';
 import { TaskAccess, taskDetailInclude, type TaskFull } from './task-access.js';
 import { TASK_TEAM_ROLES, TaskTargets } from './task-targets.js';
+import { assertAssignee, assignScope, departmentHead } from './assign-rules.js';
 
 const fmt = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 const short = (d: Date | null | undefined) => (d ? fmt.format(d) : 'no deadline');
@@ -312,7 +313,7 @@ export class TasksActionsService implements OnModuleInit {
     if (engagementId) engWhere.OR = [...(engWhere.OR ?? [{}]), { id: engagementId }];
     const [engs, depts, templates, people, self] = await Promise.all([
       this.prisma.engagement.findMany({ where: engWhere, include: { clientOrg: { select: { id: true, name: true } }, service: { select: { name: true } }, cycles: { select: { deliverables: { where: { archivedAt: null }, select: { id: true, title: true, departmentId: true } } }, orderBy: { createdAt: 'desc' }, take: 2 } }, orderBy: [{ clientOrg: { name: 'asc' } }], take: 300 }),
-      this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { id: true, name: true, headUserId: true, branch: { select: { name: true } } }, orderBy: { name: 'asc' } }),
       this.prisma.flowTemplate.findMany({ where: { orgId: me.orgId, active: true }, include: { department: { select: { name: true } } }, orderBy: [{ name: 'asc' }, { version: 'desc' }] }),
       this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: 'active', roles: { some: { role: { baseRole: { in: TASK_TEAM_ROLES } } } } }, include: { roles: { include: { role: { select: { baseRole: true } } } } }, orderBy: { name: 'asc' } }),
       this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } }),
@@ -322,6 +323,11 @@ export class TasksActionsService implements OnModuleInit {
     const addOns = await this.prisma.request.findMany({ where: { engagementId: { in: visibleEngs.map((e) => e.id) }, type: 'new_scope', status: { in: ADDON_OK as never[] } }, select: { id: true, engagementId: true, description: true } });
     const latest = templates.filter((t, i) => templates.findIndex((x) => x.departmentId === t.departmentId && x.name === t.name) === i);
     const pods = await this.prisma.clientPod.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { clientIds: true, producerIds: true, strategistUserId: true, amUserId: true } });
+    // v32: Department Heads assign to their team; everyone else who assigns sends tasks to the chosen departments' heads.
+    const scope = await assignScope(this.prisma, me);
+    const headIds = [...new Set(depts.map((d) => d.headUserId).filter((x): x is string => !!x))];
+    const heads = headIds.length ? await this.prisma.user.findMany({ where: { id: { in: headIds }, status: 'active', deletedAt: null }, select: { id: true, name: true } }) : [];
+    const sameName = (n: string) => depts.filter((d) => d.name === n).length > 1;
     return {
       engagements: visibleEngs.map((e) => ({
         id: e.id,
@@ -334,7 +340,9 @@ export class TasksActionsService implements OnModuleInit {
         departmentIds: [...new Set(e.cycles.flatMap((cy) => cy.deliverables.map((d) => d.departmentId)).filter((x): x is string => !!x))],
         podMemberIds: ((p) => (p ? [...p.producerIds, p.strategistUserId, p.amUserId].filter((x): x is string => !!x) : undefined))(pods.find((p) => p.clientIds.includes(e.clientOrg.id))),
       })),
-      departments: depts,
+      departments: depts.map((d) => ({ id: d.id, name: sameName(d.name) ? `${d.name} (${d.branch.name})` : d.name, head: heads.find((h) => h.id === d.headUserId) ?? null })),
+      assignMode: scope.kind,
+      teamDepartmentIds: scope.kind === 'team' ? scope.departmentIds : undefined,
       deliverables: visibleEngs.flatMap((e) => e.cycles.flatMap((cy) => cy.deliverables.map((d) => ({ id: d.id, title: d.title, engagementId: e.id })))),
       addOnRequests: addOns.map((a) => ({ id: a.id, engagementId: a.engagementId, description: a.description.slice(0, 120) })),
       templates: latest.map((t) => ({ id: t.id, name: t.name, department: t.department.name, steps: Array.isArray(t.steps) ? t.steps.length : 0 })),
@@ -371,6 +379,20 @@ export class TasksActionsService implements OnModuleInit {
     const input = parsed.data as DraftInput & { references: string[]; checklist: { id: string; label: string; done: boolean }[]; subtasks: { title: string; ownerId?: string; deadline?: string }[]; dependsOn: string[]; watcherIds: string[]; attachmentIds: string[] };
     const c = await this.ctx(me);
     const manager = hasRole(me, ...MANAGER_ROLES);
+    const scope = await assignScope(this.prisma, me);
+
+    // v32: several departments chosen: each Department Head gets their own copy (checked up front, so all or none).
+    const multi = [...new Set((input as { departmentIds?: string[] }).departmentIds ?? [])];
+    if (multi.length > 1 && !isDraft && !input.parentId) {
+      if (scope.kind !== 'heads') throw new ForbiddenException('Only the Founder, Branch Managers and client leads send one task to several Department Heads at once');
+      const heads = [];
+      for (const d of multi) heads.push(await departmentHead(this.prisma, me.orgId, d));
+      const results: CoreTaskMutation[] = [];
+      for (const [i, d] of multi.entries()) results.push(await this.create(me, { ...(body as object), departmentIds: undefined, departmentId: d, ownerId: heads[i].id }, ip));
+      const waiting = results.filter((r) => r.approval).length;
+      return { ...results[0], message: `Task sent to ${results.length} Department Heads, one copy each: ${heads.map((h) => `${h.name} (${h.department})`).join(', ')}.${waiting ? ` ${waiting} need Department Head approval because of leave or workload.` : ''}` };
+    }
+    if (multi.length === 1 && !input.departmentId) input.departmentId = multi[0];
 
     // Parent (subtask): visible, and the subtask inherits the client / department.
     let parent: TaskFull | null = null;
@@ -386,8 +408,8 @@ export class TasksActionsService implements OnModuleInit {
       input.deliverableId = input.deliverableId ?? parent.deliverableId;
     }
 
-    // Producers: only for themselves (or subtasks of their own work).
-    let ownerId = input.ownerId || (isDraft ? null : me.id);
+    // Who it goes to is settled once the department is known (v32 assign rules below).
+    let ownerId = input.ownerId || null;
     if (!manager && ownerId && ownerId !== me.id) throw new ForbiddenException('Producers can add tasks only for themselves. Ask your department head, client manager or strategist to assign work to someone else.');
 
     let engagement: Awaited<ReturnType<TasksActionsService['checkEngagement']>> | null = null;
@@ -398,8 +420,11 @@ export class TasksActionsService implements OnModuleInit {
     if (departmentId && !(await this.prisma.department.findFirst({ where: { id: departmentId, orgId: me.orgId, deletedAt: null } }))) throw new BadRequestException('Pick a department');
     if (!c.leader && hasRole(me, 'department_head') && !hasRole(me, 'account_manager', 'strategist') && departmentId && departmentId !== c.dept && !input.parentId) throw new ForbiddenException('Department heads add tasks for their own department');
     if (!departmentId && !isDraft) throw new BadRequestException('Pick a department');
-    // v11 people: a client in a client pod gets new tasks assigned to a pod member when nobody was picked.
-    if (!input.ownerId && manager && engagement && !isDraft) ownerId = (await podDefaultAssignee(this.prisma, me.orgId, engagement.clientOrg.id, departmentId)) ?? ownerId;
+    // v11 people: a Department Head's client-pod task goes to the pod member in their team when nobody was picked.
+    if (!input.ownerId && scope.kind === 'team' && engagement && !isDraft) {
+      const pod = await podDefaultAssignee(this.prisma, me.orgId, engagement.clientOrg.id, departmentId);
+      if (pod && (await assertAssignee(this.prisma, me, scope, pod, departmentId).then(() => true, () => false))) ownerId = pod;
+    }
 
     let deliverable: { id: string; departmentId: string | null; cycle: { engagementId: string } } | null = null;
     if (input.deliverableId) {
@@ -408,6 +433,11 @@ export class TasksActionsService implements OnModuleInit {
       if (engagement && deliverable.cycle.engagementId !== engagement.id) throw new BadRequestException('That deliverable belongs to a different engagement');
       departmentId = departmentId ?? deliverable.departmentId;
     }
+
+    // v32: Department Heads give work to their team (or keep it); everyone else sends it to the department's head.
+    if (scope.kind === 'heads' && departmentId && !ownerId && (!isDraft || input.departmentId)) ownerId = (await departmentHead(this.prisma, me.orgId, departmentId)).id;
+    if (!ownerId && !isDraft) ownerId = me.id;
+    if (ownerId) await assertAssignee(this.prisma, me, scope, ownerId, departmentId);
 
     // Out of scope: needs an approved add-on request, otherwise it is saved as a draft and the CM is alerted.
     let draftReason: string | null = isDraft ? 'author' : null;
@@ -471,6 +501,7 @@ export class TasksActionsService implements OnModuleInit {
 
     // Subtasks, watchers, attachments.
     for (const s of input.subtasks ?? []) {
+      if (s.ownerId && manager) await assertAssignee(this.prisma, me, scope, s.ownerId, departmentId);
       const sOwner = s.ownerId && manager ? s.ownerId : (holdOwner ?? me.id);
       await this.prisma.task.create({ data: { orgId: me.orgId, title: s.title, parentId: created.id, engagementId: created.engagementId, deliverableId: created.deliverableId, ownerId: draftReason ? sOwner : sOwner, departmentId, deadline: s.deadline ? parseDue(s.deadline) : deadline, priority: created.priority, kind: 'work', status: draftReason ? 'cancelled' : 'todo', isDraft: !!draftReason, draftReason, isInternal: created.isInternal, preProduction: created.preProduction, createdById: me.id, sort: 901 } });
     }
@@ -893,11 +924,18 @@ export class TasksActionsService implements OnModuleInit {
     if (!label) throw new BadRequestException('Give the work a name (it goes after each step name)');
     const cal = await calendarFor(this.prisma, me.orgId);
     const roles = [...new Set(steps.map((s) => s.role))];
-    const loads = await this.people.loads(me.orgId, { roles: { some: { role: { baseRole: { in: [...roles.filter((r) => r !== 'am'), 'account_manager', 'am_lead'] } } } } });
+    // v32: suggestions follow the assign rules: a Department Head's own team (or themselves); others the template department's head.
+    const scope = await assignScope(this.prisma, me);
+    const tplHead = scope.kind === 'heads' && tpl.departmentId ? (await departmentHead(this.prisma, me.orgId, tpl.departmentId)).id : null;
+    const allowedP = (p: { id: string; departmentId: string | null }) =>
+      scope.kind === 'team' ? p.id === me.id || (!!p.departmentId && scope.departmentIds.includes(p.departmentId)) : scope.kind === 'heads' ? p.id === tplHead : p.id === me.id;
+    const loads = await this.people.loads(me.orgId, { OR: [{ roles: { some: { role: { baseRole: { in: [...roles.filter((r) => r !== 'am'), 'account_manager', 'am_lead'] } } } } }, { id: { in: [me.id, tplHead].filter((x): x is string => !!x) } }] });
     const people = input.people ?? {};
     const roleRows = roles.map((role) => {
-      const pool = loads.filter((p) => (role === 'am' ? p.roles.some((r) => ['account_manager', 'am_lead'].includes(r)) : p.roles.includes(role)));
-      const pref = role === 'am' ? amId : null;
+      const byRole = loads.filter((p) => allowedP(p) && (role === 'am' ? p.roles.some((r) => ['account_manager', 'am_lead'].includes(r)) : p.roles.includes(role)));
+      // Nobody in the team has that role: the Department Head (or the department's head) takes the step.
+      const pool = byRole.length ? byRole : loads.filter(allowedP);
+      const pref = role === 'am' && pool.some((p) => p.id === amId) ? amId : null;
       const chosen = people[role] ?? pref ?? [...pool].filter((p) => !p.onLeaveToday).sort((a, b) => Number(b.departmentId === tpl.departmentId) - Number(a.departmentId === tpl.departmentId) || a.loadPct - b.loadPct)[0]?.id ?? null;
       const u = loads.find((p) => p.id === chosen);
       if (!u && chosen) warnings.push(`The person picked for ${role.replace(/_/g, ' ')} is not available`);
@@ -932,6 +970,9 @@ export class TasksActionsService implements OnModuleInit {
   async fromTemplate(me: Me, input: CoreTemplatePreviewInput, ip?: string) {
     const p = await this.template(me, input);
     if (p.tasks.some((t) => !t.ownerId)) throw new BadRequestException('Pick a person for every role first');
+    // v32: the same assign rules as a single task (Department Heads: their team; others: the department's head).
+    const scope = await assignScope(this.prisma, me);
+    for (const t of p.tasks) await assertAssignee(this.prisma, me, scope, t.ownerId!, p._departmentId ?? null);
     const ids: string[] = [];
     let prevId: string | null = null;
     for (const [i, t] of p.tasks.entries()) {

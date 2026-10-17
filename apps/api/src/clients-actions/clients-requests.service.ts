@@ -26,6 +26,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { calendarFor } from '../production/generate.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { assertStaff, isAdmin, isClientLead } from './clients-access.js';
+import { assignScope } from '../actions/tasks/assign-rules.js';
 
 const CONVERTIBLE = ['paid', 'in_progress', 'in_scope', 'approved'];
 type FlowStep = { key: string; days: number; kind: string; name: string; role: string };
@@ -169,24 +170,33 @@ export class ClientsRequestsService implements OnModuleInit {
     const cal = await calendarFor(this.prisma, me.orgId);
     let at = new Date();
     const deptHead = (deptId: string | null) => depts.find((d) => d.id === deptId)?.headUserId ?? null;
+    // v32: Department Heads give work to their team; others (Client Managers, leads) to the department's head.
+    const scope = await assignScope(this.prisma, me);
+    const headIds = new Set(depts.map((d) => d.headUserId).filter((x): x is string => !!x));
+    const allowed = (p: { id: string; departmentId: string | null }) =>
+      scope.kind === 'heads' ? headIds.has(p.id) : scope.kind === 'team' ? p.id === me.id || (!!p.departmentId && scope.departmentIds.includes(p.departmentId)) : p.id === me.id;
+    const ownerFor = (deptId: string | null, preferred?: { id: string; departmentId: string | null } | null) =>
+      scope.kind === 'heads' ? deptHead(deptId) : preferred && allowed(preferred) ? preferred.id : scope.kind === 'team' ? me.id : (preferred?.id ?? deptHead(deptId));
     const lines: ClientsConvertPreview['lines'] = [];
     if (tpl) {
       for (const s of (tpl.steps as FlowStep[]).filter((x) => x.kind === 'work')) {
         at = addWorkingDays(at, Math.max(1, s.days), cal);
         const owner = s.role === 'strategist' ? people.find((p) => p.roles.some((x) => x.role.baseRole === 'strategist')) : people.find((p) => p.departmentId === tpl.departmentId && p.roles.some((x) => x.role.baseRole === 'producer'));
-        lines.push({ title: `${s.name}: ${r.description.slice(0, 60)}`, departmentId: owner?.departmentId ?? tpl.departmentId, ownerId: owner?.id ?? deptHead(tpl.departmentId), deadline: istDate(at) });
+        const deptId = scope.kind === 'heads' ? tpl.departmentId : (owner?.departmentId ?? tpl.departmentId);
+        lines.push({ title: `${s.name}: ${r.description.slice(0, 60)}`, departmentId: deptId, ownerId: ownerFor(deptId, owner) ?? deptHead(tpl.departmentId), deadline: istDate(at) });
       }
     }
     if (!lines.length) {
       const amDept = people.find((p) => p.id === r.engagement.amId)?.departmentId ?? null;
-      lines.push({ title: r.description.slice(0, 120), departmentId: amDept, ownerId: r.assigneeId ?? r.engagement.amId, deadline: istDate(r.neededBy ?? addWorkingDays(new Date(), r.type === 'urgent' ? 1 : 2, cal)) });
+      const preferred = people.find((p) => p.id === (r.assigneeId ?? r.engagement.amId)) ?? null;
+      lines.push({ title: r.description.slice(0, 120), departmentId: amDept, ownerId: ownerFor(amDept, preferred) ?? r.assigneeId ?? r.engagement.amId, deadline: istDate(r.neededBy ?? addWorkingDays(new Date(), r.type === 'urgent' ? 1 : 2, cal)) });
     }
     return {
       request: { id: r.id, description: r.description, status: r.status, client: r.engagement.clientOrg.name, engagementId: r.engagementId },
       template: tpl ? { id: tpl.id, name: tpl.name } : null,
       lines,
       departments: depts.map((d) => ({ id: d.id, name: d.name })),
-      people: people.map((p) => ({ id: p.id, name: p.name, departmentId: p.departmentId, role: p.roles[0]?.role.baseRole ?? '' })),
+      people: people.filter(allowed).map((p) => ({ id: p.id, name: p.name, departmentId: p.departmentId, role: p.roles[0]?.role.baseRole ?? '' })),
       blocked,
     };
   }

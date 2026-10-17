@@ -315,6 +315,8 @@ export const coreTaskCreateBase = z.object({
   engagementId: z.string().optional().nullable(),
   internal: z.boolean().default(false),
   departmentId: z.string().min(1, "Pick a department"),
+  /** v32: several departments: each Department Head gets their own copy (Founder, Branch Manager, client leads). */
+  departmentIds: z.array(z.string().min(1)).max(30).optional(),
   ownerId: z.string().min(1, "Pick who will do it"),
   deadline: dateOrDay,
   priority: z.enum(CORE_TASK_PRIORITIES).default("normal"),
@@ -498,7 +500,8 @@ export type CoreTaskMutation = { task: CoreTaskDetail; undo: CoreUndo | null; me
 
 export type CoreTaskFormOptions = {
   engagements: { id: string; client: string; clientId: string; service: string; gate: string; productionOpen: boolean; amId: string | null; departmentIds: string[]; /** v11 people: the client pod's members (producers, strategist, CM), the default assignees. */ podMemberIds?: string[] }[];
-  departments: Ref[];
+  /** v32: with each department's head (tasks from the Founder, Branch Manager and client leads go to the head). */
+  departments: (Ref & { head?: Ref | null })[];
   deliverables: { id: string; title: string; engagementId: string }[];
   addOnRequests: { id: string; engagementId: string; description: string }[];
   templates: { id: string; name: string; department: string | null; steps: number }[];
@@ -506,6 +509,10 @@ export type CoreTaskFormOptions = {
   /** The current user can assign to others (producers can't). */
   canAssignOthers: boolean;
   me: Ref & { departmentId: string | null };
+  /** v32: "self" = team members (only themselves); "team" = Department Heads (their team or themselves); "heads" = everyone else (the chosen departments' heads). */
+  assignMode?: "self" | "team" | "heads";
+  /** v32: a Department Head's own department(s). */
+  teamDepartmentIds?: string[];
 };
 
 // ---------------------------------------------------------------------------

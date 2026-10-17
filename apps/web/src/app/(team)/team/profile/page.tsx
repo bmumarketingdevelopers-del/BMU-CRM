@@ -56,7 +56,8 @@ export default function ProfilePage() {
           <AttendanceDots p={p} />
         </Panel>
 
-        <MyCorrections />
+        {/* v32: Founders don't ask for attendance corrections. */}
+        {canApply && <MyCorrections />}
 
         {canApply && (
           <Panel title="My leave and work-from-home requests" flush>

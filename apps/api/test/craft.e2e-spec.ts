@@ -65,8 +65,10 @@ beforeAll(async () => {
   ids.amEng = (await prisma.engagement.findFirstOrThrow({ where: { amId: ids.am, clientOrg: { name: 'Saffron Table Restaurants' } } })).id;
   ids.peak = (await prisma.clientOrg.findFirstOrThrow({ where: { name: 'Peak Motors' } })).id;
   ids.saffron = (await prisma.clientOrg.findFirstOrThrow({ where: { name: 'Saffron Table Restaurants' } })).id;
+  // v32: tasks belong to the Design department, whose head gives them to the team.
+  ids.designDept = (await prisma.user.findUniqueOrThrow({ where: { id: ids.head } })).departmentId!;
   const mk = async (engagementId: string, title: string, specialty: string) => {
-    const t = await prisma.task.create({ data: { orgId: org.id, engagementId, title, specialty, kind: 'work', status: 'todo', deadline: new Date(Date.now() + 3 * 86_400_000) } });
+    const t = await prisma.task.create({ data: { orgId: org.id, engagementId, title, specialty, departmentId: ids.designDept, kind: 'work', status: 'todo', deadline: new Date(Date.now() + 3 * 86_400_000) } });
     createdTasks.push(t.id);
     return t.id;
   };
@@ -192,7 +194,9 @@ describe('Manager workspace', () => {
   });
 
   it('assigning notifies the assignee and writes the audit log', async () => {
-    const r = await http().post(`/craft/manager/tasks/${ids.pmTask}/assign`).set(as('pm')).send({ ownerId: ids.design, priority: 'high', deadline: '2026-12-01' }).expect(200);
+    // v32: a Client Manager gives work only to the Department Head; the head gives it to the team.
+    await http().post(`/craft/manager/tasks/${ids.pmTask}/assign`).set(as('pm')).send({ ownerId: ids.design }).expect(403);
+    const r = await http().post(`/craft/manager/tasks/${ids.pmTask}/assign`).set(as('head')).send({ ownerId: ids.design, priority: 'high', deadline: '2026-12-01' }).expect(200);
     expect(r.body.owner.id).toBe(ids.design);
     expect(r.body.priority).toBe('high');
     const n = await prisma.notification.findFirst({ where: { userId: ids.design, kind: 'task_assigned', title: { contains: `Craft e2e banner ${stamp}` } } });
@@ -204,7 +208,7 @@ describe('Manager workspace', () => {
     expect(dash.body.next.some((x: { id: string; kind: string }) => x.id === `n-${ids.pmTask}` && x.kind === 'assigned')).toBe(true);
 
     // Reassign: the new owner is told, and so is the previous one.
-    await http().post(`/craft/manager/tasks/${ids.pmTask}/assign`).set(as('pm')).send({ ownerId: ids.uxui }).expect(200);
+    await http().post(`/craft/manager/tasks/${ids.pmTask}/assign`).set(as('head')).send({ ownerId: ids.uxui }).expect(200);
     expect(await prisma.notification.count({ where: { userId: ids.design, title: { contains: `moved to` } , createdAt: { gte: new Date(Date.now() - 60_000) } } })).toBeGreaterThan(0);
     expect(await prisma.auditEvent.count({ where: { entityId: ids.pmTask, action: 'task.reassigned' } })).toBe(1);
   });
@@ -214,7 +218,7 @@ describe('Manager workspace', () => {
   });
 
   it('bulk reassigns and updates deadline and priority', async () => {
-    const b = await http().post('/craft/manager/tasks/assign').set(as('pm')).send({ taskIds: [ids.pmTask], ownerId: ids.design }).expect(200);
+    const b = await http().post('/craft/manager/tasks/assign').set(as('head')).send({ taskIds: [ids.pmTask], ownerId: ids.design }).expect(200);
     expect(b.body.assigned).toBe(1);
     await http().post('/craft/manager/tasks/assign').set(as('pm')).send({ taskIds: [ids.pmTask, ids.amTask], ownerId: ids.design }).expect(403);
     const u = await http().patch(`/craft/manager/tasks/${ids.pmTask}`).set(as('pm')).send({ deadline: '2026-12-05', priority: 'urgent' }).expect(200);
@@ -243,7 +247,7 @@ describe('Manager workspace', () => {
   it('creates an ad-hoc task with an assignee', async () => {
     const r = await http()
       .post('/craft/manager/tasks')
-      .set(as('pm'))
+      .set(as('head'))
       .send({ title: `Craft e2e ad-hoc ${stamp}`, engagementId: ids.pmEng, specialty: 'graphic_designer', ownerId: ids.design, deadline: '2026-12-02', priority: 'high' })
       .expect(201);
     expect(r.body.owner.id).toBe(ids.design);
@@ -251,6 +255,8 @@ describe('Manager workspace', () => {
     expect(r.body.client.id).toBe(ids.peak);
     expect(await prisma.notification.count({ where: { userId: ids.design, title: { contains: `Craft e2e ad-hoc ${stamp}` } } })).toBe(1);
     expect(await prisma.auditEvent.count({ where: { entityId: r.body.id, action: 'task.created' } })).toBe(1);
+    // v32: a Client Manager can't give the work straight to a designer.
+    await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e nope ${stamp}`, engagementId: ids.pmEng, specialty: 'graphic_designer', ownerId: ids.design }).expect(403);
     // Not on another CM's engagement, and a CM must pick a client.
     await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e nope ${stamp}`, engagementId: ids.amEng }).expect(403);
     await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e nope ${stamp}` }).expect(400);
