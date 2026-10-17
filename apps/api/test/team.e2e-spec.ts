@@ -393,10 +393,12 @@ describe('settings take effect', () => {
   it('working days change leave maths; holidays are skipped', async () => {
     const all = (await http().get('/settings').set(as('hr')).expect(200)).body;
     const sat = addDays(futureMonday(9), 5);
-    await http().put('/settings/workingHours').set(as('hr')).send({ ...all.workingHours, days: [1, 2, 3, 4, 5] }).expect(200);
+    // v30: only the Founder changes the working time.
+    await http().put('/settings/workingHours').set(as('hr')).send({ ...all.workingHours, days: [1, 2, 3, 4, 5] }).expect(403);
+    await http().put('/settings/workingHours').set(as('founder')).send({ ...all.workingHours, days: [1, 2, 3, 4, 5] }).expect(200);
     const r = await http().post('/workspace/leave').set(as('staff')).send({ from: sat, to: sat, type: 'casual' }).expect(400);
     expect(r.body.message).toMatch(/days off or holidays/);
-    await http().put('/settings/workingHours').set(as('hr')).send(all.workingHours).expect(200);
+    await http().put('/settings/workingHours').set(as('founder')).send(all.workingHours).expect(200);
     await http().put('/settings/holidays').set(as('hr')).send({ list: [...all.holidays.list, { date: sat, name: 'Test holiday' }] }).expect(200);
     await http().post('/workspace/leave').set(as('staff')).send({ from: sat, to: sat, type: 'casual' }).expect(400);
     await http().put('/settings/holidays').set(as('hr')).send(all.holidays).expect(200);

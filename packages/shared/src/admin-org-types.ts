@@ -42,7 +42,10 @@ export type MoveMember = z.infer<typeof moveMemberSchema>;
 export const LEAVE_ALLOWANCE = { casual: 12, sick: 12 } as const;
 
 export type AttendanceToday = "checked_in" | "checked_out" | "absent" | "on_leave" | "holiday" | "day_off" | "not_yet";
-export type AttendanceCell = "present" | "late" | "leave" | "absent" | "holiday" | "weekend" | "future" | "none";
+export type AttendanceCell = "present" | "late" | "missed_out" | "leave" | "absent" | "holiday" | "weekend" | "future" | "none";
+
+/** v30: a check-in after start + grace counts as late (default 15 minutes). */
+export const ATTENDANCE_GRACE_DEFAULT = 15;
 
 export type AttendanceBoardRow = {
   user: PersonRef & { department: string | null };
@@ -56,12 +59,104 @@ export type AttendanceView = {
   /** What kind of day today is, e.g. a holiday with its name. */
   todayKind: { kind: "working" | "weekend" | "holiday"; label: string | null };
   month: string;
-  workingHours: { start: string; end: string; days: number[] };
+  workingHours: { start: string; end: string; days: number[]; graceMinutes: number };
   board: AttendanceBoardRow[];
   days: { date: string; kind: "working" | "weekend" | "holiday"; label: string | null }[];
-  grid: { user: PersonRef; cells: AttendanceCell[]; present: number; leave: number; absent: number }[];
+  grid: { user: PersonRef; cells: AttendanceCell[]; present: number; leave: number; absent: number; missedOut?: number }[];
   late: { user: PersonRef; date: string; checkIn: string; minutesLate: number }[];
   balances: { user: PersonRef; casualUsed: number; sickUsed: number; casualLeft: number; sickLeft: number; otherUsed: number }[];
+  /** v30: whose attendance this is: everyone (Founder, Branch Manager, HR) or a Department Head's own department(s). */
+  scope?: { all: boolean; departments: string[] };
+  /** v30: the attendance records sheet (Founder, HR; Department Heads for their team) and its download (Founder, HR). */
+  canRecords?: boolean;
+  canDownload?: boolean;
+  /** v30: may decide attendance correction requests. */
+  canCorrections?: boolean;
+};
+
+// v30: the attendance records sheet, by department, with each person's designation.
+export type AttendanceRecordStatus = "present" | "late" | "missed_out" | "late_missed_out" | "leave" | "absent" | "holiday" | "weekend" | "worked_off_day" | "not_tracked" | "future";
+export const attendanceStatusLabels: Record<AttendanceRecordStatus, string> = {
+  present: "Present",
+  late: "Late",
+  missed_out: "Missed check-out",
+  late_missed_out: "Late, missed check-out",
+  leave: "On leave",
+  absent: "Absent",
+  holiday: "Holiday",
+  weekend: "Weekly off",
+  worked_off_day: "Worked on a day off",
+  not_tracked: "Not tracked yet",
+  future: "",
+};
+export type AttendanceRecordDay = {
+  date: string;
+  kind: "working" | "weekend" | "holiday";
+  /** Holiday name. */
+  label: string | null;
+  checkIn: string | null;
+  checkOut: string | null;
+  hours: number;
+  status: AttendanceRecordStatus;
+  /** Minutes after the start time, when late. */
+  lateMinutes: number;
+  /** Times changed through an approved correction request. */
+  corrected: boolean;
+  leaveType?: string | null;
+};
+export type AttendanceRecordTotals = { workingDays: number; present: number; late: number; missedOut: number; leave: number; absent: number; hours: number };
+export type AttendanceRecordPerson = { user: PersonRef & { email: string }; designation: string; days: AttendanceRecordDay[]; totals: AttendanceRecordTotals };
+export type AttendanceRecordDepartment = { id: string | null; name: string; branch: string | null; people: AttendanceRecordPerson[]; totals: AttendanceRecordTotals };
+export type AttendanceRecords = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  workingHours: { start: string; end: string; days: number[]; graceMinutes: number };
+  departments: AttendanceRecordDepartment[];
+  /** Departments the viewer may pick from. */
+  departmentOptions: { id: string; name: string }[];
+  canDownload: boolean;
+};
+
+/** v30: today by department, for the Founder's and HR's dashboards (Department Heads: their own). */
+export type AttendanceTodayDept = { id: string | null; name: string; total: number; in: number; late: number; onLeave: number; notIn: number; notYet: number; checkedOut: number };
+export type AttendanceTodaySummary = {
+  today: string;
+  todayKind: { kind: "working" | "weekend" | "holiday"; label: string | null };
+  workingHours: { start: string; end: string; graceMinutes: number };
+  departments: AttendanceTodayDept[];
+  totals: Omit<AttendanceTodayDept, "id" | "name">;
+  /** People who checked in but did not check out on the last working day. */
+  missedCheckOutYesterday: number;
+  scope: { all: boolean; departments: string[] };
+};
+
+// v30: attendance corrections: the employee asks (missed check-in / check-out, wrong time); their manager or HR decides.
+export const ATTENDANCE_CORRECTION_DAYS = 30;
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM");
+export const attendanceCorrectionSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the day"),
+    checkIn: hhmm,
+    checkOut: hhmm,
+    reason: z.string().trim().min(5, "Give a short reason (at least 5 characters)").max(500),
+  })
+  .refine((v) => v.checkOut > v.checkIn, { message: "Check-out must be after check-in", path: ["checkOut"] });
+export type AttendanceCorrectionInput = z.infer<typeof attendanceCorrectionSchema>;
+export type AttendanceCorrectionRow = {
+  id: string;
+  user: PersonRef;
+  date: string;
+  /** What was recorded before (null = nothing). */
+  recorded: { checkIn: string | null; checkOut: string | null };
+  requested: { checkIn: string; checkOut: string };
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  decidedBy: PersonRef | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  createdAt: string;
+  canDecide: boolean;
 };
 
 export type LeaveRow = {

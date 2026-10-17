@@ -12,7 +12,13 @@ import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
 const time = new Intl.DateTimeFormat("en-IN", { timeStyle: "short", timeZone: "Asia/Kolkata" });
+const dayName = (ymd: string) => new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${ymd}T00:00:00Z`));
 const lines = (v: string) => v.split("\n").map((l) => l.trim()).filter(Boolean);
+/** "09:30" + 15 -> "09:45". */
+const addMin = (hhmm: string, n: number) => {
+  const m = Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5)) + n;
+  return `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+};
 
 /** My Day: check-in/out, today's priorities and the end-of-day report (people_capacity module). */
 export function MyDayPanel({ layout, wrap, hasLeads }: DashLayoutProps & { hasLeads?: boolean }) {
@@ -47,23 +53,43 @@ export function MyDayPanel({ layout, wrap, hasLeads }: DashLayoutProps & { hasLe
           <div>
             <p className="text-[13px] text-ink-muted">Attendance</p>
             {!day.checkIn ? (
-              <p className="mt-2 text-[28px] leading-none font-semibold tracking-tight">Not in yet</p>
+              <p className="mt-2 text-[28px] leading-none font-semibold tracking-tight">{day.workday && day.workday.kind !== "working" ? (day.workday.kind === "holiday" ? "Holiday" : "Weekly off") : "Not in yet"}</p>
             ) : (
               <p className="mt-2 text-[28px] leading-none font-semibold tracking-tight tabular-nums">{Math.floor(hours)}h {Math.round((hours % 1) * 60)}m</p>
             )}
             <p className="mt-2 text-xs text-ink-muted">
-              {day.checkIn ? `In at ${time.format(new Date(day.checkIn))}` : "Check in when you start work"}
+              {day.checkIn
+                ? `In at ${time.format(new Date(day.checkIn))}`
+                : day.workday && day.workday.kind !== "working"
+                  ? `${day.workday.label ? `${day.workday.label}. ` : ""}No check-in today.`
+                  : day.workingHours
+                    ? `Office starts ${day.workingHours.start}. Check in by ${addMin(day.workingHours.start, day.workingHours.graceMinutes)} to be on time.`
+                    : "Check in when you start work"}
               {day.checkOut && ` · out at ${time.format(new Date(day.checkOut))}`}
+              {day.late && " · late"}
             </p>
           </div>
-          {!day.checkIn ? (
-            <Button onClick={() => act(api.myDay.checkIn)}>Check in</Button>
-          ) : !day.checkOut ? (
-            <Button variant="secondary" onClick={() => act(api.myDay.checkOut)}>
+          {day.canCheckIn ?? !day.checkIn ? (
+            <Button onClick={() => act(api.myDay.checkIn)} data-testid="check-in">
+              Check in
+            </Button>
+          ) : (day.canCheckOut ?? !day.checkOut) && day.checkIn ? (
+            <Button variant="secondary" onClick={() => act(api.myDay.checkOut)} data-testid="check-out">
               Check out
             </Button>
           ) : (
-            <p className="text-xs text-ink-muted">Done for the day. See you tomorrow.</p>
+            <p className="text-xs text-ink-muted">
+              {day.checkOut ? "Done for the day." : ""}
+              {day.nextCheckIn ? ` Check-in opens on ${dayName(day.nextCheckIn)}.` : day.checkOut ? " See you tomorrow." : ""}
+            </p>
+          )}
+          {day.missedCheckOut && (
+            <p className="text-xs text-[#9a6b00]">
+              You did not check out on {dayName(day.missedCheckOut)}.{" "}
+              <Link href="/team/profile#corrections" className="underline">
+                Ask for a correction
+              </Link>
+            </p>
           )}
         </div>
         <div className="grid gap-px bg-border sm:grid-cols-2 lg:grid-cols-4">

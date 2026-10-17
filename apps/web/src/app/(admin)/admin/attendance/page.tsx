@@ -1,15 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { LEAVE_ALLOWANCE, type AttendanceBoardRow, type AttendanceCell, type AttendanceToday, type AttendanceView, type LeaveRow } from "@bmu/shared";
 import { DataTable, Empty, Meter, Panel, StatRow, StatTile, Tabs, type Column } from "@/components/dash";
 import { Badge, Button, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
+import { AttendanceTodayByDepartment } from "@/components/attendance/today-by-department";
+import { AttendanceRecordsView } from "@/components/attendance/records";
+import { CorrectionsToDecide } from "@/components/attendance/corrections";
 import { DAY_NAMES, ErrorNote, fmtDate, fmtShort, fmtTime, weekday } from "../_admin-org/kit";
 
-type Tab = "today" | "month" | "late" | "leave" | "balances";
+type Tab = "today" | "records" | "month" | "late" | "corrections" | "leave" | "balances";
 
 const TODAY_LABEL: Record<AttendanceToday, { text: string; tone: "neutral" | "green" | "amber" | "red" | "dark" }> = {
   checked_in: { text: "Checked in", tone: "green" },
@@ -24,12 +27,18 @@ const TODAY_LABEL: Record<AttendanceToday, { text: string; tone: "neutral" | "gr
 const CELL: Record<AttendanceCell, { cls: string; label: string; mark?: string }> = {
   present: { cls: "bg-charcoal", label: "Present" },
   late: { cls: "bg-amber", label: "Late check-in" },
+  missed_out: { cls: "border border-amber bg-amber/30", label: "Missed check-out", mark: "!" },
   leave: { cls: "bg-green", label: "On leave" },
   absent: { cls: "border border-red bg-red/15", label: "Absent" },
   holiday: { cls: "bg-canvas", label: "Holiday", mark: "H" },
   weekend: { cls: "bg-canvas", label: "Weekly off" },
   future: { cls: "border border-border", label: "Not yet" },
   none: { cls: "", label: "Not tracked yet" },
+};
+
+const subscribeHash = (fn: () => void) => {
+  window.addEventListener("hashchange", fn);
+  return () => window.removeEventListener("hashchange", fn);
 };
 
 const shiftMonth = (m: string, n: number) => {
@@ -45,7 +54,10 @@ export default function AttendancePage() {
   const [busy, setBusy] = useState(false);
   const first = useLoad(() => api.adminOrg.attendance());
   const leave = useLoad(() => api.adminOrg.leave());
-  const [tab, setTab] = useState<Tab>("today");
+  // v30: links like /admin/attendance#corrections open that tab.
+  const hash = useSyncExternalStore(subscribeHash, () => window.location.hash.slice(1), () => "");
+  const [picked, setTab] = useState<Tab>();
+  const tab: Tab = picked ?? (["records", "month", "late", "corrections", "leave", "balances"] as const).find((t) => t === hash) ?? "today";
   const [error, setError] = useState<string>();
   const data = view ?? first.data;
 
@@ -79,7 +91,14 @@ export default function AttendancePage() {
 
   return (
     <>
-      <PageTitle title="Attendance & Leave" subtitle="Who is in today, the month at a glance, late check-ins, and leave requests to approve." />
+      <PageTitle
+        title="Attendance & Leave"
+        subtitle={
+          data && data.scope && !data.scope.all
+            ? `Your team only (${data.scope.departments.join(", ") || "no department"}): who is in today, the month and late check-ins.`
+            : "Who is in today, by department; the attendance records to view and download; late check-ins, corrections and leave."
+        }
+      />
       <ErrorNote>{error}</ErrorNote>
       <LoadState loading={!data && first.loading} error={first.error} />
       {data && (
@@ -92,8 +111,10 @@ export default function AttendancePage() {
                 onChange={setTab}
                 options={[
                   { value: "today", label: "Today" },
+                  ...(data.canRecords ? [{ value: "records" as const, label: "Records" }] : []),
                   { value: "month", label: "Month" },
                   { value: "late", label: `Late (${data.late.length})` },
+                  ...(data.canCorrections ? [{ value: "corrections" as const, label: "Corrections" }] : []),
                   { value: "leave", label: `Leave requests${pending.length ? ` (${pending.length})` : ""}` },
                   { value: "balances", label: "Balances" },
                 ]}
@@ -112,7 +133,14 @@ export default function AttendancePage() {
             )}
           </div>
 
-          {tab === "today" && <TodayBoard data={data} />}
+          {tab === "today" && (
+            <>
+              <AttendanceTodayByDepartment link={false} />
+              <TodayBoard data={data} />
+            </>
+          )}
+          {tab === "records" && data.canRecords && <AttendanceRecordsView />}
+          {tab === "corrections" && data.canCorrections && <CorrectionsToDecide onChanged={() => goMonth(data.month)} />}
           {tab === "month" && <MonthGrid data={data} />}
           {tab === "late" && <LateList data={data} />}
           {tab === "leave" && (leave.data ? <LeaveList rows={leave.data} decide={decide} /> : <LoadState loading={leave.loading} error={leave.error} />)}
@@ -136,7 +164,7 @@ function TodayStats({ data, pending, onPending }: { data: AttendanceView; pendin
       )}
       <StatRow cols={5}>
         <StatTile label="In today" value={count("checked_in") + count("checked_out")} hint={`of ${data.board.length} people`} />
-        <StatTile label="Late today" value={data.board.filter((b) => b.late).length} tone={data.board.some((b) => b.late) ? "warn" : "default"} hint={`after ${data.workingHours.start}`} />
+        <StatTile label="Late today" value={data.board.filter((b) => b.late).length} tone={data.board.some((b) => b.late) ? "warn" : "default"} hint={`after ${data.workingHours.start} + ${data.workingHours.graceMinutes ?? 15} min`} />
         <StatTile label="On leave" value={count("on_leave")} />
         <StatTile label="Not checked in" value={count("absent")} tone={count("absent") ? "warn" : "default"} />
         <button onClick={onPending} className="text-left">
@@ -175,7 +203,11 @@ function TodayBoard({ data }: { data: AttendanceView }) {
   const order: AttendanceToday[] = ["absent", "checked_in", "checked_out", "on_leave", "not_yet", "holiday", "day_off"];
   const rows = [...data.board].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
   return (
-    <Panel title={`Today · ${fmtDate(data.today)}`} subtitle={`Working hours ${data.workingHours.start}–${data.workingHours.end}, ${data.workingHours.days.map((d) => DAY_NAMES[d]).join(" ")}`} flush>
+    <Panel
+      title={`Today · ${fmtDate(data.today)}`}
+      subtitle={`Working hours ${data.workingHours.start}–${data.workingHours.end}, ${data.workingHours.days.map((d) => DAY_NAMES[d]).join(" ")} · late after ${data.workingHours.graceMinutes ?? 15} min grace`}
+      flush
+    >
       <DataTable rows={rows} columns={columns} rowKey={(r) => r.user.id} empty="No active team members." />
     </Panel>
   );
@@ -201,6 +233,7 @@ function MonthGrid({ data }: { data: AttendanceView }) {
                 <th className="pl-3 text-right font-medium text-ink-muted">In</th>
                 <th className="pl-2 text-right font-medium text-ink-muted">Leave</th>
                 <th className="pl-2 text-right font-medium text-ink-muted">Absent</th>
+                <th className="pl-2 text-right font-medium text-ink-muted" title="Checked in but did not check out">No out</th>
               </tr>
             </thead>
             <tbody>
@@ -218,6 +251,7 @@ function MonthGrid({ data }: { data: AttendanceView }) {
                   <td className="pl-3 text-right tabular-nums">{row.present}</td>
                   <td className="pl-2 text-right tabular-nums">{row.leave}</td>
                   <td className={`pl-2 text-right tabular-nums ${row.absent ? "text-[#b4432c]" : ""}`}>{row.absent}</td>
+                  <td className={`pl-2 text-right tabular-nums ${row.missedOut ? "text-[#9a6b00]" : ""}`}>{row.missedOut ?? 0}</td>
                 </tr>
               ))}
             </tbody>
@@ -240,7 +274,7 @@ function LateList({ data }: { data: AttendanceView }) {
   const counts = new Map<string, number>();
   for (const l of data.late) counts.set(l.user.id, (counts.get(l.user.id) ?? 0) + 1);
   return (
-    <Panel title="Late check-ins" subtitle={`Checked in after ${data.workingHours.start} (from Holidays & Working Hours)`} flush>
+    <Panel title="Late check-ins" subtitle={`Checked in after ${data.workingHours.start} + ${data.workingHours.graceMinutes ?? 15} min grace (from Holidays & Working Hours). "Late by" counts from ${data.workingHours.start}.`} flush>
       <DataTable
         rows={data.late}
         rowKey={(r) => `${r.user.id}-${r.date}`}

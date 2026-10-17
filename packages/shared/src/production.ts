@@ -351,6 +351,17 @@ export type MyDayView = {
   date: string;
   checkIn: string | null;
   checkOut: string | null;
+  /** v30: today is a working day, a weekly off or a holiday (check-in only on working days, once a day). */
+  workday?: { kind: "working" | "weekend" | "holiday"; label: string | null };
+  canCheckIn?: boolean;
+  canCheckOut?: boolean;
+  /** v30: the next working day, when check-in opens again. */
+  nextCheckIn?: string | null;
+  /** v30: today's check-in was after start + grace. */
+  late?: boolean;
+  workingHours?: { start: string; end: string; graceMinutes: number };
+  /** v30: the latest recent working day with a check-in and no check-out (and no correction asked yet). */
+  missedCheckOut?: string | null;
   tasks: { overdue: TaskView[]; today: TaskView[]; upcoming: TaskView[]; blocked: TaskView[] };
   qcWaiting: number;
   sendToClientWaiting: number;

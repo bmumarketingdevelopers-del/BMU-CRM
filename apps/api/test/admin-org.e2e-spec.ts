@@ -35,6 +35,9 @@ beforeAll(async () => {
 afterAll(async () => {
   // Remove what this run created so the demo screens stay tidy.
   await prisma.leaveRequest.deleteMany({ where: { reason: null, OR: [{ userId: { in: testUsers } }, { userId: hrId, from: new Date('2026-12-01T00:00:00Z') }] } });
+  await prisma.attendanceCorrection.deleteMany({ where: { userId: { in: testUsers } } });
+  await prisma.attendance.deleteMany({ where: { userId: { in: testUsers } } });
+  await prisma.notification.deleteMany({ where: { title: { contains: `Leave Tester ${stamp}` } } });
   await prisma.notification.deleteMany({ where: { userId: { in: testUsers } } });
   await prisma.user.deleteMany({ where: { id: { in: testUsers } } });
   const branches = await prisma.branch.findMany({ where: { name: { startsWith: 'Pune ' }, city: { startsWith: 'Pune' } } });
@@ -140,6 +143,164 @@ describe('attendance and leave', () => {
     expect(bal.casualLeft).toBe(6);
     const row = nov.body.grid.find((g: { user: { id: string } }) => g.user.id === staffId);
     expect(row.cells[1]).toBe('leave');
+  });
+
+  // ---------------------------------------------------------------------------
+  // v30: Department Head scope, grace period, missed check-out, records sheet, check-in once a day, corrections.
+
+  type Day = { date: string; kind: string; status: string; lateMinutes: number; corrected: boolean; checkOut: string | null };
+  type Person = { user: { id: string }; designation: string; days: Day[]; totals: { late: number; missedOut: number; present: number } };
+  type Dept = { id: string | null; name: string; people: Person[] };
+  const ymd = (d: Date) => new Date(d.getTime() + 330 * 60_000).toISOString().slice(0, 10);
+  const back = (n: number) => ymd(new Date(Date.now() - n * 86_400_000));
+  const staffRow = (body: { departments: Dept[] }) => body.departments.flatMap((d) => d.people).find((p) => p.user.id === staffId)!;
+  let headDept = '';
+  let staffToken = '';
+
+  it('shows a Department Head only their own team; records and downloads are for the Founder and HR', async () => {
+    const head = await userId('design.head@bmu.demo');
+    const headed = await prisma.department.findFirst({ where: { headUserId: head, deletedAt: null } });
+    headDept = headed?.id ?? (await prisma.user.findUniqueOrThrow({ where: { id: head } })).departmentId!;
+    await prisma.user.update({ where: { id: staffId }, data: { departmentId: headDept } });
+    const deptName = (await prisma.department.findUniqueOrThrow({ where: { id: headDept } })).name;
+
+    const hr = (await http().get('/admin-org/attendance').set(as('hr')).expect(200)).body;
+    expect(hr.scope.all).toBe(true);
+    expect(hr).toMatchObject({ canRecords: true, canDownload: true });
+    expect(hr.workingHours.graceMinutes).toBe(15);
+    const dh = (await http().get('/admin-org/attendance').set(as('design.head')).expect(200)).body;
+    expect(dh.scope.all).toBe(false);
+    expect(dh).toMatchObject({ canRecords: true, canDownload: false });
+    expect(dh.board.length).toBeGreaterThan(0);
+    expect(dh.board.length).toBeLessThan(hr.board.length);
+    expect(dh.board.every((b: { user: { department: string } }) => b.user.department === deptName)).toBe(true);
+    expect(dh.board.some((b: { user: { id: string } }) => b.user.id === staffId)).toBe(true);
+    const admin = (await http().get('/admin-org/attendance').set(as('admin')).expect(200)).body;
+    expect(admin).toMatchObject({ canRecords: false, canDownload: false });
+
+    // Today by department (Founder's and HR's dashboards).
+    const today = (await http().get('/admin-org/attendance/today').set(as('founder')).expect(200)).body;
+    expect(today.scope.all).toBe(true);
+    expect(today.departments.length).toBeGreaterThan(1);
+    expect(today.totals.total).toBe(today.departments.reduce((s: number, d: { total: number }) => s + d.total, 0));
+    const todayDh = (await http().get('/admin-org/attendance/today').set(as('design.head')).expect(200)).body;
+    expect(todayDh.departments.map((d: { name: string }) => d.name)).toEqual([deptName]);
+    await http().get('/admin-org/attendance/today').set(as('am')).expect(403);
+
+    // Records: everyone for HR / Founder; the Department Head only their department, without download.
+    const rec = (await http().get(`/admin-org/attendance/records?from=${back(10)}&to=${back(1)}`).set(as('hr')).expect(200)).body;
+    expect(rec.canDownload).toBe(true);
+    expect(rec.departments.length).toBeGreaterThan(1);
+    expect(staffRow(rec).designation).toBeTruthy();
+    expect(staffRow(rec).days).toHaveLength(10);
+    const recDh = (await http().get(`/admin-org/attendance/records?from=${back(10)}&to=${back(1)}`).set(as('design.head')).expect(200)).body;
+    expect(recDh.canDownload).toBe(false);
+    expect(recDh.departments.map((d: Dept) => d.id)).toEqual([headDept]);
+    const other = rec.departments.find((d: Dept) => d.id && d.id !== headDept);
+    await http().get(`/admin-org/attendance/records?departmentId=${other.id}`).set(as('design.head')).expect(403);
+    const one = (await http().get(`/admin-org/attendance/records?departmentId=${other.id}`).set(as('founder')).expect(200)).body;
+    expect(one.departments.map((d: Dept) => d.id)).toEqual([other.id]);
+    await http().get('/admin-org/attendance/records').set(as('admin')).expect(403);
+    await http().get('/admin-org/attendance/records').set(as('am')).expect(403);
+    await http().get(`/admin-org/attendance/records?from=${back(1)}&to=${back(3)}`).set(as('hr')).expect(400);
+  });
+
+  it('counts late only after the 15-minute grace and flags a missed check-out', async () => {
+    const rec = (await http().get(`/admin-org/attendance/records?from=${back(14)}&to=${back(1)}`).set(as('hr')).expect(200)).body;
+    const working = staffRow(rec).days.filter((d) => d.kind === 'working').map((d) => d.date);
+    const [onTime, late, missed] = working;
+    const at = (day: string, hhmm: string) => new Date(`${day}T${hhmm}:00+05:30`);
+    await prisma.attendance.createMany({
+      data: [
+        { orgId, userId: staffId, date: new Date(`${onTime}T00:00:00Z`), checkIn: at(onTime, '09:44'), checkOut: at(onTime, '18:40') },
+        { orgId, userId: staffId, date: new Date(`${late}T00:00:00Z`), checkIn: at(late, '09:46'), checkOut: at(late, '18:35') },
+        { orgId, userId: staffId, date: new Date(`${missed}T00:00:00Z`), checkIn: at(missed, '09:30') },
+      ],
+    });
+    const after = staffRow((await http().get(`/admin-org/attendance/records?from=${back(14)}&to=${back(1)}`).set(as('hr')).expect(200)).body);
+    const day = (d: string) => after.days.find((x) => x.date === d)!;
+    expect(day(onTime)).toMatchObject({ status: 'present', lateMinutes: 0 });
+    expect(day(late)).toMatchObject({ status: 'late', lateMinutes: 16 });
+    expect(day(missed)).toMatchObject({ status: 'missed_out' });
+    expect(after.totals).toMatchObject({ present: 3, late: 1, missedOut: 1 });
+    // The month grid shows it too.
+    const month = missed.slice(0, 7);
+    const grid = (await http().get(`/admin-org/attendance?month=${month}`).set(as('hr')).expect(200)).body;
+    const row = grid.grid.find((g: { user: { id: string } }) => g.user.id === staffId);
+    expect(row.cells[Number(missed.slice(8)) - 1]).toBe('missed_out');
+  });
+
+  it('allows one check-in and one check-out a day, only on working days, and only the Founder changes the working time', async () => {
+    const email = `leave.${stamp}@example.com`;
+    staffToken = await signIn(email);
+    const me = { Authorization: `Bearer ${staffToken}` };
+    const day = (await http().get('/my-day').set(me).expect(200)).body;
+    expect(day.workingHours.graceMinutes).toBe(15);
+    if (day.workday.kind === 'working') {
+      expect(day.canCheckIn).toBe(true);
+      await http().post('/my-day/check-in').set(me).expect(200);
+      await http().post('/my-day/check-in').set(me).expect(400);
+      const out = (await http().post('/my-day/check-out').set(me).expect(200)).body;
+      expect(out).toMatchObject({ canCheckIn: false, canCheckOut: false });
+      expect(out.nextCheckIn > out.date).toBe(true);
+      const again = await http().post('/my-day/check-in').set(me).expect(400);
+      expect(again.body.message).toMatch(/already checked in and out today\. Check-in opens on/);
+      await http().post('/my-day/check-out').set(me).expect(400);
+    } else {
+      expect(day.canCheckIn).toBe(false);
+      const r = await http().post('/my-day/check-in').set(me).expect(400);
+      expect(r.body.message).toMatch(/No check-in is needed/);
+    }
+    // Working hours: Founder only.
+    const all = (await http().get('/settings').set(as('founder')).expect(200)).body;
+    expect(all.canEdit.workingHours).toBe(true);
+    expect((await http().get('/settings').set(as('hr')).expect(200)).body.canEdit.workingHours).toBe(false);
+    await http().put('/settings/workingHours').set(as('hr')).send(all.workingHours).expect(403);
+    await http().put('/settings/workingHours').set(as('admin')).send(all.workingHours).expect(403);
+    await http().put('/settings/workingHours').set(as('founder')).send({ ...all.workingHours, graceMinutes: 15 }).expect(200);
+  });
+
+  it('lets the employee ask for a correction and their manager approve it into the records', async () => {
+    const me = { Authorization: `Bearer ${staffToken}` };
+    const rec = staffRow((await http().get(`/admin-org/attendance/records?from=${back(14)}&to=${back(1)}`).set(as('hr')).expect(200)).body);
+    const missed = rec.days.find((d) => d.status === 'missed_out')!.date;
+    const weekend = rec.days.find((d) => d.kind !== 'working');
+    const body = { date: missed, checkIn: '09:30', checkOut: '18:45', reason: 'Forgot to check out' };
+    await http().post('/admin-org/attendance/corrections').set(me).send({ ...body, reason: 'no' }).expect(400);
+    await http().post('/admin-org/attendance/corrections').set(me).send({ ...body, date: back(-2) }).expect(400);
+    if (weekend) await http().post('/admin-org/attendance/corrections').set(me).send({ ...body, date: weekend.date }).expect(400);
+    const mine = (await http().post('/admin-org/attendance/corrections').set(me).send(body).expect(201)).body;
+    expect(mine[0]).toMatchObject({ date: missed, status: 'pending' });
+    expect(mine[0].recorded.checkOut).toBeNull();
+    await http().post('/admin-org/attendance/corrections').set(me).send(body).expect(400);
+    const note = await prisma.notification.findFirst({ where: { userId: await userId('design.head@bmu.demo'), kind: 'attendance_correction' }, orderBy: { createdAt: 'desc' } });
+    expect(note?.title).toMatch(`Leave Tester ${stamp}`);
+
+    // My Day no longer nags about the missed check-out once a correction is asked.
+    expect((await http().get('/my-day').set(me).expect(200)).body.missedCheckOut).toBeNull();
+
+    const list = (await http().get('/admin-org/attendance/corrections').set(as('design.head')).expect(200)).body;
+    const row = list.find((c: { id: string }) => c.id === mine[0].id);
+    expect(row.canDecide).toBe(true);
+    await http().post(`/admin-org/attendance/corrections/${row.id}/decide`).set(as('am')).send({ decision: 'approve' }).expect(403);
+    await http().post(`/admin-org/attendance/corrections/${row.id}/decide`).set(me).send({ decision: 'approve' }).expect(403);
+    const ok = (await http().post(`/admin-org/attendance/corrections/${row.id}/decide`).set(as('design.head')).send({ decision: 'approve' }).expect(201)).body;
+    expect(ok.status).toBe('approved');
+    await http().post(`/admin-org/attendance/corrections/${row.id}/decide`).set(as('hr')).send({ decision: 'reject' }).expect(409);
+    const fixed = staffRow((await http().get(`/admin-org/attendance/records?from=${missed}&to=${missed}`).set(as('hr')).expect(200)).body).days[0];
+    expect(fixed).toMatchObject({ status: 'present', corrected: true });
+    expect(fixed.checkOut).toBe(new Date(`${missed}T18:45:00+05:30`).toISOString());
+
+    // Cancel a second request; HR sees everyone's requests.
+    const other = rec.days.find((d) => d.kind === 'working' && d.status === 'not_tracked' || (d.kind === 'working' && d.status === 'absent'));
+    if (other) {
+      const asked = (await http().post('/admin-org/attendance/corrections').set(me).send({ ...body, date: other.date }).expect(201)).body;
+      const cancelled = (await http().post(`/admin-org/attendance/corrections/${asked[0].id}/cancel`).set(me).expect(201)).body;
+      expect(cancelled[0].status).toBe('cancelled');
+    }
+    const hrList = (await http().get('/admin-org/attendance/corrections').set(as('hr')).expect(200)).body;
+    expect(hrList.some((c: { id: string }) => c.id === row.id)).toBe(true);
+    expect((await http().get('/admin-org/attendance/corrections').set(as('am')).expect(200)).body).toEqual([]);
   });
 
   it('never lets someone decide their own leave', async () => {

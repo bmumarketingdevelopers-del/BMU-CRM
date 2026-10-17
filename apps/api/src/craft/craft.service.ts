@@ -46,6 +46,8 @@ import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CraftManagerService } from './craft-manager.service.js';
+import { SettingsService } from '../settings/settings.service.js';
+import { checkWindow, loadWorkCalendar } from '../admin-org/work-calendar.js';
 import { DAY, avg, clock, days, inRange, istDow, pct, periodsFrom, plural, round1, shortDay, weekStart, type Periods, type Range } from './craft-util.js';
 
 const OPEN = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'] as const;
@@ -99,6 +101,7 @@ export class CraftService {
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
     private readonly manager: CraftManagerService,
+    private readonly settings: SettingsService,
   ) {}
 
   // -------------------------------------------------------------------------
@@ -527,6 +530,7 @@ export class CraftService {
     return {
       checkIn: att?.checkIn?.toISOString() ?? null,
       checkOut: att?.checkOut?.toISOString() ?? null,
+      ...checkWindow(att, today, await loadWorkCalendar(this.settings, ctx.me.orgId)),
       overdue: open.filter((t) => t.status !== 'blocked' && t.deadline && t.deadline < ctx.now).length,
       dueToday: open.filter((t) => t.status !== 'blocked' && t.deadline && t.deadline >= ctx.now && istDate(t.deadline) === today).length,
       blocked: open.filter((t) => t.status === 'blocked').length,

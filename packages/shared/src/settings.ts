@@ -13,7 +13,8 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
 
 export const settingsSchemas = {
   holidays: z.object({ list: z.array(z.object({ date: isoDate, name: z.string().trim().min(1).max(80) })).max(100) }),
-  workingHours: z.object({ start: hhmm, end: hhmm, days: z.array(z.number().int().min(0).max(6)).min(1), timezone: z.string().min(1) }),
+  // v30: graceMinutes = how long after the start time a check-in still counts as on time. Only the Founder edits working hours.
+  workingHours: z.object({ start: hhmm, end: hhmm, days: z.array(z.number().int().min(0).max(6)).min(1), timezone: z.string().min(1), graceMinutes: z.number().int().min(0).max(120).optional() }),
   discountLimits: z.record(z.string(), z.number().min(0).max(100)),
   documentTemplates: z.object({ proposalIntro: z.string().max(4000), proposalTerms: z.string().max(8000), agreementBody: z.string().max(20000) }),
   requirementChecklists: z.record(z.string(), z.array(z.object({ label: z.string().trim().min(1).max(200), type: z.string().min(1) })).max(50)),
@@ -119,7 +120,7 @@ export const settingsDefaults: AllSettings = {
       { date: "2027-01-26", name: "Republic Day" },
     ],
   },
-  workingHours: { start: "09:30", end: "18:30", days: [1, 2, 3, 4, 5, 6], timezone: "Asia/Kolkata" },
+  workingHours: { start: "09:30", end: "18:30", days: [1, 2, 3, 4, 5, 6], timezone: "Asia/Kolkata", graceMinutes: 15 },
   discountLimits: { sales_manager: 10, admin: 20 },
   documentTemplates: {
     proposalIntro: "Thank you for considering BMU Marketing. Here is the plan and investment we recommend for your growth.",

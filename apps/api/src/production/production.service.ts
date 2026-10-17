@@ -38,6 +38,8 @@ import { approvalStatus, pendingUserIds } from '../deliver/approval-policy.js';
 import { DeliverSlaService } from '../deliver/deliver-sla.service.js';
 import { carryOpenComments, proofRounds, ProofingService } from '../creative/proofing.service.js';
 import { AssetsService } from '../creative/assets.service.js';
+import { SettingsService } from '../settings/settings.service.js';
+import { addDays, dayKind, dayLabel, dbDate, lateMinutes, loadWorkCalendar, nextWorkingDay } from '../admin-org/work-calendar.js';
 
 const OPEN: TaskStatus[] = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
 const DONE: TaskStatus[] = ['done', 'cancelled'];
@@ -75,6 +77,7 @@ export class ProductionService {
     private readonly sla: DeliverSlaService,
     private readonly reassignEngine: ReassignService,
     private readonly ref: ModuleRef,
+    private readonly settings: SettingsService,
   ) {}
 
   private readonly log = new Logger('Production');
@@ -767,10 +770,26 @@ export class ProductionService {
       where: { ownerId: me.id, status: 'done', completedAt: { gte: new Date(`${todayStr}T00:00:00+05:30`) } },
       select: { title: true },
     });
+    // v30: check-in once a day on working days; after check-out it opens again on the next working day.
+    const cal = await loadWorkCalendar(this.settings, me.orgId);
+    const workday = dayKind(todayStr, cal);
+    const missed = await this.prisma.attendance.findFirst({
+      where: { userId: me.id, date: { gte: dbDate(addDays(todayStr, -7)), lt: date }, checkIn: { not: null }, checkOut: null },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+    const missedAsked = missed ? await this.prisma.attendanceCorrection.count({ where: { userId: me.id, date: missed.date, status: { in: ['pending', 'approved'] } } }) : 0;
     return {
       date: todayStr,
       checkIn: att?.checkIn?.toISOString() ?? null,
       checkOut: att?.checkOut?.toISOString() ?? null,
+      workday,
+      canCheckIn: workday.kind === 'working' && !att?.checkIn,
+      canCheckOut: !!att?.checkIn && !att.checkOut,
+      nextCheckIn: workday.kind !== 'working' || att?.checkOut ? nextWorkingDay(todayStr, cal) : null,
+      late: lateMinutes(att?.checkIn, cal) > 0,
+      workingHours: { start: cal.start, end: cal.end, graceMinutes: cal.graceMinutes },
+      missedCheckOut: missed && !missedAsked ? missed.date.toISOString().slice(0, 10) : null,
       tasks: {
         overdue: open.filter((t) => t.overdue && t.status !== 'blocked'),
         today: open.filter((t) => !t.overdue && dueToday(t) && t.status !== 'blocked'),
@@ -798,9 +817,17 @@ export class ProductionService {
     const date = this.today();
     const now = new Date();
     const existing = await this.prisma.attendance.findUnique({ where: { userId_date: { userId: me.id, date } } });
+    // v30: only on working days (Holidays & Working Hours, set by the Founder), one check-in and one check-out a day.
+    const cal = await loadWorkCalendar(this.settings, me.orgId);
+    const todayStr = istDate(now);
+    const kind = dayKind(todayStr, cal);
+    const next = nextWorkingDay(todayStr, cal);
+    const opens = next ? ` Check-in opens on ${dayLabel(next)}.` : '';
+    if (!out && kind.kind !== 'working') throw new BadRequestException(`Today is ${kind.kind === 'holiday' ? `a holiday (${kind.label})` : 'a weekly off'}. No check-in is needed.${opens}`);
+    if (!out && existing?.checkOut) throw new BadRequestException(`You have already checked in and out today.${opens}`);
     if (!out && existing?.checkIn) throw new BadRequestException('Already checked in today');
     if (out && !existing?.checkIn) throw new BadRequestException('Check in first');
-    if (out && existing?.checkOut) throw new BadRequestException('Already checked out today');
+    if (out && existing?.checkOut) throw new BadRequestException(`Already checked out today.${opens}`);
     await this.prisma.attendance.upsert({
       where: { userId_date: { userId: me.id, date } },
       update: out ? { checkOut: now } : { checkIn: now },

@@ -1101,11 +1101,36 @@ model Attendance {
   orgId    String
   checkIn  DateTime?
   checkOut DateTime?
+  /// v30: times set by an approved correction request
+  corrected Boolean @default(false)
 
   user User @relation(fields: [userId], references: [id])
 
   @@id([userId, date])
   @@map("attendance")
+}
+
+/// v30: an employee asks to fix a day's attendance (missed check-in / check-out, wrong time); their manager or HR decides.
+model AttendanceCorrection {
+  id               String    @id @default(cuid())
+  orgId            String
+  userId           String
+  date             DateTime  @db.Date
+  checkIn          DateTime
+  checkOut         DateTime
+  recordedCheckIn  DateTime?
+  recordedCheckOut DateTime?
+  reason           String
+  /// pending | approved | rejected | cancelled
+  status           String    @default("pending")
+  decidedById      String?
+  decidedAt        DateTime?
+  decisionNote     String?
+  createdAt        DateTime  @default(now())
+
+  @@index([orgId, status])
+  @@index([userId, date])
+  @@map("attendance_corrections")
 }
 
 model EODReport {

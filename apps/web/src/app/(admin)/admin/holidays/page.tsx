@@ -75,7 +75,7 @@ function Editor({ data, onSaved }: { data: SettingsView; onSaved: (v: SettingsVi
     <div className="space-y-6">
       <ErrorNote>{error}</ErrorNote>
       {saved && <p className="border border-green bg-green/10 px-4 py-2 text-sm">{saved}. Saved and logged.</p>}
-      {!canHolidays && <p className="text-sm text-ink-muted">You can view the calendar. Only the Founder or Branch Manager can change it.</p>}
+      {!canHolidays && <p className="text-sm text-ink-muted">You can view the calendar. Only the Founder, Branch Manager or HR can change holidays.</p>}
 
       <StatRow>
         <StatTile label="Next holiday" value={next ? fmtDate(next.date) : "None"} hint={next?.name} tone={next ? "good" : "default"} />
@@ -124,7 +124,7 @@ function Editor({ data, onSaved }: { data: SettingsView; onSaved: (v: SettingsVi
         </Panel>
 
         <div className="space-y-6">
-          <Panel title="Working hours" subtitle="Used for late check-ins and as the office day.">
+          <Panel title="Working hours" subtitle={canHours ? "The company working time: check-in days, late check-ins and the office day." : "The company working time. Only the Founder can change it."}>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Day starts">
                 <Input type="time" value={hours.start} disabled={!canHours} onChange={(e) => setHours({ ...hours, start: e.target.value })} />
@@ -133,7 +133,23 @@ function Editor({ data, onSaved }: { data: SettingsView; onSaved: (v: SettingsVi
                 <Input type="time" value={hours.end} disabled={!canHours} onChange={(e) => setHours({ ...hours, end: e.target.value })} />
               </Field>
             </div>
-            <p className="mt-4 mb-2 text-xs text-ink-muted">Working days</p>
+            <div className="mt-3">
+              <Field label="Grace for check-in (minutes)">
+                <Input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={hours.graceMinutes ?? 15}
+                  disabled={!canHours}
+                  onChange={(e) => setHours({ ...hours, graceMinutes: Math.max(0, Math.min(120, Number(e.target.value) || 0)) })}
+                  aria-label="Grace for check-in in minutes"
+                />
+              </Field>
+              <p className="mt-1 text-xs text-ink-muted">
+                A check-in after {hours.start} + {hours.graceMinutes ?? 15} min counts as late.
+              </p>
+            </div>
+            <p className="mt-4 mb-2 text-xs text-ink-muted">Working days (check-in opens only on these days)</p>
             <div className="flex flex-wrap gap-1">
               {DAY_NAMES.map((n, d) => (
                 <button
@@ -159,7 +175,7 @@ function Editor({ data, onSaved }: { data: SettingsView; onSaved: (v: SettingsVi
               items={[
                 { k: "Request first-reply SLAs", v: "Pause outside hours & on holidays" },
                 { k: "Plan deadline (Gate 2)", v: "Counts working days" },
-                { k: "Attendance", v: "Late after start time" },
+                { k: "Attendance", v: `Late after start + ${hours.graceMinutes ?? 15} min; check-in on working days` },
                 { k: "Leave balances", v: "Holidays not deducted" },
               ]}
             />

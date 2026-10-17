@@ -160,14 +160,16 @@ export function Strip({ strip, readOnly, onChanged }: { strip: CraftStrip; readO
           <div>
             <p className="text-[13px] text-ink-muted">Attendance</p>
             <p className="mt-1 text-sm font-medium">
-              {!strip.checkIn ? "Not checked in yet" : strip.checkOut ? `Out at ${fmtTime(strip.checkOut)}` : `In since ${fmtTime(strip.checkIn)}`}
+              {!strip.checkIn ? (strip.offDay ? `${strip.offDay}, no check-in` : "Not checked in yet") : strip.checkOut ? `Out at ${fmtTime(strip.checkOut)}` : `In since ${fmtTime(strip.checkIn)}`}
             </p>
           </div>
           {!readOnly &&
             (!strip.checkIn ? (
+              strip.canCheckIn === false ? null : (
               <Button className="px-3 py-1.5 text-xs" disabled={!!busy} onClick={() => run("in", () => api.myDay.checkIn()).then((r) => r && onChanged())}>
                 Check in
               </Button>
+              )
             ) : !strip.checkOut ? (
               <Button variant="secondary" className="px-3 py-1.5 text-xs" disabled={!!busy} onClick={() => run("out", () => api.myDay.checkOut()).then((r) => r && onChanged())}>
                 Check out

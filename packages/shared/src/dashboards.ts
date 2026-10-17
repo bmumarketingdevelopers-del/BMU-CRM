@@ -119,6 +119,7 @@ export const DASHBOARD_BUILTINS: Record<DashboardBuiltinKey, DashboardBuiltinDef
       { key: "forecast_risks", label: "Forecast & risks", size: "full", hint: "Revenue forecast (money roles), churn risk, deals, slipping tasks and capacity, each with its reasons" },
       { key: "money_tiles", label: "Money numbers", size: "full", hint: "Revenue, collected, outstanding (money roles only)" },
       { key: "ops_tiles", label: "Operations numbers", size: "full", hint: "Leads, overdue tasks, reply times, QC" },
+      { key: "attendance_today", label: "Attendance today by department", size: "full", hint: "Founder, Branch Manager, HR; Department Heads see their own team" },
       { key: "money_chart", label: "Invoiced and collected chart", size: "half", hint: "Money roles only" },
       { key: "pipeline", label: "Pipeline by stage", size: "half" },
       { key: "overdue_invoices", label: "Overdue invoices", size: "half", hint: "Money roles only" },

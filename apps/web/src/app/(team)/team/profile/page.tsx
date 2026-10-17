@@ -4,6 +4,7 @@ import { useState } from "react";
 import { LEAVE_TYPES, craftSpecialtyLabel, leaveTypeLabels, roleLabel, type LeaveType, type MyProfile } from "@bmu/shared";
 import { NotificationPrefsPanel } from "@/components/service/notification-prefs";
 import { SecurityPanels } from "@/components/security/security-panel";
+import { MyCorrections } from "@/components/attendance/corrections";
 import { DataTable, Empty, Grid, KeyValues, Meter, Panel, StatRow, StatTile } from "@/components/dash";
 import { fmtIsoDay, fmtTime, istToday, monthLabel } from "@/components/workspace/format";
 import { Badge, Button, Input, LoadState, PageTitle, Select } from "@/components/ui";
@@ -45,6 +46,8 @@ export default function ProfilePage() {
         <Panel title="Attendance" subtitle={`${monthLabel(p.attendance.month)} · from your My Day check-ins`}>
           <AttendanceDots p={p} />
         </Panel>
+
+        <MyCorrections />
 
         <Panel title="My leave requests" flush>
           <LeaveTable p={p} onDone={setFresh} />

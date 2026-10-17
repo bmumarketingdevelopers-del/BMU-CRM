@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import {
+  attendanceCorrectionSchema,
   branchInputSchema,
   branchUpdateSchema,
   decideLeaveSchema,
@@ -83,6 +84,42 @@ export class AdminOrgController {
   @Get('attendance')
   attendanceView(@CurrentUser() me: Me, @Query('month') month?: string) {
     return this.attendance.view(me, month);
+  }
+
+  // v30: today by department, the records sheet, and attendance corrections.
+  @Get('attendance/today')
+  attendanceToday(@CurrentUser() me: Me) {
+    return this.attendance.today(me);
+  }
+
+  @Get('attendance/records')
+  attendanceRecords(@CurrentUser() me: Me, @Query('from') from?: string, @Query('to') to?: string, @Query('departmentId') departmentId?: string) {
+    return this.attendance.records(me, { from, to, departmentId });
+  }
+
+  @Get('attendance/corrections/mine')
+  myCorrections(@CurrentUser() me: Me) {
+    return this.attendance.myCorrections(me);
+  }
+
+  @Get('attendance/corrections')
+  corrections(@CurrentUser() me: Me) {
+    return this.attendance.corrections(me);
+  }
+
+  @Post('attendance/corrections')
+  requestCorrection(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.attendance.requestCorrection(me, parse(attendanceCorrectionSchema, body), ip);
+  }
+
+  @Post('attendance/corrections/:id/cancel')
+  cancelCorrection(@CurrentUser() me: Me, @Param('id') id: string, @ClientIp() ip?: string) {
+    return this.attendance.cancelCorrection(me, id, ip);
+  }
+
+  @Post('attendance/corrections/:id/decide')
+  decideCorrection(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.attendance.decideCorrection(me, id, parse(decideLeaveSchema, body), ip);
   }
 
   @Get('leave')

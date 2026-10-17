@@ -7,6 +7,7 @@ import { DataTable, Panel, StatRow, StatTile } from "@/components/dash";
 import { hrs, sheetLabel, sheetTone } from "@/components/timesheet-week";
 import { Badge, Button, Input, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
+import { CorrectionsToDecide } from "@/components/attendance/corrections";
 import { useLoad } from "@/lib/use-load";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
@@ -51,7 +52,7 @@ export function PeopleApprovals() {
 
   return (
     <>
-      <PageTitle title="Approvals" subtitle="Leave and timesheets from your team that need your decision" />
+      <PageTitle title="Approvals" subtitle="Leave, attendance corrections and timesheets from your team that need your decision" />
       <StatRow cols={3}>
         <StatTile label="Leave to decide" value={waiting.length} tone={waiting.length ? "warn" : "good"} />
         <StatTile label="Timesheets to approve" value={toDecide.length} tone={toDecide.length ? "warn" : "good"} />
@@ -142,6 +143,8 @@ export function PeopleApprovals() {
             />
           </Panel>
         )}
+        {/* v30: attendance corrections from my team (shown only when something waits for me). */}
+        <CorrectionsToDecide compact />
       </div>
     </>
   );

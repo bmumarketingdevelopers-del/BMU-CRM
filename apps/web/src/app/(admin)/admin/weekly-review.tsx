@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { AiWeeklyDigest } from "@/components/ai/digest-panel";
 import { ForecastRisks } from "@/components/intelligence/forecast-risks";
+import { AttendanceTodayByDepartment } from "@/components/attendance/today-by-department";
 import { Legend, WithData, fmtDateTime, inr, inrShort, pctText } from "./_insights/kit";
 
 const stageTone = ["grey", "muted", "amber", "dark", "green", "red"] as const;
@@ -66,6 +67,8 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
               <StatTile label="QC pass rate" value={pctText(d.qcPassRate)} hint={`${d.qcChecksThisWeek} checks this week`} tone={d.qcPassRate !== null && d.qcPassRate < 70 ? "warn" : "default"} href="/admin/quality" />
             </StatRow>
           ),
+          // v30: who is in today, by department (hidden for people without attendance access).
+          attendance_today: <AttendanceTodayByDepartment />,
           money_chart: m ? (
             <Panel className="min-w-0 h-full" title="Invoiced and collected" subtitle="Last six months, including GST" action={<Legend items={[{ label: "Invoiced", className: "bg-grey/60" }, { label: "Collected", className: "bg-charcoal" }]} />}>
               <ColumnChart data={m.byMonth.map((p) => ({ label: p.label, value: p.collectedPaise, secondary: p.invoicedPaise }))} format={inrShort} highlightLast={false} />

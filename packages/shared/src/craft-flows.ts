@@ -189,7 +189,14 @@ export type CraftKpi = {
 export type CraftNextKind = "overdue" | "due_today" | "assigned" | "feedback" | "blocked";
 export type CraftNextItem = { id: string; kind: CraftNextKind; title: string; detail: string; href: string; due: string | null; client: string | null };
 
-export type CraftStrip = { checkIn: string | null; checkOut: string | null; overdue: number; dueToday: number; blocked: number; open: number; eodSubmitted: boolean };
+export type CraftStrip = {
+  checkIn: string | null;
+  checkOut: string | null;
+  /** v30: check-in / check-out open (working day, once a day); offDay names a holiday or weekly off. */
+  canCheckIn?: boolean;
+  canCheckOut?: boolean;
+  offDay?: string | null;
+  overdue: number; dueToday: number; blocked: number; open: number; eodSubmitted: boolean };
 
 export type CraftWorkload = {
   /** Week labels, oldest first (e.g. "8 Sep"); the last `future` weeks are planned work. */

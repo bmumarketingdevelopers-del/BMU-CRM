@@ -2,6 +2,10 @@ import type { Transport } from "./transport.js";
 import type {
   AdminEngagementRow,
   AmWorkloadView,
+  AttendanceCorrectionInput,
+  AttendanceCorrectionRow,
+  AttendanceRecords,
+  AttendanceTodaySummary,
   AttendanceView,
   BranchInput,
   DecideLeave,
@@ -37,6 +41,15 @@ export const adminOrgApi = (t: Transport) => ({
     attendance: (month?: string) => t.get<AttendanceView>(`/admin-org/attendance${month ? `?month=${month}` : ""}`),
     leave: () => t.get<LeaveRow[]>("/admin-org/leave"),
     decideLeave: (id: string, input: DecideLeave) => t.post<LeaveRow>(`/admin-org/leave/${id}/decide`, input),
+    // v30: today by department, the records sheet, and attendance corrections.
+    attendanceToday: () => t.get<AttendanceTodaySummary>("/admin-org/attendance/today"),
+    attendanceRecords: (q: { from: string; to: string; departmentId?: string }) =>
+      t.get<AttendanceRecords>(`/admin-org/attendance/records?from=${q.from}&to=${q.to}${q.departmentId ? `&departmentId=${encodeURIComponent(q.departmentId)}` : ""}`),
+    corrections: () => t.get<AttendanceCorrectionRow[]>("/admin-org/attendance/corrections"),
+    decideCorrection: (id: string, input: DecideLeave) => t.post<AttendanceCorrectionRow>(`/admin-org/attendance/corrections/${id}/decide`, input),
+    myCorrections: () => t.get<AttendanceCorrectionRow[]>("/admin-org/attendance/corrections/mine"),
+    requestCorrection: (input: AttendanceCorrectionInput) => t.post<AttendanceCorrectionRow[]>("/admin-org/attendance/corrections", input),
+    cancelCorrection: (id: string) => t.post<AttendanceCorrectionRow[]>(`/admin-org/attendance/corrections/${id}/cancel`),
 
     engagements: () => t.get<AdminEngagementRow[]>("/admin-org/engagements"),
     amWorkload: () => t.get<AmWorkloadView>("/admin-org/am-workload"),

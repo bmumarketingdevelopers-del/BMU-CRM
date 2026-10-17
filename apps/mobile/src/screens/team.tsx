@@ -86,8 +86,17 @@ export function MyDay({ me }: { me: Me }) {
       <Title sub={me.roles.join(', ').replaceAll('_', ' ')}>Hello, {me.name.split(' ')[0]}</Title>
       <OfflineBanner savedAt={d.savedAt} />
       <Card tone={day0.checkIn && !day0.checkOut ? 'good' : undefined}>
-        <Body bold>{!day0.checkIn ? 'Not checked in yet' : day0.checkOut ? `Checked out at ${when(day0.checkOut)}` : `Checked in at ${when(day0.checkIn)}`}</Body>
-        {!day0.checkIn && <Button title="Check in" busy={busy} onPress={() => check(false)} />}
+        <Body bold>
+          {!day0.checkIn
+            ? day0.workday && day0.workday.kind !== 'working'
+              ? `${day0.workday.kind === 'holiday' ? `Holiday${day0.workday.label ? `: ${day0.workday.label}` : ''}` : 'Weekly off'}. No check-in today.`
+              : 'Not checked in yet'
+            : day0.checkOut
+              ? `Checked out at ${when(day0.checkOut)}`
+              : `Checked in at ${when(day0.checkIn)}`}
+        </Body>
+        {day0.nextCheckIn && (day0.checkOut || !day0.canCheckIn) ? <Body>Check-in opens on {day0.nextCheckIn}.</Body> : null}
+        {(day0.canCheckIn ?? !day0.checkIn) && <Button title="Check in" busy={busy} onPress={() => check(false)} />}
         {day0.checkIn && !day0.checkOut && <Button variant="secondary" title="Check out" busy={busy} onPress={() => check(true)} />}
       </Card>
       <Stats

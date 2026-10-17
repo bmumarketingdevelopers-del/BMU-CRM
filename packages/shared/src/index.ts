@@ -13,6 +13,7 @@ export * from "./admin.js";
 export * from "./proposals.js";
 export * from "./client.js";
 export * from "./working-days.js";
+export * from "./xlsx.js";
 export * from "./delivery.js";
 export * from "./production.js";
 export * from "./requests.js";

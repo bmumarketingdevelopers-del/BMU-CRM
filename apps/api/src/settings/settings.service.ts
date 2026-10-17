@@ -66,7 +66,9 @@ export class SettingsService {
     // Platform-wide sections are Founder/Admin only; others need the capability plus a leadership role.
     const editors = ['branding', 'tenant', 'notificationTemplates', 'ai'].includes(section)
       ? ['founder', 'admin']
-      : ['holidays', 'workingHours'].includes(section)
+      : section === 'workingHours'
+        ? ['founder'] // v30: only the Founder changes the company working time (check-in window, late, grace)
+        : section === 'holidays'
         ? ['founder', 'admin', 'hr_ops']
         : ['founder', 'admin', 'finance', 'department_head'];
     return me.type === 'staff' && scope !== 'none' && me.roles.some((r) => editors.includes(r));
