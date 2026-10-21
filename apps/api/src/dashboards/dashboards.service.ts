@@ -30,6 +30,7 @@ import {
   type DashboardView,
   type DashboardWidget,
   type Me,
+  DASHBOARD_LATER_SECTIONS,
 } from '@bmu/shared';
 import type { Dashboard, Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -62,12 +63,44 @@ export class DashboardsService {
   }
 
   /** Stored layout, dropping anything that no longer validates (e.g. a section removed in a later version). */
-  private layoutOf(d: Pick<Dashboard, 'layout' | 'surface'>): DashboardWidget[] {
+  private layoutOf(d: Pick<Dashboard, 'layout' | 'surface'> & Partial<Pick<Dashboard, 'builtin' | 'knownSections'>>): DashboardWidget[] {
     const raw = Array.isArray(d.layout) ? d.layout : [];
     const out: DashboardWidget[] = [];
     for (const item of raw) {
       const r = dashboardLayoutSchema.element.safeParse(item);
       if (r.success && !dashboardLayoutProblem([...out, r.data], d.surface as DashboardSurface)) out.push(r.data);
+    }
+    return d.builtin && isDashboardBuiltinKey(d.builtin) ? this.withNewSections(d.builtin, out, d.knownSections) : out;
+  }
+
+  /** The section keys a built-in offers today (saved as knownSections whenever its layout is saved). */
+  private sectionKeys(key: DashboardBuiltinKey) {
+    return DASHBOARD_BUILTINS[key].sections.map((x) => x.key);
+  }
+
+  /**
+   * v33: sections added to a built-in after this layout was saved appear in their default place; sections someone
+   * removed (they were offered, so they're in knownSections) stay removed.
+   */
+  private withNewSections(key: DashboardBuiltinKey, layout: DashboardWidget[], known: unknown): DashboardWidget[] {
+    const later = DASHBOARD_LATER_SECTIONS[key] ?? [];
+    const seen = new Set(Array.isArray(known) ? (known as string[]) : this.sectionKeys(key).filter((k) => !later.includes(k)));
+    const has = (k: string) => layout.some((w) => w.type === 'section' && w.dashboard === key && w.section === k);
+    const defaults = dashboardDefaultLayout(key);
+    const out = [...layout];
+    for (const [i, w] of defaults.entries()) {
+      if (w.type !== 'section' || seen.has(w.section) || has(w.section)) continue;
+      // After the nearest earlier default section that is on the dashboard, else first.
+      let at = 0;
+      for (let j = i - 1; j >= 0; j--) {
+        const prev = defaults[j];
+        const pos = out.findIndex((x) => x.type === 'section' && prev.type === 'section' && x.section === prev.section && x.dashboard === key);
+        if (pos >= 0) {
+          at = pos + 1;
+          break;
+        }
+      }
+      out.splice(at, 0, w);
     }
     return out;
   }
@@ -111,7 +144,7 @@ export class DashboardsService {
     return this.prisma.dashboard.upsert({
       where: { orgId_key: { orgId, key } },
       update: {},
-      create: { orgId, key, builtin: key, name: def.name, surface: def.surface, placement: 'menu', layout: dashboardDefaultLayout(key) as unknown as Prisma.InputJsonValue },
+      create: { orgId, key, builtin: key, name: def.name, surface: def.surface, placement: 'menu', layout: dashboardDefaultLayout(key) as unknown as Prisma.InputJsonValue, knownSections: this.sectionKeys(key) },
     });
   }
 
@@ -319,6 +352,8 @@ export class DashboardsService {
         await this.prisma.savedReport.updateMany({ where: { orgId: me.orgId, id: { in: reportIds }, userId: me.id }, data: { shared: true } });
       }
       data.layout = input.layout as unknown as Prisma.InputJsonValue;
+      // v33: everything the built-in offers now has been seen; what's left out was removed on purpose.
+      if (before.builtin && isDashboardBuiltinKey(before.builtin)) data.knownSections = this.sectionKeys(before.builtin);
     }
     const d = await this.prisma.dashboard.update({ where: { id }, data });
     await this.saveVersion(me, d, input.note);
@@ -364,7 +399,7 @@ export class DashboardsService {
     assertStudio(me);
     const d = await this.find(me, id);
     if (!d.builtin || !isDashboardBuiltinKey(d.builtin)) throw new BadRequestException('Only built-in dashboards have an original layout');
-    const out = await this.prisma.dashboard.update({ where: { id }, data: { layout: dashboardDefaultLayout(d.builtin) as unknown as Prisma.InputJsonValue, updatedById: me.id } });
+    const out = await this.prisma.dashboard.update({ where: { id }, data: { layout: dashboardDefaultLayout(d.builtin) as unknown as Prisma.InputJsonValue, knownSections: this.sectionKeys(d.builtin), updatedById: me.id } });
     await this.saveVersion(me, out, 'Reset to original');
     await this.audit.log(me, 'dashboard.reset', 'dashboard', id, { widgets: this.layoutOf(d).length }, { widgets: this.layoutOf(out).length }, ip);
     return this.viewWithName(me, out);

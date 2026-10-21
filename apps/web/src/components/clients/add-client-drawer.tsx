@@ -395,7 +395,8 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
         )}
       </Section>
 
-      <Section title="Client manager" hint="Suggested by current load and industry experience.">
+      {/* v33: a Client Manager's only option is themselves. */}
+      <Section title="Client manager" hint={opts?.ownOnly ? "Clients you add are yours. The CM Lead or Founder can move them later." : "Suggested by current load and industry experience."}>
         <div className="max-h-48 divide-y divide-border overflow-y-auto border border-border" role="radiogroup" aria-label="Client manager">
           {amRows.map((a) => (
             <label key={a.id} className={`flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm ${v.amUserId === a.id ? "bg-canvas" : ""}`}>

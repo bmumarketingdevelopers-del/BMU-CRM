@@ -2251,6 +2251,9 @@ model Dashboard {
   audience       Json      @default("{}")
   /// DashboardWidget[]
   layout         Json      @default("[]")
+  /// v33 (built-ins): section keys this layout has already offered; sections added to the built-in later are shown
+  /// automatically, ones someone removed stay removed. null = saved before v33.
+  knownSections  Json?
   createdById    String?
   updatedById    String?
   archivedAt     DateTime?

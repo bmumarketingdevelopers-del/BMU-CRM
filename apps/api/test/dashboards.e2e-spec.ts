@@ -8,6 +8,7 @@ import request from 'supertest';
 import { dashboardDefaultLayout, type DashboardView, type DashboardWidget } from '@bmu/shared';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { Prisma } from '../src/generated/prisma/client.js';
 
 let app: INestApplication;
 let prisma: PrismaService;
@@ -65,6 +66,26 @@ describe('Studio list and permissions', () => {
     await http().patch(`/dashboards/${d.id}`).set(as('am')).send({ layout: [] }).expect(403);
     await http().post('/dashboards').set(as('salesManager')).send({ name: 'Nope' }).expect(403);
     await http().get('/dashboards').set(as('admin')).expect(200);
+  });
+});
+
+describe('Sections added to a built-in later (v33)', () => {
+  it('appear on a layout saved before them, and stay away once someone removes them', async () => {
+    const d = await builtin('command_centre');
+    touchedBuiltins.add(d.id);
+    const old = dashboardDefaultLayout('command_centre').filter((w) => !(w.type === 'section' && ['attendance_today', 'new_clients'].includes(w.section)));
+    // A layout saved before v33: no knownSections and without the later sections.
+    await prisma.dashboard.update({ where: { id: d.id }, data: { layout: old as object[], knownSections: Prisma.DbNull } });
+    const seen = await builtin('command_centre');
+    expect(seen.layout).toEqual(dashboardDefaultLayout('command_centre'));
+    expect(seen.customised).toBe(false);
+    // Someone removes the new clients panel: it stays removed.
+    const without = seen.layout.filter((w) => !(w.type === 'section' && w.section === 'new_clients'));
+    await http().patch(`/dashboards/${d.id}`).set(as('founder')).send({ layout: without }).expect(200);
+    const after = await builtin('command_centre');
+    expect(after.layout.some((w) => w.type === 'section' && w.section === 'new_clients')).toBe(false);
+    expect(after.layout.some((w) => w.type === 'section' && w.section === 'attendance_today')).toBe(true);
+    await http().post(`/dashboards/${d.id}/reset`).set(as('founder')).expect(201);
   });
 });
 

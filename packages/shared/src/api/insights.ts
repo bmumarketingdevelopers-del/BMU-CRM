@@ -16,6 +16,7 @@ import type {
   RevenuePeriod,
   RevenueView,
   WeeklyReviewView,
+  NewClientsView,
 } from "../insights-types.js";
 
 export * from "../insights-types.js";
@@ -45,6 +46,8 @@ export type InvoiceFilters = {
 export const insightsApi = (t: Transport) => ({
   insights: {
     weekly: () => t.get<WeeklyReviewView>("/insights/weekly"),
+    /** v33: clients added in the last 30 days and who added them. */
+    newClients: () => t.get<NewClientsView>("/insights/new-clients"),
     revenue: (period: RevenuePeriod = "month") => t.get<RevenueView>(`/insights/revenue${qs({ period })}`),
     collections: () => t.get<CollectionsView>("/insights/collections"),
     capacity: () => t.get<CapacityView>("/insights/capacity"),

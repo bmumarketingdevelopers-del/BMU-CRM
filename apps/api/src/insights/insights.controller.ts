@@ -16,6 +16,12 @@ export class InsightsController {
     return cached(me.orgId, `weekly:${me.id}`, 30_000, () => this.insights.weekly(me));
   }
 
+  // v33: clients added in the last 30 days and who added them.
+  @Get('new-clients')
+  newClients(@CurrentUser() me: Me) {
+    return this.insights.newClients(me);
+  }
+
   @Get('revenue')
   revenue(@CurrentUser() me: Me, @Query('period') period?: string) {
     const p = (REVENUE_PERIODS as readonly string[]).includes(period ?? '') ? (period as RevenuePeriod) : 'month';

@@ -12,7 +12,10 @@ const hasAny = (roles: string[], allowed: readonly string[]) => roles.some((r) =
 // ------------------------------------------------------------------ Who may do what
 
 /** add_client: Founder, Branch Manager, Sales Manager, CM Lead. */
-export const CLIENTS_ADD_ROLES = ["founder", "admin", "sales_manager", "am_lead"] as const;
+/** v33: Client Managers add (and migrate) clients too; the client is theirs. */
+export const CLIENTS_ADD_ROLES = ["founder", "admin", "sales_manager", "am_lead", "account_manager"] as const;
+/** v33: a Client Manager without a leadership role: the clients they add are always their own. */
+export const clientsAddsOwnOnly = (me: Who) => staff(me) && me.roles.includes("account_manager") && !hasAny(me.roles, ["founder", "admin", "sales_manager", "am_lead"]);
 /** assign_reassign_am: CM Lead, Branch Manager, Founder. */
 export const CLIENTS_AM_ROLES = ["founder", "admin", "am_lead"] as const;
 /** cancel / offboard client: Admin, CM Lead (Admin approves). */
@@ -316,6 +319,8 @@ export type ClientsFormOptions = {
   ams: ClientsAmSuggestion[];
   roles: { key: ClientTeamRole; label: string }[];
   canMigrate: boolean;
+  /** v33: a Client Manager adding a client: it is always their own. */
+  ownOnly?: boolean;
 };
 export type ClientsAmSuggestion = { id: string; name: string; role: string; clients: number; activeEngagements: number; industryMatch: number; loadPct: number; suggested: boolean; onLeaveToday: boolean };
 

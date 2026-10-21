@@ -4,6 +4,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import {
   CLIENT_TEAM_ROLES,
   CLIENTS_INDUSTRIES,
+  clientsAddsOwnOnly,
   clientsCanAdd,
   clientsCreateSchema,
   clientsDueNowPaise,
@@ -135,14 +136,17 @@ export class ClientsCreateService implements OnModuleInit {
       this.prisma.clientOrg.findMany({ where: { orgId: me.orgId, deletedAt: null, industry: { not: null } }, select: { industry: true }, distinct: ['industry'] }),
       this.amSuggest(me),
     ]);
+    // v33: a Client Manager's new clients are their own, so they are the only choice.
+    const own = clientsAddsOwnOnly(me);
     const industries = [...new Set([...CLIENTS_INDUSTRIES, ...used.map((u) => u.industry!).filter(Boolean)])];
     return {
       branches: branches.map((b) => ({ id: b.id, name: b.name, city: b.city })),
       industries,
       services: this.bookServices(book),
-      ams,
+      ams: own ? ams.filter((a) => a.id === me.id).map((a) => ({ ...a, suggested: true })) : ams,
       roles: CLIENT_TEAM_ROLES.map((r) => ({ key: r, label: clientRoleLabels[r].name })),
       canMigrate: clientsCanAdd(me),
+      ownOnly: own,
     };
   }
 
@@ -222,11 +226,11 @@ export class ClientsCreateService implements OnModuleInit {
 
   async create(me: Me, body: unknown, ip?: string, opts: { source?: 'manual' | 'lead' | 'import'; leadId?: string; allowSalesManagerOnly?: boolean } = {}): Promise<ClientsCreateResult> {
     assertStaff(me);
-    if (!clientsCanAdd(me)) throw new ForbiddenException('Only the Founder, Branch Manager, Sales Manager or CM Lead can add clients');
+    if (!clientsCanAdd(me)) throw new ForbiddenException('Only the Founder, Branch Manager, Sales Manager, CM Lead or a Client Manager can add clients');
     const parsed = clientsCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Check the form');
     const input = parsed.data;
-    if (input.startMode === 'migration' && !hasRole(me, 'founder', 'admin', 'am_lead', 'sales_manager')) throw new ForbiddenException('Only leadership can migrate an existing client');
+    if (input.startMode === 'migration' && !hasRole(me, 'founder', 'admin', 'am_lead', 'sales_manager', 'account_manager')) throw new ForbiddenException('Only leadership or a Client Manager can migrate an existing client');
 
     const branch = await this.prisma.branch.findFirst({ where: { id: input.branchId, orgId: me.orgId, deletedAt: null } });
     if (!branch) throw new BadRequestException('Pick a branch');
@@ -242,6 +246,11 @@ export class ClientsCreateService implements OnModuleInit {
 
     // CM: chosen (must be an active CM) or suggested by load and industry.
     let amId = input.amUserId ?? null;
+    // v33: a Client Manager adds clients for themselves; moving them to another CM stays with the Founder, Branch Manager or CM Lead.
+    if (clientsAddsOwnOnly(me)) {
+      if (amId && amId !== me.id) throw new ForbiddenException('Clients you add are yours. Ask the CM Lead or Founder to move a client to another Client Manager.');
+      amId = me.id;
+    }
     if (amId) {
       const ok = await this.prisma.user.findFirst({ where: { id: amId, orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: { in: AM_BASE_ROLES } } } } } });
       if (!ok) throw new BadRequestException('Choose an active client manager');
@@ -383,11 +392,17 @@ export class ClientsCreateService implements OnModuleInit {
 
     // Notify CM, CM Lead, Finance; welcome the invited users.
     const leads = await this.roleHolders(me.orgId, ['am_lead']);
+    // v33: the Founder hears about every client someone else adds (it also shows on the Weekly Review).
+    const founders = await this.roleHolders(me.orgId, ['founder']);
     const finance = await this.roleHolders(me.orgId, ['finance']);
     const services = lines.length ? `${lines.length} service${lines.length > 1 ? 's' : ''}` : 'no services yet';
     const link = `/team/clients/${client.id}`;
     await this.notifications.notify(me.orgId, [amId].filter((x) => x !== me.id), { kind: 'client_assigned', title: merged ? `${client.name}: details added by ${me.name}` : `New client: ${client.name} is yours`, body: [migration ? 'Existing client migrated at its current gates.' : `Added by ${me.name} with ${services}.`, input.handoverNote ? `Handover: ${input.handoverNote}` : null].filter(Boolean).join(' '), link });
-    await this.notifications.notify(me.orgId, leads.filter((x) => x !== me.id && x !== amId), { kind: 'client_created', title: `${me.name} added ${client.name}`, body: `${migration ? 'Migrated client' : 'New client'} · ${services}`, link });
+    if (!merged) {
+      const who = clientsAddsOwnOnly(me) ? `${me.name} (Client Manager)` : me.name;
+      await this.notifications.notify(me.orgId, founders.filter((x) => x !== me.id), { kind: 'client_created', title: `${who} ${migration ? 'brought in' : 'added'} a new client: ${client.name}`, body: `${migration ? 'Migrated client' : 'New client'} · ${services}${input.payment === 'offline' ? ' · offline payment to confirm' : ''}`, link });
+    }
+    await this.notifications.notify(me.orgId, leads.filter((x) => x !== me.id && x !== amId && !founders.includes(x)), { kind: 'client_created', title: `${me.name} added ${client.name}`, body: `${migration ? 'Migrated client' : 'New client'} · ${services}`, link });
     if (needsPayment || result.pastCount) await this.notifications.notify(me.orgId, finance.filter((x) => x !== me.id), { kind: 'client_created', title: `New client ${client.name}${input.payment === 'offline' ? ': confirm the offline payment' : ''}`, body: result.invoice ? `First invoice ${result.invoice.number} issued.` : `${result.pastCount} past invoice(s) imported.`, link: input.payment === 'offline' ? '/team/approvals' : link, critical: input.payment === 'offline' });
     if (result.invites.created.length) await this.welcome(me, client.id, result.invites.created, amId);
     if (result.invites.pending.length) await this.requestOwnerConfirmations(me, client.id, client.name, result.invites.pending);

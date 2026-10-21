@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
   LEAD_STAGES,
   leadStageLabels,
@@ -12,6 +12,8 @@ import {
   type RevenuePeriod,
   type RevenueView,
   type WeeklyReviewView,
+  type NewClientRow,
+  type NewClientsView,
 } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assertCommand, assertMoney, canSeeMoney, canWriteFinance, seesAllDepartments } from './access.js';
@@ -64,6 +66,47 @@ export class InsightsService {
 
   // -------------------------------------------------------------------------
   // Weekly Review
+
+  /** v33: clients added recently and who added them (Founder, Branch Manager, CM Lead, Finance). */
+  async newClients(me: Me): Promise<NewClientsView> {
+    assertCommand(me);
+    if (!seesAllDepartments(me)) throw new ForbiddenException('New clients are for the Founder, Branch Manager, CM Lead and Finance');
+    const days = 30;
+    const events = await this.prisma.auditEvent.findMany({
+      where: { orgId: me.orgId, entity: 'ClientOrg', action: { in: ['client.created', 'client.migrated', 'client.converted_from_lead'] }, at: { gte: new Date(Date.now() - days * DAY) } },
+      orderBy: { at: 'desc' },
+      take: 50,
+      select: { entityId: true, actorId: true, action: true, at: true },
+    });
+    const clientIds = [...new Set(events.map((e) => e.entityId))];
+    const [clients, engs] = await Promise.all([
+      this.prisma.clientOrg.findMany({ where: { id: { in: clientIds }, orgId: me.orgId, deletedAt: null }, select: { id: true, name: true, amUserId: true } }),
+      this.prisma.engagement.groupBy({ by: ['clientOrgId'], where: { clientOrgId: { in: clientIds }, deletedAt: null }, _count: { _all: true } }),
+    ]);
+    const userIds = [...new Set([...events.map((e) => e.actorId), ...clients.map((c) => c.amUserId)].filter((x): x is string => !!x))];
+    const users = await this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, roles: { select: { role: { select: { baseRole: true } } } } } });
+    const roleLabel = (roles: string[]) =>
+      roles.includes('founder') ? 'Founder' : roles.includes('admin') ? 'Branch Manager' : roles.includes('am_lead') ? 'CM Lead' : roles.includes('sales_manager') ? 'Sales Manager' : roles.includes('account_manager') ? 'Client Manager' : 'Team';
+    const seen = new Set<string>();
+    const rows: NewClientRow[] = [];
+    for (const e of events) {
+      const c = clients.find((x) => x.id === e.entityId);
+      if (!c || seen.has(c.id)) continue;
+      seen.add(c.id);
+      const by = users.find((u) => u.id === e.actorId);
+      const cm = users.find((u) => u.id === c.amUserId);
+      rows.push({
+        id: c.id,
+        name: c.name,
+        addedAt: e.at.toISOString(),
+        how: e.action === 'client.migrated' ? 'migrated' : e.action === 'client.converted_from_lead' ? 'from_lead' : 'new',
+        addedBy: by ? { id: by.id, name: by.name, role: roleLabel(by.roles.map((r) => r.role.baseRole)) } : null,
+        cm: cm ? { id: cm.id, name: cm.name } : null,
+        services: engs.find((g) => g.clientOrgId === c.id)?._count._all ?? 0,
+      });
+    }
+    return { days, rows: rows.slice(0, 20), total: rows.length, byCm: rows.filter((r) => r.addedBy?.role === 'Client Manager').length };
+  }
 
   async weekly(me: Me): Promise<WeeklyReviewView> {
     assertCommand(me);

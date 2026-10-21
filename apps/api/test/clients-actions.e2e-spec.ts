@@ -118,11 +118,30 @@ afterAll(async () => {
 });
 
 describe('add_client: who may add, validation and duplicates', () => {
-  it('refuses roles outside Founder, Branch Manager, Sales Manager and CM Lead', async () => {
-    for (const who of ['am', 'design', 'finance']) {
+  it('refuses roles outside Founder, Branch Manager, Sales Manager, CM Lead and Client Managers', async () => {
+    for (const who of ['design', 'finance']) {
       const r = await http().post('/clients-actions').set(as(who)).send(base('Nope')).expect(code(403));
       expect(r.body.message).toMatch(/Founder|Branch Manager|Sales Manager|CM Lead/);
     }
+  });
+
+  it('v33: a Client Manager adds a client for themselves, and the Founder is told and sees it', async () => {
+    const opts = (await http().get('/clients-actions/form-options').set(as('am')).expect(code(200))).body;
+    expect(opts.ownOnly).toBe(true);
+    expect(opts.ams.map((a: { id: string }) => a.id)).toEqual([ids.am]);
+    expect(opts.canMigrate).toBe(true);
+    // Not for another Client Manager.
+    const other = await http().post('/clients-actions').set(as('am')).send(base('CM Other', { amUserId: ids.am2 })).expect(code(403));
+    expect(other.body.message).toMatch(/Clients you add are yours/);
+    const r = await create('am', base('CM Own'));
+    const c = await prisma.clientOrg.findUniqueOrThrow({ where: { id: r.client.id } });
+    expect(c.amUserId).toBe(ids.am);
+    const note = await prisma.notification.findFirst({ where: { userId: ids.founder, kind: 'client_created', title: { contains: tag('CM Own') } } });
+    expect(note?.title).toMatch(/\(Client Manager\) added a new client/);
+    const fresh = (await http().get('/insights/new-clients').set(as('founder')).expect(code(200))).body;
+    expect(fresh.rows.find((x: { id: string }) => x.id === r.client.id)).toMatchObject({ how: 'new', addedBy: { id: ids.am, role: 'Client Manager' }, cm: { id: ids.am } });
+    expect(fresh.byCm).toBeGreaterThan(0);
+    await http().get('/insights/new-clients').set(as('am')).expect(code(403));
   });
 
   it('checks the GSTIN format and required fields in plain English', async () => {

@@ -304,3 +304,15 @@ export const createPayoutSchema = z.object({
 export type CreatePayout = z.infer<typeof createPayoutSchema>;
 
 export const markPayoutPaidSchema = z.object({ ref: z.string().trim().min(3, "Enter the payment reference").max(100) });
+
+/** v33: clients added recently, and by whom (Founder's Weekly Review). */
+export type NewClientRow = {
+  id: string;
+  name: string;
+  addedAt: string;
+  how: "new" | "migrated" | "from_lead";
+  addedBy: { id: string; name: string; role: string } | null;
+  cm: { id: string; name: string } | null;
+  services: number;
+};
+export type NewClientsView = { days: number; rows: NewClientRow[]; byCm: number; total: number };
