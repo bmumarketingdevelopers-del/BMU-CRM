@@ -28,6 +28,7 @@ import { applyNotificationTemplate } from '../notifications/notifications.servic
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { AWAY_LEAVE, loadLeaveRouting, paidAccrued, splitPaid } from '../admin-org/leave-flow.js';
+import { SENT_FILE_TAGS } from '../ops-actions/file-access.js';
 import { assertStaff, canSeeBilling, currentWeek, dayOf, dbDate, eachDay, excerpt, hasRole, isUniqueError, isWorkDay, monthRange, workingDaysIn } from './util.js';
 
 const OPEN: TaskStatus[] = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
@@ -111,7 +112,8 @@ export class TeamWorkspaceService {
       billing ? this.prisma.invoice.findMany({ where: { clientOrgId: c.id }, include: { payments: true }, orderBy: { createdAt: 'desc' } }) : Promise.resolve(null),
       this.prisma.message.findMany({ where: { thread: { clientOrgId: c.id } }, orderBy: { createdAt: 'desc' }, take: 6 }),
       this.prisma.message.findFirst({ where: { thread: { clientOrgId: c.id }, isInternal: false }, orderBy: { createdAt: 'desc' } }),
-      this.prisma.file.findMany({ where: { clientOrgId: c.id }, orderBy: { createdAt: 'desc' }, take: 10 }),
+      // v38: files sent in discussions and on tasks stay with the people they were sent to.
+      this.prisma.file.findMany({ where: { clientOrgId: c.id, NOT: { tags: { hasSome: SENT_FILE_TAGS } } }, orderBy: { createdAt: 'desc' }, take: 10 }),
     ]);
 
     const entityIds = [

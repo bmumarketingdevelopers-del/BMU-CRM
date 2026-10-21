@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { taskStatusLabels, type CoreTaskDetail, type CoreTaskFormOptions, type CoreTaskRow, type TaskStatus } from "@bmu/shared";
 import { Badge } from "@/components/ui";
@@ -9,6 +9,7 @@ import { useActions, useActionShortcuts } from "@/components/actions/actions-pro
 import { HistoryTab } from "@/components/actions/history-tab";
 import { RowMenu } from "@/components/actions/row-menu";
 import { taskMenuItems, useTaskActionDialogs } from "@/components/actions/tasks/task-menu";
+import { SENT_FILE_MAX, SentFileList } from "@/components/sent-files";
 
 const day = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 const statusTone = (s: string) => (s === "done" ? "green" : s === "blocked" ? "red" : s === "waiting" ? "amber" : s === "in_progress" ? "dark" : "neutral");
@@ -244,6 +245,7 @@ export function TaskDetailView({ id }: { id: string }) {
                 </ul>
               </section>
             )}
+            <TaskFiles task={t} onSaved={setTask} notify={notify} />
             <Checklist task={t} onSaved={setTask} />
             <Subtasks task={t} onAdd={() => openNew("task", { parentId: t.id, engagementId: t.engagementId ?? undefined, internal: t.isInternal ? "1" : undefined }, reload)} />
             <Dependencies task={t} onSaved={setTask} />
@@ -317,6 +319,45 @@ function DraftBox({ task, onDone }: { task: CoreTaskDetail; onDone: () => void }
         </div>
       )}
     </div>
+  );
+}
+
+/** v38: files sent on the task. The owner, creator and watchers are told, and find them in Files ("Task"). */
+function TaskFiles({ task, onSaved, notify }: { task: CoreTaskDetail; onSaved: (t: CoreTaskDetail) => void; notify: (m: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const picker = useRef<HTMLInputElement>(null);
+  async function send(list: FileList | null) {
+    if (!list?.length) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      for (const f of Array.from(list).slice(0, 10)) {
+        if (f.size > SENT_FILE_MAX) throw new Error(`${f.name} is larger than 200 MB`);
+        const r = await api.coreTasks.attachFile(task.id, f);
+        onSaved(r.task);
+        notify(r.message);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      if (picker.current) picker.current.value = "";
+    }
+  }
+  const files = task.files ?? [];
+  return (
+    <section>
+      <h2 className="flex items-center justify-between text-sm font-semibold">
+        <span>Files{files.length ? ` (${files.length})` : ""}</span>
+        <label className="cursor-pointer text-xs font-normal underline">
+          {busy ? "Sending…" : "📎 Send a file"}
+          <input ref={picker} type="file" multiple className="sr-only" disabled={busy} onChange={(e) => send(e.target.files)} aria-label="Send a file on this task" />
+        </label>
+      </h2>
+      {files.length ? <SentFileList files={files} /> : <p className="mt-1 text-xs text-ink-muted">No files yet. Files sent here reach the owner, the creator and watchers, also in their Files.</p>}
+      {error && <p className="mt-1 text-sm text-red">{error}</p>}
+    </section>
   );
 }
 

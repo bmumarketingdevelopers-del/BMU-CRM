@@ -172,8 +172,13 @@ export class OpsFilesService implements OnModuleInit {
       const asset = assetFiles.find((a) => a.fileId === f.id);
       // Older client uploads have no uploader recorded: no versions, no tags, not an asset, in a client's general folder.
       const fromClient = isClient(f.uploadedById) || f.folder === 'from_client' || (!f.uploadedById && !f.versions.length && !asset && !!f.clientOrgId && !f.tags.length && f.folder === 'general');
-      const source: OpsFileSource = f.tags.includes('payment-proof')
-        ? 'payment_proof'
+      // v38: files sent to teammates in a discussion or on a task.
+      const source: OpsFileSource = f.tags.includes('discussion-file')
+        ? 'discussion'
+        : f.tags.includes('task-file')
+          ? 'task'
+          : f.tags.includes('payment-proof')
+            ? 'payment_proof'
         : f.versions.length
           ? 'review'
           : asset

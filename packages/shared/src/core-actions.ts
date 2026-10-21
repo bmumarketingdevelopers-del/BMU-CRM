@@ -462,6 +462,8 @@ export type CoreTaskDetail = CoreTaskRow & {
   description: string | null;
   brief: string | null;
   references: string[];
+  /** v38: files sent on the task (the owner, creator, watchers and leadership see them, also in Files). */
+  files?: { id: string; name: string; url: string; mimeType: string | null; sizeBytes: number | null; by?: string; at?: string }[];
   checklist: { id: string; label: string; done: boolean }[];
   estimateHours: number | null;
   preProduction: boolean;

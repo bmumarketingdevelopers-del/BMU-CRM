@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
 import {
   coreTaskActivateSchema,
   coreTaskBulkSchema,
@@ -17,6 +17,7 @@ import { ClientIp, CurrentUser } from '../../common/decorators.js';
 import { parse } from '../../common/zod.js';
 import { TasksActionsService } from './tasks.service.js';
 import { cached } from '../../platform/read-cache.js';
+import { opsUpload, type OpsUpload } from '../../ops-actions/ops-util.js';
 
 /**
  * v11 core: task actions. Shares the /tasks prefix with Production (GET /tasks and PATCH /tasks/:id keep working);
@@ -71,6 +72,13 @@ export class TasksActionsController {
   @Get(':id')
   get(@CurrentUser() me: Me, @Param('id') id: string) {
     return this.tasks.get(me, id);
+  }
+
+  /** v38: send a file on the task (the owner, creator and watchers find it in Files too). */
+  @Post(':id/files')
+  @UseInterceptors(opsUpload)
+  attachFile(@CurrentUser() me: Me, @Param('id') id: string, @UploadedFile() file: OpsUpload | undefined, @ClientIp() ip?: string) {
+    return this.tasks.attachFile(me, id, file, ip);
   }
 
   @Patch(':id/details')

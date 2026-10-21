@@ -5,16 +5,30 @@
 //   of clients their department works on (v37).
 // - Team members: their department's files and the Client files of the clients they work on.
 // - Everyone: files they uploaded themselves. Files with no client: the uploader's department and leadership.
+// - v38: files sent in a discussion or on a task are private to that conversation: the sender, the people in the
+//   discussion (project threads: everyone on the client) or the task's owner, creator and watchers, plus the Founder
+//   and Branch Managers. The department rules above don't open them to anyone else.
 import type { Me } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 
 const ALL_FILES = ['founder', 'admin', 'am_lead', 'finance'];
+/** v38: who also sees files sent in discussions and on tasks they are not part of. */
+const SENT_FILES_ALL = ['founder', 'admin'];
+/** v38: tags of files sent to teammates in a discussion or on a task. */
+export const SENT_FILE_TAGS = ['discussion-file', 'task-file'];
 const has = (me: Me, roles: string[]) => me.roles.some((r) => roles.includes(r));
 
+type Sent = {
+  /** v38: files sent to this person (or by them) in discussions and on tasks. */
+  sent: string[];
+  /** v38: Founder / Branch Manager: every sent file too. */
+  allSent: boolean;
+};
+
 export type FileScope =
-  | { all: true }
-  | {
+  | ({ all: true } & Sent)
+  | ({
       all: false;
       /** Clients this person manages as Client Manager: every department. */
       cmClients: string[];
@@ -25,11 +39,34 @@ export type FileScope =
       workClients: string[];
       /** v37: clients a head's department works on: every department's files there. */
       headClients: string[];
-    };
+    } & Sent);
+
+/** v38: files in discussions this person is in (project threads: on clients they work on) and on their tasks. */
+async function sentFiles(prisma: PrismaService, me: Me, projectClients: 'all' | string[]): Promise<string[]> {
+  const watched = (await prisma.watcher.findMany({ where: { userId: me.id, targetType: 'task' }, select: { targetId: true } })).map((w) => w.targetId);
+  const [messages, tasks] = await Promise.all([
+    prisma.message.findMany({
+      where: {
+        orgId: me.orgId,
+        attachments: { isEmpty: false },
+        thread: {
+          type: { in: ['project', 'internal'] },
+          OR: [projectClients === 'all' ? { type: 'project' } : { type: 'project', clientOrgId: { in: projectClients } }, { createdById: me.id }, { participantIds: { has: me.id } }],
+        },
+      },
+      select: { attachments: true },
+    }),
+    prisma.task.findMany({ where: { orgId: me.orgId, attachments: { isEmpty: false }, OR: [{ ownerId: me.id }, { createdById: me.id }, ...(watched.length ? [{ id: { in: watched } }] : [])] }, select: { attachments: true } }),
+  ]);
+  return [...new Set([...messages.flatMap((m) => m.attachments), ...tasks.flatMap((t) => t.attachments)])];
+}
 
 export async function fileScope(prisma: PrismaService, me: Me): Promise<FileScope> {
-  if (me.type !== 'staff') return { all: false, cmClients: [], headDepts: [], memberDept: null, workClients: [], headClients: [] };
-  if (has(me, ALL_FILES)) return { all: true };
+  if (me.type !== 'staff') return { all: false, cmClients: [], headDepts: [], memberDept: null, workClients: [], headClients: [], sent: [], allSent: false };
+  const allSent = has(me, SENT_FILES_ALL);
+  // Project threads are open to leadership and Department Heads (as in Discussions).
+  const allProjects = has(me, ['founder', 'admin', 'am_lead', 'department_head']);
+  if (has(me, ALL_FILES)) return { all: true, allSent, sent: allSent ? [] : await sentFiles(prisma, me, allProjects ? 'all' : []) };
   const self = await prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } });
   const [managed, engs, myTasks] = await Promise.all([
     prisma.clientOrg.findMany({ where: { orgId: me.orgId, amUserId: me.id }, select: { id: true } }),
@@ -55,16 +92,24 @@ export async function fileScope(prisma: PrismaService, me: Me): Promise<FileScop
     : [];
   const mine = engIds.length ? await prisma.engagement.findMany({ where: { id: { in: engIds } }, select: { clientOrgId: true } }) : [];
   const workClients = [...new Set([...mine.map((e) => e.clientOrgId), ...deptEngs.map((e) => e.clientOrgId), ...cmClients])];
-  return { all: false, cmClients, headDepts, memberDept: self?.departmentId ?? null, workClients, headClients: [...new Set(deptEngs.map((e) => e.clientOrgId))] };
+  const sent = await sentFiles(prisma, me, allProjects ? 'all' : [...new Set([...mine.map((e) => e.clientOrgId), ...cmClients])]);
+  return { all: false, cmClients, headDepts, memberDept: self?.departmentId ?? null, workClients, headClients: [...new Set(deptEngs.map((e) => e.clientOrgId))], sent, allSent };
 }
 
 /** The files a person may see, as a Prisma filter. */
 export function fileWhere(me: Me, s: FileScope): Prisma.FileWhereInput {
-  if (s.all) return {};
+  if (s.all && s.allSent) return {};
+  // v38: files sent in discussions and on tasks: only the people they were sent to (and the sender).
+  const mine: Prisma.FileWhereInput[] = [{ uploadedById: me.id }, ...(s.sent.length ? [{ id: { in: s.sent } }] : [])];
+  const notSent: Prisma.FileWhereInput = { NOT: { tags: { hasSome: SENT_FILE_TAGS } } };
+  if (s.all) return { OR: [...mine, notSent] };
   const myDepts = [...new Set([...s.headDepts, ...(s.memberDept ? [s.memberDept] : [])])];
+  return { OR: [...mine, { AND: [notSent, byDepartment(s, myDepts)] }] };
+}
+
+function byDepartment(s: Extract<FileScope, { all: false }>, myDepts: string[]): Prisma.FileWhereInput {
   return {
     OR: [
-      { uploadedById: me.id },
       ...(s.cmClients.length ? [{ clientOrgId: { in: s.cmClients } }] : []),
       ...(s.headDepts.length ? [{ departmentId: { in: s.headDepts } }] : []),
       // v37: a head sees every department's files for clients their department works on.
@@ -79,8 +124,10 @@ export function fileWhere(me: Me, s: FileScope): Prisma.FileWhereInput {
 }
 
 /** Whether a person may see one file (same rules as fileWhere). */
-export function canSeeFile(me: Me, s: FileScope, f: { uploadedById: string | null; clientOrgId: string | null; departmentId: string | null }) {
-  if (s.all || f.uploadedById === me.id) return true;
+export function canSeeFile(me: Me, s: FileScope, f: { id: string; tags: string[]; uploadedById: string | null; clientOrgId: string | null; departmentId: string | null }) {
+  if (f.uploadedById === me.id || s.sent.includes(f.id)) return true;
+  if (f.tags.some((t) => SENT_FILE_TAGS.includes(t))) return s.all && s.allSent;
+  if (s.all) return true;
   if (f.clientOrgId && s.cmClients.includes(f.clientOrgId)) return true;
   if (f.departmentId && s.headDepts.includes(f.departmentId)) return true;
   if (f.clientOrgId && s.headClients.includes(f.clientOrgId)) return true;

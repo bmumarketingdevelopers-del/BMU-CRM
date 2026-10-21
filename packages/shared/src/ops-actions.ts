@@ -288,7 +288,8 @@ export type OpsFileList = {
 export const OPS_FILE_DIRECTIONS = ["to_client", "from_client", "internal"] as const;
 export type OpsFileDirection = (typeof OPS_FILE_DIRECTIONS)[number];
 export const opsFileDirectionLabels: Record<OpsFileDirection, string> = { to_client: "Sent to client", from_client: "From client", internal: "Internal" };
-export const OPS_FILE_SOURCES = ["chat", "review", "client_upload", "upload", "brand", "asset", "payment_proof"] as const;
+// v38: "discussion" and "task": files sent to teammates in a discussion or on a task (only they and leadership see them).
+export const OPS_FILE_SOURCES = ["chat", "review", "client_upload", "upload", "brand", "asset", "payment_proof", "discussion", "task"] as const;
 export type OpsFileSource = (typeof OPS_FILE_SOURCES)[number];
 export const opsFileSourceLabels: Record<OpsFileSource, string> = {
   chat: "Chat",
@@ -298,6 +299,8 @@ export const opsFileSourceLabels: Record<OpsFileSource, string> = {
   brand: "Brand kit",
   asset: "Asset library",
   payment_proof: "Payment proof",
+  discussion: "Discussion",
+  task: "Task",
 };
 /** v35: files sent to and received from clients (the Founder's dashboard and daily summary). */
 export type OpsClientFileFeed = {
@@ -339,8 +342,12 @@ export const opsThreadCreateSchema = z.object({
 });
 export type OpsThreadCreate = z.input<typeof opsThreadCreateSchema>;
 export type OpsThreadSummary = { id: string; kind: string; title: string; client: { id: string; name: string }; engagement: string | null; participants: string[]; lastMessage: { body: string; author: string; at: string } | null; createdAt: string };
-export type OpsThreadView = OpsThreadSummary & { messages: { id: string; body: string; author: string; mine: boolean; at: string }[]; canPost: boolean };
-export const opsThreadPostSchema = z.object({ body: z.string().trim().min(1, "Write a message").max(4000) });
+/** v38: a file sent in a discussion or on a task. */
+export type SentFile = { id: string; name: string; url: string; mimeType: string | null; sizeBytes: number | null; by?: string; at?: string };
+export type OpsThreadView = OpsThreadSummary & { messages: { id: string; body: string; author: string; mine: boolean; at: string; attachments?: SentFile[] }[]; canPost: boolean };
+export const opsThreadPostSchema = z
+  .object({ body: z.string().trim().max(4000).default(""), attachmentIds: z.array(z.string()).max(5).default([]) })
+  .refine((m) => m.body.length > 0 || m.attachmentIds.length > 0, { message: "Write a message or attach a file", path: ["body"] });
 
 export const OPS_REQUEST_TYPES = REQUEST_TYPES;
 export const opsMessageToRequestSchema = z.object({

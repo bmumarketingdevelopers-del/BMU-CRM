@@ -3,6 +3,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   addWorkingMinutes,
+  fileKindFromMime,
   opsAnnouncementSchema,
   opsCanAnnounce,
   opsMessageToRequestSchema,
@@ -14,6 +15,7 @@ import {
   type OpsAnnouncementRow,
   type OpsThreadSummary,
   type OpsThreadView,
+  type SentFile,
 } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -24,7 +26,7 @@ import { calendarFor } from '../production/generate.js';
 import { threadScope } from '../requests/messages.service.js';
 import { EmailService } from '../service/email.service.js';
 import { SettingsService } from '../settings/settings.service.js';
-import { hasRole, isLeadership } from './ops-util.js';
+import { hasRole, isLeadership, relPath, sha256, type OpsUpload } from './ops-util.js';
 
 const OPS_TYPES = ['project', 'internal'];
 const threadInclude = { clientOrg: { select: { id: true, name: true, amUserId: true } }, engagement: { select: { id: true, service: { select: { name: true } } } }, messages: { orderBy: { createdAt: 'asc' as const } } } satisfies Prisma.ThreadInclude;
@@ -125,8 +127,54 @@ export class OpsCommsService {
   async thread(me: Me, id: string): Promise<OpsThreadView> {
     const t = await this.load(me, id);
     const [s] = await this.summaries(me, [t]);
-    const users = await this.prisma.user.findMany({ where: { id: { in: t.messages.map((m) => m.authorId) } }, select: { id: true, name: true } });
-    return { ...s, messages: t.messages.map((m) => ({ id: m.id, body: m.body, author: users.find((u) => u.id === m.authorId)?.name ?? 'Team', mine: m.authorId === me.id, at: m.createdAt.toISOString() })), canPost: true };
+    const fileIds = t.messages.flatMap((m) => m.attachments);
+    const [users, files] = await Promise.all([
+      this.prisma.user.findMany({ where: { id: { in: t.messages.map((m) => m.authorId) } }, select: { id: true, name: true } }),
+      fileIds.length ? this.prisma.file.findMany({ where: { id: { in: fileIds } }, select: { id: true, name: true, mimeType: true, sizeBytes: true } }) : [],
+    ]);
+    const sent = (id: string): SentFile | null => {
+      const f = files.find((x) => x.id === id);
+      return f ? { id: f.id, name: f.name ?? 'file', url: `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes } : null;
+    };
+    return {
+      ...s,
+      messages: t.messages.map((m) => ({
+        id: m.id,
+        body: m.body,
+        author: users.find((u) => u.id === m.authorId)?.name ?? 'Team',
+        mine: m.authorId === me.id,
+        at: m.createdAt.toISOString(),
+        attachments: m.attachments.map(sent).filter((x): x is SentFile => !!x),
+      })),
+      canPost: true,
+    };
+  }
+
+  /**
+   * v38: a file to send in a discussion. It lands in Files labelled "Discussion", for the people in it only (project
+   * threads: everyone on the client) and the Founder / Branch Managers.
+   */
+  async attach(me: Me, id: string, file: OpsUpload | undefined, ip?: string): Promise<SentFile> {
+    const t = await this.load(me, id);
+    if (!file) throw new BadRequestException('Choose a file to send');
+    const f = await this.prisma.file.create({
+      data: {
+        orgId: me.orgId,
+        clientOrgId: t.clientOrgId,
+        engagementId: t.engagementId,
+        path: relPath(file.path),
+        kind: fileKindFromMime(file.mimetype),
+        name: file.originalname.slice(0, 200),
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        checksum: await sha256(file.path),
+        folder: 'general',
+        tags: ['discussion-file'],
+        uploadedById: me.id,
+      },
+    });
+    await this.audit.log(me, 'thread.file_attached', 'File', f.id, undefined, { threadId: t.id, name: f.name, sizeBytes: f.sizeBytes }, ip);
+    return { id: f.id, name: f.name ?? 'file', url: `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes };
   }
 
   async create(me: Me, body: unknown, ip?: string) {
@@ -166,10 +214,17 @@ export class OpsCommsService {
   async post(me: Me, id: string, body: unknown, ip?: string) {
     const input = parse(opsThreadPostSchema, body);
     const t = await this.load(me, id);
-    const m = await this.prisma.message.create({ data: { orgId: me.orgId, threadId: t.id, authorId: me.id, body: input.body, isInternal: true } });
-    await this.audit.log(me, 'thread.message_posted', 'ClientOrg', t.clientOrgId, undefined, { threadId: t.id, messageId: m.id }, ip);
+    // v38: files uploaded for this discussion by this person, not sent yet.
+    const ids = [...new Set(input.attachmentIds)];
+    if (ids.length) {
+      const ok = await this.prisma.file.count({ where: { id: { in: ids }, orgId: me.orgId, clientOrgId: t.clientOrgId, uploadedById: me.id, tags: { has: 'discussion-file' } } });
+      if (ok !== ids.length) throw new BadRequestException('One of the files could not be found. Attach it again.');
+    }
+    const m = await this.prisma.message.create({ data: { orgId: me.orgId, threadId: t.id, authorId: me.id, body: input.body, isInternal: true, attachments: ids } });
+    await this.audit.log(me, 'thread.message_posted', 'ClientOrg', t.clientOrgId, undefined, { threadId: t.id, messageId: m.id, files: ids.length }, ip);
     const others = [...new Set([t.createdById, ...t.participantIds, ...t.messages.map((x) => x.authorId)])].filter((x): x is string => !!x && x !== me.id);
-    await this.notifications.notify(me.orgId, others, { kind: 'thread_reply', title: `${me.name} replied in "${t.title ?? 'Discussion'}"`, body: input.body.slice(0, 140), link: `/team/discussions/${t.id}`, noEmail: true });
+    const preview = input.body || `Sent ${ids.length} file${ids.length === 1 ? '' : 's'}`;
+    await this.notifications.notify(me.orgId, others, { kind: 'thread_reply', title: `${me.name} replied in "${t.title ?? 'Discussion'}"`, body: preview.slice(0, 140), link: `/team/discussions/${t.id}`, noEmail: true });
     return this.thread(me, id);
   }
 

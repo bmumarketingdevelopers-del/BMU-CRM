@@ -98,6 +98,12 @@ export const coreActionsApi = (t: Transport) => ({
   coreTasks: {
     query: (q: CoreTaskQuery = {}) => t.get<CoreTaskRow[]>(`/tasks/query${qs(q as Record<string, string | undefined>)}`),
     get: (id: string) => t.get<CoreTaskDetail>(`/tasks/${id}`),
+    /** v38: send a file on the task (the owner, creator and watchers find it in Files too). */
+    attachFile: (id: string, file: Blob) => {
+      const form = new FormData();
+      form.append("file", file);
+      return t.request<{ message: string; task: CoreTaskDetail }>(`/tasks/${id}/files`, { method: "POST", body: form });
+    },
     formOptions: (engagementId?: string) => t.get<CoreTaskFormOptions>(`/tasks/form-options${qs({ engagementId })}`),
     create: (input: CoreTaskCreate) => t.post<CoreTaskMutation>("/tasks", input),
     edit: (id: string, input: CoreTaskEdit) => t.patch<CoreTaskMutation>(`/tasks/${id}/details`, input),

@@ -269,6 +269,13 @@ export class OpsCommsController {
     return this.comms.post(me, id, body, ip);
   }
 
+  /** v38: a file to send with the next message in a discussion. */
+  @Post('threads/:id/attachments')
+  @UseInterceptors(opsUpload)
+  attach(@CurrentUser() me: Me, @Param('id') id: string, @UploadedFile() file: OpsUpload | undefined, @ClientIp() ip?: string) {
+    return this.comms.attach(me, id, file, ip);
+  }
+
   @Post('messages/to-request')
   toRequest(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.comms.toRequest(me, body, ip);

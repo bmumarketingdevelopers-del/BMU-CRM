@@ -36,6 +36,7 @@ import type {
   OpsThreadCreate,
   OpsThreadSummary,
   OpsThreadView,
+  SentFile,
 } from "../ops-actions.js";
 
 const qs = (params: Record<string, string | undefined>) => {
@@ -132,7 +133,13 @@ export const opsActionsApi = (t: Transport) => ({
       options: () => t.get<OpsThreadOptions>("/ops/threads/options"),
       create: (body: OpsThreadCreate) => t.post<Msg & { id: string }>("/ops/threads", body),
       get: (id: string) => t.get<OpsThreadView>(`/ops/threads/${id}`),
-      post: (id: string, body: string) => t.post<OpsThreadView>(`/ops/threads/${id}/messages`, { body }),
+      post: (id: string, body: string, attachmentIds: string[] = []) => t.post<OpsThreadView>(`/ops/threads/${id}/messages`, { body, attachmentIds }),
+      /** v38: upload a file to send with the next message (it goes to Files for the people in the discussion). */
+      attach: (id: string, file: Blob) => {
+        const form = new FormData();
+        form.append("file", file);
+        return t.request<SentFile>(`/ops/threads/${id}/attachments`, { method: "POST", body: form });
+      },
       toRequest: (body: OpsMessageToRequest) => t.post<Msg & { id: string; href: string }>("/ops/messages/to-request", body),
     },
     announcements: {

@@ -840,6 +840,8 @@ model Task {
   description          String?
   brief                String?
   references           String[]  @default([])
+  /// v38: files sent on the task (File ids): the owner, creator, watchers and leadership see them in Files
+  attachments          String[]  @default([])
   /// [{ id, label, done }]
   checklist            Json      @default("[]")
   estimateMin          Int?
