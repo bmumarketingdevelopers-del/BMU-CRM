@@ -11,6 +11,9 @@ import { errMsg } from "./kit";
 
 export function FileUploadDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
   const opts = useLoad(() => api.ops.threads.options());
+  // v36: the department the files belong to (default: the uploader's own).
+  const taskOpts = useLoad(() => api.coreTasks.formOptions(), { live: false });
+  const [departmentId, setDepartment] = useState("");
   const [clientOrgId, setClient] = useState(prefill?.clientId ?? "");
   const [engagementId, setEngagement] = useState(prefill?.engagementId ?? "");
   const [folder, setFolder] = useState<OpsFileFolder>((prefill?.folder as OpsFileFolder) ?? "working");
@@ -33,7 +36,7 @@ export function FileUploadDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
     setSaving(true);
     try {
       let last: string | undefined;
-      for (const f of files) last = (await api.ops.files.upload(f, { clientOrgId: clientId, engagementId: engagementId || undefined, folder, tags: tags.split(",").map((t) => t.trim()).filter(Boolean) })).id;
+      for (const f of files) last = (await api.ops.files.upload(f, { clientOrgId: clientId, engagementId: engagementId || undefined, folder, departmentId: departmentId || undefined, tags: tags.split(",").map((t) => t.trim()).filter(Boolean) })).id;
       onSaved(last, files.length === 1 ? `${files[0].name} uploaded` : `${files.length} files uploaded`);
       setFiles([]);
       if (mode !== "another") onClose();
@@ -73,6 +76,16 @@ export function FileUploadDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
           {OPS_FILE_FOLDERS.filter((f) => f !== "from_client").map((f) => (
             <option key={f} value={f}>
               {opsFileFolderLabels[f]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Department" hint="Who the files are for. Team members see their own department's files; the Client Manager and leadership see all.">
+        <select className={inputCls} value={departmentId} onChange={(e) => setDepartment(e.target.value)} aria-label="Department">
+          <option value="">My department</option>
+          {taskOpts.data?.departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
             </option>
           ))}
         </select>

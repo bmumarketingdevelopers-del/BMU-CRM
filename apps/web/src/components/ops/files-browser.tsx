@@ -21,7 +21,7 @@ import { AddButton, EmptyAdd, errMsg, fmtDay, fmtSize, ReasonDialog } from "./ki
 
 /** v35: "clients" = sent to or received from clients. */
 type Shared = "" | "clients" | "to_client" | "from_client" | "internal";
-type F = { q: string; folder: "" | OpsFileFolder; client: string; project: string; archived: boolean; shared?: Shared };
+type F = { q: string; folder: "" | OpsFileFolder; client: string; project: string; archived: boolean; shared?: Shared; dept?: string };
 const DIRECTION_TONE = { to_client: "green", from_client: "amber", internal: "neutral" } as const;
 
 export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }: { clientOrgId?: string; engagementId?: string; compact?: boolean; shared?: Shared }) {
@@ -56,6 +56,7 @@ export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }
       if (f.client && r.client?.id !== f.client) return false;
       if (f.project && r.engagement?.id !== f.project) return false;
       if (f.shared === "clients" ? r.direction === "internal" : f.shared && r.direction !== f.shared) return false;
+      if (f.dept && (f.dept === "client" ? !!r.department : r.department?.id !== f.dept)) return false;
       if (q && ![r.name, r.client?.name, r.engagement?.name, r.uploadedBy, r.sharedBy, ...r.tags].some((x) => x?.toLowerCase().includes(q))) return false;
       return true;
     });
@@ -129,6 +130,7 @@ export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }
                 columns={[
                   { header: "Name", value: (r: OpsFileRow) => r.name },
                   { header: "Folder", value: (r) => opsFileFolderLabels[r.folder] },
+                  { header: "Department", value: (r) => r.department?.name ?? "Client file" },
                   { header: "Shared", value: (r) => (r.direction ? opsFileDirectionLabels[r.direction] : "") },
                   { header: "Where", value: (r) => (r.source ? opsFileSourceLabels[r.source] : "") },
                   { header: "Shared by", value: (r) => r.sharedBy ?? "" },
@@ -155,6 +157,15 @@ export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }
       </div>
       <div className="grid gap-2 border-b border-border p-3 sm:grid-cols-2 lg:grid-cols-4" role="search" aria-label="Filter files">
         <Input placeholder="Search name, tag or person…" aria-label="Search files" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
+        <Select aria-label="Department" value={f.dept ?? ""} onChange={(e) => setF({ ...f, dept: e.target.value })}>
+          <option value="">Every department</option>
+          <option value="client">Client files</option>
+          {list.data?.departments?.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </Select>
         <Select aria-label="Shared" value={f.shared ?? ""} onChange={(e) => setF({ ...f, shared: e.target.value as Shared })}>
           <option value="">Shared or not</option>
           <option value="clients">With clients (both ways)</option>
@@ -235,7 +246,10 @@ export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }
                       ))}
                     </span>
                   </td>
-                  <td className="px-3 py-2">{opsFileFolderLabels[r.folder]}</td>
+                  <td className="px-3 py-2">
+                    {opsFileFolderLabels[r.folder]}
+                    <span className="block text-xs text-ink-muted">{r.department?.name ?? "Client file"}</span>
+                  </td>
                   <td className="px-3 py-2" data-testid="file-shared">
                     {r.direction && <Badge tone={DIRECTION_TONE[r.direction]}>{opsFileDirectionLabels[r.direction]}</Badge>}
                     <span className="mt-0.5 block text-xs text-ink-muted">
@@ -307,7 +321,7 @@ export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }
         </BulkButton>
         <BulkButton onClick={() => setArchiving(sel.ids)}>Archive</BulkButton>
       </BulkBar>
-      {editing && <EditFileDialog file={editing} engagements={clients.find((c) => c.id === editing.client?.id)?.engagements ?? []} onClose={() => setEditing(null)} onDone={(m) => (notify(m), reload())} />}
+      {editing && <EditFileDialog file={editing} departments={list.data?.departments ?? []} engagements={clients.find((c) => c.id === editing.client?.id)?.engagements ?? []} onClose={() => setEditing(null)} onDone={(m) => (notify(m), reload())} />}
       {sharing && <ShareDialog file={sharing} onClose={() => (setSharing(null), reload())} />}
       {history && (
         <ActionDialog open title={`History of ${history.name}`} onClose={() => setHistory(null)} testId="file-history">
@@ -321,11 +335,12 @@ export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }
   );
 }
 
-function EditFileDialog({ file, engagements, onClose, onDone }: { file: OpsFileRow; engagements: { id: string; name: string }[]; onClose: () => void; onDone: (message: string) => void }) {
+function EditFileDialog({ file, engagements, departments, onClose, onDone }: { file: OpsFileRow; engagements: { id: string; name: string }[]; departments: { id: string; name: string }[]; onClose: () => void; onDone: (message: string) => void }) {
   const [name, setName] = useState(file.name);
   const [folder, setFolder] = useState<OpsFileFolder>(file.folder);
   const [tags, setTags] = useState(file.tags.join(", "));
   const [engagementId, setEngagement] = useState(file.engagement?.id ?? "");
+  const [departmentId, setDepartment] = useState(file.department?.id ?? "");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   async function save() {
@@ -333,7 +348,7 @@ function EditFileDialog({ file, engagements, onClose, onDone }: { file: OpsFileR
     setBusy(true);
     setError(undefined);
     try {
-      const r = await api.ops.files.update(file.id, { name: name.trim(), folder, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), engagementId: engagementId || null });
+      const r = await api.ops.files.update(file.id, { name: name.trim(), folder, tags: tags.split(",").map((t) => t.trim()).filter(Boolean), engagementId: engagementId || null, departmentId: departmentId || null });
       onDone(r.message);
       onClose();
     } catch (e) {
@@ -345,7 +360,7 @@ function EditFileDialog({ file, engagements, onClose, onDone }: { file: OpsFileR
   return (
     <ActionDialog
       open
-      title="Move, rename or tag"
+      title="Move, rename, tag or change department"
       onClose={onClose}
       testId="file-edit-dialog"
       footer={
@@ -367,6 +382,16 @@ function EditFileDialog({ file, engagements, onClose, onDone }: { file: OpsFileR
           {OPS_FILE_FOLDERS.filter((x) => x !== "from_client" || file.folder === "from_client").map((x) => (
             <option key={x} value={x}>
               {opsFileFolderLabels[x]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Department" hint="Team members see their own department's files; Client files are for everyone working on the client.">
+        <select className={inputCls} value={departmentId} onChange={(e) => setDepartment(e.target.value)} aria-label="Department">
+          <option value="">Client file (no department)</option>
+          {departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
             </option>
           ))}
         </select>

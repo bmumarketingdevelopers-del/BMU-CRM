@@ -49,6 +49,7 @@ import { CraftManagerService } from './craft-manager.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { checkWindow, leaveOn, loadWorkCalendar } from '../admin-org/work-calendar.js';
 import { DAY, avg, clock, days, inRange, istDow, pct, periodsFrom, plural, round1, shortDay, weekStart, type Periods, type Range } from './craft-util.js';
+import { uploaderDepartment } from '../ops-actions/file-access.js';
 
 const OPEN = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'] as const;
 const LOCKED = ['approved', 'scheduled', 'published'];
@@ -1395,7 +1396,8 @@ export class CraftService {
     if (!file) throw new BadRequestException('Choose a file to upload');
     const kind = file.mimetype.startsWith('image/') ? 'image' : file.mimetype === 'application/pdf' ? 'pdf' : file.mimetype.startsWith('video/') ? 'video' : 'other';
     const f = await this.prisma.file.create({
-      data: { orgId: me.orgId, clientOrgId, path: file.path.slice(storageRoot.length + 1), kind, name: file.originalname, mimeType: file.mimetype, sizeBytes: file.size, tags: ['brand'] },
+      // v36: who uploaded it and their department.
+      data: { orgId: me.orgId, clientOrgId, path: file.path.slice(storageRoot.length + 1), kind, name: file.originalname, mimeType: file.mimetype, sizeBytes: file.size, tags: ['brand'], folder: 'brand', uploadedById: me.id, departmentId: await uploaderDepartment(this.prisma, me.id) },
     });
     await this.audit.log(me, 'craft.brand_file_added', 'ClientOrg', clientOrgId, undefined, { fileId: f.id, name: f.name }, ip);
     return this.brandKit(me, clientOrgId);

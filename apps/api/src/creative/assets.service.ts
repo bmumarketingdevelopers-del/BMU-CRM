@@ -34,6 +34,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { storageRoot } from '../production/production.controller.js';
 import { amOf, clientScope, hasRole, inScope, isLeadership } from './scope.js';
 import { localFile, putFile, relPathOf } from '../storage/file-store.js';
+import { uploaderDepartment } from '../ops-actions/file-access.js';
 
 const DAY = 86_400_000;
 const include = { collection: { select: { id: true, name: true } }, versions: { orderBy: { number: 'asc' } } } satisfies Prisma.AssetInclude;
@@ -343,7 +344,9 @@ export class AssetsService {
   // ------------------------------------------------------------------------------------------------ adding files
 
   /** Adds a stored file as a new asset, or as the next version of `assetId`. */
-  private async attach(me: Me, file: Prisma.FileUncheckedCreateInput, t: { assetId?: string; title?: string; clientOrgId?: string | null; collectionId?: string | null; tags?: string[]; note?: string }, ip?: string) {
+  private async attach(me: Me, fileIn: Prisma.FileUncheckedCreateInput, t: { assetId?: string; title?: string; clientOrgId?: string | null; collectionId?: string | null; tags?: string[]; note?: string }, ip?: string) {
+    // v36: asset files belong to the uploader's department.
+    const file: Prisma.FileUncheckedCreateInput = { ...fileIn, departmentId: fileIn.departmentId ?? (await uploaderDepartment(this.prisma, me.id)) };
     if (t.assetId) {
       const a = await this.load(me, t.assetId);
       if (a.archivedAt) throw new BadRequestException('Restore the asset first');

@@ -412,8 +412,12 @@ describe('files', () => {
     const other = await prisma.clientOrg.findFirstOrThrow({ where: { orgId: ids.org, amUserId: { not: ids.am }, deletedAt: null } });
     await http().post('/ops/files').set(as('am')).field('clientOrgId', other.id).attach('file', png, { filename: 'x.png', contentType: 'image/png' }).expect(403);
     await http().post('/ops/files').set(as('am')).field('clientOrgId', ids.sunrise).expect(400);
-    const r = await http().post('/ops/files').set(as('am')).field('clientOrgId', ids.sunrise).field('folder', 'working').field('tags', 'logo, draft').attach('file', png, { filename: `brochure-${stamp}.png`, contentType: 'image/png' }).expect(201);
+    // v36: filed under the Design department, so the Design head can see and move it.
+    const headUser = await prisma.user.findFirstOrThrow({ where: { email: 'design.head@bmu.demo' } });
+    ids.designDept = (await prisma.department.findFirst({ where: { headUserId: headUser.id, deletedAt: null } }))?.id ?? headUser.departmentId!;
+    const r = await http().post('/ops/files').set(as('am')).field('clientOrgId', ids.sunrise).field('folder', 'working').field('tags', 'logo, draft').field('departmentId', ids.designDept).attach('file', png, { filename: `brochure-${stamp}.png`, contentType: 'image/png' }).expect(201);
     ids.file = r.body.id;
+    expect((await prisma.file.findUniqueOrThrow({ where: { id: ids.file } })).departmentId).toBe(ids.designDept);
     const list = (await http().get(`/ops/files?clientOrgId=${ids.sunrise}`).set(as('am')).expect(200)).body;
     const row = list.rows.find((f: { id: string }) => f.id === ids.file);
     expect(row.folder).toBe('working');

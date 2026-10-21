@@ -44,6 +44,7 @@ import { AssetsService } from '../creative/assets.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { assertAssignee, assignScope } from '../actions/tasks/assign-rules.js';
 import { addDays, dayKind, dayLabel, dbDate, lateMinutes, leaveOn, loadWorkCalendar, nextWorkingDay } from '../admin-org/work-calendar.js';
+import { canSeeFile, fileScope } from '../ops-actions/file-access.js';
 
 const OPEN: TaskStatus[] = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
 const DONE: TaskStatus[] = ['done', 'cancelled'];
@@ -396,6 +397,9 @@ export class ProductionService {
       fileData = {
         orgId: me.orgId,
         clientOrgId: d.cycle.engagement.clientOrgId,
+        // v36: work versions belong to the deliverable's department; uploadedById: who made it.
+        departmentId: d.departmentId,
+        uploadedById: me.id,
         path: src.file.path.slice(storageRoot.length + 1),
         kind: fileKindFromMime(src.file.mimetype),
         name: src.file.originalname,
@@ -404,7 +408,7 @@ export class ProductionService {
         checksum,
       };
     } else if (src.url) {
-      fileData = { orgId: me.orgId, clientOrgId: d.cycle.engagement.clientOrgId, path: src.url, kind: 'link', name: src.url };
+      fileData = { orgId: me.orgId, clientOrgId: d.cycle.engagement.clientOrgId, departmentId: d.departmentId, uploadedById: me.id, path: src.url, kind: 'link', name: src.url };
     } else throw new BadRequestException('Attach a file or paste a link');
 
     const number = (d.versions.at(-1)?.number ?? 0) + 1;
@@ -746,6 +750,10 @@ export class ProductionService {
     } else {
       const reachable = await Promise.all(file.versions.map((v) => this.canSeeDeliverable(me, v.deliverable)));
       if (file.versions.length && !reachable.some(Boolean)) throw new NotFoundException('File not found');
+      // v36: other files by department (see file-access.ts); asset library files follow the library's own access.
+      if (!file.versions.length && !canSeeFile(me, await fileScope(this.prisma, me), file) && !(await this.prisma.assetVersion.count({ where: { fileId: file.id } }))) {
+        throw new NotFoundException('File not found');
+      }
     }
     return file;
   }

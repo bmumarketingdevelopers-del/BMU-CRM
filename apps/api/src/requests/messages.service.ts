@@ -6,6 +6,7 @@ import { isLeadership } from '../engagements/engagement-access.js';
 import { calendarFor } from '../production/generate.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { canSeeFile, fileScope } from '../ops-actions/file-access.js';
 
 const include = { clientOrg: { include: { am: { select: { id: true, name: true } } } }, messages: { orderBy: { createdAt: 'asc' as const } } } satisfies Prisma.ThreadInclude;
 type Row = Prisma.ThreadGetPayload<{ include: typeof include }>;
@@ -186,7 +187,11 @@ export class MessagesService {
       const msg = await this.prisma.message.findFirst({ where: { attachments: { has: fileId } }, select: { isInternal: true, authorId: true } });
       if (file.clientOrgId !== me.clientOrg?.id || (msg ? msg.isInternal : false)) throw new NotFoundException('File not found');
     } else {
-      const ok = await this.prisma.thread.findFirst({ where: { AND: [{ clientOrgId: file.clientOrgId ?? '' }, await threadScope(me)] }, select: { id: true } });
+      // v36: people who may see the file in Files (it was sent in the client conversation) can open it too.
+      const msg = await this.prisma.message.findFirst({ where: { attachments: { has: fileId } }, select: { thread: { select: { type: true } } } });
+      if (msg?.thread.type === 'client_am' && canSeeFile(me, await fileScope(this.prisma, me), file)) return file;
+      const scope = await threadScope(me).catch(() => null);
+      const ok = scope && (await this.prisma.thread.findFirst({ where: { AND: [{ clientOrgId: file.clientOrgId ?? '' }, scope] }, select: { id: true } }));
       if (!ok) throw new NotFoundException('File not found');
     }
     return file;

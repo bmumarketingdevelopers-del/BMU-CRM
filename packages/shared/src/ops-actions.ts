@@ -267,6 +267,8 @@ export type OpsFileRow = {
   shares: number;
   can: { edit: boolean; release: boolean; share: boolean; archive: boolean };
   releaseBlockedReason: string | null;
+  /** v36: the department the file belongs to; null = a Client file (client uploads and client chat). */
+  department?: { id: string; name: string } | null;
   /** v35: sent to the client, received from the client, or kept inside the team. */
   direction?: OpsFileDirection;
   /** v35: where it was shared (chat, review, upload, brand kit, asset library, payment proof). */
@@ -275,7 +277,12 @@ export type OpsFileRow = {
   sharedAt?: string | null;
   sharedBy?: string | null;
 };
-export type OpsFileList = { rows: OpsFileRow[]; clients: { id: string; name: string; engagements: { id: string; name: string; gate: string }[] }[] };
+export type OpsFileList = {
+  rows: OpsFileRow[];
+  clients: { id: string; name: string; engagements: { id: string; name: string; gate: string }[] }[];
+  /** v36: departments to file under (upload, move). */
+  departments?: { id: string; name: string }[];
+};
 
 // v35: every client file in one place, with its direction and where it was shared.
 export const OPS_FILE_DIRECTIONS = ["to_client", "from_client", "internal"] as const;
@@ -305,6 +312,8 @@ export const opsFileUpdateSchema = z.object({
   folder: z.enum(OPS_FILE_FOLDERS).optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
   engagementId: z.string().nullable().optional(),
+  /** v36: the department the file belongs to; null = a Client file. */
+  departmentId: z.string().nullable().optional(),
 });
 export type OpsFileUpdate = z.input<typeof opsFileUpdateSchema>;
 

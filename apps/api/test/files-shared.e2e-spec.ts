@@ -31,7 +31,7 @@ beforeAll(async () => {
   prisma = app.get(PrismaService);
   const org = await prisma.organisation.findFirstOrThrow({ orderBy: { createdAt: 'asc' } });
   ids.org = org.id;
-  for (const [k, email] of Object.entries({ founder: 'founder@bmu.demo', am: 'am@bmu.demo', pm: 'pm@bmu.demo', finance: 'finance@bmu.demo' })) {
+  for (const [k, email] of Object.entries({ founder: 'founder@bmu.demo', am: 'am@bmu.demo', pm: 'pm@bmu.demo', finance: 'finance@bmu.demo', design: 'design@bmu.demo', head: 'design.head@bmu.demo' })) {
     tokens[k] = await signIn(email);
     ids[k] = (await prisma.user.findFirstOrThrow({ where: { email } })).id;
   }
@@ -51,12 +51,36 @@ beforeAll(async () => {
   await prisma.message.create({ data: { orgId: org.id, threadId: thread.id, authorId: ids.am, body: tag('Team note'), attachments: [ids.internalNote], isInternal: true } });
   // A payment proof and a signature image (settings, never listed).
   ids.proof = (await prisma.file.create({ data: { orgId: org.id, clientOrgId: client.id, path: 'test/proof', kind: 'image', name: tag('utr.png'), tags: ['payment-proof'], uploadedById: ids.am } })).id;
+  // v36: departments. The designer works on this client (a task); Design files, another department's file, a Client file.
+  const headed = await prisma.department.findFirst({ where: { headUserId: ids.head, deletedAt: null } });
+  ids.designDept = headed?.id ?? (await prisma.user.findUniqueOrThrow({ where: { id: ids.head } })).departmentId!;
+  await prisma.user.update({ where: { id: ids.design }, data: { departmentId: ids.designDept } });
+  const branchId = (await prisma.department.findUniqueOrThrow({ where: { id: ids.designDept } })).branchId;
+  ids.otherDept = (await prisma.department.create({ data: { orgId: org.id, branchId, name: tag('Other dept') } })).id;
+  const eng = await prisma.engagement.findFirstOrThrow({ where: { clientOrgId: client.id, deletedAt: null } });
+  ids.task = (await prisma.task.create({ data: { orgId: org.id, title: tag('Design work'), ownerId: ids.design, engagementId: eng.id, departmentId: ids.designDept, status: 'todo' } })).id;
+  const deptFile = (name: string, departmentId: string | null, clientOrgId: string | null = client.id) =>
+    prisma.file.create({ data: { orgId: org.id, clientOrgId, departmentId, path: `test/${name}`, kind: 'image', name: tag(name), uploadedById: ids.am, folder: 'working' } });
+  ids.designFile = (await deptFile('design-board.png', ids.designDept)).id;
+  ids.otherFile = (await deptFile('other-dept.png', ids.otherDept)).id;
+  ids.clientFile = (await deptFile('client-logo.png', null)).id;
+  // Another client's Design file: the head sees it, the designer (not on that client) does not.
+  const elsewhere = await prisma.clientOrg.findFirstOrThrow({ where: { id: { not: client.id }, orgId: org.id, deletedAt: null } });
+  ids.elsewhereFile = (await deptFile('elsewhere-design.png', ids.designDept, elsewhere.id)).id;
+  // Fix 2: a file in a team-only project thread is not a client file.
+  const projectThread = await prisma.thread.create({ data: { orgId: org.id, clientOrgId: client.id, type: 'project', title: tag('Project chat') } });
+  ids.projectThread = projectThread.id;
+  ids.teamChatFile = (await file(tag('team-chat.png'))).id;
+  await prisma.message.create({ data: { orgId: org.id, threadId: projectThread.id, authorId: ids.am, body: tag('team file'), attachments: [ids.teamChatFile] } });
   ids.signature = (await prisma.file.create({ data: { orgId: org.id, path: 'test/sig', kind: 'image', name: tag('sig.png'), tags: ['cm-signature'], uploadedById: ids.am } })).id;
 });
 
 afterAll(async () => {
   await prisma.message.deleteMany({ where: { body: { contains: `${stamp}` } } });
+  await prisma.thread.deleteMany({ where: { id: ids.projectThread } });
+  await prisma.task.deleteMany({ where: { id: ids.task } });
   await prisma.file.deleteMany({ where: { name: { contains: `${stamp}` } } });
+  await prisma.department.update({ where: { id: ids.otherDept }, data: { deletedAt: new Date() } });
   await app.close();
 });
 
@@ -104,3 +128,36 @@ describe("the Founder's client files", () => {
     await http().get('/ops/files/client-feed').set(as('finance')).expect(403);
   });
 });
+
+describe('files by department (v36)', () => {
+  const sees = async (who: string, id: string) => (await list(who)).some((r) => r.id === id);
+
+  it('team members see their department and Client files of clients they work on; not other departments', async () => {
+    expect(await sees('design', ids.designFile)).toBe(true);
+    expect(await sees('design', ids.clientFile)).toBe(true);
+    expect(await sees('design', ids.otherFile)).toBe(false);
+    expect(await sees('design', ids.elsewhereFile)).toBe(false);
+  });
+
+  it("Department Heads see their department's files across clients; Client Managers all of their clients'; leadership everything", async () => {
+    expect(await sees('head', ids.designFile)).toBe(true);
+    expect(await sees('head', ids.elsewhereFile)).toBe(true);
+    expect(await sees('head', ids.otherFile)).toBe(false);
+    for (const id of [ids.designFile, ids.otherFile, ids.clientFile]) expect(await sees('am', id)).toBe(true);
+    for (const id of [ids.designFile, ids.otherFile, ids.elsewhereFile]) expect(await sees('founder', id)).toBe(true);
+    const row = (await list('am')).find((r) => r.id === ids.designFile) as Row & { department?: { id: string } };
+    expect(row.department?.id).toBe(ids.designDept);
+  });
+
+  it('direct links follow the same rules', async () => {
+    const refused = (r: request.Response) => r.status === 404 && /File not found/.test(JSON.stringify(r.body));
+    expect(refused(await http().get(`/files/${ids.otherFile}`).set(as('design')))).toBe(true);
+    expect(refused(await http().get(`/files/${ids.designFile}`).set(as('design')))).toBe(false);
+    expect(refused(await http().get(`/files/${ids.otherFile}`).set(as('founder')))).toBe(false);
+  });
+
+  it('files in team-only threads are not client files', async () => {
+    expect((await list('founder')).some((r) => r.id === ids.teamChatFile)).toBe(false);
+  });
+});
+

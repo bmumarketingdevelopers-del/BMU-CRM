@@ -30,6 +30,7 @@ import { appUrl } from '../service/email.service.js';
 import { day, hasRole, isLeadership, lc, relPath, sha256, type OpsUpload } from './ops-util.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
 import { claimOnce } from '../runtime/claims.js';
+import { canSeeFile, fileScope, fileWhere, uploaderDepartment } from './file-access.js';
 
 const fileInclude = { versions: { select: { id: true, sentToClientAt: true, sentById: true } } } as const;
 /** v35: signature and seal images are settings, not client files. */
@@ -111,10 +112,11 @@ export class OpsFilesService implements OnModuleInit {
   }
 
   private async staffFile(me: Me, id: string) {
+    if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
     const f = await this.prisma.file.findFirst({ where: { id, orgId: me.orgId, kind: { not: ATTACHMENT_KIND } }, include: fileInclude });
     if (!f) throw new NotFoundException('File not found');
-    const scope = await this.clientScope(me);
-    if (scope !== 'all' && f.uploadedById !== me.id && !(f.clientOrgId && scope.includes(f.clientOrgId))) throw new NotFoundException('File not found');
+    // v36: by department (see file-access.ts).
+    if (!canSeeFile(me, await fileScope(this.prisma, me), f)) throw new NotFoundException('File not found');
     return f;
   }
 
@@ -152,7 +154,7 @@ export class OpsFilesService implements OnModuleInit {
     const ids = rows.map((r) => r.id);
     const chatIds = rows.filter((r) => r.kind === ATTACHMENT_KIND).map((r) => r.id);
     const [messages, assetFiles] = await Promise.all([
-      chatIds.length ? this.prisma.message.findMany({ where: { attachments: { hasSome: chatIds } }, select: { attachments: true, authorId: true, isInternal: true, createdAt: true } }) : [],
+      chatIds.length ? this.prisma.message.findMany({ where: { attachments: { hasSome: chatIds } }, select: { attachments: true, authorId: true, isInternal: true, createdAt: true, thread: { select: { type: true } } } }) : [],
       ids.length ? this.prisma.assetVersion.findMany({ where: { fileId: { in: ids } }, select: { fileId: true, asset: { select: { clientVisible: true } } } }) : [],
     ]);
     const peopleIds = [...new Set([...rows.map((r) => r.uploadedById), ...messages.map((m) => m.authorId)].filter((x): x is string => !!x))];
@@ -162,8 +164,8 @@ export class OpsFilesService implements OnModuleInit {
     for (const f of rows) {
       if (f.kind === ATTACHMENT_KIND) {
         const m = messages.find((x) => x.attachments.includes(f.id));
-        // Attached but never sent: not shared with anyone.
-        out.set(f.id, m ? { source: 'chat', direction: m.isInternal ? 'internal' : isClient(m.authorId) ? 'from_client' : 'to_client', sharedAt: m.createdAt, sharedById: m.authorId } : null);
+        // Attached but never sent, or sent in a team-only thread (project / internal discussion): not a client file.
+        out.set(f.id, m && m.thread.type === 'client_am' ? { source: 'chat', direction: m.isInternal ? 'internal' : isClient(m.authorId) ? 'from_client' : 'to_client', sharedAt: m.createdAt, sharedById: m.authorId } : null);
         continue;
       }
       const sent = f.versions.filter((v) => v.sentToClientAt).sort((a, b) => a.sentToClientAt!.getTime() - b.sentToClientAt!.getTime());
@@ -285,6 +287,7 @@ export class OpsFilesService implements OnModuleInit {
 
   async list(me: Me, q: { clientOrgId?: string; engagementId?: string; folder?: string; archived?: string; direction?: string }): Promise<OpsFileList> {
     const scope = await this.clientScope(me);
+    const fscope = await fileScope(this.prisma, me);
     const where: Prisma.FileWhereInput = {
       orgId: me.orgId,
       archivedAt: q.archived === '1' ? { not: null } : null,
@@ -294,7 +297,8 @@ export class OpsFilesService implements OnModuleInit {
         { OR: [{ kind: { not: ATTACHMENT_KIND }, OR: [{ clientOrgId: { not: null } }, { uploadedById: { not: null } }] }, { kind: ATTACHMENT_KIND, clientOrgId: { not: null } }] },
         { NOT: { tags: { hasSome: PRIVATE_TAGS } } },
         hasRole(me, ...PROOF_ROLES) ? {} : { NOT: { tags: { has: 'payment-proof' } } },
-        scope === 'all' ? {} : { OR: [{ clientOrgId: { in: scope } }, { uploadedById: me.id }] },
+        // v36: by department (see file-access.ts).
+        fileWhere(me, fscope),
         q.clientOrgId ? { clientOrgId: q.clientOrgId } : {},
         q.engagementId ? { engagementId: q.engagementId } : {},
       ],
@@ -304,6 +308,8 @@ export class OpsFilesService implements OnModuleInit {
     // Chat files attached but never sent are not shared with anyone yet.
     const rows = found.filter((f) => shared.get(f.id) !== null && (!q.direction || shared.get(f.id)?.direction === q.direction)).slice(0, 500);
     const clientIds = [...new Set(rows.map((r) => r.clientOrgId).filter((x): x is string => !!x))];
+    const departments = await this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { id: true, name: true, branch: { select: { name: true } } }, orderBy: { name: 'asc' } });
+    const deptLabel = (d: (typeof departments)[number]) => (departments.filter((x) => x.name === d.name).length > 1 ? `${d.name} (${d.branch.name})` : d.name);
     const [clients, users, shares, scopeClients] = await Promise.all([
       this.prisma.clientOrg.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true, amUserId: true } }),
       this.prisma.user.findMany({ where: { id: { in: [...new Set([...rows.map((r) => r.uploadedById), ...[...shared.values()].map((v) => v?.sharedById)].filter((x): x is string => !!x))] } }, select: { id: true, name: true, type: true } }),
@@ -360,6 +366,7 @@ export class OpsFilesService implements OnModuleInit {
                 archive: f.uploadedById === me.id || leader || head || manages,
               },
           releaseBlockedReason: chat ? null : manages ? releaseBlockedReason : f.released ? null : 'Only the Client Manager releases final files',
+          department: ((d) => (d ? { id: d.id, name: deptLabel(d) } : null))(departments.find((d) => d.id === f.departmentId)),
           direction: sh?.direction ?? 'internal',
           source: sh?.source ?? 'upload',
           sharedAt: sh?.sharedAt.toISOString() ?? null,
@@ -369,6 +376,7 @@ export class OpsFilesService implements OnModuleInit {
     return {
       rows: out,
       clients: scopeClients.map((c) => ({ id: c.id, name: c.name, engagements: c.engagements.map((e) => ({ id: e.id, name: e.service.name, gate: e.currentGate })) })),
+      departments: departments.map((d) => ({ id: d.id, name: deptLabel(d) })),
     };
   }
 
@@ -380,7 +388,7 @@ export class OpsFilesService implements OnModuleInit {
     return [...new Set(arr.map((t) => String(t).trim().toLowerCase()).filter((t) => t && t.length <= 40))].slice(0, 20);
   }
 
-  async upload(me: Me, file: OpsUpload | undefined, body: { clientOrgId?: string; engagementId?: string; folder?: string; tags?: unknown; name?: string }, ip?: string) {
+  async upload(me: Me, file: OpsUpload | undefined, body: { clientOrgId?: string; engagementId?: string; folder?: string; tags?: unknown; name?: string; departmentId?: string }, ip?: string) {
     if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
     if (!file) throw new BadRequestException('Choose a file to upload');
     if (!body.clientOrgId) throw new BadRequestException('Pick the client the file is for');
@@ -393,6 +401,13 @@ export class OpsFilesService implements OnModuleInit {
     }
     const folder = (OPS_FILE_FOLDERS as readonly string[]).includes(body.folder ?? '') ? (body.folder as OpsFileFolder) : 'working';
     const tags = this.parseTags(body.tags);
+    // v36: the department picked, else the uploader's.
+    let departmentId = await uploaderDepartment(this.prisma, me.id);
+    if (body.departmentId) {
+      const d = await this.prisma.department.findFirst({ where: { id: body.departmentId, orgId: me.orgId, deletedAt: null }, select: { id: true } });
+      if (!d) throw new BadRequestException('Pick a department');
+      departmentId = d.id;
+    }
     const f = await this.prisma.file.create({
       data: {
         orgId: me.orgId,
@@ -407,6 +422,7 @@ export class OpsFilesService implements OnModuleInit {
         folder,
         tags: folder === 'brand' ? [...new Set([...tags, 'brand'])] : tags,
         uploadedById: me.id,
+        departmentId,
       },
     });
     await this.audit.log(me, 'file.uploaded', 'File', f.id, undefined, { name: f.name, clientOrgId: client.id, engagementId, folder, sizeBytes: f.sizeBytes }, ip);
@@ -519,14 +535,16 @@ export class OpsFilesService implements OnModuleInit {
       }
     }
     const tags = input.tags ? [...new Set(input.tags.map((t) => t.toLowerCase()))] : undefined;
+    if (input.departmentId && !(await this.prisma.department.findFirst({ where: { id: input.departmentId, orgId: me.orgId, deletedAt: null } }))) throw new BadRequestException('Pick a department');
     const data: Prisma.FileUpdateInput = {
+      ...(input.departmentId !== undefined ? { departmentId: input.departmentId } : {}),
       ...(input.name ? { name: input.name } : {}),
       ...(input.folder ? { folder: input.folder } : {}),
       ...(tags ? { tags: input.folder === 'brand' || (f.tags.includes('brand') && input.folder === undefined) ? [...tags, 'brand'] : tags } : {}),
       ...(engagementId !== undefined ? { engagementId } : {}),
     };
     await this.prisma.file.update({ where: { id }, data });
-    const before = { name: f.name, folder: this.folderOf(f), tags: f.tags, engagementId: f.engagementId };
+    const before = { name: f.name, folder: this.folderOf(f), tags: f.tags, engagementId: f.engagementId, departmentId: f.departmentId };
     await this.audit.log(me, input.folder && input.folder !== before.folder ? 'file.moved' : input.name && input.name !== f.name ? 'file.renamed' : 'file.updated', 'File', id, before, input, ip);
     return { id, message: input.folder ? `Moved to ${input.folder.replace('_', ' ')}` : 'Saved' };
   }

@@ -92,7 +92,7 @@ export const opsActionsApi = (t: Transport) => ({
       list: (q: { clientOrgId?: string; engagementId?: string; folder?: string; archived?: string; direction?: string } = {}) => t.get<OpsFileList>(`/ops/files${qs(q)}`),
       /** v35: files sent to and received from clients (Founder). */
       clientFeed: (days = 7) => t.get<OpsClientFileFeed>(`/ops/files/client-feed?days=${days}`),
-      upload: (file: Blob, meta: { clientOrgId: string; engagementId?: string; folder?: string; tags?: string[]; name?: string }) => {
+      upload: (file: Blob, meta: { clientOrgId: string; engagementId?: string; folder?: string; tags?: string[]; name?: string; departmentId?: string }) => {
         const form = new FormData();
         form.append("file", file);
         form.append("clientOrgId", meta.clientOrgId);
@@ -100,6 +100,7 @@ export const opsActionsApi = (t: Transport) => ({
         if (meta.folder) form.append("folder", meta.folder);
         if (meta.tags?.length) form.append("tags", meta.tags.join(","));
         if (meta.name) form.append("name", meta.name);
+        if (meta.departmentId) form.append("departmentId", meta.departmentId);
         return t.request<Msg & { id: string; name: string }>("/ops/files", { method: "POST", body: form });
       },
       update: (id: string, body: OpsFileUpdate) => t.patch<Msg & { id: string }>(`/ops/files/${id}`, body),

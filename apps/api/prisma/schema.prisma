@@ -1056,6 +1056,9 @@ model File {
   tags           String[]  @default([])
   /// v11 ops: folder (from_client | working | final | brand | general), who uploaded it, the project and archive
   folder         String    @default("general")
+  /// v36: the department the file belongs to (work versions: the deliverable's; team uploads: chosen or the
+  /// uploader's). null = a Client file (client uploads, client chat files) or not tied to a department.
+  departmentId   String?
   uploadedById   String?
   engagementId   String?
   archivedAt     DateTime?
@@ -1064,6 +1067,7 @@ model File {
 
   versions Version[]
 
+  @@index([orgId, departmentId])
   @@map("files")
 }
 

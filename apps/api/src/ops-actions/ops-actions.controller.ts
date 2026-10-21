@@ -168,7 +168,7 @@ export class OpsFilesController {
 
   @Post('files')
   @UseInterceptors(opsUpload)
-  upload(@CurrentUser() me: Me, @UploadedFile() file: OpsUpload | undefined, @Body() body: { clientOrgId?: string; engagementId?: string; folder?: string; tags?: string; name?: string }, @ClientIp() ip?: string) {
+  upload(@CurrentUser() me: Me, @UploadedFile() file: OpsUpload | undefined, @Body() body: { clientOrgId?: string; engagementId?: string; folder?: string; tags?: string; name?: string; departmentId?: string }, @ClientIp() ip?: string) {
     return this.files.upload(me, file, body ?? {}, ip);
   }
 
