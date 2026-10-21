@@ -1,8 +1,8 @@
 // v36: who may see a file, by department.
 // - Founder, Branch Manager, CM Lead, Finance: every file.
 // - Client Managers: every file of their own clients (they work across departments with the client).
-// - Department Heads: their department's files across all clients, plus Client files (client uploads, client chat)
-//   of clients their department works on.
+// - Department Heads: their department's files across all clients, plus every file (all departments and Client files)
+//   of clients their department works on (v37).
 // - Team members: their department's files and the Client files of the clients they work on.
 // - Everyone: files they uploaded themselves. Files with no client: the uploader's department and leadership.
 import type { Me } from '@bmu/shared';
@@ -23,10 +23,12 @@ export type FileScope =
       memberDept: string | null;
       /** Clients they (or, for a head, their department) work on: Client files and a member's department files. */
       workClients: string[];
+      /** v37: clients a head's department works on: every department's files there. */
+      headClients: string[];
     };
 
 export async function fileScope(prisma: PrismaService, me: Me): Promise<FileScope> {
-  if (me.type !== 'staff') return { all: false, cmClients: [], headDepts: [], memberDept: null, workClients: [] };
+  if (me.type !== 'staff') return { all: false, cmClients: [], headDepts: [], memberDept: null, workClients: [], headClients: [] };
   if (has(me, ALL_FILES)) return { all: true };
   const self = await prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } });
   const [managed, engs, myTasks] = await Promise.all([
@@ -53,7 +55,7 @@ export async function fileScope(prisma: PrismaService, me: Me): Promise<FileScop
     : [];
   const mine = engIds.length ? await prisma.engagement.findMany({ where: { id: { in: engIds } }, select: { clientOrgId: true } }) : [];
   const workClients = [...new Set([...mine.map((e) => e.clientOrgId), ...deptEngs.map((e) => e.clientOrgId), ...cmClients])];
-  return { all: false, cmClients, headDepts, memberDept: self?.departmentId ?? null, workClients };
+  return { all: false, cmClients, headDepts, memberDept: self?.departmentId ?? null, workClients, headClients: [...new Set(deptEngs.map((e) => e.clientOrgId))] };
 }
 
 /** The files a person may see, as a Prisma filter. */
@@ -65,6 +67,8 @@ export function fileWhere(me: Me, s: FileScope): Prisma.FileWhereInput {
       { uploadedById: me.id },
       ...(s.cmClients.length ? [{ clientOrgId: { in: s.cmClients } }] : []),
       ...(s.headDepts.length ? [{ departmentId: { in: s.headDepts } }] : []),
+      // v37: a head sees every department's files for clients their department works on.
+      ...(s.headClients.length ? [{ clientOrgId: { in: s.headClients } }] : []),
       ...(s.memberDept ? [{ departmentId: s.memberDept, clientOrgId: { in: s.workClients } }] : []),
       // Client files (no department): for everyone working on that client.
       { departmentId: null, clientOrgId: { in: s.workClients } },
@@ -79,6 +83,7 @@ export function canSeeFile(me: Me, s: FileScope, f: { uploadedById: string | nul
   if (s.all || f.uploadedById === me.id) return true;
   if (f.clientOrgId && s.cmClients.includes(f.clientOrgId)) return true;
   if (f.departmentId && s.headDepts.includes(f.departmentId)) return true;
+  if (f.clientOrgId && s.headClients.includes(f.clientOrgId)) return true;
   if (f.departmentId && f.departmentId === s.memberDept && f.clientOrgId && s.workClients.includes(f.clientOrgId)) return true;
   if (!f.departmentId && f.clientOrgId && s.workClients.includes(f.clientOrgId)) return true;
   if (!f.clientOrgId && f.departmentId && (s.headDepts.includes(f.departmentId) || f.departmentId === s.memberDept)) return true;

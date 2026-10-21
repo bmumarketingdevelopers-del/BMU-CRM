@@ -67,6 +67,12 @@ beforeAll(async () => {
   // Another client's Design file: the head sees it, the designer (not on that client) does not.
   const elsewhere = await prisma.clientOrg.findFirstOrThrow({ where: { id: { not: client.id }, orgId: org.id, deletedAt: null } });
   ids.elsewhereFile = (await deptFile('elsewhere-design.png', ids.designDept, elsewhere.id)).id;
+  // v37: another department's file on a client the Design department does not work on.
+  const designEngs = (await prisma.task.findMany({ where: { departmentId: ids.designDept, engagementId: { not: null } }, select: { engagementId: true } })).map((t) => t.engagementId!);
+  const notDesign = await prisma.clientOrg.findFirstOrThrow({
+    where: { orgId: org.id, deletedAt: null, engagements: { none: { OR: [{ id: { in: designEngs } }, { cycles: { some: { deliverables: { some: { departmentId: ids.designDept } } } } }] } } },
+  });
+  ids.notDesignFile = (await deptFile('not-design-client.png', ids.otherDept, notDesign.id)).id;
   // Fix 2: a file in a team-only project thread is not a client file.
   const projectThread = await prisma.thread.create({ data: { orgId: org.id, clientOrgId: client.id, type: 'project', title: tag('Project chat') } });
   ids.projectThread = projectThread.id;
@@ -142,7 +148,9 @@ describe('files by department (v36)', () => {
   it("Department Heads see their department's files across clients; Client Managers all of their clients'; leadership everything", async () => {
     expect(await sees('head', ids.designFile)).toBe(true);
     expect(await sees('head', ids.elsewhereFile)).toBe(true);
-    expect(await sees('head', ids.otherFile)).toBe(false);
+    // v37: every department's files on clients the head's department works on; not on other clients.
+    expect(await sees('head', ids.otherFile)).toBe(true);
+    expect(await sees('head', ids.notDesignFile)).toBe(false);
     for (const id of [ids.designFile, ids.otherFile, ids.clientFile]) expect(await sees('am', id)).toBe(true);
     for (const id of [ids.designFile, ids.otherFile, ids.elsewhereFile]) expect(await sees('founder', id)).toBe(true);
     const row = (await list('am')).find((r) => r.id === ids.designFile) as Row & { department?: { id: string } };
