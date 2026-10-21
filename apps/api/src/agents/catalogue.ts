@@ -18,7 +18,7 @@ import { EmailService } from '../service/email.service.js';
 import { DunningService } from '../service/dunning.service.js';
 import { canWriteFinance } from '../insights/access.js';
 import { loadLedger } from '../insights/ledger.js';
-import { CapacityService } from '../money/capacity.service.js';
+import { CapacityService, NOT_A_BOOKER } from '../money/capacity.service.js';
 import { isMonday, mondayOf, todayIst } from '../money/dates.js';
 import { PaymentsHubService } from '../money/payments-hub.service.js';
 
@@ -405,7 +405,7 @@ export const ACTIONS: Record<AgentAction, ActionImpl> = {
     },
     check: async (i, ctx) => {
       const cap = get(ctx.ref, CapacityService);
-      if (!cap.canBook(ctx.me)) throw new ForbiddenException('Only producers, Client Managers and leadership book people');
+      if (!cap.canBook(ctx.me)) throw new ForbiddenException(NOT_A_BOOKER);
       const e = await get(ctx.ref, PrismaService).engagement.findFirst({ where: { id: String(i.engagementId), orgId: ctx.me.orgId, deletedAt: null }, select: { id: true } });
       if (!e) throw new NotFoundException('Project not found');
       const week = String(i.weekStart);

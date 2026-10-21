@@ -25,6 +25,8 @@ export type CreateApproval = {
   approverRoles?: string[];
   /** Before → after lines shown to the approver. */
   diff?: { field: string; before: string | null; after: string | null }[];
+  /** Replaces the default "<name> needs your approval" notice (e.g. a colleague offering a task). */
+  notice?: { title: string; link?: string };
 };
 
 const isAdmin = (me: Me) => hasRole(me, 'founder', 'admin');
@@ -79,9 +81,9 @@ export class ApprovalsService {
     const recipients = [...new Set([...(approverId ? [approverId] : []), ...(approverRoles.length ? await this.roleHolders(me.orgId, approverRoles) : [])])].filter((id) => id !== me.id);
     await this.notifications.notify(me.orgId, recipients, {
       kind: 'approval_needed',
-      title: `${me.name} needs your approval: ${input.summary}`,
+      title: input.notice?.title ?? `${me.name} needs your approval: ${input.summary}`,
       body: [handler.label, input.reason].filter(Boolean).join(' · '),
-      link: '/team/approvals',
+      link: input.notice?.link ?? '/team/approvals',
       ref: req.id,
     });
     return req;
@@ -197,7 +199,7 @@ export class ApprovalsService {
     await this.audit.log(me, `approval.${input.decision === 'approve' ? 'approved' : 'rejected'}`, this.entity(r.targetType), r.targetId, { status: 'pending' }, { approvalId: r.id, action: r.action, note: input.note ?? null }, ip);
     if (!r.requestedById.startsWith('system:')) await this.notifications.notify(me.orgId, [r.requestedById], {
       kind: 'approval_decided',
-      title: `${me.name} ${input.decision === 'approve' ? 'approved' : 'rejected'}: ${r.summary}`,
+      title: `${me.name} ${handler.decisionWords?.[input.decision] ?? (input.decision === 'approve' ? 'approved' : 'rejected')}: ${r.summary}`,
       body: input.note || undefined,
       link: handler.href?.(r) ?? '/team/approvals',
     });

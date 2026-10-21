@@ -285,7 +285,70 @@ export type BookingRow = {
   note: string | null;
   status: BookingStatus;
 };
-export type WorkloadView = { weeks: string[]; people: WorkloadPerson[]; bookings: BookingRow[]; requests: BookingRow[]; canBook: boolean; holidays: { date: string; name: string }[] };
+export type WorkloadView = {
+  weeks: string[];
+  people: WorkloadPerson[];
+  bookings: BookingRow[];
+  requests: BookingRow[];
+  /** Book project hours: Founder, Branch Manager, CM Lead, Department Heads, Client Managers */
+  canBook: boolean;
+  /** v23: change someone's working hours per week (Founder, Branch Manager, HR, Department Heads) */
+  canSetHours: boolean;
+  holidays: { date: string; name: string }[];
+};
+
+// v23 pass a task: anyone hands one of their own open tasks to a colleague in the same department; it moves when the
+// colleague accepts.
+
+/** Statuses a task can be passed in (QC and client-review steps never). */
+export const TASK_PASS_STATUSES = ["todo", "in_progress", "blocked", "waiting"] as const;
+
+export type PassableTask = {
+  id: string;
+  title: string;
+  status: string;
+  deadline: string | null;
+  /** The estimate, or 2 h when the task has none (same as the workload heatmap) */
+  hours: number;
+  client: string | null;
+  /** Already offered to someone and waiting for them */
+  pending: { id: string; to: string } | null;
+};
+export type PassCandidate = {
+  userId: string;
+  name: string;
+  specialty: string | null;
+  /** The week the task counts in: its deadline week, or this week when overdue or undated */
+  weekStart: string;
+  availableHours: number;
+  freeHours: number;
+  /** Why they can't take it (approved leave on the deadline, no working hours that week) */
+  blocked: string | null;
+  /** They can take it, but it goes past their free hours */
+  warning: string | null;
+};
+export type PassRequestRow = {
+  /** The approval request id (accept / decline / withdraw go through it) */
+  id: string;
+  taskId: string;
+  task: string;
+  deadline: string | null;
+  fromId: string;
+  from: string;
+  toId: string;
+  to: string;
+  note: string | null;
+  createdAt: string;
+  expiresAt: string;
+};
+export type TaskPassView = { department: string | null; tasks: PassableTask[]; sent: PassRequestRow[]; received: PassRequestRow[] };
+
+export const taskPassSchema = z.object({
+  taskId: z.string().min(1, "Pick one of your tasks"),
+  toUserId: z.string().min(1, "Pick a colleague"),
+  note: z.string().trim().min(3, "Add a handover note: what is done and what is left").max(1000),
+});
+export type TaskPassInput = z.infer<typeof taskPassSchema>;
 
 export const bookingSchema = z
   .object({

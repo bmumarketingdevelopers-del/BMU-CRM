@@ -8,7 +8,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
-import type { AgentEvalResult, AgentProposalView, BookingResult, CashflowView, ExpenseList, ExpenseRow, InvoiceScheduleRow, PaymentLinkView, ProfitView, PublicPayView, TimerStopResult, TimerView, UnmatchedList, WorkloadView } from '@bmu/shared';
+import type { AgentEvalResult, AgentProposalView, BookingResult, CashflowView, ExpenseList, ExpenseRow, InvoiceScheduleRow, PassCandidate, PassRequestRow, PaymentLinkView, ProfitView, PublicPayView, TaskPassView, TimerStopResult, TimerView, UnmatchedList, WorkloadView } from '@bmu/shared';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { BillingService } from '../src/requests/billing.service.js';
@@ -33,7 +33,7 @@ const http = () => request(app.getHttpServer());
 const as = (who: string) => ({ Authorization: `Bearer ${tokens[who]}` });
 const stamp = Date.now();
 const today = todayIst();
-const cleanup: { leaves: string[]; bookings: string[] } = { leaves: [], bookings: [] };
+const cleanup: { leaves: string[]; bookings: string[]; tasks: string[] } = { leaves: [], bookings: [], tasks: [] };
 
 async function signIn(email: string) {
   const otp = await http().post('/auth/otp/request').send({ identifier: email }).expect(200);
@@ -60,6 +60,7 @@ beforeAll(async () => {
     tokens[k] = await signIn(email);
     users[k] = (await prisma.user.findFirstOrThrow({ where: { email } })).id;
   }
+  users.video = (await prisma.user.findFirstOrThrow({ where: { email: 'video@bmu.demo' } })).id;
   const service = await prisma.service.findFirstOrThrow({ where: { orgId } });
   const client = await prisma.clientOrg.create({ data: { orgId, name: `Finance Test ${stamp}`, amUserId: users.am } });
   clientId = client.id;
@@ -71,6 +72,9 @@ afterAll(async () => {
   await prisma.leaveRequest.deleteMany({ where: { id: { in: cleanup.leaves } } });
   await prisma.resourceBooking.deleteMany({ where: { OR: [{ id: { in: cleanup.bookings } }, { engagementId: engId }] } });
   await prisma.activeTimer.deleteMany({ where: { userId: users.producer } });
+  await prisma.approvalRequest.deleteMany({ where: { targetType: 'task', targetId: { in: cleanup.tasks } } });
+  await prisma.assignment.deleteMany({ where: { targetType: 'task', targetId: { in: cleanup.tasks } } });
+  await prisma.task.deleteMany({ where: { id: { in: cleanup.tasks } } });
   await app.close();
 });
 
@@ -318,36 +322,36 @@ describe('Capacity', () => {
     const part = await prisma.leaveRequest.create({ data: { orgId, userId: users.design, from: dbDate(partWeek), to: dbDate(addDays(partWeek, 2)), status: 'approved', stage: 'done', reason: `test ${stamp}` } });
     cleanup.leaves.push(full.id, part.id);
 
-    const view = (await http().get(`/capacity/workload?from=${leaveWeek}&weeks=2`).set(as('producer')).expect(200)).body as WorkloadView;
+    const view = (await http().get(`/capacity/workload?from=${leaveWeek}&weeks=2`).set(as('am')).expect(200)).body as WorkloadView;
     expect(view.canBook).toBe(true);
     const me = view.people.find((p) => p.userId === users.design)!;
     expect(me.cells[0]).toMatchObject({ weekStart: leaveWeek, availableHours: 0 });
     expect(me.cells[0].leaveDays).toBeGreaterThan(0);
     expect(me.cells[1].leaveDays).toBe(3);
 
-    const refused = await http().post('/capacity/bookings').set(as('producer')).send({ engagementId: engId, userId: users.design, weekStart: leaveWeek, hours: 4 }).expect(400);
+    const refused = await http().post('/capacity/bookings').set(as('am')).send({ engagementId: engId, userId: users.design, weekStart: leaveWeek, hours: 4 }).expect(400);
     expect(refused.body.message).toMatch(/approved leave/);
-    await http().post('/capacity/bookings').set(as('producer')).send({ engagementId: engId, userId: users.design, weekStart: addDays(leaveWeek, 1), hours: 4 }).expect(400);
+    await http().post('/capacity/bookings').set(as('am')).send({ engagementId: engId, userId: users.design, weekStart: addDays(leaveWeek, 1), hours: 4 }).expect(400);
     await http().post('/capacity/bookings').set(as('sales')).send({ engagementId: engId, userId: users.design, weekStart: partWeek, hours: 4 }).expect(403);
 
     const free = Math.floor(me.cells[1].availableHours - me.cells[1].bookedHours);
-    const ok = (await http().post('/capacity/bookings').set(as('producer')).send({ engagementId: engId, userId: users.design, weekStart: partWeek, hours: free }).expect(201)).body as BookingResult;
+    const ok = (await http().post('/capacity/bookings').set(as('am')).send({ engagementId: engId, userId: users.design, weekStart: partWeek, hours: free }).expect(201)).body as BookingResult;
     expect(ok.created).toHaveLength(1);
     cleanup.bookings.push(ok.created[0].id);
-    const over = await http().post('/capacity/bookings').set(as('producer')).send({ engagementId: engId, userId: users.design, weekStart: partWeek, hours: 1 }).expect(400);
+    const over = await http().post('/capacity/bookings').set(as('am')).send({ engagementId: engId, userId: users.design, weekStart: partWeek, hours: 1 }).expect(400);
     expect(over.body.message).toMatch(/only .* hours free/);
 
     // Several weeks at once: leave weeks are skipped, the rest are booked.
-    const multi = (await http().post('/capacity/bookings').set(as('producer')).send({ engagementId: engId, userId: users.design, weekStart: addDays(leaveWeek, -7), weeks: 2, hours: 2 }).expect(201)).body as BookingResult;
+    const multi = (await http().post('/capacity/bookings').set(as('am')).send({ engagementId: engId, userId: users.design, weekStart: addDays(leaveWeek, -7), weeks: 2, hours: 2 }).expect(201)).body as BookingResult;
     cleanup.bookings.push(...multi.created.map((b) => b.id));
     expect(multi.skipped.some((s) => s.weekStart === leaveWeek && /leave/.test(s.reason))).toBe(true);
 
-    const suggest = (await http().get(`/capacity/suggest?weekStart=${leaveWeek}&specialty=graphic_designer`).set(as('producer')).expect(200)).body as { candidates: { userId: string }[] };
+    const suggest = (await http().get(`/capacity/suggest?weekStart=${leaveWeek}&specialty=graphic_designer`).set(as('am')).expect(200)).body as { candidates: { userId: string }[] };
     expect(suggest.candidates.some((c) => c.userId === users.design)).toBe(false);
   });
 
   it('the Producer agent never proposes booking someone on leave; the safety check proves it refuses', async () => {
-    const req = (await http().post('/capacity/bookings').set(as('producer')).send({ engagementId: engId, specialty: 'graphic_designer', weekStart: leaveWeek, hours: 6 }).expect(201)).body as BookingResult;
+    const req = (await http().post('/capacity/bookings').set(as('am')).send({ engagementId: engId, specialty: 'graphic_designer', weekStart: leaveWeek, hours: 6 }).expect(201)).body as BookingResult;
     expect(req.created[0].status).toBe('requested');
     cleanup.bookings.push(req.created[0].id);
     await http().patch('/agents/producer').set(as('founder')).send({ actsForUserId: users.founder }).expect(200);
@@ -355,12 +359,103 @@ describe('Capacity', () => {
     const inbox = (await http().get('/agents/inbox').set(as('founder')).expect(200)).body as AgentProposalView[];
     expect(inbox.some((p) => p.action === 'book_person' && p.payload.userId === users.design && p.payload.weekStart === leaveWeek)).toBe(false);
     // Filling the request by hand for someone on leave is refused too.
-    await http().patch(`/capacity/bookings/${req.created[0].id}`).set(as('producer')).send({ userId: users.design }).expect(400);
+    await http().patch(`/capacity/bookings/${req.created[0].id}`).set(as('am')).send({ userId: users.design }).expect(400);
 
     const evals = (await http().post('/agents/evals').set(as('founder')).expect(200)).body as AgentEvalResult;
     const c = evals.cases.find((x) => x.key === 'no_booking_on_leave')!;
     expect(c.passed).toBe(true);
     expect(c.detail).toMatch(/leave/);
+  });
+});
+
+describe('Pass a task (v23)', () => {
+  // Meera (producer@) and Rhea (design@) are both in Creative / Design; Aman (video@) is in Video / Production.
+  const passWeek = addDays(mondayOf(today), 35);
+  const due = (week: string, plus = 2) => new Date(`${addDays(week, plus)}T12:30:00Z`); // 6 pm IST
+  const mine = (title: string, extra: { kind?: string; status?: 'todo' | 'in_progress' | 'in_qc'; deadline?: Date } = {}) =>
+    prisma.task
+      .create({ data: { orgId, title: `${title} ${stamp}`, ownerId: users.producer, deadline: extra.deadline ?? due(passWeek), estimateMin: 90, kind: extra.kind ?? 'work', status: extra.status ?? 'todo', isInternal: true, createdById: users.producer } })
+      .then((t) => (cleanup.tasks.push(t.id), t));
+
+  it('team members no longer book project hours; they see their own department on Workload', async () => {
+    const view = (await http().get('/capacity/workload?weeks=1').set(as('producer')).expect(200)).body as WorkloadView;
+    expect(view.canBook).toBe(false);
+    expect(view.canSetHours).toBe(false);
+    expect(view.people.some((p) => p.userId === users.producer)).toBe(true);
+    expect(view.people.some((p) => p.userId === users.design)).toBe(true);
+    expect(view.people.some((p) => p.userId === users.video)).toBe(false);
+    const refused = await http().post('/capacity/bookings').set(as('producer')).send({ engagementId: engId, userId: users.design, weekStart: passWeek, hours: 2 }).expect(403);
+    expect(refused.body.message).toMatch(/Client Managers, Department Heads and leadership/);
+    // Client Managers still book (and see everyone).
+    expect(((await http().get('/capacity/workload?weeks=1').set(as('am')).expect(200)).body as WorkloadView).canBook).toBe(true);
+  });
+
+  it('passes a task to a colleague in the same department once they accept, with the handover note in the history', async () => {
+    const task = await mine('Logo refresh');
+    const people = (await http().get(`/capacity/pass/candidates?taskId=${task.id}`).set(as('producer')).expect(200)).body as PassCandidate[];
+    expect(people.some((p) => p.userId === users.design)).toBe(true);
+    expect(people.some((p) => p.userId === users.video || p.userId === users.producer)).toBe(false);
+    expect(people[0].weekStart).toBe(passWeek);
+
+    await http().post('/capacity/pass').set(as('producer')).send({ taskId: task.id, toUserId: users.video, note: 'Over to you' }).expect(403);
+    await http().post('/capacity/pass').set(as('producer')).send({ taskId: task.id, toUserId: users.design, note: '' }).expect(400);
+    await http().post('/capacity/pass').set(as('design')).send({ taskId: task.id, toUserId: users.design, note: 'Not mine to pass' }).expect(400);
+
+    const row = (await http().post('/capacity/pass').set(as('producer')).send({ taskId: task.id, toUserId: users.design, note: 'Concepts done, final export left' }).expect(201)).body as PassRequestRow;
+    expect(row).toMatchObject({ taskId: task.id, toId: users.design, fromId: users.producer, note: 'Concepts done, final export left' });
+    await http().post('/capacity/pass').set(as('producer')).send({ taskId: task.id, toUserId: users.design, note: 'Again' }).expect(400);
+
+    const meera = (await http().get('/capacity/pass').set(as('producer')).expect(200)).body as TaskPassView;
+    expect(meera.tasks.find((t) => t.id === task.id)?.pending?.id).toBe(row.id);
+    expect(meera.sent.some((r) => r.id === row.id)).toBe(true);
+    const rhea = (await http().get('/capacity/pass').set(as('design')).expect(200)).body as TaskPassView;
+    expect(rhea.received.some((r) => r.id === row.id)).toBe(true);
+    const notice = await prisma.notification.findFirst({ where: { userId: users.design, ref: row.id } });
+    expect(notice?.title).toMatch(/wants to pass you a task/);
+
+    // Nobody else decides for Rhea, not even a Founder; the task is still Meera's until she accepts.
+    await http().post(`/actions/approvals/${row.id}/decide`).set(as('founder')).send({ decision: 'approve' }).expect(403);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).ownerId).toBe(users.producer);
+
+    await http().post(`/actions/approvals/${row.id}/decide`).set(as('design')).send({ decision: 'approve' }).expect(200);
+    const after = await prisma.task.findUniqueOrThrow({ where: { id: task.id } });
+    expect(after.ownerId).toBe(users.design);
+    expect(after.deadline?.toISOString()).toBe(task.deadline?.toISOString());
+    const history = await prisma.assignment.findFirstOrThrow({ where: { targetType: 'task', targetId: task.id } });
+    expect(history).toMatchObject({ fromUserId: users.producer, toUserId: users.design, handoverNote: 'Concepts done, final export left', approvalRequestId: row.id });
+    const told = await prisma.notification.findFirst({ where: { userId: users.producer, title: { contains: 'accepted' } }, orderBy: { createdAt: 'desc' } });
+    expect(told?.title).toMatch(/Logo refresh/);
+  });
+
+  it('a declined task stays with you, and a colleague on leave on the deadline is refused', async () => {
+    const task = await mine('Banner set');
+    const row = (await http().post('/capacity/pass').set(as('producer')).send({ taskId: task.id, toUserId: users.design, note: 'Sizes listed in the brief' }).expect(201)).body as PassRequestRow;
+    await http().post(`/actions/approvals/${row.id}/decide`).set(as('design')).send({ decision: 'reject' }).expect(400); // a reason is needed
+    await http().post(`/actions/approvals/${row.id}/decide`).set(as('design')).send({ decision: 'reject', note: 'Full this week' }).expect(200);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).ownerId).toBe(users.producer);
+
+    const leaveWeek = addDays(passWeek, 7);
+    const leave = await prisma.leaveRequest.create({ data: { orgId, userId: users.design, from: dbDate(addDays(leaveWeek, 2)), to: dbDate(addDays(leaveWeek, 2)), status: 'approved', stage: 'done', reason: `test ${stamp}` } });
+    cleanup.leaves.push(leave.id);
+    const onLeave = await mine('Poster', { deadline: due(leaveWeek) });
+    const people = (await http().get(`/capacity/pass/candidates?taskId=${onLeave.id}`).set(as('producer')).expect(200)).body as PassCandidate[];
+    expect(people.find((p) => p.userId === users.design)?.blocked).toMatch(/approved leave/);
+    const refused = await http().post('/capacity/pass').set(as('producer')).send({ taskId: onLeave.id, toUserId: users.design, note: 'Please take it' }).expect(400);
+    expect(refused.body.message).toMatch(/approved leave/);
+  });
+
+  it('QC steps and tasks in QC are never passed, and a withdrawn offer frees the task again', async () => {
+    const qc = await mine('QC check', { kind: 'qc' });
+    expect((await http().post('/capacity/pass').set(as('producer')).send({ taskId: qc.id, toUserId: users.design, note: 'Please review' }).expect(400)).body.message).toMatch(/QC/);
+    const inQc = await mine('Waiting on QC', { status: 'in_qc' });
+    expect((await http().post('/capacity/pass').set(as('producer')).send({ taskId: inQc.id, toUserId: users.design, note: 'Please' }).expect(400)).body.message).toMatch(/in QC/);
+
+    const task = await mine('Icon set');
+    const row = (await http().post('/capacity/pass').set(as('producer')).send({ taskId: task.id, toUserId: users.design, note: 'Grid is in the folder' }).expect(201)).body as PassRequestRow;
+    await http().post(`/actions/approvals/${row.id}/cancel`).set(as('producer')).expect(200);
+    const view = (await http().get('/capacity/pass').set(as('producer')).expect(200)).body as TaskPassView;
+    expect(view.tasks.find((t) => t.id === task.id)?.pending).toBeNull();
+    expect(view.tasks.some((t) => t.id === qc.id || t.id === inQc.id)).toBe(false);
   });
 });
 

@@ -1,6 +1,8 @@
 "use client";
 // v18 workload: six-week heatmap of each person's booked and task hours against their free hours (after leave and
 // holidays), booking people on projects, skill requests and the best free people for a week.
+// v23: everyone can pass one of their own tasks to a colleague in their department (task-pass.tsx); booking project
+// hours stays with Client Managers, Department Heads and leadership.
 import { Fragment, useState } from "react";
 import type { BookingRow, BookingSuggestions, MoneyOptions, WorkloadCell, WorkloadPerson } from "@bmu/shared";
 import { Badge, Button, Input, LoadState, PageTitle, Select } from "@/components/ui";
@@ -8,6 +10,7 @@ import { DataTable, Panel } from "@/components/dash";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { addDays, day, Field, mondayOf, Note, todayIst } from "./kit";
+import { PassRequests, PassTaskPanel } from "./task-pass";
 
 function cellTone(c: WorkloadCell) {
   if (c.availableHours <= 0) return "bg-canvas text-ink-muted";
@@ -24,6 +27,9 @@ export function Workload() {
   const [from, setFrom] = useState(mondayOf(todayIst()));
   const view = useLoad(() => api.capacity.workload({ from, weeks: "6" }), { live: ["ResourceBooking", "LeaveRequest", "Task"] });
   const options = useLoad(() => api.money.options(), { live: false });
+  // v23: passing your own tasks to a colleague in your department (everyone).
+  const passes = useLoad(() => api.capacity.passView(), { live: ["ApprovalRequest", "Task"] });
+  const [passing, setPassing] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [suggest, setSuggest] = useState<BookingSuggestions | null>(null);
   const [msg, setMsg] = useState<{ error?: string; ok?: string }>({});
@@ -60,6 +66,12 @@ export function Workload() {
       setMsg({ error: (e as Error).message });
     }
   };
+  const passed = (ok: string) => {
+    setMsg({ ok });
+    setPassing(false);
+    passes.reload();
+    view.reload();
+  };
   const fill = (r: BookingRow, userId: string) => api.capacity.updateBooking(r.id, { userId }).then(() => { setMsg({ ok: "Request filled." }); setSuggest(null); view.reload(); }).catch((e: Error) => setMsg({ error: e.message }));
   const setHours = (p: WorkloadPerson) => {
     const h = window.prompt(`${p.name}: working hours per week`, String(p.weeklyHours));
@@ -75,12 +87,15 @@ export function Workload() {
           <div className="flex gap-2 text-sm">
             <Button variant="secondary" onClick={() => move(-1)}>← Earlier</Button>
             <Button variant="secondary" onClick={() => move(1)}>Later →</Button>
-            {v.canBook && <Button onClick={() => open(null, from)} data-testid="new-booking">Book someone</Button>}
+            <Button variant={v.canBook ? "secondary" : "primary"} onClick={() => { setMsg({}); setDraft(null); setPassing(true); }} data-testid="pass-task">Pass a task</Button>
+            {v.canBook && <Button onClick={() => { setPassing(false); open(null, from); }} data-testid="new-booking">Book someone</Button>}
           </div>
         }
       />
       <div className="space-y-6">
         <Note {...msg} />
+        {passing && passes.data && <PassTaskPanel data={passes.data} onClose={() => setPassing(false)} onDone={passed} />}
+        {passes.data && <PassRequests data={passes.data} onDone={passed} onError={(error) => setMsg({ error })} />}
         {draft && (
           <Panel title="Book time on a project" subtitle="People on approved leave, or without free hours that week, are refused." action={<Button variant="ghost" onClick={() => setDraft(null)}>Close</Button>}>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -143,7 +158,7 @@ export function Workload() {
                     <span className="font-medium">{p.name}</span>
                     <span className="block text-xs text-ink-muted">
                       {(p.specialty ?? p.role).replaceAll("_", " ")} ·{" "}
-                      {v.canBook ? <button className="underline" onClick={() => setHours(p)}>{p.weeklyHours}h/week</button> : `${p.weeklyHours}h/week`}
+                      {v.canSetHours ? <button className="underline" onClick={() => setHours(p)}>{p.weeklyHours}h/week</button> : `${p.weeklyHours}h/week`}
                     </span>
                   </td>
                   {p.cells.map((c) => (

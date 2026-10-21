@@ -9,6 +9,7 @@ import { ExpensesService } from './expenses.service.js';
 import { PaymentsHubService, type RazorpayEvent } from './payments-hub.service.js';
 import { ProfitService } from './profit.service.js';
 import { SchedulesService } from './schedules.service.js';
+import { TaskPassService } from './task-pass.service.js';
 import { TimerService } from './timer.service.js';
 
 const safeEqual = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -161,7 +162,26 @@ export class TimerController {
 
 @Controller('capacity')
 export class CapacityController {
-  constructor(private readonly capacity: CapacityService) {}
+  constructor(
+    private readonly capacity: CapacityService,
+    private readonly pass: TaskPassService,
+  ) {}
+
+  // v23 pass a task to a colleague in the same department (accept / decline / withdraw: /actions/approvals/:id/...)
+  @Get('pass')
+  passView(@CurrentUser() me: Me) {
+    return this.pass.view(me);
+  }
+
+  @Get('pass/candidates')
+  passCandidates(@CurrentUser() me: Me, @Query('taskId') taskId: string) {
+    return this.pass.candidates(me, taskId);
+  }
+
+  @Post('pass')
+  passTask(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.pass.request(me, body, ip);
+  }
 
   @Get('workload')
   workload(@CurrentUser() me: Me, @Query('from') from?: string, @Query('weeks') weeks?: string, @Query('team') team?: string) {

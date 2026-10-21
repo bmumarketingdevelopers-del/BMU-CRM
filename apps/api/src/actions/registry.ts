@@ -92,6 +92,8 @@ export interface ApprovalHandler {
   href?(req: ApprovalRow): string | null;
   /** Who may decide this kind of request. When set, it replaces the default rule (named approver, approver roles, or any Founder / Branch Manager). */
   approvers?(me: Me, req: ApprovalRow): boolean;
+  /** Words in the notice the requester gets, e.g. { approve: 'accepted', reject: 'declined' }. Default approved / rejected. */
+  decisionWords?: { approve: string; reject: string };
   apply(ctx: { approver: Me; requester: Me | null; req: ApprovalRow; input?: Record<string, unknown> }): Promise<unknown>;
   onReject?(ctx: { approver: Me; req: ApprovalRow }): Promise<void>;
 }
