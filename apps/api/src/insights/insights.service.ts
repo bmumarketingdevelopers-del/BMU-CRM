@@ -14,6 +14,8 @@ import {
   type WeeklyReviewView,
   type NewClientRow,
   type NewClientsView,
+  DELIVER_SOCIAL_TYPES,
+  type ContentWeekView,
 } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assertCommand, assertMoney, canSeeMoney, canWriteFinance, seesAllDepartments } from './access.js';
@@ -106,6 +108,37 @@ export class InsightsService {
       });
     }
     return { days, rows: rows.slice(0, 20), total: rows.length, byCm: rows.filter((r) => r.addedBy?.role === 'Client Manager').length };
+  }
+
+  /** v34: posts in the next 7 days, work waiting on clients, posts past their time and failed auto-publishing. */
+  async contentWeek(me: Me): Promise<ContentWeekView> {
+    assertCommand(me);
+    if (!me.roles.some((r) => ['founder', 'admin', 'am_lead'].includes(r))) throw new ForbiddenException('Content at a glance is for the Founder, Branch Manager and CM Lead');
+    const now = new Date();
+    const week = new Date(now.getTime() + 7 * DAY);
+    const social = { orgId: me.orgId, type: { in: [...DELIVER_SOCIAL_TYPES] }, archivedAt: null };
+    const sel = { id: true, title: true, channel: true, scheduledAt: true, versions: { where: { sentToClientAt: { not: null } }, select: { sentToClientAt: true }, orderBy: { sentToClientAt: 'desc' }, take: 1 }, cycle: { select: { engagement: { select: { clientOrg: { select: { name: true } } } } } } } as const;
+    const [scheduled, scheduledCount, publishedLast7, waiting, waitingCount, due, failed] = await Promise.all([
+      this.prisma.deliverable.findMany({ where: { ...social, status: 'scheduled', scheduledAt: { gte: now, lt: week } }, select: sel, orderBy: { scheduledAt: 'asc' }, take: 12 }),
+      this.prisma.deliverable.count({ where: { ...social, status: 'scheduled', scheduledAt: { gte: now, lt: week } } }),
+      this.prisma.deliverable.count({ where: { ...social, status: 'published', publishedAt: { gte: new Date(now.getTime() - 7 * DAY) } } }),
+      this.prisma.deliverable.findMany({ where: { orgId: me.orgId, archivedAt: null, status: 'ready_for_client' }, select: sel, orderBy: { dueAt: 'asc' }, take: 8 }),
+      this.prisma.deliverable.count({ where: { orgId: me.orgId, archivedAt: null, status: 'ready_for_client' } }),
+      this.prisma.deliverable.findMany({ where: { ...social, status: 'scheduled', scheduledAt: { lt: now } }, select: sel, orderBy: { scheduledAt: 'asc' }, take: 8 }),
+      this.prisma.postPublication.findMany({ where: { orgId: me.orgId, status: 'failed' }, select: { deliverableId: true, error: true, updatedAt: true }, orderBy: { updatedAt: 'desc' }, take: 8 }),
+    ]);
+    const failedPosts = failed.length ? await this.prisma.deliverable.findMany({ where: { id: { in: failed.map((f) => f.deliverableId) }, status: { not: 'published' } }, select: sel }) : [];
+    const row = (d: (typeof scheduled)[number], note?: string | null) => ({ id: d.id, title: d.title, client: d.cycle.engagement.clientOrg.name, channel: d.channel, at: d.scheduledAt?.toISOString() ?? null, note: note ?? null });
+    return {
+      scheduled: scheduled.map((d) => row(d)),
+      scheduledCount,
+      publishedLast7,
+      // How long since the latest version went to the client.
+      waitingOnClient: waiting.map((d) => ({ ...row(d), days: d.versions[0]?.sentToClientAt ? Math.max(0, Math.floor((now.getTime() - d.versions[0].sentToClientAt.getTime()) / DAY)) : 0 })).sort((a, b) => b.days - a.days),
+      waitingCount,
+      dueToPost: due.map((d) => row(d)),
+      failed: failedPosts.map((d) => row(d, failed.find((f) => f.deliverableId === d.id)?.error ?? 'Could not publish')),
+    };
   }
 
   async weekly(me: Me): Promise<WeeklyReviewView> {

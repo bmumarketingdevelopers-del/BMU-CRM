@@ -9,15 +9,18 @@ import { Button, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { WhoIsOut } from "@/components/who-is-out";
 import { useActionsMaybe } from "@/components/actions/actions-provider";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 const KINDS: { kind: CalendarItemKind; label: string; dot: string }[] = [
   { kind: "task", label: "Task deadlines", dot: "bg-charcoal" },
   { kind: "deliverable", label: "Deliverables due", dot: "bg-green" },
   { kind: "draft_due", label: "First drafts due", dot: "bg-amber" },
+  { kind: "meeting", label: "Meetings", dot: "bg-[#3b6fb6]" },
+  { kind: "post", label: "Social posts", dot: "bg-[#8a4fbf]" },
   { kind: "leave", label: "Leave", dot: "bg-grey" },
   { kind: "holiday", label: "Holidays", dot: "bg-red" },
 ];
-const dotFor = (k: CalendarItemKind) => KINDS.find((x) => x.kind === k)!.dot;
+const dotFor = (k: CalendarItemKind) => KINDS.find((x) => x.kind === k)?.dot ?? "bg-grey";
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** Monday-first grid of the month: leading blanks, then each yyyy-mm-dd. */
@@ -40,6 +43,8 @@ export default function CalendarPage() {
   const [hidden, setHidden] = useState<CalendarItemKind[]>([]);
   const actions = useActionsMaybe();
   const [added, setAdded] = useState(0);
+  // v34: refresh on its own while open (changes anywhere, and every minute).
+  useAutoRefresh(() => setAdded((n) => n + 1), ["Task", "Deliverable", "Cycle", "LeaveRequest", "Meeting", "MeetingParticipant", "Settings"]);
 
   useEffect(() => {
     let live = true;
@@ -67,7 +72,7 @@ export default function CalendarPage() {
     <div className="[&_.grid>*]:min-w-0">
       <PageTitle
         title="Calendar"
-        subtitle="Deadlines, due dates, first drafts, holidays and leave. Click a day to see what is on it. Times are IST."
+        subtitle="Deadlines, due dates, first drafts, meetings, social posts, holidays and leave. Click a day to see what is on it. Times are IST. Updates on its own."
         action={
           <Tabs
             value={view}
@@ -141,7 +146,10 @@ export default function CalendarPage() {
                     {list.slice(0, 3).map((x) => (
                       <li key={x.id} className={`flex items-center gap-1 truncate text-[11px] ${x.done ? "text-ink-muted line-through" : x.overdue ? "text-red" : ""}`}>
                         <span className={`inline-block h-1.5 w-1.5 shrink-0 ${dotFor(x.kind)}`} />
-                        <span className="truncate">{x.title}</span>
+                        <span className="truncate">
+                          {x.time && <span className="tabular-nums text-ink-muted">{x.time} </span>}
+                          {x.title}
+                        </span>
                       </li>
                     ))}
                     {list.length > 3 && <li className="text-[11px] text-ink-muted">+{list.length - 3} more</li>}
@@ -180,7 +188,7 @@ export default function CalendarPage() {
                       <span>{x.title}</span>
                     </p>
                     <p className="ml-4 text-xs text-ink-muted">
-                      {KINDS.find((k) => k.kind === x.kind)!.label.replace(/s$/, "")}
+                      {KINDS.find((k) => k.kind === x.kind)?.label.replace(/s$/, "")}
                       {x.sub && ` · ${x.sub}`}
                       {x.overdue && <span className="text-red"> · overdue</span>}
                     </p>

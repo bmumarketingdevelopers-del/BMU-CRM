@@ -8,6 +8,7 @@ import { istMonth, istToday, monthLabel, shiftMonth } from "@/components/workspa
 import { Badge, Button, Input, LoadState, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const IST = 330 * 60_000;
@@ -57,6 +58,10 @@ export function ContentCalendar({ mode }: { mode: "team" | "client" }) {
       .catch((e: Error) => setError(e.message));
   }, [mode, from, to]);
   useEffect(load, [load]);
+  // v34: refresh on its own while open (approvals, scheduling, publishing anywhere; and every minute), not mid-drag.
+  useAutoRefresh(() => {
+    if (!dragging) load();
+  }, ["Deliverable", "Version", "Approval", "PostPublication", "PostMetric"]);
 
   const items = data?.items ?? [];
   const all = [...items, ...(data?.unscheduled ?? [])];

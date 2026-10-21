@@ -17,6 +17,7 @@ import type {
   RevenueView,
   WeeklyReviewView,
   NewClientsView,
+  ContentWeekView,
 } from "../insights-types.js";
 
 export * from "../insights-types.js";
@@ -48,6 +49,8 @@ export const insightsApi = (t: Transport) => ({
     weekly: () => t.get<WeeklyReviewView>("/insights/weekly"),
     /** v33: clients added in the last 30 days and who added them. */
     newClients: () => t.get<NewClientsView>("/insights/new-clients"),
+    /** v34: posts this week, waiting on clients, due to post and failed to publish. */
+    contentWeek: () => t.get<ContentWeekView>("/insights/content-week"),
     revenue: (period: RevenuePeriod = "month") => t.get<RevenueView>(`/insights/revenue${qs({ period })}`),
     collections: () => t.get<CollectionsView>("/insights/collections"),
     capacity: () => t.get<CapacityView>("/insights/capacity"),

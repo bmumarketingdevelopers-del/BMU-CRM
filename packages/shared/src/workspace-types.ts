@@ -23,8 +23,10 @@ export type Client360 = {
 // ---------------------------------------------------------------------------
 // Calendar (team)
 
-export type CalendarItemKind = "task" | "deliverable" | "draft_due" | "holiday" | "leave";
-export type CalendarItem = { id: string; date: string; kind: CalendarItemKind; title: string; sub?: string; href?: string; done?: boolean; overdue?: boolean };
+/** v34: meetings and scheduled / published social posts are on the calendar too. */
+export type CalendarItemKind = "task" | "deliverable" | "draft_due" | "holiday" | "leave" | "meeting" | "post";
+/** time: "HH:MM" (IST) for meetings and posts. */
+export type CalendarItem = { id: string; date: string; kind: CalendarItemKind; title: string; sub?: string; href?: string; done?: boolean; overdue?: boolean; time?: string };
 export type CalendarView = { month: string; view: "mine" | "team"; today: string; items: CalendarItem[] };
 
 // ---------------------------------------------------------------------------

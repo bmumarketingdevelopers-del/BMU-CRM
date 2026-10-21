@@ -13,6 +13,7 @@ import { AiWeeklyDigest } from "@/components/ai/digest-panel";
 import { ForecastRisks } from "@/components/intelligence/forecast-risks";
 import { AttendanceTodayByDepartment } from "@/components/attendance/today-by-department";
 import { NewClientsPanel } from "@/components/clients/new-clients-panel";
+import { ContentWeekPanel } from "@/components/deliver/content-week-panel";
 import { Legend, WithData, fmtDateTime, inr, inrShort, pctText } from "./_insights/kit";
 
 const stageTone = ["grey", "muted", "amber", "dark", "green", "red"] as const;
@@ -72,6 +73,8 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
           attendance_today: <AttendanceTodayByDepartment />,
           // v33: clients added in the last 30 days, and who added them (including Client Managers).
           new_clients: <NewClientsPanel />,
+          // v34: social content at a glance.
+          content_week: <ContentWeekPanel />,
           money_chart: m ? (
             <Panel className="min-w-0 h-full" title="Invoiced and collected" subtitle="Last six months, including GST" action={<Legend items={[{ label: "Invoiced", className: "bg-grey/60" }, { label: "Collected", className: "bg-charcoal" }]} />}>
               <ColumnChart data={m.byMonth.map((p) => ({ label: p.label, value: p.collectedPaise, secondary: p.invoicedPaise }))} format={inrShort} highlightLast={false} />

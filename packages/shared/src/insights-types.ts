@@ -316,3 +316,15 @@ export type NewClientRow = {
   services: number;
 };
 export type NewClientsView = { days: number; rows: NewClientRow[]; byCm: number; total: number };
+
+/** v34: social content at a glance for the Founder: the next 7 days, what waits on clients, and what went wrong. */
+export type ContentWeekPost = { id: string; title: string; client: string; channel: string | null; at: string | null; note?: string | null };
+export type ContentWeekView = {
+  scheduled: ContentWeekPost[];
+  scheduledCount: number;
+  publishedLast7: number;
+  waitingOnClient: (ContentWeekPost & { days: number })[];
+  waitingCount: number;
+  dueToPost: ContentWeekPost[];
+  failed: ContentWeekPost[];
+};

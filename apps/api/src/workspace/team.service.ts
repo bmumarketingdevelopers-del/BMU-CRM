@@ -1,5 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  DELIVER_SOCIAL_TYPES,
+  deliverChannelLabels,
+  type DeliverChannel,
   GATES,
   LEAVE_TYPES,
   istDate,
@@ -231,6 +234,25 @@ export class TeamWorkspaceService {
     const deliverableFilter: Prisma.DeliverableWhereInput = all ? {} : { OR: [{ tasks: { some: { ownerId: { in: ids } } } }, { cycle: { engagement: { amId: { in: ids } } } }] };
     const cycleFilter: Prisma.CycleWhereInput = all ? {} : { OR: [{ engagement: { amId: { in: ids } } }, { deliverables: { some: { tasks: { some: { ownerId: { in: ids } } } } } }] };
 
+    // v34: meetings (hosting or taking part) and social posts scheduled or published in the month.
+    const meetingFilter: Prisma.MeetingWhereInput = all ? {} : { OR: [{ hostId: { in: ids } }, { participants: { some: { userId: { in: ids }, status: { notIn: ['ignored'] } } } }] };
+    const postWhen: Prisma.DeliverableWhereInput = { OR: [{ scheduledAt: within }, { scheduledAt: null, publishedAt: within }] };
+    const [meetings, posts] = await Promise.all([
+      this.prisma.meeting.findMany({
+        where: { orgId: me.orgId, startAt: within, status: { notIn: ['cancelled'] }, cancelledAt: null, ...meetingFilter },
+        select: { id: true, title: true, startAt: true, endAt: true, status: true, clientOrgId: true, guestName: true, hostId: true },
+        orderBy: { startAt: 'asc' },
+        take: 300,
+      }),
+      this.prisma.deliverable.findMany({
+        where: { orgId: me.orgId, type: { in: [...DELIVER_SOCIAL_TYPES] }, status: { in: ['scheduled', 'published'] }, AND: [postWhen, deliverableFilter] },
+        select: { id: true, title: true, status: true, scheduledAt: true, publishedAt: true, channel: true, cycle: { select: { engagement: { select: { clientOrg: { select: { name: true } } } } } } },
+        take: 300,
+      }),
+    ]);
+    const meetingClients = await this.prisma.clientOrg.findMany({ where: { id: { in: [...new Set(meetings.map((m) => m.clientOrgId).filter((x): x is string => !!x))] } }, select: { id: true, name: true } });
+    const hhmm = (d: Date) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }).format(d);
+
     const [tasks, deliverables, cycles, leave, holidays] = await Promise.all([
       this.prisma.task.findMany({
         where: { orgId: me.orgId, deadline: within, status: { not: 'cancelled' }, ...ownerFilter },
@@ -293,6 +315,36 @@ export class TeamWorkspaceService {
         href: `/team/projects/${c.engagementId}`,
       });
     }
+    for (const m of meetings) {
+      const done = m.status === 'done' || m.endAt < now;
+      const who = m.clientOrgId ? meetingClients.find((c) => c.id === m.clientOrgId)?.name : m.guestName;
+      items.push({
+        id: `m-${m.id}`,
+        date: istDate(m.startAt),
+        kind: 'meeting',
+        time: hhmm(m.startAt),
+        title: m.title,
+        sub: [`${hhmm(m.startAt)}–${hhmm(m.endAt)}`, who, m.status === 'requested' || m.status === 'awaiting' ? 'not confirmed yet' : null].filter(Boolean).join(' · '),
+        href: '/team/meetings',
+        done,
+      });
+    }
+    for (const p of posts) {
+      const at = p.scheduledAt ?? p.publishedAt!;
+      const published = p.status === 'published';
+      items.push({
+        id: `p-${p.id}`,
+        date: istDate(at),
+        kind: 'post',
+        time: hhmm(at),
+        title: p.title,
+        sub: [p.cycle.engagement.clientOrg.name, p.channel ? (deliverChannelLabels[p.channel as DeliverChannel] ?? p.channel) : null, published ? 'published' : `scheduled ${hhmm(at)}`].filter(Boolean).join(' · '),
+        href: `/team/deliverables/${p.id}`,
+        done: published,
+        // Time passed and still not published.
+        overdue: !published && at < now,
+      });
+    }
     for (const h of holidays) if (h.date >= range.firstDay && h.date <= range.lastDay) items.push({ id: `h-${h.date}`, date: h.date, kind: 'holiday', title: h.name });
     for (const l of leave) {
       const name = leaveNames.find((u) => u.id === l.userId)?.name ?? 'Someone';
@@ -301,7 +353,7 @@ export class TeamWorkspaceService {
         items.push({ id: `l-${l.id}-${day}`, date: day, kind: 'leave', title: l.userId === me.id ? 'You are on leave' : `${name} on leave`, sub: `${l.type} leave` });
       }
     }
-    items.sort((a, b) => a.date.localeCompare(b.date));
+    items.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? ''));
     return { month: range.month, view, today: istDate(now), items };
   }
 

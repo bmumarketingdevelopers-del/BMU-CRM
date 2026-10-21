@@ -10,6 +10,7 @@ import { stopLive } from './src/live';
 import { SignInScreen } from './src/SignInScreen';
 import { ClientBilling, ClientFiles, ClientHome, ClientMessages, ClientRequests, ClientReviews } from './src/screens/client';
 import { NotificationsScreen } from './src/screens/shared';
+import { ContentCalendar, TeamCalendar } from './src/screens/calendars';
 import { Inbox, isClientTeam, MyDay, Tasks, TeamMessages } from './src/screens/team';
 import { isFounderView, Pulse } from './src/screens/pulse';
 import { fonts, ui } from './src/theme';
@@ -24,6 +25,8 @@ import { LockScreen, useLock } from './src/lock';
 function routeFor(link: string | null, client: boolean): [string, string | undefined] {
   const id = (k: string) => link?.match(new RegExp(`/${k}/([\\w-]+)`))?.[1];
   if (!link) return ['more', 'notifications'];
+  // v34: post published / post due notifications open the content calendar.
+  if (link.includes('/calendar') || link.includes('/content-calendar')) return ['more', 'content'];
   if (client) {
     if (link.includes('/reviews')) return ['reviews', id('reviews')];
     if (link.includes('/requests')) return ['requests', id('requests')];
@@ -154,10 +157,15 @@ export default function App() {
       if (detail === 'notifications') return <NotificationsScreen />;
       if (detail === 'billing') return <ClientBilling onBack={() => go('more')} />;
       if (detail === 'files') return <ClientFiles onBack={() => go('more')} />;
+      // v34: calendars on the phone.
+      if (detail === 'calendar' && !isClient) return <TeamCalendar onBack={() => go('more')} />;
+      if (detail === 'content') return <ContentCalendar client={isClient} onBack={() => go('more')} />;
       return (
         <Screen>
           <Title sub={me.clientOrg?.name ?? me.roles.join(', ').replaceAll('_', ' ')}>{me.name}</Title>
           <Row title="Notifications" sub={unread ? `${unread} unread` : 'All caught up'} onPress={() => go('more', 'notifications')} />
+          {!isClient && <Row title="Calendar" sub="Deadlines, meetings, social posts, leave and holidays" onPress={() => go('more', 'calendar')} />}
+          <Row title="Content calendar" sub={isClient ? 'Your scheduled and published posts' : 'Scheduled and published social posts'} onPress={() => go('more', 'content')} />
           {isClient && <Row title="Billing" sub="Invoices and payments" onPress={() => go('more', 'billing')} />}
           {isClient && <Row title="Files" sub="Approved work and final delivery" onPress={() => go('more', 'files')} />}
           {!isClient && <Row title="Full workspace" sub="Projects, QC, Review Studio and the Command Centre are on the website" />}

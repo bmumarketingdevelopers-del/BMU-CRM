@@ -119,6 +119,7 @@ export const DASHBOARD_BUILTINS: Record<DashboardBuiltinKey, DashboardBuiltinDef
       { key: "forecast_risks", label: "Forecast & risks", size: "full", hint: "Revenue forecast (money roles), churn risk, deals, slipping tasks and capacity, each with its reasons" },
       { key: "money_tiles", label: "Money numbers", size: "full", hint: "Revenue, collected, outstanding (money roles only)" },
       { key: "ops_tiles", label: "Operations numbers", size: "full", hint: "Leads, overdue tasks, reply times, QC" },
+      { key: "content_week", label: "Content this week", size: "full", hint: "Founder, Branch Manager, CM Lead: posts in the next 7 days, waiting on clients, due to post, failed to publish" },
       { key: "new_clients", label: "New clients and who added them", size: "full", hint: "Founder, Branch Manager, CM Lead, Finance: clients added in the last 30 days" },
       { key: "attendance_today", label: "Attendance today by department", size: "full", hint: "Founder, Branch Manager, HR; Department Heads see their own team" },
       { key: "money_chart", label: "Invoiced and collected chart", size: "half", hint: "Money roles only" },
@@ -306,7 +307,7 @@ export const dashboardLayoutSchema = z.array(dashboardWidgetSchema).max(40, "A d
  * v33: sections added to a built-in after it first shipped. A built-in saved before v33 (no knownSections) hasn't
  * offered these yet, so they are added to it; anything else missing was removed on purpose and stays removed.
  */
-export const DASHBOARD_LATER_SECTIONS: Partial<Record<DashboardBuiltinKey, string[]>> = { command_centre: ["attendance_today", "new_clients"] };
+export const DASHBOARD_LATER_SECTIONS: Partial<Record<DashboardBuiltinKey, string[]>> = { command_centre: ["attendance_today", "new_clients", "content_week"] };
 
 export function dashboardDefaultLayout(key: DashboardBuiltinKey): DashboardWidget[] {
   return DASHBOARD_BUILTINS[key].sections.map((s) => ({ id: `${key}.${s.key}`, type: "section", size: s.size, dashboard: key, section: s.key }));

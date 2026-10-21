@@ -22,6 +22,12 @@ export class InsightsController {
     return this.insights.newClients(me);
   }
 
+  // v34: social content at a glance (Founder's Weekly Review).
+  @Get('content-week')
+  contentWeek(@CurrentUser() me: Me) {
+    return this.insights.contentWeek(me);
+  }
+
   @Get('revenue')
   revenue(@CurrentUser() me: Me, @Query('period') period?: string) {
     const p = (REVENUE_PERIODS as readonly string[]).includes(period ?? '') ? (period as RevenuePeriod) : 'month';
