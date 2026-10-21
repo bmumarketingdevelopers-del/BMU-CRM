@@ -161,7 +161,7 @@ export class ProofingService {
     const l = await this.prisma.proofLink.findUnique({ where: { tokenHash: tokenHash(token) } });
     if (!l) throw new NotFoundException('This link does not exist. Open the review from your BMU Hub account instead.');
     if (l.expiresAt < new Date()) throw new GoneException('This link has expired. Open the review from your BMU Hub account instead.');
-    const v = await this.prisma.version.findUnique({ where: { id: l.versionId }, include: { file: true, deliverable: { include: { versions: { select: { id: true, number: true } }, cycle: { select: { engagement: { select: { clientOrgId: true, clientOrg: { select: { name: true } }, service: { select: { name: true } } } } } } } } } });
+    const v = await this.prisma.version.findUnique({ where: { id: l.versionId }, include: { file: true, deliverable: { include: { versions: { select: { id: true, number: true } }, cycle: { select: { engagement: { select: { clientOrgId: true, billingType: true, status: true, clientOrg: { select: { name: true } }, service: { select: { name: true } } } } } } } } } });
     if (!v) throw new GoneException('This version is no longer available');
     const user = await this.prisma.user.findFirst({ where: { id: l.userId, deletedAt: null, status: { not: 'suspended' } }, select: { id: true, name: true } });
     if (!user) throw new ForbiddenException('Your account can no longer approve work. Ask your BMU Client Manager.');
@@ -182,6 +182,8 @@ export class ProofingService {
       forName: user.name,
       version: { number: v.number, kind: v.file.kind as FileKind, name: v.file.name, url: v.file.kind === 'link' ? v.file.path : `/api/public/proof/${token}/file`, note: v.note },
       openComments: open,
+      // v37: a one-time project before the final payment: watermarked preview; videos with an on-screen mark.
+      preview: !v.file.released && d.cycle.engagement.billingType === 'one_time' && d.cycle.engagement.status !== 'delivered',
       status,
       message: message ?? (status === 'approved' ? (d.approvedVersionId === v.id ? 'Approved. Thank you!' : 'You approved this version. Waiting for the other approvers.') : status === 'closed' ? 'A newer version replaced this one. Open the review from your BMU Hub account.' : status === 'changes_requested' ? 'Changes were requested. The team is working on the next version.' : null),
     };
@@ -194,6 +196,12 @@ export class ProofingService {
   async publicFile(token: string) {
     const { v } = await this.link(token);
     return v.file;
+  }
+
+  /** v37: same preview rule as the client app (one-time project, not yet released). */
+  async needsPreview(file: { id: string }) {
+    const full = await this.prisma.file.findUniqueOrThrow({ where: { id: file.id }, include: { versions: { include: { deliverable: { include: { cycle: { select: { engagementId: true } } } } } } } });
+    return this.production().needsPreview(full);
   }
 
   async decide(token: string, body: unknown, ip?: string) {

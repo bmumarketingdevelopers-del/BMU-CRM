@@ -100,6 +100,7 @@ export default function ClientReviewPage({ params }: { params: Promise<{ id: str
 
       <Card>
         <ReviewViewer
+          preview={d.preview}
           versions={d.versions}
           comments={d.comments}
           canComment={d.can.comment}

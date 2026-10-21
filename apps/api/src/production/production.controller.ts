@@ -12,6 +12,7 @@ import { parse } from '../common/zod.js';
 import { ProductionService, type UploadedFile as Upload } from './production.service.js';
 import { TasksActionsService } from '../actions/tasks/tasks.service.js';
 import { sendStoredFile, storageRoot } from '../storage/file-store.js';
+import { sendClientPreview } from '../storage/client-preview.js';
 
 /** Where uploads land first; see storage/file-store.ts (Supabase Storage or disk). Re-exported for older imports. */
 export { storageRoot };
@@ -171,6 +172,8 @@ export class FilesController {
     // Clients download final files only after Gate 5 (sign-off + balance paid) released them.
     if (download && me.type === 'client' && !file.released) throw new ForbiddenException('Final files unlock after sign-off and the final payment');
     if (file.kind === 'link') return res.redirect(file.path);
+    // v37: a one-time project's work before the final payment: a watermarked preview, never the original.
+    if (await this.production.previewOnly(me, file)) return sendClientPreview(res, file);
     return sendStoredFile(res, file, { disposition: download ? 'attachment' : 'inline' });
   }
 }

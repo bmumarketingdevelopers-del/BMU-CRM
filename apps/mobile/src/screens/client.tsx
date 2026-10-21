@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Image, Linking, View } from 'react-native';
 import { formatINR, REQUEST_TYPES, requestStatusLabels, requestTypeLabels, type RequestType, type RequestView } from '@bmu/shared';
-import { api, authHeaders, fileUrl } from '../api';
+import { api, API_URL, authHeaders, fileUrl } from '../api';
 import { GateTrack } from '../GateTrack';
 import { ui } from '../theme';
 import { Back, Badge, Body, Button, Card, Empty, ErrorText, Input, Loading, Muted, Pills, Row, Screen, Section, Stats, Title, useData, when } from '../ui';
@@ -417,7 +417,14 @@ export function ClientFiles({ onBack }: { onBack: () => void }) {
       <ErrorText>{error}</ErrorText>
       <Section>Approved work</Section>
       {files.map((f) => (
-        <Row key={f.id} title={f.deliverable} sub={`${f.serviceName} · v${f.version}`} right={<Badge tone={f.downloadUrl ? 'good' : 'neutral'}>{f.downloadUrl ? 'Ready' : '🔒 Locked'}</Badge>} onPress={() => Linking.openURL(fileUrl(f.url))} />
+        <Row
+          key={f.id}
+          title={f.deliverable}
+          sub={`${f.serviceName} · v${f.version}${f.preview ? (f.kind === 'video' ? ' · watch the preview in the web portal' : ' · watermarked preview') : ''}`}
+          right={<Badge tone={f.downloadUrl ? 'good' : 'neutral'}>{f.downloadUrl ? 'Ready' : f.preview ? '🔒 Preview' : '🔒 Locked'}</Badge>}
+          // v37: before the final payment, videos play (watermarked) in the web portal; images and PDFs open watermarked.
+          onPress={() => Linking.openURL(f.preview && f.kind === 'video' ? `${API_URL.replace(/\/api\/?$/, '')}/client/files` : fileUrl(f.url))}
+        />
       ))}
       {files.length === 0 && <Empty>Approved work appears here.</Empty>}
     </Screen>

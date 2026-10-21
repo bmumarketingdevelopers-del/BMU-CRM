@@ -61,11 +61,22 @@ function Grid({ q }: { q: AssetQuery }) {
                 <Badge tone={a.rights.state === "expired" ? "red" : "amber"}>{assetRightsLabels[a.rights.state]}</Badge>
               </p>
             )}
-            {a.kind !== "link" && (
-              <a href={a.current.url} download={a.current.name ?? true} className="mt-2 inline-block text-xs underline">
-                Download
-              </a>
-            )}
+            {a.kind !== "link" &&
+              (a.preview ? (
+                // v37: a one-time project's work before the final payment: a watermarked preview, no download.
+                <span className="mt-2 block text-xs text-ink-muted">
+                  {a.kind !== "video" && (
+                    <a href={a.current.url} target="_blank" rel="noreferrer" className="underline">
+                      View preview
+                    </a>
+                  )}
+                  {a.kind !== "video" ? " · " : ""}🔒 Download after the final payment
+                </span>
+              ) : (
+                <a href={a.current.url} download={a.current.name ?? true} className="mt-2 inline-block text-xs underline">
+                  Download
+                </a>
+              ))}
           </div>
         </li>
       ))}

@@ -612,6 +612,7 @@ export class ProductionService {
       revisionRounds: { used: d.revisionRoundsUsed, included: await this.includedRounds(d) },
       versions: await this.versionViews(d, { client: true }),
       comments: await this.comments(d, { client: true }),
+      preview: d.cycle.engagement.billingType === 'one_time' && d.cycle.engagement.status !== 'delivered',
       approvalStatus: await this.deliverableApproval(d),
       schedule: { scheduledAt: d.scheduledAt?.toISOString() ?? null, channel: d.channel, publishedAt: d.publishedAt?.toISOString() ?? null, liveUrl: d.liveUrl },
       rounds: await proofRounds(this.prisma, d, true),
@@ -727,6 +728,30 @@ export class ProductionService {
 
   // -------------------------------------------------------------------------
   // Files
+
+  /**
+   * v37: a client sees a watermarked preview (no download) of a ONE-TIME project's work until its final balance is
+   * paid and the files are released. Monthly retainers pay in advance and get clean files.
+   */
+  async previewOnly(me: Me, file: { id: string; released: boolean; engagementId: string | null; versions: { deliverable: { cycle: { engagementId: string } } }[] }) {
+    return me.type === 'client' && this.needsPreview(file);
+  }
+
+  /** v37: the file is a one-time project's unreleased work (also used by email / WhatsApp proof links). */
+  async needsPreview(file: { id: string; released: boolean; engagementId: string | null; folder?: string; versions: { deliverable: { cycle: { engagementId: string } } }[] }) {
+    if (file.released) return false;
+    // Only BMU's work (versions, final files, approved work in the asset library), never what the client sent.
+    if (file.folder === 'from_client') return false;
+    // Asset library copies of approved work point back to their deliverable.
+    const assetVersions = await this.prisma.assetVersion.findMany({ where: { fileId: file.id }, select: { assetId: true } });
+    const assets = assetVersions.length ? await this.prisma.asset.findMany({ where: { id: { in: assetVersions.map((a) => a.assetId) }, deliverableId: { not: null } }, select: { deliverableId: true } }) : [];
+    const fromAssets = assets.length ? await this.prisma.deliverable.findMany({ where: { id: { in: assets.map((a) => a.deliverableId!) } }, select: { cycle: { select: { engagementId: true } } } }) : [];
+    const ids = [
+      ...new Set([file.folder === 'final' ? file.engagementId : null, ...file.versions.map((v) => v.deliverable.cycle.engagementId), ...fromAssets.map((d) => d.cycle.engagementId)].filter((x): x is string => !!x)),
+    ];
+    if (!ids.length) return false;
+    return (await this.prisma.engagement.count({ where: { id: { in: ids }, billingType: 'one_time', status: { not: 'delivered' } } })) > 0;
+  }
 
   /** Staff of the org may open any file they can reach; clients only files of versions sent to them. */
   async fileFor(me: Me, id: string) {

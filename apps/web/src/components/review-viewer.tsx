@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReviewAnchor, ReviewComment, VersionView } from "@bmu/shared";
 import { Button } from "@/components/ui";
+import { WatermarkOverlay, previewVideoProps } from "./watermark-overlay";
 
 const when = new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" });
 const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -27,7 +28,10 @@ export function ReviewViewer({
   allowInternal = false,
   onComment,
   onResolve,
+  preview = false,
 }: {
+  /** v37: a one-time project before the final payment (client view): videos get an on-screen mark, no download. */
+  preview?: boolean;
   versions: VersionView[];
   comments: ReviewComment[];
   canComment: boolean;
@@ -191,12 +195,13 @@ export function ReviewViewer({
         {compare && (
           <div>
             <p className="mb-1 text-xs text-ink-muted">v{compare.number}</p>
-            <Media version={compare} marks={[]} numbered={[]} />
+            <Media version={compare} marks={[]} numbered={[]} preview={preview} />
           </div>
         )}
         <div>
           {compare && <p className="mb-1 text-xs text-ink-muted">v{selected.number}</p>}
           <Media
+            preview={preview}
             version={selected}
             marks={onFrame}
             numbered={marks}
@@ -423,7 +428,9 @@ function Media({
   onStroke,
   onTime,
   onDuration,
+  preview = false,
 }: {
+  preview?: boolean;
   version: VersionView;
   marks: ReviewComment[];
   numbered: ReviewComment[];
@@ -461,7 +468,9 @@ function Media({
           onTimeUpdate={(e) => onTime?.(e.currentTarget.currentTime)}
           onSeeked={(e) => onTime?.(e.currentTarget.currentTime)}
           onLoadedMetadata={(e) => onDuration?.(e.currentTarget.duration || 0)}
+          {...(preview ? previewVideoProps : {})}
         />
+        {preview && <WatermarkOverlay />}
         {overlay}
       </div>
     );

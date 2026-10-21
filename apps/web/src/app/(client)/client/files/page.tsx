@@ -9,11 +9,13 @@ import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { useState } from "react";
 import { ClientUploads } from "@/components/ops/client-uploads";
+import { WatermarkOverlay, previewVideoProps } from "@/components/watermark-overlay";
 
 /** Final delivery (Gate 5) and the file library. Final files unlock after sign-off and the final payment. */
 export default function ClientFilesPage() {
   const delivery = useLoad(() => api.client.delivery());
   const files = useLoad(() => api.client.files());
+  const [watching, setWatching] = useState<NonNullable<typeof files.data>[number] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -95,21 +97,44 @@ export default function ClientFilesPage() {
                 </p>
               </div>
               <div className="flex items-center gap-4">
-                <a href={f.url} target="_blank" rel="noreferrer" className="text-ink-muted underline hover:text-ink">
-                  View
-                </a>
+                {/* v37: before the final payment, a project's work opens as a watermarked preview; videos play here. */}
+                {f.preview && f.kind === "video" ? (
+                  <button type="button" className="text-ink-muted underline hover:text-ink" onClick={() => setWatching(f)}>
+                    Watch preview
+                  </button>
+                ) : (
+                  <a href={f.url} target="_blank" rel="noreferrer" className="text-ink-muted underline hover:text-ink">
+                    {f.preview ? "View preview" : "View"}
+                  </a>
+                )}
                 {f.downloadUrl ? (
                   <a href={f.downloadUrl} className="font-medium underline">
                     Download
                   </a>
                 ) : (
                   <span className="text-xs text-ink-muted" title="Unlocks after sign-off and final payment">
-                    🔒 Locked
+                    🔒 {f.preview ? "Watermarked until the final payment" : "Locked"}
                   </span>
                 )}
               </div>
             </div>
           ))}
+          {watching && (
+            <div role="dialog" aria-modal aria-label={`Preview of ${watching.deliverable}`} className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setWatching(null)}>
+              <div className="relative max-h-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+                <div className="relative bg-black">
+                  <video src={watching.url} controls autoPlay playsInline className="block max-h-[80vh] max-w-full" {...previewVideoProps} />
+                  <WatermarkOverlay />
+                </div>
+                <p className="mt-2 flex justify-between gap-4 text-xs text-white/80">
+                  <span>Preview. The full video unlocks after sign-off and the final payment.</span>
+                  <button type="button" className="underline" onClick={() => setWatching(null)}>
+                    Close
+                  </button>
+                </p>
+              </div>
+            </div>
+          )}
           {files.data.length === 0 && (
             <p className="py-8 text-center text-sm text-ink-muted">
               Approved work appears here. See drafts in <Link href="/client/reviews" className="underline">Review Studio</Link>.

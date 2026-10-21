@@ -40,7 +40,7 @@ const DAY = 86_400_000;
 const include = { collection: { select: { id: true, name: true } }, versions: { orderBy: { number: 'asc' } } } satisfies Prisma.AssetInclude;
 type AssetFull = Prisma.AssetGetPayload<{ include: typeof include }>;
 type FileRow = { id: string; kind: string; name: string | null; mimeType: string | null; sizeBytes: number | null; path: string; checksum: string | null };
-type Lookups = { files: Map<string, FileRow>; users: Map<string, string>; clients: Map<string, string>; creators: Map<string, string> };
+type Lookups = { locked: Set<string>; files: Map<string, FileRow>; users: Map<string, string>; clients: Map<string, string>; creators: Map<string, string> };
 
 /** Images up to this size are sent to the AI for tags (the API limit is 5 MB of base64). */
 const AI_IMAGE_MAX = 3_700_000;
@@ -85,12 +85,21 @@ export class AssetsService {
     const clientIds = [...new Set(assets.map((a) => a.clientOrgId).filter((x): x is string => !!x))];
     const creatorIds = [...new Set(assets.map((a) => a.creatorId).filter((x): x is string => !!x))];
     const [files, users, clients, creators] = await Promise.all([
-      this.prisma.file.findMany({ where: { id: { in: fileIds } }, select: { id: true, kind: true, name: true, mimeType: true, sizeBytes: true, path: true, checksum: true } }),
+      this.prisma.file.findMany({ where: { id: { in: fileIds } }, select: { id: true, kind: true, name: true, mimeType: true, sizeBytes: true, path: true, checksum: true, released: true } }),
       this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } }),
       this.prisma.clientOrg.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } }),
       this.prisma.creator.findMany({ where: { id: { in: creatorIds } }, select: { id: true, user: { select: { name: true } } } }),
     ]);
+    // v37: approved work of a one-time project not yet paid in full: clients get a watermarked preview only.
+    const dIds = assets.map((a) => a.deliverableId).filter((x): x is string => !!x);
+    const open = dIds.length
+      ? await this.prisma.deliverable.findMany({ where: { id: { in: dIds }, cycle: { engagement: { billingType: 'one_time', status: { not: 'delivered' } } } }, select: { id: true } })
+      : [];
+    const openIds = new Set(open.map((d) => d.id));
+    const released = new Set(files.filter((f) => f.released).map((f) => f.id));
+    const locked = new Set(assets.filter((a) => a.deliverableId && openIds.has(a.deliverableId) && !a.versions.every((v) => released.has(v.fileId))).map((a) => a.id));
     return {
+      locked,
       files: new Map(files.map((f) => [f.id, f])),
       users: new Map(users.map((u) => [u.id, u.name])),
       clients: new Map(clients.map((c) => [c.id, c.name])),
@@ -129,6 +138,7 @@ export class AssetsService {
       clientVisible: a.clientVisible,
       versions: a.versions.length,
       current: this.fileView(current, l, client),
+      preview: client && l.locked.has(a.id),
       rights: {
         note: a.rightsNote,
         expiresAt: a.rightsExpireAt?.toISOString().slice(0, 10) ?? null,

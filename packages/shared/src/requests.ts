@@ -148,6 +148,8 @@ export type ClientFile = {
   released: boolean;
   url: string;
   downloadUrl: string | null;
+  /** v37: watermarked preview only until the final payment (one-time projects). */
+  preview?: boolean;
 };
 
 export type FinalDeliveryView = {

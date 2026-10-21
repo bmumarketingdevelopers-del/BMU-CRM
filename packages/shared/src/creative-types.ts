@@ -49,6 +49,8 @@ export type AssetRow = {
   rights: { note: string | null; expiresAt: string | null; creator: { id: string; name: string } | null; state: AssetRightsState };
   createdBy: string;
   updatedAt: string;
+  /** v37: client view: a one-time project's work before the final payment (watermarked, no download). */
+  preview?: boolean;
 };
 
 export type AssetDetail = AssetRow & {
@@ -165,6 +167,8 @@ export type ProofLinkView = {
   openComments: number;
   status: "waiting" | "approved" | "changes_requested" | "closed";
   message: string | null;
+  /** v37: watermarked preview only (one-time project before the final payment). */
+  preview?: boolean;
 };
 
 export const proofDecisionSchema = z.object({
