@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { fillOpenStepsAutomatically } from '../src/production/generate.js';
 
 let app: INestApplication;
 const tokens: Record<string, string> = {};
@@ -131,6 +132,8 @@ describe('plan and Gate 2', () => {
     plans = (await http().get('/client/plans').set(as('client')).expect(200)).body;
     expect(plans[0].plan.clientComments[0].body).toBe('Add Kannada keywords');
     await http().post(`/client/plans/${plans[0].plan.id}/approve`).set(as('client')).expect(200);
+    // v37: the Department Heads pick the team by hand; here the old automatic pick stands in for them.
+    await fillOpenStepsAutomatically(app.get(PrismaService), engagementId);
     const detail = (await http().get(`/engagements/${engagementId}`).set(as('am')).expect(200)).body;
     expect(detail.currentGate).toBe('G4'); // tasks generated and assigned, so Gate 3 passes too
     expect(detail.plan.status).toBe('approved');

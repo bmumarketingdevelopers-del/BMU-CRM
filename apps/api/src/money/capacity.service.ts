@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { bookingSchema, bookingUpdateSchema, weeklyHoursSchema, type BookingResult, type BookingRow, type BookingSuggestions, type Me, type WorkloadCell, type WorkloadView } from '@bmu/shared';
+import { bookingSchema, bookingUpdateSchema, craftSpecialtyLabel, weeklyHoursSchema, type BookingResult, type BookingRow, type BookingSuggestions, type Me, type WorkloadCell, type WorkloadView } from '@bmu/shared';
 import { AuditService } from '../audit/audit.service.js';
 import { parse } from '../common/zod.js';
 import { hasRole } from '../creative/scope.js';
@@ -14,6 +14,12 @@ const OPEN_TASK = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
 /** Open tasks without an estimate count as two hours. */
 const DEFAULT_TASK_MIN = 120;
 const BOOKERS = ['founder', 'admin', 'am_lead', 'department_head', 'producer', 'account_manager'];
+/**
+ * Who sees everyone's weekly hours on Workload (and books anyone): Founders, Branch Managers, HR, the CM Lead, Client
+ * Managers and producers. A Department Head sees (and books, and sets the hours of) only their own department's people;
+ * anyone else sees only their own row.
+ */
+const SEE_ALL = ['founder', 'admin', 'hr_ops', 'am_lead', 'account_manager', 'producer'];
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export type WeekLoad = WorkloadCell & { leaveDates: string[] };
@@ -33,6 +39,23 @@ export class CapacityService {
 
   canBook(me: Me) {
     return me.type === 'staff' && hasRole(me, ...BOOKERS);
+  }
+
+  /** 'all', or the people whose weekly hours this person may see: their department(s) for a Department Head, else themselves. */
+  async visiblePeople(me: Me): Promise<'all' | string[]> {
+    if (hasRole(me, ...SEE_ALL)) return 'all';
+    if (!hasRole(me, 'department_head')) return [me.id];
+    const headed = (await this.prisma.department.findMany({ where: { orgId: me.orgId, headUserId: me.id, deletedAt: null }, select: { id: true } })).map((d) => d.id);
+    // A Department Head not yet set as head of a department sees their own department.
+    const deptIds = headed.length ? headed : [(await this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } }))?.departmentId].filter((x): x is string => !!x);
+    const people = deptIds.length ? await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', departmentId: { in: deptIds } }, select: { id: true } }) : [];
+    return [...new Set([me.id, ...people.map((p) => p.id)])];
+  }
+
+  private async assertVisible(me: Me, userIds: (string | null | undefined)[]) {
+    const scope = await this.visiblePeople(me);
+    if (scope === 'all') return;
+    if (userIds.some((u) => u && !scope.includes(u))) throw new ForbiddenException('You can only do this for people in your own department');
   }
 
   private async calendar(orgId: string) {
@@ -90,15 +113,22 @@ export class CapacityService {
   async workload(me: Me, q: { from?: string; weeks?: string; team?: string }): Promise<WorkloadView> {
     if (me.type !== 'staff') throw new ForbiddenException('Team only');
     const weeks = this.weeksFrom(q.from, Math.min(12, Math.max(1, Number(q.weeks) || 6)));
-    const all = this.canBook(me) || hasRole(me, 'hr_ops');
+    const scope = await this.visiblePeople(me);
+    const all = scope === 'all';
+    // A Department Head sees their department's people, their bookings and the open skill requests (to fill them).
+    const head = !all && scope.length > 1;
     const users = await this.prisma.user.findMany({
-      where: { orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, ...(all ? {} : { id: me.id }), ...(q.team ? { departmentId: q.team } : {}) },
+      where: { orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, ...(all ? {} : { id: { in: scope } }), ...(q.team ? { departmentId: q.team } : {}) },
       select: { id: true, name: true, specialty: true, weeklyHours: true, roles: { select: { role: { select: { baseRole: true } } } } },
       orderBy: { name: 'asc' },
       take: 300,
     });
     const loads = await this.loads(me.orgId, users.map((u) => u.id), weeks);
-    const bookings = await this.bookingRows({ orgId: me.orgId, weekStart: { gte: dbDate(weeks[0]), lte: dbDate(weeks[weeks.length - 1]) }, ...(all ? {} : { userId: me.id }) });
+    const bookings = await this.bookingRows({
+      orgId: me.orgId,
+      weekStart: { gte: dbDate(weeks[0]), lte: dbDate(weeks[weeks.length - 1]) },
+      ...(all ? {} : head ? { OR: [{ userId: { in: scope as string[] } }, { userId: null }] } : { userId: me.id }),
+    });
     const { holidays } = await this.calendar(me.orgId);
     const end = addDays(weeks[weeks.length - 1], 6);
     return {
@@ -168,8 +198,9 @@ export class CapacityService {
     const input = parse(bookingSchema, body);
     if (!isMonday(input.weekStart)) throw new BadRequestException('Bookings start on a Monday');
     if (input.weekStart < mondayOf(todayIst())) throw new BadRequestException('That week is already over');
-    const eng = await this.prisma.engagement.findFirst({ where: { id: input.engagementId, orgId: me.orgId, deletedAt: null }, select: { id: true, clientOrg: { select: { name: true } }, service: { select: { name: true } } } });
+    const eng = await this.prisma.engagement.findFirst({ where: { id: input.engagementId, orgId: me.orgId, deletedAt: null }, select: { id: true, amId: true, clientOrg: { select: { name: true, amUserId: true } }, service: { select: { name: true } } } });
     if (!eng) throw new NotFoundException('Project not found');
+    await this.assertVisible(me, [input.userId]);
     const created: ResourceBooking[] = [];
     const skipped: BookingResult['skipped'] = [];
     for (let i = 0; i < input.weeks; i++) {
@@ -199,6 +230,7 @@ export class CapacityService {
           noEmail: true,
         });
       }
+      if (!input.userId && input.specialty) await this.tellRequestPosted(me, eng, input.specialty, created);
     }
     return { created: await this.toRows(created), skipped };
   }
@@ -210,12 +242,14 @@ export class CapacityService {
     if (!b) throw new NotFoundException('Booking not found');
     const userId = input.userId ?? b.userId;
     const hours = input.hours ?? b.hours;
+    await this.assertVisible(me, [b.userId, userId]);
     if (userId) {
       const why = await this.refusal(me.orgId, userId, isoOf(b.weekStart), hours, b.userId === userId ? id : undefined);
       if (why) throw new BadRequestException(why);
     }
     const after = await this.prisma.resourceBooking.update({ where: { id }, data: { userId, hours, note: input.note === undefined ? undefined : input.note?.trim() || null, status: userId ? 'booked' : 'requested', specialty: userId ? null : b.specialty } });
     await this.audit.log(me, 'booking.updated', 'ResourceBooking', id, { userId: b.userId, hours: b.hours }, { userId, hours }, ip);
+    if (b.status === 'requested' && userId) await this.tellRequestFilled(me, b, userId, hours);
     return (await this.toRows([after]))[0];
   }
 
@@ -223,9 +257,60 @@ export class CapacityService {
     if (!this.canBook(me)) throw new ForbiddenException('Only producers, Client Managers and leadership book people');
     const b = await this.prisma.resourceBooking.findFirst({ where: { id, orgId: me.orgId } });
     if (!b) throw new NotFoundException('Booking not found');
+    await this.assertVisible(me, [b.userId]);
     await this.prisma.resourceBooking.delete({ where: { id } });
     await this.audit.log(me, 'booking.deleted', 'ResourceBooking', id, { userId: b.userId, hours: b.hours, weekStart: isoOf(b.weekStart) }, undefined, ip);
     return { ok: true as const };
+  }
+
+  /**
+   * A skill request was posted (e.g. the SDE head needs a UI/UX designer): the project's Client Manager, the CM Lead(s)
+   * and the Department Head(s) of the departments with that skill are told, so someone fills it.
+   */
+  private async tellRequestPosted(me: Me, eng: { id: string; amId: string | null; clientOrg: { name: string; amUserId: string | null }; service: { name: string } }, specialty: string, created: ResourceBooking[]) {
+    const [leads, skilled] = await Promise.all([
+      this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'am_lead' } } } }, select: { id: true } }),
+      this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, specialty, departmentId: { not: null } }, select: { departmentId: true } }),
+    ]);
+    const heads = skilled.length
+      ? await this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null, id: { in: [...new Set(skilled.map((u) => u.departmentId!))] }, headUserId: { not: null } }, select: { headUserId: true } })
+      : [];
+    const to = [...new Set([eng.amId ?? eng.clientOrg.amUserId, ...leads.map((l) => l.id), ...heads.map((h) => h.headUserId)].filter((x): x is string => !!x && x !== me.id))];
+    if (!to.length) return;
+    const weeks = created.length;
+    await this.notifications.notify(me.orgId, to, {
+      kind: 'booking',
+      title: `${me.name} needs a ${craftSpecialtyLabel(specialty)}: ${eng.clientOrg.name} · ${eng.service.name}`,
+      body: `${created[0].hours}h a week for ${weeks} week${weeks === 1 ? '' : 's'} from ${isoOf(created[0].weekStart)}. Fill it under Skill requests on Workload.`,
+      link: '/team/workload',
+    });
+  }
+
+  /** A skill request was filled: the person who asked and the person booked are told. */
+  private async tellRequestFilled(me: Me, b: ResourceBooking, userId: string, hours: number) {
+    const [eng, person] = await Promise.all([
+      this.prisma.engagement.findUnique({ where: { id: b.engagementId }, select: { clientOrg: { select: { name: true } }, service: { select: { name: true } } } }),
+      this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+    ]);
+    const project = eng ? `${eng.clientOrg.name} · ${eng.service.name}` : 'the project';
+    const week = isoOf(b.weekStart);
+    if (b.createdById && b.createdById !== me.id) {
+      await this.notifications.notify(me.orgId, [b.createdById], {
+        kind: 'booking',
+        title: `${person?.name ?? 'Someone'} is booked for your ${craftSpecialtyLabel(b.specialty)} request`,
+        body: `${project}: ${hours}h in the week of ${week}, by ${me.name}.`,
+        link: '/team/workload',
+      });
+    }
+    if (userId !== me.id) {
+      await this.notifications.notify(me.orgId, [userId], {
+        kind: 'booking',
+        title: `Booked ${hours}h on ${project}`,
+        body: `Week of ${week}, by ${me.name}.`,
+        link: '/team/workload',
+        noEmail: true,
+      });
+    }
   }
 
   async projectBookings(me: Me, engagementId: string) {
@@ -236,13 +321,15 @@ export class CapacityService {
   /** Best people for a week: matching skill, most free hours, and work finished on time in the last 90 days. */
   async suggest(me: Me, q: { weekStart: string; specialty?: string; hours?: string }): Promise<BookingSuggestions> {
     if (me.type !== 'staff') throw new ForbiddenException('Team only');
-    return this.suggestCore(me.orgId, q.weekStart, q.specialty || null, Number(q.hours) || 0);
+    // A Department Head is only offered people from their department.
+    const scope = await this.visiblePeople(me);
+    return this.suggestCore(me.orgId, q.weekStart, q.specialty || null, Number(q.hours) || 0, scope === 'all' ? undefined : scope);
   }
 
-  async suggestCore(orgId: string, weekRaw: string, specialty: string | null, hours: number): Promise<BookingSuggestions> {
+  async suggestCore(orgId: string, weekRaw: string, specialty: string | null, hours: number, onlyUserIds?: string[]): Promise<BookingSuggestions> {
     const weekStart = mondayOf(/^\d{4}-\d{2}-\d{2}$/.test(weekRaw) ? weekRaw : todayIst());
     const users = await this.prisma.user.findMany({
-      where: { orgId, type: 'staff', status: 'active', deletedAt: null, ...(specialty ? { specialty } : { specialty: { not: null } }) },
+      where: { orgId, type: 'staff', status: 'active', deletedAt: null, ...(specialty ? { specialty } : { specialty: { not: null } }), ...(onlyUserIds ? { id: { in: onlyUserIds } } : {}) },
       select: { id: true, name: true, specialty: true },
       take: 200,
     });
@@ -271,6 +358,8 @@ export class CapacityService {
 
   async setWeeklyHours(me: Me, userId: string, body: unknown, ip?: string) {
     if (!hasRole(me, 'founder', 'admin', 'hr_ops', 'department_head')) throw new ForbiddenException('Founder, Branch Manager, HR and department heads set working hours');
+    // A Department Head sets the hours of their own department's people only.
+    if (!hasRole(me, 'founder', 'admin', 'hr_ops')) await this.assertVisible(me, [userId]);
     const { weeklyHours } = parse(weeklyHoursSchema, body);
     const u = await this.prisma.user.findFirst({ where: { id: userId, orgId: me.orgId, type: 'staff' }, select: { weeklyHours: true } });
     if (!u) throw new NotFoundException('Person not found');

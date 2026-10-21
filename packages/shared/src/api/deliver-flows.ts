@@ -9,6 +9,12 @@ import type {
   DeliverHandoverView,
   DeliverRetainerRun,
   DeliverSlaView,
+  HandoffAssignInput,
+  HandoffDeliverable,
+  HandoffInbox,
+  HandoffOptions,
+  HandoffSendInput,
+  ProjectHandoffView,
 } from "../deliver-flows.js";
 import type { ClientOnboarding } from "../delivery.js";
 
@@ -18,6 +24,14 @@ const range = (from: string, to: string) => `?from=${encodeURIComponent(from)}&t
 
 /** v10 deliver area: retainer cycles, content calendar, approval rules, delivery SLA, handover pack. */
 export const deliverFlowsApi = (t: Transport) => ({
+  /** v37 manual hand-off: the Client Manager sends work to Department Heads, who pick their people. */
+  handoff: {
+    project: (engagementId: string) => t.get<ProjectHandoffView>(`/handoff/projects/${engagementId}`),
+    send: (engagementId: string, body: HandoffSendInput) => t.post<ProjectHandoffView>(`/handoff/projects/${engagementId}/send`, body),
+    inbox: () => t.get<HandoffInbox>("/handoff/inbox"),
+    options: (deliverableId: string) => t.get<HandoffOptions>(`/handoff/deliverables/${deliverableId}/options`),
+    assign: (deliverableId: string, body: HandoffAssignInput) => t.post<HandoffDeliverable>(`/handoff/deliverables/${deliverableId}/assign`, body),
+  },
   deliver: {
     cycles: (engagementId: string) => t.get<DeliverCyclesView>(`/deliver/engagements/${engagementId}/cycles`),
     startNextCycle: (engagementId: string) => t.post<DeliverCyclesView>(`/deliver/engagements/${engagementId}/cycles/next`),

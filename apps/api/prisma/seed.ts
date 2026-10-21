@@ -343,7 +343,7 @@ async function main() {
     });
     await prisma.approval.create({ data: { orgId: org.id, targetType: 'plan', targetId: cycle.id, gate: 'G2', userId: clientOwner.id } });
     for (const d of deliverables) await prisma.deliverable.create({ data: { orgId: org.id, cycleId: cycle.id, ...d } });
-    await generateProductionTasks(prisma, cycle.id);
+    await generateProductionTasks(prisma, cycle.id, new Date(), { autoAssign: true });
   }
 
   // v8 area demo data (each idempotent).

@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
+import { fillOpenStepsAutomatically } from '../src/production/generate.js';
 import { DeliverCyclesService } from '../src/deliver/deliver-cycles.service.js';
 import { DeliverSlaService } from '../src/deliver/deliver-sla.service.js';
 import { DeliverApprovalsService } from '../src/deliver/deliver-approvals.service.js';
@@ -234,6 +235,8 @@ describe('one-time project: onboarding → plan → production → review → fi
     await http().post('/deliver/approvals/remind').set(as('producer')).send({ target: 'plan', id: planId }).expect(403);
 
     plans = (await http().post(`/client/plans/${planId}/approve`).set(as('owner')).expect(200)).body;
+    // v37: the Department Heads pick the team by hand; here the old automatic pick stands in for them.
+    await fillOpenStepsAutomatically(prisma, projectId);
     p = plans.find((x: { engagementId: string }) => x.engagementId === projectId);
     expect(p.plan.status).toBe('approved');
     expect(p.plan.approvalStatus.satisfied).toBe(true);
@@ -454,6 +457,7 @@ describe('monthly retainer cycles that roll over', () => {
     await http().post(`/engagements/${retainerId}/plan/submit`).set(as('strategist')).expect(200);
     await http().post(`/engagements/${retainerId}/plan/send`).set(as('am')).expect(200);
     await http().post(`/client/plans/${plan.id}/approve`).set(as('owner')).expect(200);
+    await fillOpenStepsAutomatically(prisma, retainerId);
     let det = (await http().get(`/engagements/${retainerId}`).set(as('am')).expect(200)).body;
     expect(det.currentGate).toBe('G3');
 

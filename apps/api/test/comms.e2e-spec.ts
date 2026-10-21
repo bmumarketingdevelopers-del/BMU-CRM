@@ -204,7 +204,7 @@ describe('one-tap approval from WhatsApp', () => {
   it('the client approves from the WhatsApp link and the work moves on', async () => {
     const cycle = await prisma.cycle.findFirstOrThrow({ where: { engagementId: ids.engagement } });
     const del = await prisma.deliverable.create({ data: { orgId, cycleId: cycle.id, type: 'post', title: `Festive post ${stamp}` } });
-    await generateProductionTasks(prisma, cycle.id);
+    await generateProductionTasks(prisma, cycle.id, new Date(), { autoAssign: true });
     const up = (await http().post(`/deliverables/${del.id}/versions`).set(as('am')).attach('file', mp4, { filename: 'post.mp4', contentType: 'video/mp4' }).expect(201)).body as DeliverableDetail;
     const v = up.versions.at(-1)!;
     await http().post(`/deliverables/versions/${v.id}/qc`).set(as('qc')).send({ items: [{ label: 'Brand', ok: true }] }).expect(200);

@@ -749,11 +749,21 @@ model Deliverable {
   /// v11 core: archived records are hidden from lists, kept for reports and restorable
   archivedAt     DateTime?
   archivedReason String?
+  /// v37 manual hand-off: the Client Manager sends the work to a Department Head, who picks their people
+  handoffHeadId     String?
+  handoffById       String?
+  handoffAt         DateTime?
+  handoffNote       String?
+  /// v37: when every step got a person (by the Department Head, or the same team reused for a project's next month)
+  handoffAssignedAt DateTime?
+  /// v37: the one reminder sent when the Department Head had not assigned within a working day
+  handoffRemindedAt DateTime?
 
   cycle    Cycle     @relation(fields: [cycleId], references: [id])
   versions Version[]
   tasks    Task[]
 
+  @@index([handoffHeadId, handoffAssignedAt])
   @@map("deliverables")
 }
 

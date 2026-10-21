@@ -267,3 +267,71 @@ export type DeliverHandoverView = {
 };
 
 export const deliverNpsBand = (score: number) => (score >= 9 ? "promoter" : score >= 7 ? "passive" : "detractor");
+
+// ---------------------------------------------------------------------------
+// v37 manual hand-off: Client Manager → Department Head → people
+
+/** not_sent: the Client Manager has not sent it yet · waiting: sent, the Department Head has not picked everyone · assigned */
+export type HandoffStatus = "not_sent" | "waiting" | "assigned";
+export const handoffStatusLabels: Record<HandoffStatus, string> = { not_sent: "Not sent", waiting: "Waiting for head", assigned: "Assigned" };
+
+export type HandoffStep = {
+  taskId: string;
+  key: string | null;
+  name: string;
+  /** work: made by the department · qc: a QC reviewer or the Department Head · client_review: the Client Manager */
+  kind: "work" | "qc" | "client_review" | "planning";
+  owner: { id: string; name: string } | null;
+  deadline: string | null;
+  status: string;
+};
+
+export type HandoffDeliverable = {
+  id: string;
+  title: string;
+  type: string;
+  deliverableStatus: string;
+  dueAt: string | null;
+  project: { id: string; client: string; service: string; cm: { id: string; name: string } | null };
+  department: { id: string; name: string } | null;
+  head: { id: string; name: string } | null;
+  status: HandoffStatus;
+  sentAt: string | null;
+  sentBy: { id: string; name: string } | null;
+  note: string | null;
+  assignedAt: string | null;
+  steps: HandoffStep[];
+  can: { send: boolean; assign: boolean };
+};
+
+export type ProjectHandoffView = {
+  engagementId: string;
+  deliverables: HandoffDeliverable[];
+  /** Departments the Client Manager can send work to (those with a Department Head). */
+  departments: { id: string; name: string; head: { id: string; name: string } | null }[];
+  canSend: boolean;
+};
+
+/** The hand-off page: what a Department Head has to assign, and what a Client Manager is waiting for. */
+export type HandoffInbox = {
+  toAssign: HandoffDeliverable[];
+  waitingForHeads: HandoffDeliverable[];
+  notSent: HandoffDeliverable[];
+  isHead: boolean;
+  isSender: boolean;
+};
+
+export type HandoffPerson = { id: string; name: string; specialty: string | null; openTasks: number; onLeaveToday: boolean; why: string | null };
+/** People a Department Head can put on a deliverable's steps. */
+export type HandoffOptions = { makers: HandoffPerson[]; qc: HandoffPerson[] };
+
+export const handoffSendSchema = z.object({
+  items: z.array(z.object({ deliverableId: z.string().min(1), departmentId: z.string().min(1, "Pick a department") })).min(1, "Pick at least one deliverable").max(100),
+  note: z.string().trim().max(2000).optional(),
+});
+export type HandoffSendInput = z.infer<typeof handoffSendSchema>;
+
+export const handoffAssignSchema = z.object({
+  steps: z.array(z.object({ taskId: z.string().min(1), ownerId: z.string().min(1) })).min(1, "Pick a person for at least one step").max(30),
+});
+export type HandoffAssignInput = z.infer<typeof handoffAssignSchema>;

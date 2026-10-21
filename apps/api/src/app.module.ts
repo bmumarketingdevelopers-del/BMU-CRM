@@ -66,6 +66,8 @@ import { DeliverCyclesService } from './deliver/deliver-cycles.service.js';
 import { DeliverHandoverService } from './deliver/deliver-handover.service.js';
 import { DeliverJobsService } from './deliver/deliver-jobs.service.js';
 import { DeliverSlaService } from './deliver/deliver-sla.service.js';
+import { HandoffController } from './deliver/handoff.controller.js';
+import { HandoffService } from './deliver/handoff.service.js';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RuntimeModule, StorageModule, AuditModule, AuthModule, OrgModule, ProposalsModule, SettingsModule, InsightsModule, AdminOrgModule, AdminPlatformModule, WorkspaceModule, AutomationsModule, AnalyticsModule, OpsAnalyticsModule, FlowsModule, ServiceModule, CraftModule, AiModule, TeamFlowsModule, ActionsModule, ClientsActionsModule, PeopleActionsModule, OpsActionsModule, DashboardsModule, PlatformModule, CustomiseModule, WorkflowsModule, AgentsModule, CreativeModule, CommsModule, MoneyModule, IntegrationsModule, SecurityModule, IntelligenceModule, DevicesModule],
@@ -89,7 +91,8 @@ import { DeliverSlaService } from './deliver/deliver-sla.service.js';
     ThreadsController,
     ThreadFilesController,
     DeliverController,
+    HandoffController,
   ],
-  providers: [CatalogueService, EngagementsService, ProductionService, BillingService, RequestsService, DeliveryService, MessagesService, DeliverCyclesService, DeliverCalendarService, DeliverApprovalsService, DeliverSlaService, DeliverHandoverService, DeliverJobsService],
+  providers: [CatalogueService, EngagementsService, ProductionService, BillingService, RequestsService, DeliveryService, MessagesService, DeliverCyclesService, DeliverCalendarService, DeliverApprovalsService, DeliverSlaService, DeliverHandoverService, DeliverJobsService, HandoffService],
 })
 export class AppModule {}

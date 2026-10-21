@@ -62,7 +62,7 @@ beforeAll(async () => {
   const cycleId = engagement.cycles[0].id;
   logoId = (await prisma.deliverable.create({ data: { orgId: org.id, cycleId, type: 'post', title: 'Launch post' } })).id;
   guideId = (await prisma.deliverable.create({ data: { orgId: org.id, cycleId, type: 'blog', title: 'Launch blog' } })).id;
-  const result = await generateProductionTasks(prisma, cycleId);
+  const result = await generateProductionTasks(prisma, cycleId, new Date(), { autoAssign: true });
   expect(result.g3Passed).toBe(true);
 
   for (const who of ['am', 'strategist', 'producer', 'sales', 'qc', 'admin']) tokens[who] = await signIn(`${who}@bmu.demo`);

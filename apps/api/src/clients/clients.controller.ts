@@ -218,7 +218,12 @@ export class ClientPortalController {
     await this.notifications.notify(me.orgId, [engagement.amId], {
       kind: 'plan_approved',
       title: `${engagement.clientOrg.name} approved the ${engagement.service.name} plan`,
-      body: result.g3Passed ? `${result.created} tasks created and assigned. Production has started.` : result.unassigned ? `${result.unassigned} task(s) have no owner yet. Assign them to start production.` : 'Production is on hold until the overdue invoice is paid.',
+      // v37 manual hand-off: the CM sends the work to the Department Heads, who pick their people.
+      body: result.g3Passed
+        ? `${result.created} tasks created, with the same team as before. Production has started.`
+        : result.unassigned
+          ? 'Send the deliverables to the Department Heads from the project page (Department hand-off). They pick their team; production starts once every step has a person.'
+          : 'Production is on hold until the overdue invoice is paid.',
       link: `/team/projects/${engagement.id}`,
       critical: !result.g3Passed,
     });

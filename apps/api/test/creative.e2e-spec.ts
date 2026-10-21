@@ -54,7 +54,7 @@ async function upload(who: string, data: Buffer, name: string, mimeType: string,
 async function deliverable(type: string, title: string) {
   const cycle = await prisma.cycle.findFirstOrThrow({ where: { engagement: { clientOrgId: clientId } } });
   const d = await prisma.deliverable.create({ data: { orgId, cycleId: cycle.id, type, title } });
-  await generateProductionTasks(prisma, cycle.id);
+  await generateProductionTasks(prisma, cycle.id, new Date(), { autoAssign: true });
   return d.id;
 }
 

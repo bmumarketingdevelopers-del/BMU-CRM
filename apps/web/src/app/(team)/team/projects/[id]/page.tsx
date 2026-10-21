@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { ApprovalStatusBox } from "@/components/deliver/approval-status";
 import { CyclesPanel } from "@/components/deliver/cycles-panel";
+import { ProjectHandoffPanel } from "@/components/deliver/handoff";
 import { FeedbackSummary, HandoverContents } from "@/components/deliver/handover";
 import { Panel } from "@/components/dash";
 import type { DeliverHandoverView } from "@bmu/shared";
@@ -216,6 +217,8 @@ export default function EngagementPage({ params }: { params: Promise<{ id: strin
           </ul>
         </Card>
       )}
+
+      {v.deliverables.length > 0 && <ProjectHandoffPanel engagementId={v.id} />}
 
       <CyclesPanel
         engagementId={v.id}

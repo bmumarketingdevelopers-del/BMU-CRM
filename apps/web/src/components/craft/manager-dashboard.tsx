@@ -4,6 +4,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { dashboardDefaultLayout, type CraftManagerView } from "@bmu/shared";
 import { DeliveryDeadlinesPanel } from "@/components/deliver/deadlines-panel";
+import { HandoffSummary } from "@/components/deliver/handoff";
 import { DashGrid, type DashLayoutProps } from "@/components/dashboards/grid";
 import { Insight } from "@/components/charts";
 import { Panel, StatRow, StatTile } from "@/components/dash";
@@ -58,6 +59,7 @@ export function ManagerDashboard({ layout, wrap }: DashLayoutProps = {}) {
   };
   return (
     <div data-manager={v.scope}>
+      <HandoffSummary />
       <DashGrid host="manager" items={layout ?? dashboardDefaultLayout("manager")} sections={sections} wrap={wrap} />
     </div>
   );
