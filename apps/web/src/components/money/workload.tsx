@@ -34,12 +34,15 @@ export function Workload() {
   const [suggest, setSuggest] = useState<BookingSuggestions | null>(null);
   const [msg, setMsg] = useState<{ error?: string; ok?: string }>({});
   const [q, setQ] = useState("");
+  // v40: assigned-tasks Workload: click a person to see the tasks behind their hours.
+  const [openRow, setOpenRow] = useState<string>();
   const move = (n: number) => {
     setFrom(addDays(from, n * 7));
     setTimeout(view.reload, 0);
   };
   if (!view.data) return <LoadState loading={view.loading} error={view.error} />;
   const v = view.data;
+  const tasksMode = v.mode === "assigned_tasks";
   const projects = (options.data?.clients ?? []).flatMap((c) => c.projects.map((p) => ({ id: p.id, label: `${c.name} · ${p.label}` })));
   const people = v.people.filter((p) => !q || `${p.name} ${p.specialty ?? ""}`.toLowerCase().includes(q.toLowerCase()));
   const open = (p: WorkloadPerson | null, week: string, specialty = "") => {
@@ -82,13 +85,17 @@ export function Workload() {
     <>
       <PageTitle
         title="Workload"
-        subtitle="Six weeks ahead: booked project hours plus open task estimates, against each person's hours after leave and holidays."
+        subtitle={
+          tasksMode
+            ? "Six weeks ahead: the hours Department Heads gave each person's assigned tasks, against their weekly hours after leave and holidays. Hours drop off as tasks are done."
+            : "Six weeks ahead: booked project hours plus open task estimates, against each person's hours after leave and holidays."
+        }
         action={
           <div className="flex gap-2 text-sm">
             <Button variant="secondary" onClick={() => move(-1)}>← Earlier</Button>
             <Button variant="secondary" onClick={() => move(1)}>Later →</Button>
             <Button variant={v.canBook ? "secondary" : "primary"} onClick={() => { setMsg({}); setDraft(null); setPassing(true); }} data-testid="pass-task">Pass a task</Button>
-            {v.canBook && <Button onClick={() => { setPassing(false); open(null, from); }} data-testid="new-booking">Book someone</Button>}
+            {v.canBook && !tasksMode && <Button onClick={() => { setPassing(false); open(null, from); }} data-testid="new-booking">Book someone</Button>}
           </div>
         }
       />
@@ -142,7 +149,7 @@ export function Workload() {
         <div className="overflow-x-auto border border-border bg-surface-raised">
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
             <Input placeholder="Find a person or skill" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs" />
-            <p className="text-xs text-ink-muted">Hours booked + task estimates / free hours. Amber over 100%, red over 120%.</p>
+            <p className="text-xs text-ink-muted">{tasksMode ? "Assigned task hours / free hours. Click a name for the tasks. Amber over 100%, red over 120%." : "Hours booked + task estimates / free hours. Amber over 100%, red over 120%."}</p>
           </div>
           <table className="w-full min-w-[760px] text-sm" data-testid="heatmap">
             <thead>
@@ -153,9 +160,16 @@ export function Workload() {
             </thead>
             <tbody>
               {people.map((p) => (
-                <tr key={p.userId} className="border-b border-border" data-testid="heatmap-row">
+                <Fragment key={p.userId}>
+                <tr className="border-b border-border" data-testid="heatmap-row">
                   <td className="px-4 py-2">
-                    <span className="font-medium">{p.name}</span>
+                    {tasksMode ? (
+                      <button type="button" className="font-medium hover:underline" onClick={() => setOpenRow(openRow === p.userId ? undefined : p.userId)} aria-expanded={openRow === p.userId}>
+                        {p.name}
+                      </button>
+                    ) : (
+                      <span className="font-medium">{p.name}</span>
+                    )}
                     <span className="block text-xs text-ink-muted">
                       {(p.specialty ?? p.role).replaceAll("_", " ")} ·{" "}
                       {v.canSetHours ? <button className="underline" onClick={() => setHours(p)}>{p.weeklyHours}h/week</button> : `${p.weeklyHours}h/week`}
@@ -163,19 +177,48 @@ export function Workload() {
                   </td>
                   {p.cells.map((c) => (
                     <td key={c.weekStart} className="p-1">
-                      <button onClick={() => open(p, c.weekStart)} disabled={!v.canBook} className={`block w-full px-2 py-2 text-center ${cellTone(c)}`} title={`${c.bookedHours}h booked + ${c.taskHours}h tasks of ${c.availableHours}h free${c.leaveDays ? `; ${c.leaveDays} day(s) leave` : ""}${c.holidayDays ? `; ${c.holidayDays} holiday(s)` : ""}`} data-testid="heatmap-cell">
+                      <button
+                        onClick={() => (tasksMode ? setOpenRow(openRow === p.userId ? undefined : p.userId) : open(p, c.weekStart))}
+                        disabled={!tasksMode && !v.canBook}
+                        className={`block w-full px-2 py-2 text-center ${cellTone(c)}`}
+                        title={`${tasksMode ? `${c.taskHours}h of assigned tasks` : `${c.bookedHours}h booked + ${c.taskHours}h tasks`} of ${c.availableHours}h free${c.noHoursTasks ? `; ${c.noHoursTasks} task(s) without hours` : ""}${c.leaveDays ? `; ${c.leaveDays} day(s) leave` : ""}${c.holidayDays ? `; ${c.holidayDays} holiday(s)` : ""}`}
+                        data-testid="heatmap-cell"
+                      >
                         {c.availableHours <= 0 ? (c.leaveDays ? "Leave" : "Off") : `${c.loadPct ?? 0}%`}
                         <span className="block text-[10px] opacity-70">{c.leaveDays ? `${c.leaveDays}d leave` : `${Math.round(c.bookedHours + c.taskHours)}/${Math.round(c.availableHours)}h`}</span>
                       </button>
                     </td>
                   ))}
                 </tr>
+                {tasksMode && openRow === p.userId && (
+                  <tr className="border-b border-border bg-canvas/40" data-testid="workload-tasks">
+                    <td colSpan={v.weeks.length + 1} className="px-4 py-2">
+                      {p.tasks?.length ? (
+                        <ul className="space-y-1 text-xs">
+                          {p.tasks.map((t) => (
+                            <li key={t.id} className="flex flex-wrap justify-between gap-2">
+                              <a href={`/team/tasks/${t.id}`} className="underline">
+                                {t.title}
+                              </a>
+                              <span className="text-ink-muted">
+                                {[t.client, t.deadline ? `due ${day(t.deadline)}` : "no deadline", t.hours ? `${t.hours}h` : "no hours given"].filter(Boolean).join(" · ")}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-xs text-ink-muted">No open tasks.</p>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
           {v.holidays.length > 0 && <p className="px-4 py-2 text-xs text-ink-muted">Holidays: {v.holidays.map((h) => `${day(h.date)} ${h.name}`).join(", ")}</p>}
         </div>
-        {v.requests.length > 0 && (
+        {!tasksMode && v.requests.length > 0 && (
           <Panel title="Skill requests" subtitle="Projects asking for someone with a skill. The Producer agent suggests the best free person each morning." flush>
             <DataTable<BookingRow>
               rows={v.requests}
@@ -198,6 +241,7 @@ export function Workload() {
             />
           </Panel>
         )}
+        {!tasksMode && (
         <Panel title="Bookings" subtitle="Hours reserved per person and week." flush>
           <DataTable<BookingRow>
             rows={v.bookings}
@@ -212,6 +256,7 @@ export function Workload() {
             ]}
           />
         </Panel>
+        )}
       </div>
     </>
   );

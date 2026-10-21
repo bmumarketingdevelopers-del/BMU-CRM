@@ -3773,3 +3773,53 @@ model CronClaim {
 
   @@map("cron_claims")
 }
+
+/// v40 project flow: the Client Manager asks a Department Head for the date their department will finish the project's
+/// work; the head gives it (after talking to the team) and the Client Manager shares it with the client.
+model ProjectEstimate {
+  id            String    @id @default(cuid())
+  orgId         String
+  engagementId  String
+  departmentId  String
+  headId        String?
+  requestedById String?
+  requestNote   String?
+  requestedAt   DateTime  @default(now())
+  finishBy      DateTime? @db.Date
+  headNote      String?
+  estimatedAt   DateTime?
+  estimatedById String?
+  sharedAt      DateTime?
+  sharedById    String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([engagementId, departmentId])
+  @@index([orgId, headId])
+  @@map("project_estimates")
+}
+
+/// v40 project flow: a big finished part (login page, product design, first video draft) a Department Head shares with
+/// the client as a demo link or files; the client approves it or asks for changes (a task for the head).
+model ProjectMilestone {
+  id            String    @id @default(cuid())
+  orgId         String
+  engagementId  String
+  clientOrgId   String
+  departmentId  String?
+  title         String
+  note          String?
+  fileIds       String[]  @default([])
+  /// shared | approved | changes_requested
+  status        String    @default("shared")
+  sharedById    String?
+  sharedAt      DateTime  @default(now())
+  decidedAt     DateTime?
+  decidedById   String?
+  clientComment String?
+  changeTaskId  String?
+  createdAt     DateTime  @default(now())
+
+  @@index([engagementId])
+  @@index([clientOrgId, status])
+  @@map("project_milestones")
+}

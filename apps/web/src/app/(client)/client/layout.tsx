@@ -10,6 +10,7 @@ const navFor = (canBill: boolean): NavSection[] => [
     items: [
       { label: "Home", href: "/client" },
       { label: "Project journey", href: "/client/journey" },
+      { label: "Progress", href: "/client/progress" },
       { label: "Onboarding", href: "/client/onboarding" },
       { label: "Approvals", href: "/client/approvals" },
       { label: "Review Studio", href: "/client/reviews" },

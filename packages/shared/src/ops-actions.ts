@@ -289,7 +289,8 @@ export const OPS_FILE_DIRECTIONS = ["to_client", "from_client", "internal"] as c
 export type OpsFileDirection = (typeof OPS_FILE_DIRECTIONS)[number];
 export const opsFileDirectionLabels: Record<OpsFileDirection, string> = { to_client: "Sent to client", from_client: "From client", internal: "Internal" };
 // v38: "discussion" and "task": files sent to teammates in a discussion or on a task (only they and leadership see them).
-export const OPS_FILE_SOURCES = ["chat", "review", "client_upload", "upload", "brand", "asset", "payment_proof", "discussion", "task"] as const;
+// v40: "milestone": a demo of a finished part shared with the client.
+export const OPS_FILE_SOURCES = ["chat", "review", "client_upload", "upload", "brand", "asset", "payment_proof", "discussion", "task", "milestone"] as const;
 export type OpsFileSource = (typeof OPS_FILE_SOURCES)[number];
 export const opsFileSourceLabels: Record<OpsFileSource, string> = {
   chat: "Chat",
@@ -301,6 +302,7 @@ export const opsFileSourceLabels: Record<OpsFileSource, string> = {
   payment_proof: "Payment proof",
   discussion: "Discussion",
   task: "Task",
+  milestone: "Progress demo",
 };
 /** v35: files sent to and received from clients (the Founder's dashboard and daily summary). */
 export type OpsClientFileFeed = {

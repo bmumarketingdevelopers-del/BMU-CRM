@@ -738,7 +738,7 @@ export class ProductionService {
   }
 
   /** v37: the file is a one-time project's unreleased work (also used by email / WhatsApp proof links). */
-  async needsPreview(file: { id: string; released: boolean; engagementId: string | null; folder?: string; versions: { deliverable: { cycle: { engagementId: string } } }[] }) {
+  async needsPreview(file: { id: string; released: boolean; engagementId: string | null; folder?: string; tags?: string[]; versions: { deliverable: { cycle: { engagementId: string } } }[] }) {
     if (file.released) return false;
     // Only BMU's work (versions, final files, approved work in the asset library), never what the client sent.
     if (file.folder === 'from_client') return false;
@@ -747,7 +747,8 @@ export class ProductionService {
     const assets = assetVersions.length ? await this.prisma.asset.findMany({ where: { id: { in: assetVersions.map((a) => a.assetId) }, deliverableId: { not: null } }, select: { deliverableId: true } }) : [];
     const fromAssets = assets.length ? await this.prisma.deliverable.findMany({ where: { id: { in: assets.map((a) => a.deliverableId!) } }, select: { cycle: { select: { engagementId: true } } } }) : [];
     const ids = [
-      ...new Set([file.folder === 'final' ? file.engagementId : null, ...file.versions.map((v) => v.deliverable.cycle.engagementId), ...fromAssets.map((d) => d.cycle.engagementId)].filter((x): x is string => !!x)),
+      // v40: demo files of a finished part shared with the client count as the project's work too.
+      ...new Set([file.folder === 'final' || file.tags?.includes('milestone') ? file.engagementId : null, ...file.versions.map((v) => v.deliverable.cycle.engagementId), ...fromAssets.map((d) => d.cycle.engagementId)].filter((x): x is string => !!x)),
     ];
     if (!ids.length) return false;
     return (await this.prisma.engagement.count({ where: { id: { in: ids }, billingType: 'one_time', status: { not: 'delivered' } } })) > 0;
@@ -770,7 +771,9 @@ export class ProductionService {
         // v16: files of assets shared with the client in their asset library.
         (!!file.clientOrgId &&
           file.clientOrgId === me.clientOrg?.id &&
-          (await this.prisma.assetVersion.count({ where: { fileId: file.id, asset: { clientOrgId: me.clientOrg?.id, clientVisible: true, archivedAt: null } } })) > 0);
+          (await this.prisma.assetVersion.count({ where: { fileId: file.id, asset: { clientOrgId: me.clientOrg?.id, clientVisible: true, archivedAt: null } } })) > 0) ||
+        // v40: demo files of a finished part a Department Head shared with them.
+        (!!me.clientOrg && (await this.prisma.projectMilestone.count({ where: { clientOrgId: me.clientOrg.id, fileIds: { has: file.id } } })) > 0);
       if (!ok) throw new NotFoundException('File not found');
     } else {
       const reachable = await Promise.all(file.versions.map((v) => this.canSeeDeliverable(me, v.deliverable)));

@@ -25,6 +25,15 @@ export const NOT_A_BOOKER = 'Only Client Managers, Department Heads and leadersh
 const SEE_ALL = ['founder', 'admin', 'hr_ops', 'am_lead', 'account_manager'];
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/**
+ * v40: how Workload fills each person's week.
+ * - 'assigned_tasks' (now): only the hours the Department Head gave each assigned task count, spread over the working
+ *   days from today to the task's deadline; they drop off when the task is done. Bookings are hidden.
+ * - 'primary': the original calculation, booked hours + task estimates (loads()).
+ * "Please revert to primary workload calculation" = set this to 'primary'.
+ */
+export const WORKLOAD_MODE: 'assigned_tasks' | 'primary' = 'assigned_tasks';
+
 export type WeekLoad = WorkloadCell & { leaveDates: string[] };
 
 /**
@@ -116,6 +125,76 @@ export class CapacityService {
     return out;
   }
 
+  /**
+   * v40 assigned-tasks Workload: per person and week, the hours of their open tasks (as the Department Head gave them),
+   * spread evenly over the working days from today (or the day the task was added) to its deadline. Overdue work lands
+   * today. Tasks without hours are counted, not guessed.
+   */
+  async taskLoads(orgId: string, userIds: string[], weeks: string[]) {
+    const { days, holidays } = await this.calendar(orgId);
+    const first = weeks[0];
+    const last = addDays(weeks[weeks.length - 1], 6);
+    const today = todayIst();
+    const [users, leaves, tasks] = await Promise.all([
+      this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, weeklyHours: true } }),
+      this.prisma.leaveRequest.findMany({ where: { orgId, userId: { in: userIds }, status: 'approved', type: { not: 'wfh' }, from: { lte: dbDate(last) }, to: { gte: dbDate(first) } }, select: { userId: true, from: true, to: true } }),
+      this.prisma.task.findMany({
+        where: { orgId, ownerId: { in: userIds }, status: { in: OPEN_TASK as never }, archivedAt: null, isDraft: false },
+        select: { id: true, title: true, ownerId: true, deadline: true, estimateMin: true, status: true, createdAt: true, engagementId: true },
+        orderBy: [{ deadline: 'asc' }],
+        take: 5000,
+      }),
+    ]);
+    const engs = await this.prisma.engagement.findMany({ where: { id: { in: [...new Set(tasks.map((t) => t.engagementId).filter((x): x is string => !!x))] } }, select: { id: true, clientOrg: { select: { name: true } } } });
+    const ist = (d: Date) => isoOf(new Date(d.getTime() + 330 * 60_000));
+    const working = (d: string) => days.includes(dbDate(d).getUTCDay()) && !holidays.has(d);
+    // Hours per person per date.
+    const perDate = new Map<string, Map<string, number>>();
+    const noHours = new Map<string, Map<string, number>>();
+    const bump = (m: Map<string, Map<string, number>>, uid: string, date: string, n: number) => {
+      const row = m.get(uid) ?? new Map<string, number>();
+      row.set(date, (row.get(date) ?? 0) + n);
+      m.set(uid, row);
+    };
+    for (const t of tasks) {
+      const uid = t.ownerId!;
+      const due = t.deadline ? ist(t.deadline) : today;
+      if (!t.estimateMin) {
+        bump(noHours, uid, due < today ? today : due, 1);
+        continue;
+      }
+      const start = [today, ist(t.createdAt)].sort().at(-1)!;
+      const end = due < start ? start : due;
+      const dates: string[] = [];
+      for (let d = start, i = 0; d <= end && i < 400; d = addDays(d, 1), i++) if (working(d)) dates.push(d);
+      if (!dates.length) dates.push(end);
+      for (const d of dates) bump(perDate, uid, d, t.estimateMin / 60 / dates.length);
+    }
+    const hoursBy = new Map(users.map((u) => [u.id, u.weeklyHours]));
+    const out = new Map<string, { cells: WeekLoad[]; tasks: NonNullable<WorkloadView['people'][number]['tasks']> }>();
+    for (const uid of userIds) {
+      const weekly = hoursBy.get(uid) ?? 45;
+      const perDay = days.length ? weekly / days.length : 0;
+      const cells: WeekLoad[] = weeks.map((w) => {
+        const dates = Array.from({ length: 7 }, (_, i) => addDays(w, i)).filter((d) => days.includes(dbDate(d).getUTCDay()));
+        const holidayDays = dates.filter((d) => holidays.has(d));
+        const open = dates.filter((d) => !holidays.has(d));
+        const leaveDates = open.filter((d) => leaves.some((l) => l.userId === uid && isoOf(l.from) <= d && isoOf(l.to) >= d));
+        const available = round1(perDay * (open.length - leaveDates.length));
+        const week = Array.from({ length: 7 }, (_, i) => addDays(w, i));
+        const taskHours = round1(week.reduce((s, d) => s + (perDate.get(uid)?.get(d) ?? 0), 0));
+        const noHoursTasks = week.reduce((s, d) => s + (noHours.get(uid)?.get(d) ?? 0), 0);
+        return { weekStart: w, availableHours: available, bookedHours: 0, taskHours, leaveDays: leaveDates.length, holidayDays: holidayDays.length, loadPct: available > 0 ? Math.round((taskHours / available) * 100) : null, noHoursTasks, leaveDates };
+      });
+      const mine = tasks
+        .filter((t) => t.ownerId === uid)
+        .slice(0, 40)
+        .map((t) => ({ id: t.id, title: t.title, client: engs.find((e) => e.id === t.engagementId)?.clientOrg.name ?? null, hours: t.estimateMin ? round1(t.estimateMin / 60) : null, deadline: t.deadline ? ist(t.deadline) : null, status: t.status }));
+      out.set(uid, { cells, tasks: mine });
+    }
+    return out;
+  }
+
   private weeksFrom(from: string | undefined, count: number) {
     const start = mondayOf(from && /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : todayIst());
     return Array.from({ length: count }, (_, i) => addDays(start, i * 7));
@@ -136,7 +215,11 @@ export class CapacityService {
       orderBy: { name: 'asc' },
       take: 300,
     });
-    const loads = await this.loads(me.orgId, users.map((u) => u.id), weeks);
+    // v40: in the assigned-tasks Workload only the hours Department Heads gave assigned tasks fill each week (the
+    // screen hides bookings; booking and skill requests still work underneath). 'primary' = booked + task estimates.
+    const tasksMode = WORKLOAD_MODE === 'assigned_tasks';
+    const byTask = tasksMode ? await this.taskLoads(me.orgId, users.map((u) => u.id), weeks) : null;
+    const loads = byTask ? new Map([...byTask].map(([k, v]) => [k, v.cells])) : await this.loads(me.orgId, users.map((u) => u.id), weeks);
     const bookings = await this.bookingRows({
       orgId: me.orgId,
       weekStart: { gte: dbDate(weeks[0]), lte: dbDate(weeks[weeks.length - 1]) },
@@ -145,6 +228,7 @@ export class CapacityService {
     const { holidays } = await this.calendar(me.orgId);
     const end = addDays(weeks[weeks.length - 1], 6);
     return {
+      mode: WORKLOAD_MODE,
       weeks,
       people: users.map((u) => ({
         userId: u.id,
@@ -153,6 +237,7 @@ export class CapacityService {
         role: u.roles[0]?.role.baseRole ?? 'staff',
         weeklyHours: u.weeklyHours,
         cells: (loads.get(u.id) ?? []).map(({ leaveDates: _l, ...c }) => c),
+        ...(byTask ? { tasks: byTask.get(u.id)?.tasks ?? [] } : {}),
       })),
       bookings: bookings.filter((b) => b.status === 'booked'),
       requests: bookings.filter((b) => b.status === 'requested'),

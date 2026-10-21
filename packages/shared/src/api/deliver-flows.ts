@@ -15,7 +15,15 @@ import type {
   HandoffOptions,
   HandoffSendInput,
   ProjectHandoffView,
+  ClientProgressView,
+  EstimateInboxRow,
+  EstimateRequestInput,
+  EstimateSubmitInput,
+  MilestoneCreateInput,
+  MilestoneDecisionInput,
+  ProjectFlowView,
 } from "../deliver-flows.js";
+import type { SentFile, SentLink } from "../ops-actions.js";
 import type { ClientOnboarding } from "../delivery.js";
 
 export * from "../deliver-flows.js";
@@ -31,6 +39,23 @@ export const deliverFlowsApi = (t: Transport) => ({
     inbox: () => t.get<HandoffInbox>("/handoff/inbox"),
     options: (deliverableId: string) => t.get<HandoffOptions>(`/handoff/deliverables/${deliverableId}/options`),
     assign: (deliverableId: string, body: HandoffAssignInput) => t.post<HandoffDeliverable>(`/handoff/deliverables/${deliverableId}/assign`, body),
+  },
+  /** v40 project flow: finish dates from Department Heads, and finished parts the client approves. */
+  projectFlow: {
+    get: (engagementId: string) => t.get<ProjectFlowView>(`/project-flow/projects/${engagementId}`),
+    requestEstimates: (engagementId: string, body: EstimateRequestInput) => t.post<ProjectFlowView>(`/project-flow/projects/${engagementId}/estimates`, body),
+    submitEstimate: (id: string, body: EstimateSubmitInput) => t.post<ProjectFlowView>(`/project-flow/estimates/${id}`, body),
+    shareEstimates: (engagementId: string, ids: string[]) => t.post<ProjectFlowView>(`/project-flow/projects/${engagementId}/estimates/share`, { ids }),
+    inbox: () => t.get<EstimateInboxRow[]>("/project-flow/inbox"),
+    stageFile: (engagementId: string, file: Blob) => {
+      const form = new FormData();
+      form.append("file", file);
+      return t.request<SentFile>(`/project-flow/projects/${engagementId}/milestone-files`, { method: "POST", body: form });
+    },
+    stageLink: (engagementId: string, body: SentLink) => t.post<SentFile>(`/project-flow/projects/${engagementId}/milestone-links`, body),
+    shareMilestone: (engagementId: string, body: MilestoneCreateInput) => t.post<ProjectFlowView>(`/project-flow/projects/${engagementId}/milestones`, body),
+    clientProgress: () => t.get<ClientProgressView>("/project-flow/client/progress"),
+    decide: (milestoneId: string, body: MilestoneDecisionInput) => t.post<ClientProgressView>(`/project-flow/client/milestones/${milestoneId}/decision`, body),
   },
   deliver: {
     cycles: (engagementId: string) => t.get<DeliverCyclesView>(`/deliver/engagements/${engagementId}/cycles`),

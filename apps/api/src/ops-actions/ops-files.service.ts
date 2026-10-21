@@ -153,6 +153,8 @@ export class OpsFilesService implements OnModuleInit {
   private async classify(rows: FileFull[]): Promise<Map<string, Shared | null>> {
     const ids = rows.map((r) => r.id);
     const chatIds = rows.filter((r) => r.kind === ATTACHMENT_KIND).map((r) => r.id);
+    const milestoneIds = rows.filter((r) => r.tags.includes('milestone')).map((r) => r.id);
+    const milestones = milestoneIds.length ? await this.prisma.projectMilestone.findMany({ where: { fileIds: { hasSome: milestoneIds } }, select: { fileIds: true, sharedAt: true, sharedById: true } }) : [];
     const [messages, assetFiles] = await Promise.all([
       chatIds.length ? this.prisma.message.findMany({ where: { attachments: { hasSome: chatIds } }, select: { attachments: true, authorId: true, isInternal: true, createdAt: true, thread: { select: { type: true } } } }) : [],
       ids.length ? this.prisma.assetVersion.findMany({ where: { fileId: { in: ids } }, select: { fileId: true, asset: { select: { clientVisible: true } } } }) : [],
@@ -172,7 +174,12 @@ export class OpsFilesService implements OnModuleInit {
       const asset = assetFiles.find((a) => a.fileId === f.id);
       // Older client uploads have no uploader recorded: no versions, no tags, not an asset, in a client's general folder.
       const fromClient = isClient(f.uploadedById) || f.folder === 'from_client' || (!f.uploadedById && !f.versions.length && !asset && !!f.clientOrgId && !f.tags.length && f.folder === 'general');
-      // v38: files sent to teammates in a discussion or on a task.
+      // v38: files sent to teammates in a discussion or on a task. v40: demos of finished parts shared with the client.
+      if (f.tags.includes('milestone')) {
+        const m = milestones.find((x) => x.fileIds.includes(f.id));
+        out.set(f.id, m ? { source: 'milestone', direction: 'to_client', sharedAt: m.sharedAt, sharedById: m.sharedById } : { source: 'milestone', direction: 'internal', sharedAt: f.createdAt, sharedById: f.uploadedById });
+        continue;
+      }
       const source: OpsFileSource = f.tags.includes('discussion-file')
         ? 'discussion'
         : f.tags.includes('task-file')

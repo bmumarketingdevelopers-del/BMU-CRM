@@ -269,8 +269,19 @@ export type WorkloadCell = {
   holidayDays: number;
   /** (booked + task hours) / available, or null when not available that week */
   loadPct: number | null;
+  /** v40 (assigned-tasks Workload): open tasks that week with no hours from the Department Head yet */
+  noHoursTasks?: number;
 };
-export type WorkloadPerson = { userId: string; name: string; specialty: string | null; role: string; weeklyHours: number; cells: WorkloadCell[] };
+export type WorkloadPerson = {
+  userId: string;
+  name: string;
+  specialty: string | null;
+  role: string;
+  weeklyHours: number;
+  cells: WorkloadCell[];
+  /** v40 (assigned-tasks Workload): the open tasks behind the hours */
+  tasks?: { id: string; title: string; client: string | null; hours: number | null; deadline: string | null; status: string }[];
+};
 export type BookingStatus = "booked" | "requested";
 export type BookingRow = {
   id: string;
@@ -286,6 +297,11 @@ export type BookingRow = {
   status: BookingStatus;
 };
 export type WorkloadView = {
+  /**
+   * v40: "assigned_tasks": only the hours Department Heads give assigned tasks fill each person's week (bookings are
+   * hidden). "primary": the original booked hours + task estimates.
+   */
+  mode?: "assigned_tasks" | "primary";
   weeks: string[];
   people: WorkloadPerson[];
   bookings: BookingRow[];

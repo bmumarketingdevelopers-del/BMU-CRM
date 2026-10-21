@@ -21,7 +21,7 @@ function Team({ d }: { d: HandoffDeliverable }) {
       {d.steps.map((s, i) => (
         <span key={s.taskId}>
           {i ? " · " : ""}
-          {s.name}: {s.owner ? <span className="text-ink">{s.owner.name}</span> : <span className="text-[#b4432c]">not picked</span>}
+          {s.name}: {s.owner ? <span className="text-ink">{s.owner.name}{s.hours ? ` (${s.hours}h)` : ""}</span> : <span className="text-[#b4432c]">not picked</span>}
         </span>
       ))}
     </p>
@@ -36,13 +36,17 @@ function personLabel(p: HandoffPerson) {
 export function AssignTeam({ d, onDone }: { d: HandoffDeliverable; onDone: () => void }) {
   const opts = useLoad(() => api.handoff.options(d.id), { live: false });
   const [picks, setPicks] = useState<Record<string, string>>(() => Object.fromEntries(d.steps.filter((s) => s.owner).map((s) => [s.taskId, s.owner!.id])));
+  // v40: hours per step; they fill the person's 45h week on Workload until the step is done.
+  const [hours, setHours] = useState<Record<string, string>>(() => Object.fromEntries(d.steps.filter((s) => s.hours).map((s) => [s.taskId, String(s.hours)])));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string }>();
   if (!opts.data) return <LoadState loading={opts.loading} error={opts.error} />;
   const editable = d.steps.filter((s) => (s.kind === "work" || s.kind === "qc") && !["done", "cancelled"].includes(s.status));
   const save = async () => {
-    const steps = editable.filter((s) => picks[s.taskId]).map((s) => ({ taskId: s.taskId, ownerId: picks[s.taskId] }));
+    const steps = editable.filter((s) => picks[s.taskId]).map((s) => ({ taskId: s.taskId, ownerId: picks[s.taskId], hours: Number(hours[s.taskId]) || undefined }));
     if (!steps.length) return setMsg({ ok: false, text: "Pick a person for at least one step." });
+    const noHours = steps.filter((s) => !s.hours).length;
+    if (noHours) return setMsg({ ok: false, text: `Give the hours for ${noHours === 1 ? "the step" : `all ${noHours} steps`} you picked a person for. They show on each person's Workload.` });
     setBusy(true);
     setMsg(undefined);
     try {
@@ -58,7 +62,7 @@ export function AssignTeam({ d, onDone }: { d: HandoffDeliverable; onDone: () =>
   return (
     <div className="mt-3 space-y-2 border border-border bg-canvas/30 p-3 text-sm" data-testid="handoff-assign">
       {d.steps.map((s) => (
-        <div key={s.taskId} className="grid items-center gap-2 sm:grid-cols-[10rem_1fr]">
+        <div key={s.taskId} className="grid items-center gap-2 sm:grid-cols-[10rem_1fr_6rem]">
           <span className="text-xs font-medium">
             {s.name}
             {s.deadline && <span className="block font-normal text-ink-muted">due {day.format(new Date(s.deadline))}</span>}
@@ -68,14 +72,17 @@ export function AssignTeam({ d, onDone }: { d: HandoffDeliverable; onDone: () =>
           ) : ["done", "cancelled"].includes(s.status) ? (
             <span className="text-xs text-ink-muted">{s.owner?.name ?? "—"} (finished)</span>
           ) : (
-            <Select value={picks[s.taskId] ?? ""} onChange={(e) => setPicks({ ...picks, [s.taskId]: e.target.value })} aria-label={`Person for ${s.name}`} data-testid={`handoff-pick-${s.kind}`}>
-              <option value="">{s.kind === "qc" ? "Pick the QC person" : "Pick someone from your department"}</option>
-              {(s.kind === "qc" ? opts.data!.qc : opts.data!.makers).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {personLabel(p)}
-                </option>
-              ))}
-            </Select>
+            <>
+              <Select value={picks[s.taskId] ?? ""} onChange={(e) => setPicks({ ...picks, [s.taskId]: e.target.value })} aria-label={`Person for ${s.name}`} data-testid={`handoff-pick-${s.kind}`}>
+                <option value="">{s.kind === "qc" ? "Pick the QC person" : "Pick someone from your department"}</option>
+                {(s.kind === "qc" ? opts.data!.qc : opts.data!.makers).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {personLabel(p)}
+                  </option>
+                ))}
+              </Select>
+              <input type="number" min={0.5} max={500} step={0.5} className="w-full border border-border bg-surface px-2 py-1.5 text-sm" value={hours[s.taskId] ?? ""} onChange={(e) => setHours({ ...hours, [s.taskId]: e.target.value })} placeholder="Hours" aria-label={`Hours for ${s.name}`} data-testid={`handoff-hours-${s.kind}`} />
+            </>
           )}
         </div>
       ))}

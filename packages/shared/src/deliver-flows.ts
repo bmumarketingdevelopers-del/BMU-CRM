@@ -284,6 +284,8 @@ export type HandoffStep = {
   owner: { id: string; name: string } | null;
   deadline: string | null;
   status: string;
+  /** v40: hours the Department Head gave the step (counts on the person's 45h week until it is done). */
+  hours: number | null;
 };
 
 export type HandoffDeliverable = {
@@ -332,6 +334,107 @@ export const handoffSendSchema = z.object({
 export type HandoffSendInput = z.infer<typeof handoffSendSchema>;
 
 export const handoffAssignSchema = z.object({
-  steps: z.array(z.object({ taskId: z.string().min(1), ownerId: z.string().min(1) })).min(1, "Pick a person for at least one step").max(30),
+  steps: z
+    .array(z.object({ taskId: z.string().min(1), ownerId: z.string().min(1), /** v40 */ hours: z.number().min(0.5, "At least half an hour").max(500, "At most 500 hours per step").optional() }))
+    .min(1, "Pick a person for at least one step")
+    .max(30),
 });
 export type HandoffAssignInput = z.infer<typeof handoffAssignSchema>;
+
+// ---------------------------------------------------------------------------
+// v40 project flow: the Client Manager asks Department Heads for a finish date, shares it with the client; Department
+// Heads share each big finished part (a demo link or files) and the client approves it or asks for changes.
+
+export type EstimateStatus = "waiting" | "estimated" | "shared";
+export const estimateStatusLabels: Record<EstimateStatus, string> = { waiting: "Waiting for the head", estimated: "Date given", shared: "Shared with client" };
+
+export type ProjectEstimateRow = {
+  id: string;
+  department: { id: string; name: string };
+  head: { id: string; name: string } | null;
+  requestedBy: string | null;
+  requestNote: string | null;
+  requestedAt: string;
+  /** YYYY-MM-DD */
+  finishBy: string | null;
+  headNote: string | null;
+  estimatedAt: string | null;
+  sharedAt: string | null;
+  status: EstimateStatus;
+  can: { estimate: boolean; share: boolean };
+};
+
+export type MilestoneStatus = "shared" | "approved" | "changes_requested";
+export const milestoneStatusLabels: Record<MilestoneStatus, string> = { shared: "Waiting for the client", approved: "Approved", changes_requested: "Changes asked" };
+
+export type MilestoneFile = { id: string; name: string; url: string; kind: string; mimeType: string | null };
+
+export type ProjectMilestoneRow = {
+  id: string;
+  title: string;
+  note: string | null;
+  department: { id: string; name: string } | null;
+  sharedBy: string | null;
+  sharedAt: string;
+  status: MilestoneStatus;
+  files: MilestoneFile[];
+  clientComment: string | null;
+  decidedAt: string | null;
+  decidedBy: string | null;
+  /** The task the Department Head got when the client asked for changes. */
+  changeTaskId: string | null;
+};
+
+export type ProjectFlowView = {
+  engagementId: string;
+  client: string;
+  service: string;
+  estimates: ProjectEstimateRow[];
+  milestones: ProjectMilestoneRow[];
+  /** Departments with a Department Head (to ask for a date). */
+  departments: { id: string; name: string; head: { id: string; name: string } | null }[];
+  can: {
+    /** The project's Client Manager or leadership: ask heads for dates, share them with the client. */
+    request: boolean;
+    /** Departments this person may share finished parts for (their own as Department Head; all for leadership). */
+    shareFor: { id: string; name: string }[];
+  };
+};
+
+/** A Department Head's open date requests (Work hand-off page). */
+export type EstimateInboxRow = ProjectEstimateRow & { project: { id: string; client: string; service: string; cm: string | null } };
+
+export const estimateRequestSchema = z.object({
+  departmentIds: z.array(z.string().min(1)).min(1, "Pick at least one department").max(20),
+  note: z.string().trim().max(2000).optional(),
+});
+export type EstimateRequestInput = z.infer<typeof estimateRequestSchema>;
+
+export const estimateSubmitSchema = z.object({
+  finishBy: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the finish date"),
+  note: z.string().trim().max(2000).optional(),
+});
+export type EstimateSubmitInput = z.infer<typeof estimateSubmitSchema>;
+
+export const milestoneCreateSchema = z.object({
+  departmentId: z.string().min(1, "Pick the department"),
+  title: z.string().trim().min(3, "Name the part that is done, e.g. Login page").max(160),
+  note: z.string().trim().max(2000).optional(),
+  fileIds: z.array(z.string()).min(1, "Add a demo link or a file for the client").max(20),
+});
+export type MilestoneCreateInput = z.infer<typeof milestoneCreateSchema>;
+
+export const milestoneDecisionSchema = z
+  .object({ decision: z.enum(["approve", "changes"]), comment: z.string().trim().max(2000).optional() })
+  .refine((d) => d.decision === "approve" || (d.comment ?? "").length >= 3, { message: "Tell the team what to change", path: ["comment"] });
+export type MilestoneDecisionInput = z.input<typeof milestoneDecisionSchema>;
+
+/** The client's Progress page: finish dates shared with them and finished parts to look at. */
+export type ClientProgressView = {
+  projects: {
+    engagementId: string;
+    service: string;
+    estimates: { department: string; finishBy: string; note: string | null; sharedAt: string }[];
+    milestones: (ProjectMilestoneRow & { canDecide: boolean })[];
+  }[];
+};

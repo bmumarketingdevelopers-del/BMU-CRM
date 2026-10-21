@@ -33,7 +33,7 @@ const CLOSED = ['done', 'cancelled'];
 const DONE_DELIVERABLE = ['approved', 'scheduled', 'published'];
 
 const include = {
-  tasks: { orderBy: { sort: 'asc' as const }, select: { id: true, title: true, flowStep: true, kind: true, ownerId: true, deadline: true, status: true } },
+  tasks: { orderBy: { sort: 'asc' as const }, select: { id: true, title: true, flowStep: true, kind: true, ownerId: true, deadline: true, status: true, estimateMin: true } },
   cycle: { select: { engagement: { select: { id: true, amId: true, clientOrg: { select: { name: true } }, service: { select: { name: true } } } } } },
 } satisfies Prisma.DeliverableInclude;
 type Row = Prisma.DeliverableGetPayload<{ include: typeof include }>;
@@ -110,6 +110,7 @@ export class HandoffService implements OnModuleInit, OnModuleDestroy {
             owner: person(t.ownerId),
             deadline: t.deadline?.toISOString() ?? null,
             status: t.status,
+            hours: t.estimateMin ? Math.round((t.estimateMin / 60) * 10) / 10 : null,
           }),
         ),
         can: {
@@ -259,6 +260,11 @@ export class HandoffService implements OnModuleInit, OnModuleDestroy {
     }
     const changed = input.steps.filter((s) => d.tasks.find((t) => t.id === s.taskId)?.ownerId !== s.ownerId);
     for (const s of changed) await this.prisma.task.update({ where: { id: s.taskId }, data: { ownerId: s.ownerId } });
+    // v40: the hours the Department Head gives each step fill the person's week on Workload until it is done.
+    for (const s of input.steps) {
+      const min = s.hours ? Math.round(s.hours * 60) : undefined;
+      if (min && d.tasks.find((t) => t.id === s.taskId)?.estimateMin !== min) await this.prisma.task.update({ where: { id: s.taskId }, data: { estimateMin: min } });
+    }
     const allOwned = d.tasks.filter((t) => ASSIGNABLE.includes(t.kind) && !CLOSED.includes(t.status)).every((t) => !!owners.get(t.id));
     const now = new Date();
     await this.prisma.deliverable.update({
