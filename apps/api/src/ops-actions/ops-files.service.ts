@@ -10,9 +10,12 @@ import {
   opsFileUpdateSchema,
   opsShareCreateSchema,
   type Me,
+  type OpsClientFileFeed,
+  type OpsFileDirection,
   type OpsFileFolder,
   type OpsFileList,
   type OpsFileRow,
+  type OpsFileSource,
   type OpsPublicShare,
   type OpsShareLinkView,
 } from '@bmu/shared';
@@ -25,8 +28,15 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { ATTACHMENT_KIND } from '../requests/messages.service.js';
 import { appUrl } from '../service/email.service.js';
 import { day, hasRole, isLeadership, lc, relPath, sha256, type OpsUpload } from './ops-util.js';
+import { startJob, type JobHandle } from '../runtime/jobs.js';
+import { claimOnce } from '../runtime/claims.js';
 
-const fileInclude = { versions: { select: { id: true } } } as const;
+const fileInclude = { versions: { select: { id: true, sentToClientAt: true, sentById: true } } } as const;
+/** v35: signature and seal images are settings, not client files. */
+const PRIVATE_TAGS = ['invoice-signature', 'invoice-seal', 'cm-signature'];
+/** v35: payment proofs are for money roles. */
+const PROOF_ROLES = ['founder', 'admin', 'am_lead', 'finance'];
+type Shared = { direction: OpsFileDirection; source: OpsFileSource; sharedAt: Date; sharedById: string | null };
 type FileFull = Prisma.FileGetPayload<{ include: typeof fileInclude }>;
 const SECRET = () => process.env.JWT_SECRET ?? 'dev-only-change-me';
 
@@ -52,6 +62,8 @@ async function gate5Passed(prisma: PrismaService, e: { id: string; currentGate: 
 @Injectable()
 export class OpsFilesService implements OnModuleInit {
   private readonly attempts = new Map<string, { n: number; until: number }>();
+  private digestJob?: JobHandle;
+  private lastDigestDay = '';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -61,6 +73,8 @@ export class OpsFilesService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    // v35: the Founder's daily summary of files sent to and received from clients (after 19:00 IST).
+    this.digestJob = startJob({ name: 'files.client_digest', hint: "Founder's daily client files summary (after 19:00 IST)", everyMs: 30 * 60_000, run: () => this.dailyDigest() });
     this.registry.registerArchiveEntity({
       entity: 'file',
       model: 'file',
@@ -132,28 +146,167 @@ export class OpsFilesService implements OnModuleInit {
   }
 
   // -------------------------------------------------------------------------
+  // v35: which way each client file went, and where it was shared
+
+  private async classify(rows: FileFull[]): Promise<Map<string, Shared | null>> {
+    const ids = rows.map((r) => r.id);
+    const chatIds = rows.filter((r) => r.kind === ATTACHMENT_KIND).map((r) => r.id);
+    const [messages, assetFiles] = await Promise.all([
+      chatIds.length ? this.prisma.message.findMany({ where: { attachments: { hasSome: chatIds } }, select: { attachments: true, authorId: true, isInternal: true, createdAt: true } }) : [],
+      ids.length ? this.prisma.assetVersion.findMany({ where: { fileId: { in: ids } }, select: { fileId: true, asset: { select: { clientVisible: true } } } }) : [],
+    ]);
+    const peopleIds = [...new Set([...rows.map((r) => r.uploadedById), ...messages.map((m) => m.authorId)].filter((x): x is string => !!x))];
+    const people = peopleIds.length ? await this.prisma.user.findMany({ where: { id: { in: peopleIds } }, select: { id: true, type: true } }) : [];
+    const isClient = (id: string | null | undefined) => !!id && people.find((p) => p.id === id)?.type === 'client';
+    const out = new Map<string, Shared | null>();
+    for (const f of rows) {
+      if (f.kind === ATTACHMENT_KIND) {
+        const m = messages.find((x) => x.attachments.includes(f.id));
+        // Attached but never sent: not shared with anyone.
+        out.set(f.id, m ? { source: 'chat', direction: m.isInternal ? 'internal' : isClient(m.authorId) ? 'from_client' : 'to_client', sharedAt: m.createdAt, sharedById: m.authorId } : null);
+        continue;
+      }
+      const sent = f.versions.filter((v) => v.sentToClientAt).sort((a, b) => a.sentToClientAt!.getTime() - b.sentToClientAt!.getTime());
+      const asset = assetFiles.find((a) => a.fileId === f.id);
+      // Older client uploads have no uploader recorded: no versions, no tags, not an asset, in a client's general folder.
+      const fromClient = isClient(f.uploadedById) || f.folder === 'from_client' || (!f.uploadedById && !f.versions.length && !asset && !!f.clientOrgId && !f.tags.length && f.folder === 'general');
+      const source: OpsFileSource = f.tags.includes('payment-proof')
+        ? 'payment_proof'
+        : f.versions.length
+          ? 'review'
+          : asset
+            ? 'asset'
+            : f.tags.includes('brand') || f.folder === 'brand'
+              ? 'brand'
+              : fromClient
+                ? 'client_upload'
+                : 'upload';
+      if (fromClient) out.set(f.id, { source, direction: 'from_client', sharedAt: f.createdAt, sharedById: f.uploadedById });
+      else if (sent.length) out.set(f.id, { source, direction: 'to_client', sharedAt: sent[0].sentToClientAt!, sharedById: sent[0].sentById });
+      else if (f.released || asset?.asset.clientVisible) out.set(f.id, { source, direction: 'to_client', sharedAt: f.createdAt, sharedById: f.uploadedById });
+      else out.set(f.id, { source, direction: 'internal', sharedAt: f.createdAt, sharedById: f.uploadedById });
+    }
+    return out;
+  }
+
+  /** Client files that went to or came from clients since `since` (any client, any team member). */
+  private async feedRows(orgId: string, since: Date) {
+    const rows = await this.prisma.file.findMany({
+      where: {
+        orgId,
+        clientOrgId: { not: null },
+        archivedAt: null,
+        NOT: { tags: { hasSome: PRIVATE_TAGS } },
+        OR: [{ createdAt: { gte: since } }, { versions: { some: { sentToClientAt: { gte: since } } } }],
+      },
+      include: fileInclude,
+      orderBy: { createdAt: 'desc' },
+      take: 400,
+    });
+    const shared = await this.classify(rows);
+    return rows
+      .map((f) => ({ f, s: shared.get(f.id) }))
+      .filter((x): x is { f: FileFull; s: Shared } => !!x.s && x.s.direction !== 'internal' && x.s.sharedAt >= since)
+      .sort((a, b) => b.s.sharedAt.getTime() - a.s.sharedAt.getTime());
+  }
+
+  /** v35: the Founder's view of every file sent to and received from clients, by anyone. */
+  async clientFeed(me: Me, days = 7): Promise<OpsClientFileFeed> {
+    if (!hasRole(me, 'founder')) throw new ForbiddenException('Client files are on the Founder’s dashboard');
+    const span = Math.min(Math.max(Math.round(days) || 7, 1), 90);
+    const items = await this.feedRows(me.orgId, new Date(Date.now() - span * 86_400_000));
+    const files = items.slice(0, 40).map((x) => x.f);
+    const [clients, users] = await Promise.all([
+      this.prisma.clientOrg.findMany({ where: { id: { in: [...new Set(files.map((f) => f.clientOrgId!))] } }, select: { id: true, name: true } }),
+      this.prisma.user.findMany({ where: { id: { in: [...new Set(items.slice(0, 40).flatMap((x) => [x.s.sharedById, x.f.uploadedById]).filter((v): v is string => !!v))] } }, select: { id: true, name: true, type: true } }),
+    ]);
+    const engs = await this.prisma.engagement.findMany({ where: { id: { in: files.map((f) => f.engagementId).filter((x): x is string => !!x) } }, select: { id: true, service: { select: { name: true } } } });
+    return {
+      days: span,
+      sent: items.filter((x) => x.s.direction === 'to_client').length,
+      received: items.filter((x) => x.s.direction === 'from_client').length,
+      rows: items.slice(0, 40).map(({ f, s }) => {
+        const by = users.find((u) => u.id === s.sharedById);
+        const client = clients.find((c) => c.id === f.clientOrgId) ?? null;
+        const eng = engs.find((e) => e.id === f.engagementId);
+        return {
+          id: f.id,
+          name: f.name ?? 'file',
+          folder: this.folderOf(f),
+          kind: f.kind,
+          mimeType: f.mimeType,
+          sizeBytes: f.sizeBytes,
+          tags: f.tags.filter((t) => t !== 'brand'),
+          client,
+          engagement: eng ? { id: eng.id, name: eng.service.name } : null,
+          uploadedBy: by ? `${by.name}${by.type === 'client' ? ' (client)' : ''}` : s.direction === 'from_client' ? 'Client' : 'Team',
+          createdAt: f.createdAt.toISOString(),
+          released: f.released,
+          archivedAt: null,
+          url: f.kind === ATTACHMENT_KIND ? `/api/thread-files/${f.id}` : `/api/files/${f.id}`,
+          shares: 0,
+          can: { edit: false, release: false, share: false, archive: false },
+          releaseBlockedReason: null,
+          direction: s.direction,
+          source: s.source,
+          sharedAt: s.sharedAt.toISOString(),
+          sharedBy: by?.name ?? null,
+        };
+      }),
+    };
+  }
+
+  /** v35: once a day after 19:00 IST, tell each Founder how many files went to and came from clients today. */
+  private async dailyDigest() {
+    const ist = new Date(Date.now() + 330 * 60_000);
+    const today = ist.toISOString().slice(0, 10);
+    if (this.lastDigestDay === today || ist.getUTCHours() < 19) return;
+    this.lastDigestDay = today;
+    if (!(await claimOnce(this.prisma, `files.client_digest:${today}`))) return;
+    const since = new Date(`${today}T00:00:00+05:30`);
+    for (const o of await this.prisma.organisation.findMany({ select: { id: true } })) {
+      const items = await this.feedRows(o.id, since);
+      if (!items.length) continue;
+      const sent = items.filter((x) => x.s.direction === 'to_client').length;
+      const received = items.length - sent;
+      const names = await this.prisma.clientOrg.findMany({ where: { id: { in: [...new Set(items.map((x) => x.f.clientOrgId!))] } }, select: { name: true } });
+      const founders = await this.prisma.user.findMany({ where: { orgId: o.id, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, select: { id: true } });
+      await this.notifications.notify(o.id, founders.map((f) => f.id), {
+        kind: 'client_files_digest',
+        title: `Client files today: ${sent} sent to clients, ${received} received`,
+        body: `${names.map((n) => n.name).slice(0, 6).join(', ')}${names.length > 6 ? ` and ${names.length - 6} more` : ''}.`,
+        link: '/team/files?shared=clients',
+      });
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // List
 
-  async list(me: Me, q: { clientOrgId?: string; engagementId?: string; folder?: string; archived?: string }): Promise<OpsFileList> {
+  async list(me: Me, q: { clientOrgId?: string; engagementId?: string; folder?: string; archived?: string; direction?: string }): Promise<OpsFileList> {
     const scope = await this.clientScope(me);
     const where: Prisma.FileWhereInput = {
       orgId: me.orgId,
-      kind: { not: ATTACHMENT_KIND },
       archivedAt: q.archived === '1' ? { not: null } : null,
       AND: [
-        // Files that belong to a client (or were uploaded through ops); creator submissions and payment proofs stay where they are.
-        { OR: [{ clientOrgId: { not: null } }, { uploadedById: { not: null } }] },
-        { NOT: { tags: { has: 'payment-proof' } } },
+        // v35: every client file in one place: uploads, work versions, brand kits, assets and files shared in client
+        // chats. Creator submissions and team-only chat files stay where they are; signatures and seals are settings.
+        { OR: [{ kind: { not: ATTACHMENT_KIND }, OR: [{ clientOrgId: { not: null } }, { uploadedById: { not: null } }] }, { kind: ATTACHMENT_KIND, clientOrgId: { not: null } }] },
+        { NOT: { tags: { hasSome: PRIVATE_TAGS } } },
+        hasRole(me, ...PROOF_ROLES) ? {} : { NOT: { tags: { has: 'payment-proof' } } },
         scope === 'all' ? {} : { OR: [{ clientOrgId: { in: scope } }, { uploadedById: me.id }] },
         q.clientOrgId ? { clientOrgId: q.clientOrgId } : {},
         q.engagementId ? { engagementId: q.engagementId } : {},
       ],
     };
-    const rows = await this.prisma.file.findMany({ where, include: fileInclude, orderBy: { createdAt: 'desc' }, take: 500 });
+    const found = await this.prisma.file.findMany({ where, include: fileInclude, orderBy: { createdAt: 'desc' }, take: 800 });
+    const shared = await this.classify(found);
+    // Chat files attached but never sent are not shared with anyone yet.
+    const rows = found.filter((f) => shared.get(f.id) !== null && (!q.direction || shared.get(f.id)?.direction === q.direction)).slice(0, 500);
     const clientIds = [...new Set(rows.map((r) => r.clientOrgId).filter((x): x is string => !!x))];
     const [clients, users, shares, scopeClients] = await Promise.all([
       this.prisma.clientOrg.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true, amUserId: true } }),
-      this.prisma.user.findMany({ where: { id: { in: rows.map((r) => r.uploadedById).filter((x): x is string => !!x) } }, select: { id: true, name: true } }),
+      this.prisma.user.findMany({ where: { id: { in: [...new Set([...rows.map((r) => r.uploadedById), ...[...shared.values()].map((v) => v?.sharedById)].filter((x): x is string => !!x))] } }, select: { id: true, name: true, type: true } }),
       this.prisma.opsShareLink.groupBy({ by: ['fileId'], where: { fileId: { in: rows.map((r) => r.id) }, revokedAt: null, expiresAt: { gt: new Date() } }, _count: true }),
       this.prisma.clientOrg.findMany({
         where: { orgId: me.orgId, deletedAt: null, archivedAt: null, ...(scope === 'all' ? {} : { id: { in: scope } }) },
@@ -176,6 +329,9 @@ export class OpsFilesService implements OnModuleInit {
         const amId = eng?.amId ?? client?.amUserId ?? null;
         const manages = hasRole(me, 'founder', 'admin', 'am_lead') || (isAm && amId === me.id);
         const folder = this.folderOf(f);
+        const sh = shared.get(f.id) ?? null;
+        const chat = f.kind === ATTACHMENT_KIND;
+        const sharer = users.find((u) => u.id === sh?.sharedById);
         const releaseBlockedReason =
           f.released ? null : folder !== 'final' ? 'Move it to Final files first' : !eng ? 'Link the file to a project first' : !g5.get(eng.id) ? `${eng.service.name} has not passed Gate 5 (final sign-off and balance paid)` : null;
         return {
@@ -188,19 +344,26 @@ export class OpsFilesService implements OnModuleInit {
           tags: f.tags.filter((t) => t !== 'brand'),
           client: client ? { id: client.id, name: client.name } : null,
           engagement: eng ? { id: eng.id, name: eng.service.name } : null,
-          uploadedBy: users.find((u) => u.id === f.uploadedById)?.name ?? (f.uploadedById ? 'Team' : f.clientOrgId && folder === 'from_client' ? 'Client' : null),
+          uploadedBy: users.find((u) => u.id === (f.uploadedById ?? (chat ? sh?.sharedById : null)))?.name ?? (f.uploadedById ? 'Team' : f.clientOrgId && folder === 'from_client' ? 'Client' : null),
           createdAt: f.createdAt.toISOString(),
           released: f.released,
           archivedAt: f.archivedAt?.toISOString() ?? null,
-          url: `/api/files/${f.id}`,
+          url: chat ? `/api/thread-files/${f.id}` : `/api/files/${f.id}`,
           shares: shares.find((s) => s.fileId === f.id)?._count ?? 0,
-          can: {
-            edit: f.uploadedById === me.id || leader || head || manages,
-            release: manages && !f.released && !releaseBlockedReason,
-            share: hasRole(me, 'founder', 'admin') || manages,
-            archive: f.uploadedById === me.id || leader || head || manages,
-          },
-          releaseBlockedReason: manages ? releaseBlockedReason : f.released ? null : 'Only the Client Manager releases final files',
+          // Chat files stay as they were sent: open them here, manage them in the conversation.
+          can: chat
+            ? { edit: false, release: false, share: false, archive: false }
+            : {
+                edit: f.uploadedById === me.id || leader || head || manages,
+                release: manages && !f.released && !releaseBlockedReason,
+                share: hasRole(me, 'founder', 'admin') || manages,
+                archive: f.uploadedById === me.id || leader || head || manages,
+              },
+          releaseBlockedReason: chat ? null : manages ? releaseBlockedReason : f.released ? null : 'Only the Client Manager releases final files',
+          direction: sh?.direction ?? 'internal',
+          source: sh?.source ?? 'upload',
+          sharedAt: sh?.sharedAt.toISOString() ?? null,
+          sharedBy: sharer ? `${sharer.name}${sharer.type === 'client' ? ' (client)' : ''}` : null,
         };
       });
     return {

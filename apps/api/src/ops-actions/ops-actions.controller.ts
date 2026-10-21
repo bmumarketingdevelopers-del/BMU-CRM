@@ -156,8 +156,14 @@ export class OpsFilesController {
   constructor(private readonly files: OpsFilesService) {}
 
   @Get('files')
-  list(@CurrentUser() me: Me, @Query('clientOrgId') clientOrgId?: string, @Query('engagementId') engagementId?: string, @Query('folder') folder?: string, @Query('archived') archived?: string) {
-    return this.files.list(me, { clientOrgId, engagementId, folder, archived });
+  list(@CurrentUser() me: Me, @Query('clientOrgId') clientOrgId?: string, @Query('engagementId') engagementId?: string, @Query('folder') folder?: string, @Query('archived') archived?: string, @Query('direction') direction?: string) {
+    return this.files.list(me, { clientOrgId, engagementId, folder, archived, direction });
+  }
+
+  // v35: every file sent to and received from clients, for the Founder.
+  @Get('files/client-feed')
+  clientFeed(@CurrentUser() me: Me, @Query('days') days?: string) {
+    return this.files.clientFeed(me, Number(days) || 7);
   }
 
   @Post('files')

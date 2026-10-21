@@ -6,7 +6,7 @@
  * Used at /team/files and, filtered, on client and project pages.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { OPS_FILE_FOLDERS, opsFileFolderLabels, type OpsFileFolder, type OpsFileRow, type OpsShareLinkView } from "@bmu/shared";
+import { OPS_FILE_FOLDERS, opsFileDirectionLabels, opsFileFolderLabels, opsFileSourceLabels, type OpsFileFolder, type OpsFileRow, type OpsShareLinkView } from "@bmu/shared";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { Badge, Input, LoadState, Select } from "@/components/ui";
@@ -19,11 +19,14 @@ import { SavedViewsMenu } from "@/components/actions/saved-views-menu";
 import { CsvButton } from "@/components/charts";
 import { AddButton, EmptyAdd, errMsg, fmtDay, fmtSize, ReasonDialog } from "./kit";
 
-type F = { q: string; folder: "" | OpsFileFolder; client: string; project: string; archived: boolean };
+/** v35: "clients" = sent to or received from clients. */
+type Shared = "" | "clients" | "to_client" | "from_client" | "internal";
+type F = { q: string; folder: "" | OpsFileFolder; client: string; project: string; archived: boolean; shared?: Shared };
+const DIRECTION_TONE = { to_client: "green", from_client: "amber", internal: "neutral" } as const;
 
-export function FilesBrowser({ clientOrgId, engagementId, compact }: { clientOrgId?: string; engagementId?: string; compact?: boolean }) {
+export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }: { clientOrgId?: string; engagementId?: string; compact?: boolean; shared?: Shared }) {
   const { openNew, canNew, notify, version, changed } = useActions();
-  const EMPTY: F = { q: "", folder: "", client: clientOrgId ?? "", project: engagementId ?? "", archived: false };
+  const EMPTY: F = { q: "", folder: "", client: clientOrgId ?? "", project: engagementId ?? "", archived: false, shared };
   const [f, setF] = useState<F>(EMPTY);
   const archivedRef = useRef(false);
   const list = useLoad(() => api.ops.files.list({ clientOrgId, engagementId, archived: archivedRef.current ? "1" : undefined }));
@@ -52,7 +55,8 @@ export function FilesBrowser({ clientOrgId, engagementId, compact }: { clientOrg
       if (f.folder && r.folder !== f.folder) return false;
       if (f.client && r.client?.id !== f.client) return false;
       if (f.project && r.engagement?.id !== f.project) return false;
-      if (q && ![r.name, r.client?.name, r.engagement?.name, r.uploadedBy, ...r.tags].some((x) => x?.toLowerCase().includes(q))) return false;
+      if (f.shared === "clients" ? r.direction === "internal" : f.shared && r.direction !== f.shared) return false;
+      if (q && ![r.name, r.client?.name, r.engagement?.name, r.uploadedBy, r.sharedBy, ...r.tags].some((x) => x?.toLowerCase().includes(q))) return false;
       return true;
     });
   }, [rows, f]);
@@ -125,6 +129,9 @@ export function FilesBrowser({ clientOrgId, engagementId, compact }: { clientOrg
                 columns={[
                   { header: "Name", value: (r: OpsFileRow) => r.name },
                   { header: "Folder", value: (r) => opsFileFolderLabels[r.folder] },
+                  { header: "Shared", value: (r) => (r.direction ? opsFileDirectionLabels[r.direction] : "") },
+                  { header: "Where", value: (r) => (r.source ? opsFileSourceLabels[r.source] : "") },
+                  { header: "Shared by", value: (r) => r.sharedBy ?? "" },
                   { header: "Client", value: (r) => r.client?.name ?? "" },
                   { header: "Project", value: (r) => r.engagement?.name ?? "" },
                   { header: "Tags", value: (r) => r.tags.join("; ") },
@@ -147,7 +154,14 @@ export function FilesBrowser({ clientOrgId, engagementId, compact }: { clientOrg
         ))}
       </div>
       <div className="grid gap-2 border-b border-border p-3 sm:grid-cols-2 lg:grid-cols-4" role="search" aria-label="Filter files">
-        <Input placeholder="Search name or tag…" aria-label="Search files" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} className="lg:col-span-2" />
+        <Input placeholder="Search name, tag or person…" aria-label="Search files" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
+        <Select aria-label="Shared" value={f.shared ?? ""} onChange={(e) => setF({ ...f, shared: e.target.value as Shared })}>
+          <option value="">Shared or not</option>
+          <option value="clients">With clients (both ways)</option>
+          <option value="to_client">Sent to clients</option>
+          <option value="from_client">From clients</option>
+          <option value="internal">Internal only</option>
+        </Select>
         {!clientOrgId && (
           <Select aria-label="Filter by client" value={f.client} onChange={(e) => setF({ ...f, client: e.target.value, project: "" })}>
             <option value="">Every client</option>
@@ -195,6 +209,7 @@ export function FilesBrowser({ clientOrgId, engagementId, compact }: { clientOrg
                 </th>
                 <th className="px-3 py-2">File</th>
                 <th className="px-3 py-2">Folder</th>
+                <th className="px-3 py-2">Shared</th>
                 {!clientOrgId && <th className="px-3 py-2">Client</th>}
                 <th className="px-3 py-2">Uploaded</th>
                 <th className="px-3 py-2 text-right">Size</th>
@@ -221,6 +236,12 @@ export function FilesBrowser({ clientOrgId, engagementId, compact }: { clientOrg
                     </span>
                   </td>
                   <td className="px-3 py-2">{opsFileFolderLabels[r.folder]}</td>
+                  <td className="px-3 py-2" data-testid="file-shared">
+                    {r.direction && <Badge tone={DIRECTION_TONE[r.direction]}>{opsFileDirectionLabels[r.direction]}</Badge>}
+                    <span className="mt-0.5 block text-xs text-ink-muted">
+                      {[r.source ? opsFileSourceLabels[r.source] : null, r.direction !== "internal" ? r.sharedBy : null].filter(Boolean).join(" · ")}
+                    </span>
+                  </td>
                   {!clientOrgId && (
                     <td className="px-3 py-2">
                       {r.client?.name ?? "—"}
@@ -249,7 +270,7 @@ export function FilesBrowser({ clientOrgId, engagementId, compact }: { clientOrg
               ))}
               {shown.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-6 text-center text-ink-muted">
+                  <td colSpan={8} className="px-3 py-6 text-center text-ink-muted">
                     No files match these filters.
                   </td>
                 </tr>

@@ -16,6 +16,7 @@ import type {
   OpsDueDate,
   OpsDuplicateMatch,
   OpsFileList,
+  OpsClientFileFeed,
   OpsFileUpdate,
   OpsIntegrationRow,
   OpsInvoiceCreate,
@@ -88,7 +89,9 @@ export const opsActionsApi = (t: Transport) => ({
       rate: (briefId: string, body: OpsCreatorRating) => t.post<Msg & { id: string; rating: number; ratingCount: number }>(`/ops/creators/briefs/${briefId}/rating`, body),
     },
     files: {
-      list: (q: { clientOrgId?: string; engagementId?: string; folder?: string; archived?: string } = {}) => t.get<OpsFileList>(`/ops/files${qs(q)}`),
+      list: (q: { clientOrgId?: string; engagementId?: string; folder?: string; archived?: string; direction?: string } = {}) => t.get<OpsFileList>(`/ops/files${qs(q)}`),
+      /** v35: files sent to and received from clients (Founder). */
+      clientFeed: (days = 7) => t.get<OpsClientFileFeed>(`/ops/files/client-feed?days=${days}`),
       upload: (file: Blob, meta: { clientOrgId: string; engagementId?: string; folder?: string; tags?: string[]; name?: string }) => {
         const form = new FormData();
         form.append("file", file);

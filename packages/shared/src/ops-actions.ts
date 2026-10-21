@@ -267,8 +267,38 @@ export type OpsFileRow = {
   shares: number;
   can: { edit: boolean; release: boolean; share: boolean; archive: boolean };
   releaseBlockedReason: string | null;
+  /** v35: sent to the client, received from the client, or kept inside the team. */
+  direction?: OpsFileDirection;
+  /** v35: where it was shared (chat, review, upload, brand kit, asset library, payment proof). */
+  source?: OpsFileSource;
+  /** v35: when it reached (or came from) the client, and who shared it. */
+  sharedAt?: string | null;
+  sharedBy?: string | null;
 };
 export type OpsFileList = { rows: OpsFileRow[]; clients: { id: string; name: string; engagements: { id: string; name: string; gate: string }[] }[] };
+
+// v35: every client file in one place, with its direction and where it was shared.
+export const OPS_FILE_DIRECTIONS = ["to_client", "from_client", "internal"] as const;
+export type OpsFileDirection = (typeof OPS_FILE_DIRECTIONS)[number];
+export const opsFileDirectionLabels: Record<OpsFileDirection, string> = { to_client: "Sent to client", from_client: "From client", internal: "Internal" };
+export const OPS_FILE_SOURCES = ["chat", "review", "client_upload", "upload", "brand", "asset", "payment_proof"] as const;
+export type OpsFileSource = (typeof OPS_FILE_SOURCES)[number];
+export const opsFileSourceLabels: Record<OpsFileSource, string> = {
+  chat: "Chat",
+  review: "Work for review",
+  client_upload: "Client upload",
+  upload: "Team upload",
+  brand: "Brand kit",
+  asset: "Asset library",
+  payment_proof: "Payment proof",
+};
+/** v35: files sent to and received from clients (the Founder's dashboard and daily summary). */
+export type OpsClientFileFeed = {
+  days: number;
+  sent: number;
+  received: number;
+  rows: (OpsFileRow & { direction: OpsFileDirection; source: OpsFileSource; sharedAt: string })[];
+};
 
 export const opsFileUpdateSchema = z.object({
   name: z.string().trim().min(1, "Give the file a name").max(200).optional(),
