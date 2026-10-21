@@ -111,7 +111,7 @@ export class CreativeClientController {
   async file(@Param('token') token: string, @Res() res: Response) {
     const f = await this.proofing.publicFile(token);
     if (f.kind === 'link') return res.redirect(f.path);
-    // v37: a one-time project's work before the final payment: the watermarked preview, as in the client app.
+    // v37: a one-time project's work before the final payment: view only, as in the client app.
     if (await this.proofing.needsPreview(f)) return sendClientPreview(res, f);
     return sendStoredFile(res, f, { cache: 'private, no-store' });
   }

@@ -276,6 +276,12 @@ export class OpsCommsController {
     return this.comms.attach(me, id, file, ip);
   }
 
+  /** v39: a Drive (or any) link to send with the next message (files over the upload limit). */
+  @Post('threads/:id/links')
+  link(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.comms.link(me, id, body, ip);
+  }
+
   @Post('messages/to-request')
   toRequest(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.comms.toRequest(me, body, ip);

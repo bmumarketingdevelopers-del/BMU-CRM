@@ -420,10 +420,11 @@ export function ClientFiles({ onBack }: { onBack: () => void }) {
         <Row
           key={f.id}
           title={f.deliverable}
-          sub={`${f.serviceName} · v${f.version}${f.preview ? (f.kind === 'video' ? ' · watch the preview in the web portal' : ' · watermarked preview') : ''}`}
-          right={<Badge tone={f.downloadUrl ? 'good' : 'neutral'}>{f.downloadUrl ? 'Ready' : f.preview ? '🔒 Preview' : '🔒 Locked'}</Badge>}
+          sub={`${f.serviceName} · v${f.version}${f.preview ? ' · view only in the web portal until the final payment' : ''}`}
+          right={<Badge tone={f.downloadUrl ? 'good' : 'neutral'}>{f.downloadUrl ? 'Ready' : f.preview ? '🔒 View only' : '🔒 Locked'}</Badge>}
           // v37: before the final payment, videos play (watermarked) in the web portal; images and PDFs open watermarked.
-          onPress={() => Linking.openURL(f.preview && f.kind === 'video' ? `${API_URL.replace(/\/api\/?$/, '')}/client/files` : fileUrl(f.url))}
+          // v39: view only before the final payment: the web portal's viewer (no download), not the phone's browser.
+          onPress={() => Linking.openURL(f.preview ? `${API_URL.replace(/\/api\/?$/, '')}/client/files` : fileUrl(f.url))}
         />
       ))}
       {files.length === 0 && <Empty>Approved work appears here.</Empty>}

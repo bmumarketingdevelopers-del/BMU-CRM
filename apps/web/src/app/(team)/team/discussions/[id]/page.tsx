@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { use, useRef, useState } from "react";
+import { use, useState } from "react";
 import type { OpsThreadView, SentFile } from "@bmu/shared";
 import { Badge, Button, LoadState, PageTitle } from "@/components/ui";
 import { useActions } from "@/components/actions/actions-provider";
@@ -9,7 +9,7 @@ import { RowMenu } from "@/components/actions/row-menu";
 import { TextArea } from "@/components/actions/action-drawer";
 import { errMsg } from "@/components/ops/kit";
 import { MessageToRequestDrawer } from "@/components/ops/message-to-request";
-import { SENT_FILE_MAX, SentFileList } from "@/components/sent-files";
+import { PendingFiles, SendFileControls, SentFileList } from "@/components/sent-files";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
@@ -22,10 +22,8 @@ export default function DiscussionPage({ params }: { params: Promise<{ id: strin
   const [body, setBody] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  // v38: files to send with the reply (they go to Files for the people in this discussion).
+  // v38: files (v39: and links) to send with the reply; they go to Files for the people in this discussion.
   const [files, setFiles] = useState<SentFile[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const picker = useRef<HTMLInputElement>(null);
   const [toRequest, setToRequest] = useState<{ id: string; body: string }>();
   const { me, canNew, openNew, notify } = useActions();
   const canRequest = me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager"].includes(r));
@@ -44,24 +42,6 @@ export default function DiscussionPage({ params }: { params: Promise<{ id: strin
       setError(errMsg(err));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function attach(list: FileList | null) {
-    if (!list?.length) return;
-    setUploading(true);
-    setError(undefined);
-    try {
-      for (const f of Array.from(list).slice(0, 5 - files.length)) {
-        if (f.size > SENT_FILE_MAX) throw new Error(`${f.name} is larger than 200 MB`);
-        const a = await api.ops.threads.attach(id, f);
-        setFiles((x) => [...x, a]);
-      }
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setUploading(false);
-      if (picker.current) picker.current.value = "";
     }
   }
 
@@ -99,25 +79,11 @@ export default function DiscussionPage({ params }: { params: Promise<{ id: strin
       {t.canPost ? (
         <form onSubmit={send} className="mt-6 grid max-w-2xl gap-2">
           <TextArea value={body} onChange={(e) => setBody(e.target.value)} aria-label="Message" rows={3} maxLength={4000} placeholder="Write a reply…" />
-          {files.length > 0 && (
-            <ul className="flex flex-wrap gap-2 text-xs" aria-label="Files to send">
-              {files.map((f) => (
-                <li key={f.id} className="flex items-center gap-1 border border-border bg-canvas/50 px-2 py-1">
-                  📎 {f.name}
-                  <button type="button" className="ml-1 text-ink-muted hover:text-red" aria-label={`Remove ${f.name}`} onClick={() => setFiles((x) => x.filter((y) => y.id !== f.id))}>
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          <PendingFiles files={files} onRemove={(fid) => setFiles((x) => x.filter((y) => y.id !== fid))} />
+          <SendFileControls limit={5 - files.length} upload={(f) => api.ops.threads.attach(id, f)} addLink={(url) => api.ops.threads.link(id, { url })} onAdded={(f) => setFiles((x) => [...x, f])} />
           {error && <p className="text-sm text-red">{error}</p>}
           <div className="flex flex-wrap items-center gap-3">
-            <Button disabled={busy || uploading}>{busy ? "Sending…" : "Send"}</Button>
-            <label className={`cursor-pointer text-sm underline ${files.length >= 5 ? "pointer-events-none opacity-50" : ""}`}>
-              {uploading ? "Uploading…" : "📎 Attach files"}
-              <input ref={picker} type="file" multiple className="sr-only" onChange={(e) => attach(e.target.files)} disabled={uploading || files.length >= 5} aria-label="Attach files" />
-            </label>
+            <Button disabled={busy}>{busy ? "Sending…" : "Send"}</Button>
             <span className="text-xs text-ink-muted">{t.kind === "internal" ? "Only the people in this discussion see the files (also in their Files)." : "Everyone on this client's team sees the files (also in their Files)."}</span>
           </div>
         </form>

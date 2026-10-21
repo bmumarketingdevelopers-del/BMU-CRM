@@ -730,7 +730,7 @@ export class ProductionService {
   // Files
 
   /**
-   * v37: a client sees a watermarked preview (no download) of a ONE-TIME project's work until its final balance is
+   * v37: a client sees view only (no download) of a ONE-TIME project's work until its final balance is
    * paid and the files are released. Monthly retainers pay in advance and get clean files.
    */
   async previewOnly(me: Me, file: { id: string; released: boolean; engagementId: string | null; versions: { deliverable: { cycle: { engagementId: string } } }[] }) {

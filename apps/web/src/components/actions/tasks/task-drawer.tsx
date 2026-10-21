@@ -9,13 +9,14 @@
  * departmentId, internal ("1"), source ("message:<id>" | "comment:<id>"). Pass taskId to edit instead.
  */
 import { useEffect, useMemo, useState } from "react";
-import { CORE_TASK_PRIORITIES, coreCanOverride, coreCanRecur, coreRepeatRuleLabels, type CoreCandidates, type CoreTaskDetail, type CoreTaskFormOptions } from "@bmu/shared";
+import { CORE_TASK_PRIORITIES, coreCanOverride, coreCanRecur, coreRepeatRuleLabels, type CoreCandidates, type CoreTaskDetail, type CoreTaskFormOptions, type SentFile } from "@bmu/shared";
 import { api } from "@/lib/api";
 import { DuplicateWarning } from "../duplicate-warning";
 import { ActionDrawer, Field, TextArea, inputCls, useDraftAutosave, type SaveMode } from "../action-drawer";
 import { useActions } from "../actions-provider";
 import type { NewDrawerProps } from "../new-registry";
 import { PersonPicker } from "../person-picker";
+import { PendingFiles, SendFileControls } from "@/components/sent-files";
 
 type Values = {
   title: string;
@@ -91,6 +92,8 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
   const [depQ, setDepQ] = useState("");
   const [depHits, setDepHits] = useState<{ id: string; title: string }[]>([]);
   const [parentTitle, setParentTitle] = useState<string>();
+  // v39: files and links sent with the task (uploaded as they are picked).
+  const [files, setFiles] = useState<SentFile[]>([]);
   const set = <K extends keyof Values>(k: K, val: Values[K]) => setV((x) => ({ ...x, [k]: val }));
   const draftKey = `new${prefill?.engagementId ? `:${prefill.engagementId}` : ""}${prefill?.parentId ? `:${prefill.parentId}` : ""}`;
   const draft = useDraftAutosave({ entity: "task", key: draftKey, values: v as unknown as Record<string, unknown>, enabled: open, onRestore: (d) => setV({ ...initial(prefill), ...(d as unknown as Values) }) });
@@ -225,6 +228,7 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
         estimateHours: v.estimateHours ? Number(v.estimateHours) : undefined,
         deliverableId: v.deliverableId || null,
         watcherIds: v.watcherIds,
+        attachmentIds: files.map((f) => f.id),
         parentId: prefill?.parentId ?? null,
         preProduction: v.preProduction,
         outOfScope: v.outOfScope,
@@ -235,6 +239,7 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
         repeat: v.repeat && mode !== "draft" ? { rule: v.repeat as "daily", end: v.repeatEnd } : undefined,
       });
       draft.clear();
+      setFiles([]);
       onSaved(r.task.id, r.message ?? "Task added", r.undo);
       if (mode === "another") {
         setV((x) => ({ ...initial(prefill), engagementId: x.engagementId, internal: x.internal, departmentId: x.departmentId, deadline: x.deadline, ownerId: opts?.canAssignOthers ? "" : x.ownerId }));
@@ -480,6 +485,12 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
         ) : (
           <p className="text-sm text-ink-muted">Loading people…</p>
         )}
+      </Field>
+      <Field label="Files" hint="Sent with the task: the person doing it (and watchers) find them on the task and in Files.">
+        <div className="grid gap-2">
+          <PendingFiles files={files} onRemove={(fid) => setFiles((x) => x.filter((y) => y.id !== fid))} />
+          <SendFileControls limit={20 - files.length} upload={(f) => api.coreTasks.stageFile(f)} addLink={(url) => api.coreTasks.stageLink({ url })} onAdded={(f) => setFiles((x) => [...x, f])} />
+        </div>
       </Field>
       {chosen?.onLeave && coreCanOverride(me) && (
         <label className="flex items-center gap-2 text-sm">

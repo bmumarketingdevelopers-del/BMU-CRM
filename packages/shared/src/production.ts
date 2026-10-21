@@ -320,7 +320,7 @@ export type DeliverableDetail = {
 
 export type ClientDeliverableDetail = Omit<DeliverableDetail, "tasks" | "qcChecklist" | "can"> & {
   can: { approve: boolean; requestChanges: boolean; comment: boolean };
-  /** v37: a one-time project before the final payment: watermarked previews, videos with an on-screen mark, no download. */
+  /** v39: a one-time project before the final payment: view only, no download. */
   preview?: boolean;
 };
 

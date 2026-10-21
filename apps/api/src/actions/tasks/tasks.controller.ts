@@ -74,6 +74,24 @@ export class TasksActionsController {
     return this.tasks.get(me, id);
   }
 
+  /** v39: a file or link picked in the New task form (before the task exists). */
+  @Post('staged-files')
+  @UseInterceptors(opsUpload)
+  stageFile(@CurrentUser() me: Me, @UploadedFile() file: OpsUpload | undefined, @ClientIp() ip?: string) {
+    return this.tasks.stageFile(me, file, ip);
+  }
+
+  @Post('staged-links')
+  stageLink(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.tasks.stageLink(me, body, ip);
+  }
+
+  /** v39: send a Drive (or any) link on the task (files over the upload limit). */
+  @Post(':id/links')
+  attachLink(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.tasks.attachLink(me, id, body, ip);
+  }
+
   /** v38: send a file on the task (the owner, creator and watchers find it in Files too). */
   @Post(':id/files')
   @UseInterceptors(opsUpload)

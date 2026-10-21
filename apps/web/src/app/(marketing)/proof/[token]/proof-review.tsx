@@ -6,7 +6,7 @@ import type { ProofLinkView } from "@bmu/shared";
 import { Button, LoadState } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
-import { WatermarkOverlay, previewVideoProps } from "@/components/watermark-overlay";
+import { previewVideoProps } from "@/components/view-only";
 
 export function ProofReview({ token }: { token: string }) {
   const loaded = useLoad(() => api.proofing.link(token), { live: false });
@@ -58,7 +58,6 @@ export function ProofReview({ token }: { token: string }) {
         ) : v.kind === "video" ? (
           <div className="relative mx-auto w-fit">
             <video src={v.url} controls playsInline className="mx-auto block max-h-[70vh] max-w-full bg-black" {...(p.preview ? previewVideoProps : {})} />
-            {p.preview && <WatermarkOverlay />}
           </div>
         ) : v.kind === "pdf" ? (
           <iframe src={v.url} title={v.name ?? "PDF"} className="h-[70vh] w-full bg-white" />

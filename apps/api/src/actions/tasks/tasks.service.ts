@@ -5,6 +5,9 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import {
   addWorkingDays,
   fileKindFromMime,
+  sentLinkName,
+  sentLinkSchema,
+  type SentFile,
   CORE_TASK_EDIT_KEYS,
   coreReassignReasonLabels,
   coreRepeatRuleLabels,
@@ -47,6 +50,8 @@ import { TaskAccess, taskDetailInclude, type TaskFull } from './task-access.js';
 import { TASK_TEAM_ROLES, TaskTargets } from './task-targets.js';
 import { assertAssignee, assignScope, departmentHead } from './assign-rules.js';
 import { relPath, sha256, type OpsUpload } from '../../ops-actions/ops-util.js';
+import { canSeeFile, fileScope } from '../../ops-actions/file-access.js';
+import { parse } from '../../common/zod.js';
 
 const fmt = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 const short = (d: Date | null | undefined) => (d ? fmt.format(d) : 'no deadline');
@@ -269,7 +274,7 @@ export class TasksActionsService implements OnModuleInit {
       t.parentId ? this.prisma.task.findUnique({ where: { id: t.parentId }, select: { id: true, title: true } }) : null,
       t.blockedResponsibleId ? this.prisma.user.findUnique({ where: { id: t.blockedResponsibleId }, select: { name: true } }) : null,
       t.createdById ? this.prisma.user.findUnique({ where: { id: t.createdById }, select: { name: true } }) : null,
-      t.attachments.length ? this.prisma.file.findMany({ where: { id: { in: t.attachments }, archivedAt: null }, select: { id: true, name: true, mimeType: true, sizeBytes: true, uploadedById: true, createdAt: true } }) : [],
+      t.attachments.length ? this.prisma.file.findMany({ where: { id: { in: t.attachments }, archivedAt: null }, select: { id: true, name: true, mimeType: true, sizeBytes: true, uploadedById: true, createdAt: true, kind: true, path: true } }) : [],
     ]);
     const names = await this.people.names([...assignments.flatMap((a) => [a.fromUserId, a.toUserId, a.byId]), ...files.map((f) => f.uploadedById)]);
     return {
@@ -280,7 +285,7 @@ export class TasksActionsService implements OnModuleInit {
       // v38: files sent on the task, newest first.
       files: files
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-        .map((f) => ({ id: f.id, name: f.name ?? 'file', url: `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes, by: f.uploadedById ? (names.get(f.uploadedById) ?? undefined) : undefined, at: f.createdAt.toISOString() })),
+        .map((f) => ({ id: f.id, name: f.name ?? 'file', url: f.kind === 'link' ? f.path : `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes, kind: f.kind, by: f.uploadedById ? (names.get(f.uploadedById) ?? undefined) : undefined, at: f.createdAt.toISOString() })),
       checklist: (t.checklist as { id: string; label: string; done: boolean }[]) ?? [],
       estimateHours: t.estimateMin ? Math.round((t.estimateMin / 60) * 100) / 100 : null,
       preProduction: t.preProduction,
@@ -324,12 +329,50 @@ export class TasksActionsService implements OnModuleInit {
         uploadedById: me.id,
       },
     });
+    return this.addToTask(me, t, f, ip);
+  }
+
+  /** v39: send a Drive (or any) link on a task, for files over the upload limit. Same people as files. */
+  async attachLink(me: Me, id: string, body: unknown, ip?: string): Promise<CoreTaskMutation> {
+    const t = await this.access.load(me, id);
+    const input = parse(sentLinkSchema, body);
+    const eng = await this.access.engagementOf(t);
+    const f = await this.prisma.file.create({
+      data: { orgId: me.orgId, clientOrgId: eng?.clientOrg.id ?? null, engagementId: eng?.id ?? null, path: input.url, kind: 'link', name: (input.name || sentLinkName(input.url)).slice(0, 200), folder: 'general', tags: ['task-file'], uploadedById: me.id },
+    });
+    return this.addToTask(me, t, f, ip);
+  }
+
+  private async addToTask(me: Me, t: TaskFull, f: { id: string; name: string | null; sizeBytes: number | null; kind: string }, ip?: string): Promise<CoreTaskMutation> {
     await this.prisma.task.update({ where: { id: t.id }, data: { attachments: { push: f.id } } });
-    await this.audit.log(me, 'task.file_attached', 'Task', t.id, undefined, { fileId: f.id, name: f.name, sizeBytes: f.sizeBytes }, ip);
+    await this.audit.log(me, f.kind === 'link' ? 'task.link_attached' : 'task.file_attached', 'Task', t.id, undefined, { fileId: f.id, name: f.name, sizeBytes: f.sizeBytes }, ip);
     const watchers = await this.prisma.watcher.findMany({ where: { targetType: 'task', targetId: t.id }, select: { userId: true } });
     const to = [...new Set([t.ownerId, t.createdById, ...watchers.map((w) => w.userId)])].filter((x): x is string => !!x && x !== me.id);
-    if (to.length) await this.notifications.notify(me.orgId, to, { kind: 'task_file', title: `${me.name} sent a file on "${t.title}"`, body: f.name ?? undefined, link: `/team/tasks/${t.id}`, noEmail: true });
+    const what = f.kind === 'link' ? 'a link' : 'a file';
+    if (to.length) await this.notifications.notify(me.orgId, to, { kind: 'task_file', title: `${me.name} sent ${what} on "${t.title}"`, body: f.name ?? undefined, link: `/team/tasks/${t.id}`, noEmail: true });
     return this.mutation(me, t.id, null, `${f.name} sent`);
+  }
+
+  /**
+   * v39: a file or link picked in the New task form, before the task exists. Only its uploader sees it until the
+   * task is created with it (attachmentIds); then the task's people do.
+   */
+  async stageFile(me: Me, file: OpsUpload | undefined, ip?: string): Promise<SentFile> {
+    if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
+    if (!file) throw new BadRequestException('Choose a file to send');
+    const f = await this.prisma.file.create({
+      data: { orgId: me.orgId, path: relPath(file.path), kind: fileKindFromMime(file.mimetype), name: file.originalname.slice(0, 200), mimeType: file.mimetype, sizeBytes: file.size, checksum: await sha256(file.path), folder: 'general', tags: ['task-file'], uploadedById: me.id },
+    });
+    await this.audit.log(me, 'task.file_staged', 'File', f.id, undefined, { name: f.name, sizeBytes: f.sizeBytes }, ip);
+    return { id: f.id, name: f.name ?? 'file', url: `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes, kind: f.kind };
+  }
+
+  async stageLink(me: Me, body: unknown, ip?: string): Promise<SentFile> {
+    if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
+    const input = parse(sentLinkSchema, body);
+    const f = await this.prisma.file.create({ data: { orgId: me.orgId, path: input.url, kind: 'link', name: (input.name || sentLinkName(input.url)).slice(0, 200), folder: 'general', tags: ['task-file'], uploadedById: me.id } });
+    await this.audit.log(me, 'task.link_staged', 'File', f.id, undefined, { name: f.name }, ip);
+    return { id: f.id, name: f.name ?? 'link', url: f.path, mimeType: null, sizeBytes: null, kind: 'link' };
   }
 
   private async mutation(me: Me, id: string, undo: CoreUndo | null, message?: string, approval?: { id: string; summary: string } | null): Promise<CoreTaskMutation> {
@@ -547,9 +590,15 @@ export class TasksActionsService implements OnModuleInit {
     const watchers = [...new Set([...(input.watcherIds ?? [])])];
     if (watchers.length) await this.records.watch(me, 'task', created.id, watchers);
     if (input.attachmentIds?.length) {
-      const files = await this.prisma.file.findMany({ where: { id: { in: input.attachmentIds }, orgId: me.orgId }, select: { id: true, name: true } });
+      const found = await this.prisma.file.findMany({ where: { id: { in: input.attachmentIds }, orgId: me.orgId } });
+      const fscope = await fileScope(this.prisma, me);
+      const files = found.filter((f) => canSeeFile(me, fscope, f));
       // v38: kept with the task (not in References), so the people on it find them in Files too.
       if (files.length) await this.prisma.task.update({ where: { id: created.id }, data: { attachments: files.map((f) => f.id) } });
+      // v39: files picked in the New task form belong to the task's client once it has one.
+      const eng = created.engagementId ? await this.prisma.engagement.findUnique({ where: { id: created.engagementId }, select: { id: true, clientOrgId: true } }) : null;
+      const staged = files.filter((f) => f.tags.includes('task-file') && !f.clientOrgId && f.uploadedById === me.id).map((f) => f.id);
+      if (eng && staged.length) await this.prisma.file.updateMany({ where: { id: { in: staged } }, data: { clientOrgId: eng.clientOrgId, engagementId: eng.id } });
     }
     if (input.source) await this.audit.log(me, 'task.created_from', input.source.type === 'message' ? 'Message' : 'Comment', input.source.id, null, { taskId: created.id, title: created.title }, ip);
 

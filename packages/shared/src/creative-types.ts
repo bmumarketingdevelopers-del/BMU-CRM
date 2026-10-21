@@ -49,7 +49,7 @@ export type AssetRow = {
   rights: { note: string | null; expiresAt: string | null; creator: { id: string; name: string } | null; state: AssetRightsState };
   createdBy: string;
   updatedAt: string;
-  /** v37: client view: a one-time project's work before the final payment (watermarked, no download). */
+  /** v39: client view: a one-time project's work before the final payment (view only, no download). */
   preview?: boolean;
 };
 
@@ -167,7 +167,7 @@ export type ProofLinkView = {
   openComments: number;
   status: "waiting" | "approved" | "changes_requested" | "closed";
   message: string | null;
-  /** v37: watermarked preview only (one-time project before the final payment). */
+  /** v39: view only, no download (one-time project before the final payment). */
   preview?: boolean;
 };
 

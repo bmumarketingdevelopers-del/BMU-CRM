@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import type { ReviewAnchor, ReviewComment, VersionView } from "@bmu/shared";
 import { Button } from "@/components/ui";
-import { WatermarkOverlay, previewVideoProps } from "./watermark-overlay";
+import { previewVideoProps } from "./view-only";
 
 const when = new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" });
 const clock = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -30,7 +30,7 @@ export function ReviewViewer({
   onResolve,
   preview = false,
 }: {
-  /** v37: a one-time project before the final payment (client view): videos get an on-screen mark, no download. */
+  /** v39: a one-time project before the final payment (client view): view only, no download. */
   preview?: boolean;
   versions: VersionView[];
   comments: ReviewComment[];
@@ -470,7 +470,6 @@ function Media({
           onLoadedMetadata={(e) => onDuration?.(e.currentTarget.duration || 0)}
           {...(preview ? previewVideoProps : {})}
         />
-        {preview && <WatermarkOverlay />}
         {overlay}
       </div>
     );

@@ -90,7 +90,7 @@ export class AssetsService {
       this.prisma.clientOrg.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } }),
       this.prisma.creator.findMany({ where: { id: { in: creatorIds } }, select: { id: true, user: { select: { name: true } } } }),
     ]);
-    // v37: approved work of a one-time project not yet paid in full: clients get a watermarked preview only.
+    // v37: approved work of a one-time project not yet paid in full: clients get it view only.
     const dIds = assets.map((a) => a.deliverableId).filter((x): x is string => !!x);
     const open = dIds.length
       ? await this.prisma.deliverable.findMany({ where: { id: { in: dIds }, cycle: { engagement: { billingType: 'one_time', status: { not: 'delivered' } } } }, select: { id: true } })

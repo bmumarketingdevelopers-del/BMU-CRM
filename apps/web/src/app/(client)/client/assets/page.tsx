@@ -5,6 +5,7 @@ import { assetRightsLabels, type AssetQuery } from "@bmu/shared";
 import { Empty } from "@/components/dash";
 import { AssetThumb, bytes } from "@/components/creative/asset-uploader";
 import { Badge, Button, Input, LoadState, PageTitle, Select } from "@/components/ui";
+import { ViewOnlyViewer, canViewOnly } from "@/components/view-only";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
@@ -40,6 +41,7 @@ export default function ClientAssetsPage() {
 
 function Grid({ q }: { q: AssetQuery }) {
   const loaded = useLoad(() => api.assets.clientList(q), { live: false });
+  const [viewing, setViewing] = useState<{ url: string; name: string; kind: string }>();
   const data = loaded.data;
   if (!data) return <LoadState loading={loaded.loading} error={loaded.error} />;
   if (!data.items.length) return <Empty>Nothing here yet. Work you approve appears here automatically.</Empty>;
@@ -47,7 +49,19 @@ function Grid({ q }: { q: AssetQuery }) {
     <ul className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
       {data.items.map((a) => (
         <li key={a.id} className="border border-border bg-surface-raised">
-          <a href={a.current.url} target="_blank" rel="noreferrer" className="block aspect-square overflow-hidden">
+          <a
+            href={a.current.url}
+            target="_blank"
+            rel="noreferrer"
+            className="block aspect-square overflow-hidden"
+            // v39: view only before the final payment: the in-app viewer, not a new tab.
+            onClick={(e) => {
+              if (!a.preview) return;
+              e.preventDefault();
+              if (canViewOnly(null, a.kind)) setViewing({ url: a.current.url, name: a.title, kind: a.kind });
+            }}
+            onContextMenu={(e) => a.preview && e.preventDefault()}
+          >
             <AssetThumb kind={a.kind} url={a.current.url} title={a.title} />
           </a>
           <div className="p-3">
@@ -63,14 +77,14 @@ function Grid({ q }: { q: AssetQuery }) {
             )}
             {a.kind !== "link" &&
               (a.preview ? (
-                // v37: a one-time project's work before the final payment: a watermarked preview, no download.
+                // v39: a one-time project's work before the final payment: view only, no download.
                 <span className="mt-2 block text-xs text-ink-muted">
-                  {a.kind !== "video" && (
-                    <a href={a.current.url} target="_blank" rel="noreferrer" className="underline">
-                      View preview
-                    </a>
+                  {canViewOnly(null, a.kind) && (
+                    <button type="button" className="underline" onClick={() => setViewing({ url: a.current.url, name: a.title, kind: a.kind })}>
+                      {a.kind === "video" ? "Watch" : "View"}
+                    </button>
                   )}
-                  {a.kind !== "video" ? " · " : ""}🔒 Download after the final payment
+                  {canViewOnly(null, a.kind) ? " · " : ""}🔒 Download after the final payment
                 </span>
               ) : (
                 <a href={a.current.url} download={a.current.name ?? true} className="mt-2 inline-block text-xs underline">
@@ -80,6 +94,7 @@ function Grid({ q }: { q: AssetQuery }) {
           </div>
         </li>
       ))}
+      {viewing && <ViewOnlyViewer file={viewing} onClose={() => setViewing(undefined)} />}
     </ul>
   );
 }

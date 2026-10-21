@@ -9,6 +9,8 @@ import {
   opsMessageToRequestSchema,
   opsThreadCreateSchema,
   opsThreadPostSchema,
+  sentLinkName,
+  sentLinkSchema,
   SLA_FIRST_REPLY_MIN,
   type Me,
   type OpsAnnouncementOptions,
@@ -130,11 +132,11 @@ export class OpsCommsService {
     const fileIds = t.messages.flatMap((m) => m.attachments);
     const [users, files] = await Promise.all([
       this.prisma.user.findMany({ where: { id: { in: t.messages.map((m) => m.authorId) } }, select: { id: true, name: true } }),
-      fileIds.length ? this.prisma.file.findMany({ where: { id: { in: fileIds } }, select: { id: true, name: true, mimeType: true, sizeBytes: true } }) : [],
+      fileIds.length ? this.prisma.file.findMany({ where: { id: { in: fileIds } }, select: { id: true, name: true, mimeType: true, sizeBytes: true, kind: true, path: true } }) : [],
     ]);
     const sent = (id: string): SentFile | null => {
       const f = files.find((x) => x.id === id);
-      return f ? { id: f.id, name: f.name ?? 'file', url: `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes } : null;
+      return f ? { id: f.id, name: f.name ?? 'file', url: f.kind === 'link' ? f.path : `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes, kind: f.kind } : null;
     };
     return {
       ...s,
@@ -175,6 +177,17 @@ export class OpsCommsService {
     });
     await this.audit.log(me, 'thread.file_attached', 'File', f.id, undefined, { threadId: t.id, name: f.name, sizeBytes: f.sizeBytes }, ip);
     return { id: f.id, name: f.name ?? 'file', url: `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes };
+  }
+
+  /** v39: a Drive (or any) link to send in a discussion, for files over the upload limit. Same people as files. */
+  async link(me: Me, id: string, body: unknown, ip?: string): Promise<SentFile> {
+    const t = await this.load(me, id);
+    const input = parse(sentLinkSchema, body);
+    const f = await this.prisma.file.create({
+      data: { orgId: me.orgId, clientOrgId: t.clientOrgId, engagementId: t.engagementId, path: input.url, kind: 'link', name: (input.name || sentLinkName(input.url)).slice(0, 200), folder: 'general', tags: ['discussion-file'], uploadedById: me.id },
+    });
+    await this.audit.log(me, 'thread.link_attached', 'File', f.id, undefined, { threadId: t.id, name: f.name }, ip);
+    return { id: f.id, name: f.name ?? 'link', url: f.path, mimeType: null, sizeBytes: null, kind: 'link' };
   }
 
   async create(me: Me, body: unknown, ip?: string) {

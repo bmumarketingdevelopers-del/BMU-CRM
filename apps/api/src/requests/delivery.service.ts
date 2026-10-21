@@ -156,7 +156,7 @@ export class DeliveryService implements OnModuleInit {
       released: v.file.released,
       url: v.file.kind === 'link' ? v.file.path : `/api/files/${v.file.id}`,
       downloadUrl: v.file.released ? (v.file.kind === 'link' ? v.file.path : `/api/files/${v.file.id}?download=1`) : null,
-      // v37: a one-time project before the final payment: a watermarked preview only.
+      // v37: a one-time project before the final payment: view only.
       preview: !v.file.released && v.deliverable.cycle.engagement.billingType === 'one_time' && v.deliverable.cycle.engagement.status !== 'delivered',
     }));
   }

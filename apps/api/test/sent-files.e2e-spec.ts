@@ -97,3 +97,41 @@ describe('files sent on a task', () => {
     await http().get(`/files/${ids.taskFile}`).set(as('founder')).expect(200);
   });
 });
+
+describe('Drive links and files picked while assigning a task (v39)', () => {
+  it('a link instead of a file, in a discussion and on a task, reaches the same people', async () => {
+    await http().post(`/ops/threads/${ids.thread}/links`).set(as('am')).send({ url: 'not a link' }).expect(400);
+    const l = await http().post(`/ops/threads/${ids.thread}/links`).set(as('am')).send({ url: `https://drive.google.com/file/d/${stamp}/view` }).expect(201);
+    expect(l.body).toMatchObject({ kind: 'link', name: 'Google Drive link' });
+    await prisma.file.update({ where: { id: l.body.id }, data: { name: `Google Drive link ${stamp}` } });
+    const v = await http().post(`/ops/threads/${ids.thread}/messages`).set(as('am')).send({ body: 'Too big to upload', attachmentIds: [l.body.id] }).expect(201);
+    expect(v.body.messages.at(-1).attachments[0]).toMatchObject({ kind: 'link', url: `https://drive.google.com/file/d/${stamp}/view` });
+    // Opening it from Files goes to the link, for the people in the discussion only.
+    const open = await http().get(`/files/${l.body.id}`).set(as('head')).expect(302);
+    expect(open.headers.location).toBe(`https://drive.google.com/file/d/${stamp}/view`);
+    await http().get(`/files/${l.body.id}`).set(as('producer')).expect(404);
+
+    const r = await http().post(`/tasks/${ids.task}/links`).set(as('am')).send({ url: `https://www.dropbox.com/s/${stamp}`, name: `Raw footage ${stamp}` }).expect(201);
+    expect(r.body.task.files[0]).toMatchObject({ kind: 'link', name: `Raw footage ${stamp}` });
+    await http().get(`/files/${r.body.task.files[0].id}`).set(as('designer')).expect(302);
+  });
+
+  it('files and links picked in the New task form go with the task', async () => {
+    const f = await http().post('/tasks/staged-files').set(as('am')).attach('file', png, { filename: `brief-${stamp}.png`, contentType: 'image/png' }).expect(201);
+    const l = await http().post('/tasks/staged-links').set(as('am')).send({ url: `https://drive.google.com/drive/folders/${stamp}`, name: `Folder ${stamp}` }).expect(201);
+    // Before the task exists only the uploader sees them.
+    await http().get(`/files/${f.body.id}`).set(as('designer')).expect(404);
+    // Assigned through the New task form: Client Managers assign to the department's head.
+    const dept = await prisma.department.findFirstOrThrow({ where: { headUserId: ids.head, deletedAt: null } });
+    const deadline = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const c = await http().post('/tasks').set(as('am')).send({ title: `Staged ${stamp}`, internal: true, departmentId: dept.id, ownerId: ids.head, deadline, attachmentIds: [f.body.id, l.body.id] });
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect(c.body.task.files).toHaveLength(2);
+    expect((await http().get(`/tasks/${c.body.task.id}`).set(as('head')).expect(200)).body.files.map((x: { kind: string }) => x.kind).sort()).toEqual(['image', 'link']);
+    await http().get(`/files/${f.body.id}`).set(as('head')).expect(200);
+    expect((await listed('head', f.body.id))?.source).toBe('task');
+    // A file the person can't see can't be slipped onto a new task.
+    const other = await http().post('/tasks').set(as('producer')).send({ title: `Sneak ${stamp}`, internal: true, ownerId: ids.producer, deadline, attachmentIds: [ids.discussionFile] });
+    if (other.status === 201) expect(other.body.task.files ?? []).toHaveLength(0);
+  });
+});

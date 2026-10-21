@@ -31,6 +31,7 @@ import type {
   CoreWatchers,
 } from "../core-actions.js";
 import type { TaskStatus } from "../production.js";
+import type { SentFile, SentLink } from "../ops-actions.js";
 
 const qs = (params: Record<string, string | undefined>) => {
   const p = Object.entries(params).filter(([, v]) => v);
@@ -104,6 +105,15 @@ export const coreActionsApi = (t: Transport) => ({
       form.append("file", file);
       return t.request<{ message: string; task: CoreTaskDetail }>(`/tasks/${id}/files`, { method: "POST", body: form });
     },
+    /** v39: send a Drive (or any) link on the task, for files over the upload limit. */
+    attachLink: (id: string, body: SentLink) => t.post<{ message: string; task: CoreTaskDetail }>(`/tasks/${id}/links`, body),
+    /** v39: a file (or link) picked in the New task form, before the task exists; pass its id in attachmentIds. */
+    stageFile: (file: Blob) => {
+      const form = new FormData();
+      form.append("file", file);
+      return t.request<SentFile>("/tasks/staged-files", { method: "POST", body: form });
+    },
+    stageLink: (body: SentLink) => t.post<SentFile>("/tasks/staged-links", body),
     formOptions: (engagementId?: string) => t.get<CoreTaskFormOptions>(`/tasks/form-options${qs({ engagementId })}`),
     create: (input: CoreTaskCreate) => t.post<CoreTaskMutation>("/tasks", input),
     edit: (id: string, input: CoreTaskEdit) => t.patch<CoreTaskMutation>(`/tasks/${id}/details`, input),

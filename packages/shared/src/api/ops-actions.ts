@@ -37,6 +37,7 @@ import type {
   OpsThreadSummary,
   OpsThreadView,
   SentFile,
+  SentLink,
 } from "../ops-actions.js";
 
 const qs = (params: Record<string, string | undefined>) => {
@@ -140,6 +141,8 @@ export const opsActionsApi = (t: Transport) => ({
         form.append("file", file);
         return t.request<SentFile>(`/ops/threads/${id}/attachments`, { method: "POST", body: form });
       },
+      /** v39: a Drive (or any) link to send with the next message, for files over the upload limit. */
+      link: (id: string, body: SentLink) => t.post<SentFile>(`/ops/threads/${id}/links`, body),
       toRequest: (body: OpsMessageToRequest) => t.post<Msg & { id: string; href: string }>("/ops/messages/to-request", body),
     },
     announcements: {

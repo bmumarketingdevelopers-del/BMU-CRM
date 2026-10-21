@@ -1,5 +1,5 @@
-// v37: before a ONE-TIME project's final payment, clients get watermarked previews (images, PDFs), videos for the
-// in-app player only, nothing else, and no downloads. Retainer clients and released files get the originals.
+// v39: before a ONE-TIME project's final payment, clients get the work view only: pictures, PDFs and videos open in
+// the app (inline, never cached), other types wait, and nothing downloads. Retainer clients and released files are open.
 import 'dotenv/config';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -7,7 +7,6 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
-import { Jimp, JimpMime } from 'jimp';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { absPath } from '../src/storage/file-store.js';
@@ -19,6 +18,7 @@ const ids: Record<string, string> = {};
 const http = () => request(app.getHttpServer());
 const as = (who: string) => ({ Authorization: `Bearer ${tokens[who]}` });
 const stamp = Date.now();
+const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex');
 
 async function signIn(email: string) {
   const otp = await http().post('/auth/otp/request').send({ identifier: email }).expect(200);
@@ -39,7 +39,6 @@ beforeAll(async () => {
   const am = await prisma.user.findFirstOrThrow({ where: { email: 'am@bmu.demo' } });
   const svc = await prisma.service.findFirstOrThrow({ where: { orgId: org.id, key: 'website' } });
   // A real PNG on disk (tests use local storage).
-  const png = await new Jimp({ width: 800, height: 500, color: 0x2a9d8fff }).getBuffer(JimpMime.png);
   const store = (rel: string, bytes: Buffer | string) => {
     mkdirSync(dirname(absPath(rel)), { recursive: true });
     writeFileSync(absPath(rel), bytes);
@@ -73,19 +72,20 @@ afterAll(async () => {
 });
 
 describe('client previews before the final payment', () => {
-  it('a one-time project image is a watermarked JPEG preview, and cannot be downloaded', async () => {
+  it('a one-time project image is view only: shown inline, never cached, and cannot be downloaded', async () => {
     const r = await http().get(`/files/${ids.imgFile}`).set(as('client')).buffer(true).expect(200);
-    expect(r.headers['x-bmu-preview']).toBe('watermarked');
-    expect(r.headers['content-type']).toMatch(/image\/jpeg/);
+    expect(r.headers['x-bmu-preview']).toBe('view');
+    expect(r.headers['content-type']).toMatch(/image\/png/);
+    expect(r.headers['content-disposition']).toMatch(/^inline/);
     expect(r.headers['cache-control']).toBe('no-store');
-    // Not the original bytes: the preview differs and is a JPEG.
-    expect((r.body as Buffer).subarray(0, 2).toString('hex')).toBe('ffd8');
+    // The clean file, no watermark.
+    expect((r.body as Buffer).equals(png)).toBe(true);
     await http().get(`/files/${ids.imgFile}?download=1`).set(as('client')).expect(403);
   });
 
   it('videos stream for the in-app player only; other types wait for payment', async () => {
     const v = await http().get(`/files/${ids.videoFile}`).set(as('client'));
-    expect(v.headers['x-bmu-preview']).toBe('video');
+    expect(v.headers['x-bmu-preview']).toBe('view');
     await http().get(`/files/${ids.zipFile}`).set(as('client')).expect(403);
   });
 
@@ -97,7 +97,7 @@ describe('client previews before the final payment', () => {
     expect(retainer.headers['content-type']).toMatch(/image\/png/);
   });
 
-  it('client views say it is a preview; delivery (balance paid) unlocks the original', async () => {
+  it('client views say it is view only; delivery (balance paid) unlocks the original', async () => {
     const rev = (await http().get(`/client/reviews/${ids.imgDel}`).set(as('client')).expect(200)).body;
     expect(rev.preview).toBe(true);
     const files = (await http().get('/client/files').set(as('client')).expect(200)).body as { id: string; preview?: boolean }[];

@@ -182,7 +182,7 @@ export class ProofingService {
       forName: user.name,
       version: { number: v.number, kind: v.file.kind as FileKind, name: v.file.name, url: v.file.kind === 'link' ? v.file.path : `/api/public/proof/${token}/file`, note: v.note },
       openComments: open,
-      // v37: a one-time project before the final payment: watermarked preview; videos with an on-screen mark.
+      // v37: a one-time project before the final payment: view only, no download.
       preview: !v.file.released && d.cycle.engagement.billingType === 'one_time' && d.cycle.engagement.status !== 'delivered',
       status,
       message: message ?? (status === 'approved' ? (d.approvedVersionId === v.id ? 'Approved. Thank you!' : 'You approved this version. Waiting for the other approvers.') : status === 'closed' ? 'A newer version replaced this one. Open the review from your BMU Hub account.' : status === 'changes_requested' ? 'Changes were requested. The team is working on the next version.' : null),

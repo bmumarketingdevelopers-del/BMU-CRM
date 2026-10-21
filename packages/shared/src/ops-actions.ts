@@ -343,7 +343,26 @@ export const opsThreadCreateSchema = z.object({
 export type OpsThreadCreate = z.input<typeof opsThreadCreateSchema>;
 export type OpsThreadSummary = { id: string; kind: string; title: string; client: { id: string; name: string }; engagement: string | null; participants: string[]; lastMessage: { body: string; author: string; at: string } | null; createdAt: string };
 /** v38: a file sent in a discussion or on a task. */
-export type SentFile = { id: string; name: string; url: string; mimeType: string | null; sizeBytes: number | null; by?: string; at?: string };
+export type SentFile = { id: string; name: string; url: string; mimeType: string | null; sizeBytes: number | null; by?: string; at?: string; /** "link": a Drive (or other) link instead of an upload. */ kind?: string };
+/** v39: a Drive (or any) link sent instead of a file, e.g. when the file is over the upload limit. */
+export const sentLinkSchema = z.object({
+  url: z
+    .string()
+    .trim()
+    .max(2000)
+    .refine((u) => /^https?:\/\/[^\s/]+\.[^\s]+$/i.test(u), "Paste the full link (starting with https://)"),
+  name: z.string().trim().max(200).optional(),
+});
+export type SentLink = z.input<typeof sentLinkSchema>;
+/** A readable name for a link: "Google Drive link", else the site's name. */
+export const sentLinkName = (url: string) => {
+  const host = url.replace(/^https?:\/\//i, "").split(/[/?#]/)[0].toLowerCase().replace(/^www\./, "");
+  if (/(^|\.)drive\.google\.com$|(^|\.)docs\.google\.com$/.test(host)) return "Google Drive link";
+  if (/dropbox\.com$/.test(host)) return "Dropbox link";
+  if (/(onedrive\.live\.com|1drv\.ms|sharepoint\.com)$/.test(host)) return "OneDrive link";
+  if (/wetransfer\.com$|we\.tl$/.test(host)) return "WeTransfer link";
+  return `${host} link`;
+};
 export type OpsThreadView = OpsThreadSummary & { messages: { id: string; body: string; author: string; mine: boolean; at: string; attachments?: SentFile[] }[]; canPost: boolean };
 export const opsThreadPostSchema = z
   .object({ body: z.string().trim().max(4000).default(""), attachmentIds: z.array(z.string()).max(5).default([]) })
