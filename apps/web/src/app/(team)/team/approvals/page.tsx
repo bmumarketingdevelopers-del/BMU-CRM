@@ -3,12 +3,25 @@ import { requireMe } from "@/lib/session";
 import { ApprovalsList } from "@/components/actions/approvals-list";
 import { ApprovalsInbox } from "./approvals-inbox";
 import { PeopleApprovals } from "./people-approvals";
+import { MyDiscounts } from "./my-discounts";
 
 export const metadata = { title: "Approvals | BMU Hub" };
+
+/** Roles that approve or manage something; a Sales Executive holding one of these keeps the full page. */
+const DECIDING_ROLES = ["founder", "admin", "sales_manager", "am_lead", "department_head", "finance", "hr_ops", "qc_reviewer"];
 
 /** One inbox for managers: leave and timesheets from their team, plus discount approvals for sales leaders. */
 export default async function ApprovalsPage() {
   const me = await requireMe(["staff"]);
+  // Sales Executives see only the discounts on their own proposals (the API scopes it to them).
+  if (me.roles.includes("sales_executive") && !me.roles.some((r) => DECIDING_ROLES.includes(r))) {
+    return (
+      <>
+        <PageTitle title="My discount approvals" subtitle="Special discounts on your proposals: waiting, approved, and the history of approved and rejected ones. Only your own proposals are shown." />
+        <MyDiscounts />
+      </>
+    );
+  }
   const discounts = me.roles.some((r) => ["sales_manager", "admin", "founder"].includes(r));
   return (
     <>

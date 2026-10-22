@@ -7,6 +7,8 @@ import {
   type SellApprovalItem,
   type SellApprovalLevel,
   type SellApprovalStep,
+  type SellMyDiscount,
+  type SellMyDiscounts,
 } from '@bmu/shared';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -155,6 +157,45 @@ export class DiscountApprovalsService {
     const unique = [...new Set(ids.filter((x): x is string => !!x))];
     const users = unique.length ? await this.prisma.user.findMany({ where: { id: { in: unique } }, select: { id: true, name: true } }) : [];
     return new Map(users.map((u) => [u.id, u.name]));
+  }
+
+  /**
+   * Discounts the signed-in person asked for on their own proposals. Scoped by createdById only, so a Sales Executive
+   * never sees another person's discounts. Proposals without an approval chain (within the limit) are left out.
+   */
+  async mine(me: Me): Promise<SellMyDiscounts> {
+    const rows = await this.prisma.proposal.findMany({
+      where: { orgId: me.orgId, createdById: me.id, deletedAt: null, discountStatus: { in: ['pending', 'approved', 'rejected'] }, discountSteps: { some: {} } },
+      include: { lead: true },
+      orderBy: { createdAt: 'desc' },
+      take: 300,
+    });
+    const steps = await this.steps(rows.map((p) => p.id));
+    const items: SellMyDiscount[] = rows.map((p) => {
+      const list = steps.get(p.id) ?? [];
+      const decided = list.filter((s) => s.decidedAt).map((s) => s.decidedAt!).sort();
+      const open = list.find((s) => s.status === 'pending');
+      const status = p.discountStatus as SellMyDiscount['discountStatus'];
+      return {
+        proposalId: p.id,
+        client: contactName(p.lead.contact),
+        version: p.version,
+        proposalStatus: p.status,
+        extraDiscountPct: p.extraDiscountPct,
+        extraDiscountPaise: p.discountPaise - p.bundleDiscountPaise,
+        totalPaise: p.totalPaise,
+        discountStatus: status,
+        waitingFor: status === 'pending' ? (open?.level ?? null) : null,
+        steps: list,
+        requestedAt: p.createdAt.toISOString(),
+        decidedAt: status === 'pending' ? null : (decided.at(-1) ?? null),
+        sentAt: p.sentAt?.toISOString() ?? null,
+      };
+    });
+    // A pending discount on a proposal that is no longer a draft can never be decided (see decide()); leave it out.
+    const pending = items.filter((i) => i.discountStatus === 'pending' && i.proposalStatus === 'draft');
+    const decided = items.filter((i) => i.discountStatus !== 'pending').sort((a, b) => (b.decidedAt ?? '').localeCompare(a.decidedAt ?? ''));
+    return { pending, approved: decided.filter((i) => i.discountStatus === 'approved'), history: decided };
   }
 
   async inbox(me: Me): Promise<SellApprovalInbox> {

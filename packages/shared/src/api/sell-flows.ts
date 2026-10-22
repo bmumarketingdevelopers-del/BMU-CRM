@@ -4,6 +4,7 @@ import type { PublicProposal } from "../api-client.js";
 import type {
   SellActivityInput,
   SellApprovalInbox,
+  SellMyDiscounts,
   SellChangeRequestInput,
   SellFollowUp,
   SellLeadDetail,
@@ -35,6 +36,8 @@ export const sellFlowsApi = (t: Transport) => ({
     revise: (proposalId: string, input: Partial<SellReviseInput> & Pick<SellReviseInput, "lines">) => t.post<ProposalView>(`/sell/proposals/${proposalId}/revise`, input),
     extend: (proposalId: string, days: number) => t.post<ProposalView>(`/sell/proposals/${proposalId}/extend`, { days }),
     approvals: () => t.get<SellApprovalInbox>("/sell/approvals"),
+    /** Discounts on the signed-in person's own proposals only: pending, approved and history. */
+    myDiscounts: () => t.get<SellMyDiscounts>("/sell/approvals/mine"),
     approve: (stepId: string, note?: string) => t.post<SellApprovalInbox>(`/sell/approvals/${stepId}/approve`, { note }),
     reject: (stepId: string, note: string) => t.post<SellApprovalInbox>(`/sell/approvals/${stepId}/reject`, { note }),
     renewals: () => t.get<SellRenewal[]>("/sell/renewals"),

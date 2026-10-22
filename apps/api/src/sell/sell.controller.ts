@@ -93,6 +93,12 @@ export class SellController {
     return this.discounts.inbox(me);
   }
 
+  /** Discounts on the signed-in person's own proposals (pending, approved, history). Never anyone else's. */
+  @Get('approvals/mine')
+  myDiscounts(@CurrentUser() me: Me) {
+    return this.discounts.mine(me);
+  }
+
   @Post('approvals/:id/approve')
   @HttpCode(200)
   approve(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {

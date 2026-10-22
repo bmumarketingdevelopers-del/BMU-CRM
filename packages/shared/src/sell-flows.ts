@@ -190,6 +190,30 @@ export type SellApprovalItem = {
 
 export type SellApprovalInbox = { pending: SellApprovalItem[]; decided: SellApprovalItem[]; limits: Record<string, number> };
 
+/** One special discount the signed-in person asked for on their own proposal (Sales Executive's Approvals page). */
+export type SellMyDiscount = {
+  proposalId: string;
+  client: string;
+  version: number;
+  /** Proposal status: draft, sent, accepted… (an approved discount on a draft is ready to send). */
+  proposalStatus: string;
+  extraDiscountPct: number;
+  /** The special discount only (bundle discount excluded). */
+  extraDiscountPaise: number;
+  totalPaise: number;
+  discountStatus: "pending" | "approved" | "rejected";
+  /** For a pending discount: whose decision it is waiting on. */
+  waitingFor: SellApprovalLevel | null;
+  steps: SellApprovalStep[];
+  requestedAt: string;
+  /** When the final decision was made (last approval, or the rejection). */
+  decidedAt: string | null;
+  sentAt: string | null;
+};
+
+/** Only the person's own proposals. Approved = every approved discount; history = approved and rejected, newest decision first. */
+export type SellMyDiscounts = { pending: SellMyDiscount[]; approved: SellMyDiscount[]; history: SellMyDiscount[] };
+
 // ------------------------------------------------------------------ Payment plan
 
 export type SellPaymentPart = { label: string; when: string; netPaise: number; gstPaise: number; totalPaise: number };
