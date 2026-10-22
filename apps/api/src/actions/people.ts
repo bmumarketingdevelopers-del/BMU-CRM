@@ -4,6 +4,7 @@ import { CRAFT_HOURS_PER_TASK, craftSpecialtyLabel, istDate, type Me } from '@bm
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { calendarFor } from '../production/generate.js';
+import { WORKLOAD_MODE } from '../money/workload-mode.js';
 
 export const OPEN_TASK = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'] as const;
 export const DAY_MS = 86_400_000;
@@ -143,7 +144,9 @@ export class PeopleDirectory {
         for (const l of leaves.filter((x) => x.userId === u.id)) for (let t = l.from.getTime(); t <= l.to.getTime(); t += DAY_MS) leaveDays.add(ymd(new Date(t)));
         const mine = tasks.filter((t) => t.ownerId === u.id);
         const due = mine.filter((t) => t.deadline && t.deadline < windowEnd);
-        const hoursOpen = Math.round(due.reduce((s, t) => s + (t.estimateMin ? t.estimateMin / 60 : CRAFT_HOURS_PER_TASK), 0) * 10) / 10;
+        // v42: in the assigned-tasks Workload only the hours a Department Head gave count (no 4h guess for tasks without hours).
+        const guess = WORKLOAD_MODE === 'assigned_tasks' ? 0 : CRAFT_HOURS_PER_TASK;
+        const hoursOpen = Math.round(due.reduce((s, t) => s + (t.estimateMin ? t.estimateMin / 60 : guess), 0) * 10) / 10;
         const capacityHours = windowDays.filter((d) => !leaveDays.has(d)).length * HOURS_PER_DAY;
         const roles = u.roles.map((r) => r.role.baseRole).sort((a, b) => ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b));
         const spec = u.specialty ? craftSpecialtyLabel(u.specialty) : null;

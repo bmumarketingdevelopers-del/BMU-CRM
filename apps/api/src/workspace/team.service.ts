@@ -29,6 +29,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { AWAY_LEAVE, loadLeaveRouting, paidAccrued, splitPaid } from '../admin-org/leave-flow.js';
 import { SENT_FILE_TAGS } from '../ops-actions/file-access.js';
+import { WORKLOAD_MODE } from '../money/workload-mode.js';
 import { assertStaff, canSeeBilling, currentWeek, dayOf, dbDate, eachDay, excerpt, hasRole, isUniqueError, isWorkDay, monthRange, workingDaysIn } from './util.js';
 
 const OPEN: TaskStatus[] = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
@@ -369,10 +370,11 @@ export class TeamWorkspaceService {
     const now = new Date();
     const ids = [...new Set([...users.map((u) => u.id), me.id])];
     const [tasks, leave] = await Promise.all([
-      this.prisma.task.findMany({ where: { orgId: me.orgId, ownerId: { in: ids }, status: { in: OPEN } }, select: { ownerId: true, deadline: true, status: true } }),
+      this.prisma.task.findMany({ where: { orgId: me.orgId, ownerId: { in: ids }, status: { in: OPEN } }, select: { ownerId: true, deadline: true, status: true, estimateMin: true } }),
       this.prisma.leaveRequest.findMany({ where: { userId: { in: ids }, status: 'approved', ...AWAY_LEAVE, from: { lte: dbDate(week.today) }, to: { gte: dbDate(week.today) } }, select: { userId: true } }),
     ]);
-    const row = (u: { id: string; name: string; department: { name: string } | null }): TeamCapacityPerson => {
+    const assigned = WORKLOAD_MODE === 'assigned_tasks';
+    const row = (u: { id: string; name: string; department: { name: string } | null; weeklyHours?: number | null }): TeamCapacityPerson => {
       const mine = tasks.filter((t) => t.ownerId === u.id);
       const dueThisWeek = mine.filter((t) => t.deadline && t.deadline >= now && t.deadline < week.end).length;
       const overdue = mine.filter((t) => t.deadline && t.deadline < now).length;
@@ -384,7 +386,12 @@ export class TeamWorkspaceService {
         dueThisWeek,
         overdue,
         blocked: mine.filter((t) => t.status === 'blocked').length,
-        loadPct: Math.round(((dueThisWeek + overdue) * HOURS_PER_TASK * 100) / WEEK_HOURS),
+        // v42: the hours the Department Head gave the tasks due this week (or overdue), against the person's weekly hours.
+        loadPct: assigned
+          ? Math.round(
+              (mine.filter((t) => t.deadline && t.deadline < week.end).reduce((s, t) => s + (t.estimateMin ?? 0), 0) / 60 / (u.weeklyHours || 45)) * 100,
+            )
+          : Math.round(((dueThisWeek + overdue) * HOURS_PER_TASK * 100) / WEEK_HOURS),
         onLeave: leave.some((l) => l.userId === u.id),
       };
     };
@@ -401,8 +408,9 @@ export class TeamWorkspaceService {
       scope,
       scopeLabel: label,
       week: { from: week.from, to: week.to },
-      hoursPerTask: HOURS_PER_TASK,
-      weekHours: WEEK_HOURS,
+      // v42: 0 = the assigned-tasks Workload (hours from the Department Head, against each person's weekly hours).
+      hoursPerTask: assigned ? 0 : HOURS_PER_TASK,
+      weekHours: assigned ? 45 : WEEK_HOURS,
       me: row({ id: self.id, name: self.name, department: self.department }),
       people: users.map(row).sort((a, b) => b.loadPct - a.loadPct || b.open - a.open),
       unassigned: unassigned.map((t) => ({

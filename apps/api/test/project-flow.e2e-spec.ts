@@ -169,5 +169,8 @@ describe('Workload counts only assigned task hours', () => {
     expect(cells.reduce((s, c) => s + c.taskHours, 0)).toBeGreaterThanOrEqual(9.9);
     expect(cells.reduce((s, c) => s + (c.noHoursTasks ?? 0), 0)).toBeGreaterThanOrEqual(1);
     expect((row.tasks as { title: string; hours: number | null }[]).find((t) => t.title === `Build hero ${stamp}`)?.hours).toBe(10);
+    // v42: Capacity counts the head's hours too (not a fixed 4h a task).
+    const cap = (await http().get('/workspace/capacity').set(as('head')).expect(200)).body as { hoursPerTask: number };
+    expect(cap.hoursPerTask).toBe(0);
   });
 });

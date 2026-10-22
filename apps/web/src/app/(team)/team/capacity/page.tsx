@@ -60,7 +60,7 @@ export default function CapacityPage() {
             </StatRow>
           </div>
           <div className="mt-6 grid gap-6 lg:grid-cols-[2fr_1fr]">
-            <Panel title="Team load" subtitle={`Load = tasks due this week or overdue × ${c.hoursPerTask}h ÷ ${c.weekHours}h a week`} flush>
+            <Panel title="Team load" subtitle={c.hoursPerTask ? `Load = tasks due this week or overdue × ${c.hoursPerTask}h ÷ ${c.weekHours}h a week` : "Load = the hours Department Heads gave the tasks due this week or overdue ÷ each person's weekly hours"} flush>
               <DataTable<TeamCapacityPerson>
                 rows={others}
                 rowKey={(p) => p.id}

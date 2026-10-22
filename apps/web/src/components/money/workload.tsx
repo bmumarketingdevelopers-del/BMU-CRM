@@ -185,7 +185,12 @@ export function Workload() {
                         data-testid="heatmap-cell"
                       >
                         {c.availableHours <= 0 ? (c.leaveDays ? "Leave" : "Off") : `${c.loadPct ?? 0}%`}
-                        <span className="block text-[10px] opacity-70">{c.leaveDays ? `${c.leaveDays}d leave` : `${Math.round(c.bookedHours + c.taskHours)}/${Math.round(c.availableHours)}h`}</span>
+                        {/* v42: hours and leave together; tasks still without hours are shown so the head adds them. */}
+                        <span className="block text-[10px] opacity-70">
+                          {`${Math.round((c.bookedHours + c.taskHours) * 10) / 10}/${Math.round(c.availableHours)}h`}
+                          {c.leaveDays ? ` · ${c.leaveDays}d leave` : ""}
+                        </span>
+                        {!!c.noHoursTasks && <span className="block text-[10px] font-medium text-[#9a6b00]">{c.noHoursTasks} without hours</span>}
                       </button>
                     </td>
                   ))}

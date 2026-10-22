@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { calendarFor } from '../production/generate.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { addDays, dbDate, isMonday, isoOf, mondayOf, todayIst } from './dates.js';
+import { WORKLOAD_MODE } from './workload-mode.js';
 
 const OPEN_TASK = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];
 /** Open tasks without an estimate count as two hours. */
@@ -25,14 +26,8 @@ export const NOT_A_BOOKER = 'Only Client Managers, Department Heads and leadersh
 const SEE_ALL = ['founder', 'admin', 'hr_ops', 'am_lead', 'account_manager'];
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
-/**
- * v40: how Workload fills each person's week.
- * - 'assigned_tasks' (now): only the hours the Department Head gave each assigned task count, spread over the working
- *   days from today to the task's deadline; they drop off when the task is done. Bookings are hidden.
- * - 'primary': the original calculation, booked hours + task estimates (loads()).
- * "Please revert to primary workload calculation" = set this to 'primary'.
- */
-export const WORKLOAD_MODE: 'assigned_tasks' | 'primary' = 'assigned_tasks';
+// v40: WORKLOAD_MODE lives in ./workload-mode.ts (also used by Capacity and the person picker).
+export { WORKLOAD_MODE } from './workload-mode.js';
 
 export type WeekLoad = WorkloadCell & { leaveDates: string[] };
 

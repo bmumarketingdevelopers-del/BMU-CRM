@@ -3,7 +3,7 @@
 // "what to do next", the specialty's own panels and a weekly workload chart.
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { dashboardDefaultLayout, type CraftDashboard as Dash, type CraftStrip, type MyDayView } from "@bmu/shared";
+import { dashboardDefaultLayout, type CraftDashboard as Dash, type CraftStrip, type MyDayView, type WorkloadPerson } from "@bmu/shared";
 import { DashGrid, type DashLayoutProps } from "@/components/dashboards/grid";
 import { Heatmap, Insight, LineChart, PeriodPicker, usePeriod } from "@/components/charts";
 import { Panel, StatRow, StatTile, Tabs } from "@/components/dash";
@@ -106,6 +106,59 @@ export function CraftDashboard({ userId, layout, wrap }: { userId?: string } & D
   );
 }
 
+/**
+ * v42: this person's assigned hours (the hours Department Heads gave their tasks) against their weekly hours, this
+ * week and next: the same numbers as the Workload page.
+ */
+function AssignedWeek({ userId }: { userId: string }) {
+  const [row, setRow] = useState<WorkloadPerson | null>();
+  useEffect(() => {
+    let live = true;
+    api.capacity
+      .workload({ weeks: "2" })
+      .then((v) => live && setRow(v.mode === "assigned_tasks" ? (v.people.find((p) => p.userId === userId) ?? null) : null))
+      .catch(() => live && setRow(null));
+    return () => {
+      live = false;
+    };
+  }, [userId]);
+  if (!row) return null;
+  const [now, next] = row.cells;
+  const cell = (label: string, c: WorkloadPerson["cells"][number] | undefined) =>
+    c && (
+      <span>
+        {label}: <strong>{Math.round(c.taskHours * 10) / 10}h</strong> of {Math.round(c.availableHours)}h{c.availableHours > 0 ? ` (${c.loadPct ?? 0}%)` : ""}
+        {c.leaveDays ? ` · ${c.leaveDays}d leave` : ""}
+        {c.noHoursTasks ? <span className="text-[#9a6b00]"> · {c.noHoursTasks} task{c.noHoursTasks === 1 ? "" : "s"} without hours</span> : null}
+      </span>
+    );
+  const open = (row.tasks ?? []).filter((t) => t.status !== "done");
+  return (
+    <div className="mb-3 border border-border bg-canvas/40 px-3 py-2 text-sm" data-testid="assigned-week">
+      <p className="flex flex-wrap gap-x-5 gap-y-1">
+        <span className="font-medium">Your assigned work</span>
+        {cell("This week", now)}
+        {cell("Next week", next)}
+        <Link href="/team/workload" className="text-ink-muted underline">
+          Workload
+        </Link>
+      </p>
+      {open.length > 0 && (
+        <ul className="mt-1 space-y-0.5 text-xs text-ink-muted">
+          {open.slice(0, 5).map((t) => (
+            <li key={t.id}>
+              <Link href={`/team/tasks/${t.id}`} className="text-ink underline">
+                {t.title}
+              </Link>
+              {[t.client, t.hours ? `${t.hours}h` : "no hours yet", t.deadline ? `due ${fmtDay(t.deadline)}` : null].filter(Boolean).map((x) => ` · ${x}`)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function Workload({ d }: { d: Dash }) {
   const [view, setView] = useState<"hours" | "tasks" | "heat">("hours");
   const w = d.workload;
@@ -123,6 +176,7 @@ function Workload({ d }: { d: Dash }) {
       subtitle="Hours on finished tasks and tasks finished per week; shaded weeks are planned work still to come."
       action={<Tabs value={view} onChange={setView} options={[{ value: "hours", label: "Hours" }, { value: "tasks", label: "Tasks" }, { value: "heat", label: "By day" }]} />}
     >
+      <AssignedWeek userId={d.person.id} />
       {view === "heat" ? (
         <Heatmap rows={w.heat.rows} cols={w.heat.cols} values={w.heat.values} cellTitle={(r, c, v) => `${w.heat.rows[r]}, week of ${w.heat.cols[c]}: ${v ?? 0} finished`} />
       ) : (
