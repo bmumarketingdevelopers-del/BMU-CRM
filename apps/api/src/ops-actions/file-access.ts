@@ -44,7 +44,7 @@ export type FileScope =
 /** v38: files in discussions this person is in (project threads: on clients they work on) and on their tasks. */
 async function sentFiles(prisma: PrismaService, me: Me, projectClients: 'all' | string[]): Promise<string[]> {
   const watched = (await prisma.watcher.findMany({ where: { userId: me.id, targetType: 'task' }, select: { targetId: true } })).map((w) => w.targetId);
-  const [messages, tasks] = await Promise.all([
+  const [messages, tasks, briefs] = await Promise.all([
     prisma.message.findMany({
       where: {
         orgId: me.orgId,
@@ -57,8 +57,10 @@ async function sentFiles(prisma: PrismaService, me: Me, projectClients: 'all' | 
       select: { attachments: true },
     }),
     prisma.task.findMany({ where: { orgId: me.orgId, attachments: { isEmpty: false }, OR: [{ ownerId: me.id }, { createdById: me.id }, ...(watched.length ? [{ id: { in: watched } }] : [])] }, select: { attachments: true } }),
+    // v41: requirement documents sent to this person as Department Head (or sent by them).
+    prisma.projectEstimate.findMany({ where: { orgId: me.orgId, docFileIds: { isEmpty: false }, OR: [{ headId: me.id }, { requestedById: me.id }] }, select: { docFileIds: true } }),
   ]);
-  return [...new Set([...messages.flatMap((m) => m.attachments), ...tasks.flatMap((t) => t.attachments)])];
+  return [...new Set([...messages.flatMap((m) => m.attachments), ...tasks.flatMap((t) => t.attachments), ...briefs.flatMap((b) => b.docFileIds)])];
 }
 
 export async function fileScope(prisma: PrismaService, me: Me): Promise<FileScope> {

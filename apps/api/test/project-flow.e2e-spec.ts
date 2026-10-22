@@ -30,7 +30,7 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
-  const people = { am: 'am@bmu.demo', head: 'design.head@bmu.demo', designer: 'design@bmu.demo', producer: 'producer@bmu.demo', client: 'client@sunrise.demo' };
+  const people = { am: 'am@bmu.demo', head: 'design.head@bmu.demo', designer: 'design@bmu.demo', producer: 'producer@bmu.demo', sales: 'sales@bmu.demo', client: 'client@sunrise.demo' };
   for (const [k, email] of Object.entries(people)) {
     tokens[k] = await signIn(email);
     ids[k] = (await prisma.user.findFirstOrThrow({ where: { email } })).id;
@@ -77,6 +77,44 @@ describe('finish dates', () => {
     expect(s.body.estimates[0].status).toBe('shared');
     const after = (await http().get('/project-flow/client/progress').set(as('client')).expect(200)).body.projects.find((p: { engagementId: string }) => p.engagementId === ids.eng);
     expect(after.estimates[0]).toMatchObject({ finishBy: inDays(30), note: 'Two designers' });
+  });
+});
+
+describe('requirements and tasks on the project page (v41)', () => {
+  it('the CM sends requirement documents; the head opens them and gives tasks to the team with hours', async () => {
+    const doc = await http().post(`/project-flow/projects/${ids.eng}/brief-files`).set(as('am')).attach('file', png, { filename: `brief-${stamp}.png`, contentType: 'image/png' }).expect(201);
+    const link = await http().post(`/project-flow/projects/${ids.eng}/brief-links`).set(as('am')).send({ url: `https://docs.google.com/document/d/${stamp}` }).expect(201);
+    const v = await http().post(`/project-flow/projects/${ids.eng}/estimates`).set(as('am')).send({ departmentIds: [ids.dept], note: 'Website, 5 pages', fileIds: [doc.body.id, link.body.id] }).expect(200);
+    expect(v.body.estimates[0].docs.map((d: { kind: string }) => d.kind).sort()).toEqual(['image', 'link']);
+    // The head can open the documents (and the client's team, as with other client files); someone outside can't.
+    await http().get(`/files/${doc.body.id}`).set(as('head')).expect(200);
+    await http().get(`/files/${doc.body.id}`).set(as('sales')).expect(404);
+
+    // The head adds a task for their team: who, hours, deadline. Only people from the department.
+    const view = (await http().get(`/project-flow/projects/${ids.eng}`).set(as('head')).expect(200)).body;
+    expect(view.teams[0].people.some((p: { id: string }) => p.id === ids.designer)).toBe(true);
+    await http().post(`/project-flow/projects/${ids.eng}/tasks`).set(as('head')).send({ departmentId: ids.dept, title: `Home page ${stamp}`, ownerId: ids.sales, hours: 8, deadline: inDays(5) }).expect(400);
+    await http().post(`/project-flow/projects/${ids.eng}/tasks`).set(as('sales')).send({ departmentId: ids.dept, title: `Home page ${stamp}`, ownerId: ids.designer, hours: 8, deadline: inDays(5) }).expect(403);
+    const added = await http().post(`/project-flow/projects/${ids.eng}/tasks`).set(as('head')).send({ departmentId: ids.dept, title: `Home page ${stamp}`, ownerId: ids.designer, hours: 8, deadline: inDays(5) }).expect(200);
+    const t = added.body.tasks.find((x: { title: string }) => x.title === `Home page ${stamp}`);
+    expect(t).toMatchObject({ hours: 8, deadline: inDays(5), owner: { id: ids.designer }, fromPlan: false });
+    expect(await prisma.notification.count({ where: { userId: ids.designer, kind: 'task_assigned', link: `/team/tasks/${t.id}` } })).toBe(1);
+
+    // A step from the approved plan (no person yet): the head gives it a person and hours here.
+    const cycle = await prisma.cycle.create({ data: { orgId: ids.org, engagementId: ids.eng, period: `p-${stamp}` } });
+    const d = await prisma.deliverable.create({ data: { orgId: ids.org, cycleId: cycle.id, type: 'post', title: `Menu page ${stamp}`, departmentId: ids.dept } });
+    const make = await prisma.task.create({ data: { orgId: ids.org, title: `Design: Menu page ${stamp}`, deliverableId: d.id, departmentId: ids.dept, kind: 'work', status: 'todo' } });
+    const qc = await prisma.task.create({ data: { orgId: ids.org, title: `QC: Menu page ${stamp}`, deliverableId: d.id, departmentId: ids.dept, kind: 'qc', status: 'todo' } });
+    const before = (await http().get(`/project-flow/projects/${ids.eng}`).set(as('head')).expect(200)).body.tasks.find((x: { id: string }) => x.id === make.id);
+    expect(before).toMatchObject({ owner: null, fromPlan: true });
+    await http().post(`/project-flow/tasks/${make.id}/assign`).set(as('head')).send({ ownerId: ids.designer, hours: 6 }).expect(200);
+    // QC can't go to the person who made it.
+    await http().post(`/project-flow/tasks/${qc.id}/assign`).set(as('head')).send({ ownerId: ids.designer, hours: 1 }).expect(400);
+    await http().post(`/project-flow/tasks/${qc.id}/assign`).set(as('head')).send({ ownerId: ids.head, hours: 1 }).expect(200);
+    expect(await prisma.task.findUniqueOrThrow({ where: { id: make.id } })).toMatchObject({ ownerId: ids.designer, estimateMin: 360 });
+    await prisma.task.deleteMany({ where: { deliverableId: d.id } });
+    await prisma.deliverable.delete({ where: { id: d.id } });
+    await prisma.cycle.delete({ where: { id: cycle.id } });
   });
 });
 

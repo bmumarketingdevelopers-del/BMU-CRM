@@ -15,7 +15,6 @@ import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { ApprovalStatusBox } from "@/components/deliver/approval-status";
 import { CyclesPanel } from "@/components/deliver/cycles-panel";
-import { ProjectHandoffPanel } from "@/components/deliver/handoff";
 import { ProjectFlowPanel } from "@/components/deliver/project-flow";
 import { FeedbackSummary, HandoverContents } from "@/components/deliver/handover";
 import { Panel } from "@/components/dash";
@@ -219,9 +218,8 @@ export default function EngagementPage({ params }: { params: Promise<{ id: strin
         </Card>
       )}
 
-      {/* v40: finish dates from Department Heads and finished parts shared with the client. */}
+      {/* v40/v41: requirements → finish dates → tasks with hours → finished parts, by department (replaces Work hand-off). */}
       <ProjectFlowPanel engagementId={v.id} />
-      {v.deliverables.length > 0 && <ProjectHandoffPanel engagementId={v.id} />}
 
       <CyclesPanel
         engagementId={v.id}

@@ -28,7 +28,7 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
         { label: "Review Studio", href: "/team/reviews" },
         { label: "Projects", href: "/team/projects" },
         // v37: Client Managers send new project work to Department Heads, who pick their team here.
-        ...(me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager", "department_head"].includes(r)) ? [{ label: "Work hand-off", href: "/team/handoff" }] : []),
+        // v41: Work hand-off is hidden; Department Heads give tasks on each project page ("Departments & progress").
         ...(isClientTeam ? [{ label: "Requests inbox", href: "/team/requests" }] : []),
         ...(isClientTeam && !me.roles.every((r) => r === "finance") ? [{ label: "Messages", href: "/team/messages" }] : []),
         ...(me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager", "sales_manager", "sales_executive"].includes(r)) ? [{ label: "Inbox", href: "/team/inbox" }] : []),

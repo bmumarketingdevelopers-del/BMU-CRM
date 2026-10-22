@@ -3784,6 +3784,8 @@ model ProjectEstimate {
   headId        String?
   requestedById String?
   requestNote   String?
+  /// v41: requirement documents sent with the request (File ids)
+  docFileIds    String[]  @default([])
   requestedAt   DateTime  @default(now())
   finishBy      DateTime? @db.Date
   headNote      String?

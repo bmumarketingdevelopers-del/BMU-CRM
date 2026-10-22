@@ -59,6 +59,31 @@ export class ProjectFlowController {
     return this.flow.stageLink(me, id, body, ip);
   }
 
+  /** v41: requirement documents for a request to Department Heads. */
+  @Post('projects/:id/brief-files')
+  @UseInterceptors(opsUpload)
+  stageBriefFile(@CurrentUser() me: Me, @Param('id') id: string, @UploadedFile() file: OpsUpload | undefined, @ClientIp() ip?: string) {
+    return this.flow.stageFile(me, id, file, ip, 'brief');
+  }
+
+  @Post('projects/:id/brief-links')
+  stageBriefLink(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.flow.stageLink(me, id, body, ip, 'brief');
+  }
+
+  /** v41: the Department Head adds a task for their team, or gives one a person and hours. */
+  @Post('projects/:id/tasks')
+  @HttpCode(200)
+  addTask(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.flow.addTask(me, id, body, ip);
+  }
+
+  @Post('tasks/:id/assign')
+  @HttpCode(200)
+  assignTask(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.flow.assignTask(me, id, body, ip);
+  }
+
   @Post('projects/:id/milestones')
   @HttpCode(200)
   shareMilestone(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {

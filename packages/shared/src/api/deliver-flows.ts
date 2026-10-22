@@ -22,6 +22,8 @@ import type {
   MilestoneCreateInput,
   MilestoneDecisionInput,
   ProjectFlowView,
+  ProjectTaskAssignInput,
+  ProjectTaskCreateInput,
 } from "../deliver-flows.js";
 import type { SentFile, SentLink } from "../ops-actions.js";
 import type { ClientOnboarding } from "../delivery.js";
@@ -53,6 +55,16 @@ export const deliverFlowsApi = (t: Transport) => ({
       return t.request<SentFile>(`/project-flow/projects/${engagementId}/milestone-files`, { method: "POST", body: form });
     },
     stageLink: (engagementId: string, body: SentLink) => t.post<SentFile>(`/project-flow/projects/${engagementId}/milestone-links`, body),
+    /** v41: requirement documents to send with a request to Department Heads. */
+    stageBriefFile: (engagementId: string, file: Blob) => {
+      const form = new FormData();
+      form.append("file", file);
+      return t.request<SentFile>(`/project-flow/projects/${engagementId}/brief-files`, { method: "POST", body: form });
+    },
+    stageBriefLink: (engagementId: string, body: SentLink) => t.post<SentFile>(`/project-flow/projects/${engagementId}/brief-links`, body),
+    /** v41: the Department Head adds a task for their team, or gives an existing one a person and hours. */
+    addTask: (engagementId: string, body: ProjectTaskCreateInput) => t.post<ProjectFlowView>(`/project-flow/projects/${engagementId}/tasks`, body),
+    assignTask: (taskId: string, body: ProjectTaskAssignInput) => t.post<ProjectFlowView>(`/project-flow/tasks/${taskId}/assign`, body),
     shareMilestone: (engagementId: string, body: MilestoneCreateInput) => t.post<ProjectFlowView>(`/project-flow/projects/${engagementId}/milestones`, body),
     clientProgress: () => t.get<ClientProgressView>("/project-flow/client/progress"),
     decide: (milestoneId: string, body: MilestoneDecisionInput) => t.post<ClientProgressView>(`/project-flow/client/milestones/${milestoneId}/decision`, body),

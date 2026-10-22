@@ -354,6 +354,8 @@ export type ProjectEstimateRow = {
   head: { id: string; name: string } | null;
   requestedBy: string | null;
   requestNote: string | null;
+  /** v41: requirement documents the Client Manager sent with the request */
+  docs: MilestoneFile[];
   requestedAt: string;
   /** YYYY-MM-DD */
   finishBy: string | null;
@@ -385,12 +387,30 @@ export type ProjectMilestoneRow = {
   changeTaskId: string | null;
 };
 
+/** v41: one open (or recently done) task of the project, by department. */
+export type ProjectTaskRow = {
+  id: string;
+  title: string;
+  departmentId: string | null;
+  owner: { id: string; name: string } | null;
+  hours: number | null;
+  /** YYYY-MM-DD */
+  deadline: string | null;
+  status: string;
+  /** From the approved plan (a deliverable's step) rather than added by the head. */
+  fromPlan: boolean;
+};
+
 export type ProjectFlowView = {
   engagementId: string;
   client: string;
   service: string;
   estimates: ProjectEstimateRow[];
   milestones: ProjectMilestoneRow[];
+  /** v41: the project's tasks (open ones and those done in the last 30 days). */
+  tasks: ProjectTaskRow[];
+  /** v41: people a Department Head can give tasks to, per department they head (their team and themselves). */
+  teams: { departmentId: string; people: { id: string; name: string; openHours: number; onLeaveToday: boolean }[] }[];
   /** Departments with a Department Head (to ask for a date). */
   departments: { id: string; name: string; head: { id: string; name: string } | null }[];
   can: {
@@ -407,8 +427,28 @@ export type EstimateInboxRow = ProjectEstimateRow & { project: { id: string; cli
 export const estimateRequestSchema = z.object({
   departmentIds: z.array(z.string().min(1)).min(1, "Pick at least one department").max(20),
   note: z.string().trim().max(2000).optional(),
+  /** v41: requirement documents (uploaded files or Drive links) */
+  fileIds: z.array(z.string()).max(20).default([]),
 });
 export type EstimateRequestInput = z.infer<typeof estimateRequestSchema>;
+
+/** v41: a Department Head adds a task for someone in their team on the project. */
+export const projectTaskCreateSchema = z.object({
+  departmentId: z.string().min(1, "Pick the department"),
+  title: z.string().trim().min(3, "Say what to do").max(200),
+  ownerId: z.string().min(1, "Pick who does it"),
+  hours: z.number({ message: "Give the hours" }).min(0.5, "At least half an hour").max(500, "At most 500 hours"),
+  deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the deadline"),
+  note: z.string().trim().max(2000).optional(),
+});
+export type ProjectTaskCreateInput = z.infer<typeof projectTaskCreateSchema>;
+
+/** v41: a Department Head gives a task (e.g. a step from the plan) to someone, with hours. */
+export const projectTaskAssignSchema = z.object({
+  ownerId: z.string().min(1, "Pick who does it"),
+  hours: z.number({ message: "Give the hours" }).min(0.5, "At least half an hour").max(500, "At most 500 hours"),
+});
+export type ProjectTaskAssignInput = z.infer<typeof projectTaskAssignSchema>;
 
 export const estimateSubmitSchema = z.object({
   finishBy: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the finish date"),
