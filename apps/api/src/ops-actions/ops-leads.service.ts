@@ -8,6 +8,7 @@ import {
   OPS_LEAD_FIRST_REPLY_MINUTES,
   OPS_LEAD_SOURCES,
   opsCanAddLead,
+  opsCanCreateLead,
   opsIsSalesManager,
   opsLeadConvertSchema,
   opsLeadCreateSchema,
@@ -153,7 +154,7 @@ export class OpsLeadsService implements OnModuleInit {
 
   /** What the Add lead drawer needs: who can own leads and whether this person may pick the owner. */
   async addOptions(me: Me) {
-    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Branch Managers and client managers (referrals) can add leads');
+    if (!opsCanCreateLead(me)) throw new ForbiddenException('Only sales managers, Founders, Branch Managers and client managers (referrals) can add leads');
     const team = await this.salesTeam(me.orgId);
     const next = await this.nextOwner(me.orgId);
     return {
@@ -185,7 +186,7 @@ export class OpsLeadsService implements OnModuleInit {
   // Add lead
 
   async create(me: Me, body: unknown, ip?: string): Promise<OpsLeadCreated> {
-    if (!opsCanAddLead(me)) throw new ForbiddenException('Only the sales team, Founders, Branch Managers and client managers (referrals) can add leads');
+    if (!opsCanCreateLead(me)) throw new ForbiddenException('Only sales managers, Founders, Branch Managers and client managers (referrals) can add leads');
     const input = parse(opsLeadCreateSchema, body);
     const referralOnly = opsLeadReferralOnly(me);
     if (referralOnly && input.source !== 'referral') throw new ForbiddenException('Client managers can add referrals only. Set the source to Referral.');
@@ -195,8 +196,8 @@ export class OpsLeadsService implements OnModuleInit {
     if (dupes.length && !input.confirmDuplicate) {
       throw new ConflictException({ message: `Possible duplicate: ${dupes[0].name} (${dupes[0].stage}${dupes[0].owner ? `, owned by ${dupes[0].owner}` : ''}) has the same ${dupes[0].matchedOn.join(' and ')}. Open it, or choose Continue to add anyway.`, duplicates: dupes });
     }
-    // Owner: a manager picks anyone (or auto); a sales executive owns what they add unless they choose auto;
-    // referrals from client managers are always auto-assigned.
+    // Owner: a manager picks anyone (or auto); referrals from client managers are always auto-assigned.
+    // (Sales Executives no longer add leads; they work the leads they are given.)
     let owner: { id: string; name: string } | null = null;
     const wantAuto = !input.ownerId || input.ownerId === 'auto' || referralOnly;
     if (!wantAuto) {
@@ -205,8 +206,6 @@ export class OpsLeadsService implements OnModuleInit {
       const u = team.find((x) => x.id === input.ownerId) ?? (input.ownerId === me.id && hasRole(me, 'founder', 'admin') ? { id: me.id, name: me.name } : null);
       if (!u) throw new BadRequestException('Pick someone from the sales team as the owner');
       owner = { id: u.id, name: u.name };
-    } else if (!referralOnly && hasRole(me, 'sales_executive') && !opsIsSalesManager(me) && input.ownerId !== 'auto') {
-      owner = { id: me.id, name: me.name };
     } else owner = await this.nextOwner(me.orgId);
 
     const budgetPaise = input.budgetRupees === undefined ? null : input.budgetRupees * 100;
@@ -476,7 +475,7 @@ export class OpsLeadsService implements OnModuleInit {
         { key: 'owner', label: 'Owner', required: false, hint: 'Email or name; empty = round-robin' },
       ],
       sampleCsv: 'Contact name,Phone,Business name,Source,Services,Email,What they need,Monthly budget (₹),Owner\nRavi Kumar,9876500011,Kumar Sweets,referral,Social Media Management,ravi@kumarsweets.in,Instagram for Diwali,40000,\n',
-      canImport: (me) => hasRole(me, 'founder', 'admin', 'sales_manager', 'sales_executive'),
+      canImport: (me) => opsCanCreateLead(me),
       validate: (me, rows) => this.validateImport(me, rows),
       commit: async (me, rows, ip) => {
         const ids: string[] = [];

@@ -20,9 +20,13 @@ export const OPS_CREATOR_ROLES = ["founder", "admin", "am_lead", "account_manage
 export const OPS_ANNOUNCE_ROLES = ["founder", "admin"] as const;
 export const OPS_FILE_MANAGER_ROLES = ["founder", "admin", "am_lead", "account_manager", "department_head"] as const;
 
+/** Works with leads: notes and meetings on leads, the lead list. Creating new leads is opsCanCreateLead. */
 export const opsCanAddLead = (me: Who) => staff(me) && hasAny(me.roles, OPS_LEAD_ADD_ROLES);
+/** Who may create new leads (Add lead, CSV import). Sales Executives work the leads they are given but don't add new ones. */
+export const OPS_LEAD_CREATE_ROLES = ["founder", "admin", "sales_manager", "account_manager"] as const;
+export const opsCanCreateLead = (me: Who) => staff(me) && hasAny(me.roles, OPS_LEAD_CREATE_ROLES);
 /** Client managers may only add referrals (they don't own leads). */
-export const opsLeadReferralOnly = (me: Who) => !hasAny(me.roles, ["founder", "admin", "sales_manager", "sales_executive"]) && me.roles.includes("account_manager");
+export const opsLeadReferralOnly = (me: Who) => !hasAny(me.roles, ["founder", "admin", "sales_manager"]) && me.roles.includes("account_manager");
 export const opsIsSalesManager = (me: Who) => staff(me) && hasAny(me.roles, OPS_LEAD_MANAGER_ROLES);
 export const opsCanFinance = (me: Who) => staff(me) && hasAny(me.roles, OPS_FINANCE_ROLES);
 /** v29: Client Managers (and the CM Lead) create and sign invoices for their own clients (the CM Lead for all clients). */
