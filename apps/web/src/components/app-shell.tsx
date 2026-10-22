@@ -68,8 +68,12 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
   );
   // v11 core: team members get the shared action system (+ New, drawers, reassign, undo toasts).
   // v13: every signed-in surface gets live updates and presence.
+  // On Vercel, with the API in the website's own function, the stream is off: each open tab would hold a function for
+  // its full 300 s (timeouts, provisioned memory) and changes only reach tabs on the same instance anyway. Screens check
+  // for changes on a timer instead. With API_URL set (the API on its own server) the stream works and stays on.
+  const stream = !process.env.VERCEL || !!process.env.API_URL;
   return (
-    <LiveProvider meId={me.id}>
+    <LiveProvider meId={me.id} stream={stream}>
       {me.type === "staff" ? (
         <ActionsProvider me={me} surface={surface === "Command Centre" ? "admin" : "team"}>
           {shell}

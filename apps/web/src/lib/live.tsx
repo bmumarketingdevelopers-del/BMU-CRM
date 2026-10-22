@@ -34,10 +34,13 @@ const Ctx = createContext<LiveCtx | null>(null);
 const SETTLE_MS = 600;
 const MAX_WAIT_MS = 2_500;
 const FALLBACK_POLL_MS = 20_000;
+/** Without a stream (on Vercel): how often a visible tab checks for changes. */
+const NO_STREAM_POLL_MS = 120_000;
 
-export function LiveProvider({ meId, children }: { meId: string; children: React.ReactNode }) {
+/** `stream` false: no live stream; screens reload every NO_STREAM_POLL_MS while visible and on return to the tab. */
+export function LiveProvider({ meId, stream = true, children }: { meId: string; stream?: boolean; children: React.ReactNode }) {
   // Both "off" and "connecting" render nothing, so server and browser agree on first paint.
-  const [status, setStatus] = useState<Status>(() => (typeof EventSource === "undefined" ? "off" : "connecting"));
+  const [status, setStatus] = useState<Status>(() => (!stream || typeof EventSource === "undefined" ? "off" : "connecting"));
   const [flags, setFlags] = useState<Record<string, boolean>>({ live_updates: true, presence: true, smart_search: true });
   const listeners = useRef(new Set<Listener>());
   const pending = useRef<{ entities: Set<string> | null; first: number } | null>(null);
@@ -97,7 +100,23 @@ export function LiveProvider({ meId, children }: { meId: string; children: React
   }, []);
 
   useEffect(() => {
-    if (typeof EventSource === "undefined") return;
+    if (stream) return;
+    const poll = setInterval(() => document.visibilityState === "visible" && queue(null), NO_STREAM_POLL_MS);
+    let hiddenAt = 0;
+    const onVisibility = () => {
+      if (document.hidden) hiddenAt = Date.now();
+      // Back on the tab after a while: catch up once.
+      else if (hiddenAt && Date.now() - hiddenAt > 30_000) queue(null);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [stream, queue]);
+
+  useEffect(() => {
+    if (!stream || typeof EventSource === "undefined") return;
     let es: EventSource | null = null;
     let wasLive = false;
     let poll: ReturnType<typeof setInterval> | null = null;
@@ -146,7 +165,7 @@ export function LiveProvider({ meId, children }: { meId: string; children: React
       stopPoll();
       es?.close();
     };
-  }, [queue, sendPresence]);
+  }, [stream, queue, sendPresence]);
 
   const subscribe = useCallback((fn: Listener) => {
     listeners.current.add(fn);

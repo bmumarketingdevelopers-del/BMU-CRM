@@ -17,8 +17,10 @@ export function SideNav({ sections }: { sections: NavSection[] }) {
             {s.items.map((i) =>
               i.href ? (
                 <li key={i.label}>
+                  {/* No prefetch: with ~30 links, every page view would otherwise render every page in the menu on the server. */}
                   <Link
                     href={i.href}
+                    prefetch={false}
                     className={`block whitespace-nowrap border-l-2 py-1 md:px-2 ${path === i.href ? "border-green font-medium text-ink md:bg-canvas/60" : "border-transparent text-ink-muted hover:text-ink"}`}
                   >
                     {i.label}

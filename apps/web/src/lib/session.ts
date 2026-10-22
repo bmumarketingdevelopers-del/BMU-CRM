@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ApiError, createApiClient, homePathFor, type Me } from "@bmu/shared";
@@ -21,11 +22,14 @@ export async function serverApi() {
   return createApiClient(await apiBase(), { headers: { cookie: cookieHeader } });
 }
 
+/** The signed-in user, asked of the API once per page render however many layouts and pages need it. */
+const loadMe = cache(async () => (await serverApi()).auth.me());
+
 /** Signed-in user, or a redirect to sign-in. Optionally limits a surface to some user types. */
 export async function requireMe(allow?: Me["type"][]): Promise<Me> {
   let me: Me;
   try {
-    me = await (await serverApi()).auth.me();
+    me = await loadMe();
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) redirect("/sign-in");
     throw e;
