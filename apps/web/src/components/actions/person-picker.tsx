@@ -3,6 +3,7 @@
 /**
  * PersonPicker: choose an owner from the reassignment engine's candidates, showing load %, leave, active tasks and
  * skills. Used by ReassignDialog and by create drawers ("Assignee picker shows load % and leave").
+ * v42: once someone is picked the list closes and shows only that person, with "Change" to pick again.
  *
  *   <PersonPicker candidates={c.candidates} value={toUserId} onChange={setToUserId} />
  */
@@ -39,7 +40,30 @@ export function PersonPicker({
   max?: number;
 }) {
   const [q, setQ] = useState("");
+  const [picking, setPicking] = useState(false);
   const term = q.trim().toLowerCase();
+  const chosen = value ? candidates.find((c) => c.id === value) : undefined;
+  if (chosen && !picking)
+    return (
+      <div className="flex items-center justify-between gap-3 border border-charcoal bg-canvas px-3 py-2 text-sm" data-testid="person-chosen">
+        <span className="min-w-0">
+          <span className="block truncate font-medium" data-person={chosen.name}>
+            {chosen.name}
+          </span>
+          <span className="flex flex-wrap gap-x-2 text-[11px] text-ink-muted">
+            {chosen.role && <span>{chosen.role.replace(/_/g, " ")}</span>}
+            <span>{chosen.openTasks} open</span>
+            {chosen.onLeave ? <span className="font-semibold text-red">{chosen.leaveNote ?? "On leave on the deadline"}</span> : chosen.onLeaveToday ? <span className="text-amber">On leave today</span> : null}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-3">
+          <LoadBar pct={showAfter ? chosen.loadAfterPct : chosen.loadPct} />
+          <button type="button" className="text-xs underline" onClick={() => setPicking(true)} data-testid="person-change">
+            Change
+          </button>
+        </span>
+      </div>
+    );
   const rows = candidates.filter((c) => !term || c.name.toLowerCase().includes(term) || (c.department ?? "").toLowerCase().includes(term) || c.skills.some((s) => s.toLowerCase().includes(term))).slice(0, max);
   return (
     <div className="border border-border">
@@ -56,7 +80,11 @@ export function PersonPicker({
               <button
                 type="button"
                 disabled={disabled}
-                onClick={() => onChange(c.id)}
+                onClick={() => {
+                  onChange(c.id);
+                  setPicking(false);
+                  setQ("");
+                }}
                 data-person={c.name}
                 className={`grid w-full grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 ${selected ? "bg-canvas outline-1 -outline-offset-1 outline-charcoal" : "hover:bg-canvas/50"} ${disabled ? "cursor-not-allowed opacity-50" : ""}`}
               >
