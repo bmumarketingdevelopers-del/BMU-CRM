@@ -1,8 +1,10 @@
 // Every email the system sends goes through here. With SMTP_* set in .env it is really sent with nodemailer;
 // without it the email is only stored ("simulated") so Command Centre -> Outbox shows what would have gone out.
 import { Injectable, Logger } from '@nestjs/common';
+import { waitUntil } from '@vercel/functions';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { isServerless } from '../runtime/process-role.js';
 import { SettingsService } from '../settings/settings.service.js';
 
 export type EmailInput = {
@@ -121,8 +123,12 @@ ${input.button ? `<p style="margin:24px 0 8px"><a href="${escapeHtml(appUrl(inpu
           attachments: input.attachments?.length ? (input.attachments as never) : undefined,
         },
       });
-      if (this.configured) void this.deliver(row.id);
-      else this.log.log(`(outbox) ${input.kind} → ${to}: ${input.subject}`);
+      if (this.configured) {
+        const sending = this.deliver(row.id).catch((e) => this.log.warn(`Email ${row.id} not delivered: ${(e as Error).message}`));
+        // On Vercel the function is frozen as soon as the answer is sent, which stalls an open SMTP connection
+        // ("Greeting never received"); waitUntil keeps it running until the email has gone.
+        if (isServerless()) waitUntil(sending);
+      } else this.log.log(`(outbox) ${input.kind} → ${to}: ${input.subject}`);
       return row.id;
     } catch (e) {
       this.log.error(`Could not queue email: ${(e as Error).message}`);
