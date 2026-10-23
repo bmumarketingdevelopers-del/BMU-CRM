@@ -27,6 +27,8 @@ export const teamFlowsApi = (t: Transport) => ({
   teamFlows: {
     people: {
       list: (kind?: "onboarding" | "offboarding") => t.get<TeamPeopleProcess[]>(`/team-flows/people${qs({ kind })}`),
+      /** Onboarding history: every onboarding the signed-in person is part of. */
+      involved: () => t.get<TeamPeopleProcess[]>("/team-flows/people/involved"),
       options: () => t.get<TeamPeopleOptions>("/team-flows/people/options"),
       get: (id: string) => t.get<TeamPeopleProcess>(`/team-flows/people/${id}`),
       mine: () => t.get<TeamPeopleProcess[]>("/team-flows/people/mine"),

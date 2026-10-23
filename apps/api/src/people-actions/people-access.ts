@@ -59,7 +59,7 @@ export function assertPeopleReader(me: Me) {
 
 /**
  * Can `me` give someone this base role? Founder: anyone. Admin: ranks below Admin; the Branch Manager role needs the Founder.
- * HR (adding only): never Founder, Branch Manager or client roles.
+ * HR (adding only): never Founder or client roles; Branch Manager only by the HR Department Head, with the Founder's approval.
  * Rule: the person granting must be at least one rank above the new role.
  */
 export function rolePolicy(me: Me, baseRole: string, mode: 'add' | 'change'): { ok: boolean; needsFounder: boolean; whyNot: string | null } {
@@ -72,7 +72,12 @@ export function rolePolicy(me: Me, baseRole: string, mode: 'add' | 'change'): { 
   }
   if (mode === 'change') return { ok: false, needsFounder: false, whyNot: 'Only the Founder or a Branch Manager can change roles' };
   if (has(me, 'hr_ops')) {
-    if (baseRole === 'admin') return { ok: false, needsFounder: false, whyNot: 'HR cannot add someone as Founder or Branch Manager' };
+    // The HR Department Head may add a Branch Manager; the Founder approves it before the account is created.
+    if (baseRole === 'admin') {
+      return isHrHead(me)
+        ? { ok: true, needsFounder: true, whyNot: null }
+        : { ok: false, needsFounder: false, whyNot: 'Only the HR Department Head can add a Branch Manager (the Founder approves it)' };
+    }
     return { ok: true, needsFounder: false, whyNot: null };
   }
   return { ok: false, needsFounder: false, whyNot: "You can't give roles" };

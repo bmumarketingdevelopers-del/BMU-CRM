@@ -107,6 +107,10 @@ export class OrgService {
     if (role.baseRole === 'admin' && !me.roles.includes('founder') && !me.roles.includes('hr_ops')) {
       throw new ForbiddenException("Making someone a Branch Manager needs the Founder's approval. Use Change role on the person.");
     }
+    // A new Branch Manager from HR goes through Add person, where the Founder approves it; never straight from an invite.
+    if (role.baseRole === 'admin' && inviting && !me.roles.includes('founder')) {
+      throw new ForbiddenException('Add a new Branch Manager with Add person: the Founder approves it');
+    }
     if (this.access(me).rule === 'people data only') {
       // HR invites new team members with their starting role, but cannot change roles afterwards or hand out leadership roles.
       if (!inviting) throw new ForbiddenException('HR can edit people data, not roles');

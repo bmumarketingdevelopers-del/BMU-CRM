@@ -52,6 +52,12 @@ export class TeamFlowsController {
     return this.people.mine(me);
   }
 
+  /** Onboarding history: every onboarding the signed-in person is part of. */
+  @Get('people/involved')
+  involved(@CurrentUser() me: Me) {
+    return this.people.involved(me);
+  }
+
   @Get('people/:id')
   get(@CurrentUser() me: Me, @Param('id') id: string) {
     return this.people.get(me, id);

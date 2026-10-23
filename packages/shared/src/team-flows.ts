@@ -58,6 +58,8 @@ export type TeamPeopleProcess = {
   /** Offboarding only: work still owned by the leaver. */
   openWork?: TeamOpenWork;
   canEdit: boolean;
+  /** Onboarding history only: how the viewer is part of it ("Added by you", "Reports to you", "Your department"…). */
+  involvement?: string[];
 };
 
 export type TeamPeopleOptions = {

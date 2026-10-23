@@ -96,6 +96,8 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
       apply: async ({ approver, requester, req }) => {
         if (!approvesNewPeople(approver)) throw new ForbiddenException('Only a Founder or the HR Department Head can approve a new person');
         const input = peopleAddPersonSchema.parse((req.payload as { input: unknown }).input);
+        const branchManager = await this.prisma.role.count({ where: { id: { in: input.roleIds }, orgId: approver.orgId, baseRole: 'admin' } });
+        if (branchManager && !isFounder(approver)) throw new ForbiddenException('Only the Founder can approve a new Branch Manager');
         return { userId: await this.createPerson(approver, input, undefined, requester) };
       },
     });
@@ -388,6 +390,32 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
     staffOnly(me);
     const input = peopleAddPersonSchema.parse(raw);
     const v = await this.validateAdd(me, input);
+    // A Branch Manager added by the HR Department Head is created only once the Founder approves it.
+    if (!isFounder(me) && v.roles.some((r) => rolePolicy(me, r.baseRole, 'add').needsFounder)) {
+      const roleNames = v.roles.map((r) => r.name).join(' + ');
+      const req = await this.approvals.create(
+        me,
+        {
+          action: 'person.add',
+          targetType: 'person_invite',
+          targetId: v.email,
+          summary: `Add ${input.name} to ${v.dept.name} as ${roleNames}`,
+          payload: { input },
+          reason: input.note ?? 'A new Branch Manager is approved by the Founder',
+          approverId: null,
+          approverRoles: ['founder'],
+          diff: [
+            { field: 'Name', before: null, after: input.name },
+            { field: 'Role', before: null, after: roleNames },
+            { field: 'Department', before: null, after: v.dept.name },
+            { field: 'Reports to', before: null, after: v.manager.name },
+            { field: 'Joining', before: null, after: fmtDay(input.joiningDate) },
+          ],
+        },
+        ip,
+      );
+      return { ok: true, id: null, outcome: 'approval', message: 'Sent to the Founder for approval (new Branch Manager)', approval: { id: req.id, summary: req.summary }, undo: null };
+    }
     if (!approvesNewPeople(me)) {
       // Other HR members: nothing is created or sent until a Founder or the HR Department Head approves.
       const hrHead = await this.prisma.user.findFirst({
@@ -452,14 +480,19 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
       ip,
     );
     const hr = await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'hr_ops' } } } }, select: { id: true, departmentId: true } });
-    if (input.onboarding.enabled) await this.startOnboarding(me, user.id, input, v, hr[0] ?? null);
+    // The HR task goes to the HR person who added them (the requester, when an approver created the account).
+    const hrOwner = hr.find((h) => h.id === requestedBy?.id) ?? hr.find((h) => h.id === me.id) ?? hr[0] ?? null;
+    // The new joiner's Department Head is told and gets a task too, whoever they report to.
+    const headId = await this.people.departmentHead(me.orgId, v.dept.id);
+    if (input.onboarding.enabled) await this.startOnboarding(me, user.id, input, v, hrOwner, headId, requestedBy?.id ?? null);
     if (input.sendInvite) await this.sendInvite(me, user.id);
-    await this.notifications.notify(me.orgId, [v.manager.id].filter((x) => x !== me.id), { kind: 'onboarding', title: `${input.name} joins your team on ${fmtDay(input.joiningDate)}`, body: `${v.roles.map((r) => r.name).join(' + ')} · ${v.dept.name}`, link: `/admin/users/${user.id}` });
+    const team = [...new Set([v.manager.id, headId].filter((x): x is string => !!x && x !== me.id))];
+    await this.notifications.notify(me.orgId, team, { kind: 'onboarding', title: `${input.name} joins your team on ${fmtDay(input.joiningDate)}`, body: `${v.roles.map((r) => r.name).join(' + ')} · ${v.dept.name} · reports to ${v.manager.name}`, link: `/admin/users/${user.id}` });
     await this.notifications.notify(me.orgId, hr.map((h) => h.id).filter((x) => x !== me.id), { kind: 'onboarding', title: `New joiner: ${input.name} (${fmtDay(input.joiningDate)})`, body: input.onboarding.enabled ? 'Onboarding checklist created' : undefined, link: `/admin/users/${user.id}` });
     return user.id;
   }
 
-  private async startOnboarding(me: Me, userId: string, input: ReturnType<typeof peopleAddPersonSchema.parse>, v: { dept: { id: string; name: string }; manager: { id: string; name: string } }, hr: { id: string; departmentId: string | null } | null) {
+  private async startOnboarding(me: Me, userId: string, input: ReturnType<typeof peopleAddPersonSchema.parse>, v: { dept: { id: string; name: string }; manager: { id: string; name: string } }, hr: { id: string; departmentId: string | null } | null, headId: string | null = null, startedById: string | null = null) {
     const pick = new Set(input.onboarding.items);
     const sopIds = input.onboarding.sopIds?.length ? input.onboarding.sopIds : pick.has('sop_reading') ? (await this.prisma.sOP.findMany({ where: { orgId: me.orgId, departmentId: v.dept.id, status: 'published' }, select: { id: true }, take: 10 })).map((s) => s.id) : [];
     const sops = pick.has('sop_reading') && sopIds.length ? await this.prisma.sOP.findMany({ where: { id: { in: sopIds }, orgId: me.orgId, status: 'published' } }) : [];
@@ -473,14 +506,18 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
       ...(pick.has('shadowing') ? [item('buddy_assigned', 'Buddy assigned', 'buddy', { auto: true }), item('buddy_checkin', 'First-week check-in with buddy', 'buddy'), item('shadowing', 'Shadowed a teammate for the first week', 'buddy')] : []),
     ];
     const row = await this.prisma.peopleProcess.create({
-      data: { orgId: me.orgId, userId, kind: 'onboarding', startedById: me.id, buddyId: input.onboarding.buddyId ?? null, startDate: dbDay(input.joiningDate), items: items as unknown as Prisma.InputJsonValue, note: input.note ?? null },
+      // Started by the HR person who added them, even when an approver created the account.
+      data: { orgId: me.orgId, userId, kind: 'onboarding', startedById: startedById ?? me.id, buddyId: input.onboarding.buddyId ?? null, startDate: dbDay(input.joiningDate), items: items as unknown as Prisma.InputJsonValue, note: input.note ?? null },
     });
     await this.audit.log(me, 'onboarding.started', 'User', userId, null, { processId: row.id, items: [...pick].map((k) => peopleOnboardingLabels[k]), sops: sops.map((s) => s.title) });
-    // Onboarding tasks for HR and the manager, due on the joining day.
+    // Onboarding tasks for HR, the manager and the Department Head (when that is someone else), due on the joining day.
     const deadline = new Date(`${input.joiningDate}T18:00:00+05:30`);
     const tasks = [
       hr ? { ownerId: hr.id, departmentId: hr.departmentId, title: `Onboard ${input.name}: documents, laptop and accounts`, description: `Joining ${fmtDay(input.joiningDate)} in ${v.dept.name}. Work through the onboarding checklist.` } : null,
       { ownerId: v.manager.id, departmentId: v.dept.id, title: `Welcome ${input.name}: first-week plan and buddy`, description: `${input.name} joins your team on ${fmtDay(input.joiningDate)}. Plan their first week${pick.has('shadowing') ? ' and who they shadow' : ''}.` },
+      headId && headId !== v.manager.id
+        ? { ownerId: headId, departmentId: v.dept.id, title: `New joiner in ${v.dept.name}: ${input.name}, first work and access`, description: `${input.name} joins ${v.dept.name} on ${fmtDay(input.joiningDate)}, reporting to ${v.manager.name}. Plan their first assignments and check their tool access. The onboarding checklist is under Onboarding & Offboarding.` }
+        : null,
     ].filter((t): t is NonNullable<typeof t> => !!t);
     for (const t of tasks) {
       const created = await this.prisma.task.create({

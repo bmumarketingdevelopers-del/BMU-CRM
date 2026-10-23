@@ -124,7 +124,7 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
   async get(me: Me, id: string): Promise<TeamPeopleProcess> {
     const row = await this.prisma.peopleProcess.findFirst({ where: { id, orgId: me.orgId } });
     if (!row) throw new NotFoundException('Checklist not found');
-    if (!canReadPeople(me) && row.userId !== me.id && row.buddyId !== me.id) throw new ForbiddenException("You don't have access to this checklist");
+    if (!canReadPeople(me) && !(row.kind === 'onboarding' && (await this.isInvolved(me, row)))) throw new ForbiddenException("You don't have access to this checklist");
     await this.suspendDueLeavers(me.orgId);
     const synced = await this.sync((await this.prisma.peopleProcess.findUnique({ where: { id } }))!);
     return (await this.views(me, [synced], true))[0];
@@ -136,6 +136,63 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
     const rows = await this.prisma.peopleProcess.findMany({ where: { orgId: me.orgId, userId: me.id, kind: 'onboarding', status: { not: 'cancelled' } }, orderBy: { createdAt: 'desc' } });
     const synced = await Promise.all(rows.map((r) => this.sync(r)));
     return this.views(me, synced, false);
+  }
+
+  /**
+   * Every onboarding the signed-in person is part of, for the history on their My onboarding page: their own, ones they
+   * started (HR), ones where they are the buddy, the joiner reports to them, or the joiner is in a department they head.
+   */
+  async involved(me: Me): Promise<TeamPeopleProcess[]> {
+    if (!isStaff(me)) throw new ForbiddenException('Team accounts only');
+    const headDepts = await this.headedDepartments(me);
+    const joiners = await this.prisma.user.findMany({
+      where: { orgId: me.orgId, OR: [{ managerId: me.id }, ...(headDepts.length ? [{ departmentId: { in: headDepts } }] : [])] },
+      select: { id: true, managerId: true, departmentId: true },
+    });
+    const byJoiner = new Map(joiners.map((j) => [j.id, j]));
+    const rows = await this.prisma.peopleProcess.findMany({
+      where: {
+        orgId: me.orgId,
+        kind: 'onboarding',
+        status: { not: 'cancelled' },
+        OR: [{ userId: me.id }, { startedById: me.id }, { buddyId: me.id }, ...(joiners.length ? [{ userId: { in: joiners.map((j) => j.id) } }] : [])],
+      },
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: 200,
+    });
+    const synced = await Promise.all(rows.map((r) => this.sync(r)));
+    const views = await this.views(me, synced, false);
+    return views.map((v, i) => {
+      const r = synced[i];
+      const j = byJoiner.get(r.userId);
+      const involvement = [
+        r.userId === me.id ? 'Your onboarding' : null,
+        r.startedById === me.id ? 'Added by you' : null,
+        j?.managerId === me.id ? 'Reports to you' : null,
+        j?.departmentId && headDepts.includes(j.departmentId) ? 'Your department' : null,
+        r.buddyId === me.id ? 'You are the buddy' : null,
+      ].filter((x): x is string => !!x);
+      return { ...v, involvement };
+    });
+  }
+
+  /** Departments the person heads: set as the department's head, or the Department Head role in their own department. */
+  private async headedDepartments(me: Me): Promise<string[]> {
+    const ids = (await this.prisma.department.findMany({ where: { orgId: me.orgId, headUserId: me.id }, select: { id: true } })).map((d) => d.id);
+    if (hasRole(me, 'department_head')) {
+      const self = await this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } });
+      if (self?.departmentId && !ids.includes(self.departmentId)) ids.push(self.departmentId);
+    }
+    return ids;
+  }
+
+  /** Read access to one onboarding for the people involved in it (see involved()). */
+  private async isInvolved(me: Me, row: Row): Promise<boolean> {
+    if ([row.userId, row.buddyId, row.startedById].includes(me.id)) return true;
+    const joiner = await this.prisma.user.findUnique({ where: { id: row.userId }, select: { managerId: true, departmentId: true } });
+    if (!joiner) return false;
+    if (joiner.managerId === me.id) return true;
+    return !!joiner.departmentId && (await this.headedDepartments(me)).includes(joiner.departmentId);
   }
 
   private items(r: Row): TeamProcessItem[] {
