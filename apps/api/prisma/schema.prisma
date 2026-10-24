@@ -244,6 +244,10 @@ model User {
   type         UserType
   name         String
   email        String?
+  /// v42: the Google account (OpenID "sub") this person signs in with, bound on their first Google sign-in, and the
+  /// email it was bound for (a changed email in the CRM lets the next Google sign-in bind again).
+  googleSub    String?
+  googleEmail  String?
   phone        String?
   status       UserStatus @default(invited)
   managerId    String?
@@ -3476,13 +3480,15 @@ model UserSession {
   id         String    @id @default(cuid())
   orgId      String
   userId     String
-  /// otp | otp+totp | passkey
+  /// otp | google | passkey, plus "+totp", "+recovery" or "+passkey" for the second step
   method     String
   userAgent  String?
   ip         String?
   createdAt  DateTime  @default(now())
   lastSeenAt DateTime  @default(now())
   revokedAt  DateTime?
+  /// v42: when the session ends (Command Centre > Security > session length, default 30 days). Null on rows from before v42.
+  expiresAt  DateTime?
 
   @@index([userId, revokedAt])
   @@map("user_sessions")

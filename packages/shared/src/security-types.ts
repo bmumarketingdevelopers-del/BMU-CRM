@@ -104,7 +104,7 @@ export type ViewAsView = {
 
 // ------------------------------------------------------------------------------------------------ sessions and sign-in
 
-export type SessionView = { id: string; method: string; device: string; ip: string | null; createdAt: string; lastSeenAt: string; current: boolean };
+export type SessionView = { id: string; method: string; device: string; ip: string | null; createdAt: string; lastSeenAt: string; expiresAt: string | null; current: boolean };
 
 /** Sign-in that needs a second step returns this instead of a token. */
 export type SecondFactorChallenge = { needsSecondFactor: true; challenge: string; methods: ("totp" | "recovery" | "passkey")[] };
@@ -115,6 +115,8 @@ export type SecurityOverview = {
   passkeys: { id: string; name: string; createdAt: string; lastUsedAt: string | null }[];
   sessions: SessionView[];
   required: boolean;
+  /** v42: the Google account this person's "Continue with Google" is tied to (null: not tied yet). */
+  google: { email: string } | null;
 };
 
 export const totpCodeSchema = z.object({ code: z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code from your authenticator app") });

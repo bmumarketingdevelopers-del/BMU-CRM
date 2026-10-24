@@ -53,9 +53,19 @@ export class SessionsService {
   // ---------------------------------------------------------------------------------------------- sessions
 
   async issue(userId: string, orgId: string, method: string, req: ReqInfo): Promise<string> {
-    const s = await this.prisma.userSession.create({ data: { userId, orgId, method, ip: req.ip ?? null, userAgent: req.userAgent?.slice(0, 300) ?? null } });
+    // v42: the session ends after the organisation's session length (Command Centre > Security), default 30 days.
+    const days = await this.sessionDays(orgId);
+    const expiresAt = new Date(Date.now() + days * 86_400_000);
+    const s = await this.prisma.userSession.create({ data: { userId, orgId, method, expiresAt, ip: req.ip ?? null, userAgent: req.userAgent?.slice(0, 300) ?? null } });
     const claims: SessionClaims = { sub: userId, org: orgId, sid: s.id, amr: method };
-    return this.jwt.signAsync(claims);
+    return this.jwt.signAsync(claims, { expiresIn: days * 86_400 });
+  }
+
+  /** Command Centre > Security > "session length" (1 to 90 days). */
+  private async sessionDays(orgId: string): Promise<number> {
+    const org = await this.prisma.organisation.findUnique({ where: { id: orgId }, select: { settings: true } });
+    const days = (org?.settings as { v8?: { security?: { sessionDays?: number } } } | null)?.v8?.security?.sessionDays ?? settingsDefaults.security.sessionDays;
+    return Math.min(90, Math.max(1, Math.round(days)));
   }
 
   /** True when the session is still signed in. Tokens from before v20 carry no session id and stay valid. */
@@ -64,8 +74,9 @@ export class SessionsService {
     const now = Date.now();
     const hit = this.cache.get(sid);
     if (hit && now - hit.at < 15_000) return hit.ok;
-    const s = await this.prisma.userSession.findUnique({ where: { id: sid }, select: { revokedAt: true, lastSeenAt: true } });
-    const ok = !!s && !s.revokedAt;
+    const s = await this.prisma.userSession.findUnique({ where: { id: sid }, select: { revokedAt: true, lastSeenAt: true, expiresAt: true } });
+    // v42: signed out, or past its end date (also checked by the cookie's own expiry).
+    const ok = !!s && !s.revokedAt && (!s.expiresAt || s.expiresAt.getTime() > now);
     let seenAt = hit?.seenAt ?? s?.lastSeenAt.getTime() ?? 0;
     if (ok && now - seenAt > 5 * 60_000) {
       seenAt = now;
@@ -81,8 +92,9 @@ export class SessionsService {
   }
 
   async list(me: Me): Promise<SessionView[]> {
-    const rows = await this.prisma.userSession.findMany({ where: { userId: me.id, revokedAt: null }, orderBy: { lastSeenAt: 'desc' }, take: 50 });
-    return rows.map((s) => ({ id: s.id, method: s.method, device: deviceLabel(s.userAgent), ip: s.ip, createdAt: s.createdAt.toISOString(), lastSeenAt: s.lastSeenAt.toISOString(), current: s.id === me.sessionId }));
+    // Ended sessions (signed out or past their end date) are not listed.
+    const rows = await this.prisma.userSession.findMany({ where: { userId: me.id, revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }, orderBy: { lastSeenAt: 'desc' }, take: 50 });
+    return rows.map((s) => ({ id: s.id, method: s.method, device: deviceLabel(s.userAgent), ip: s.ip, createdAt: s.createdAt.toISOString(), lastSeenAt: s.lastSeenAt.toISOString(), expiresAt: s.expiresAt?.toISOString() ?? null, current: s.id === me.sessionId }));
   }
 
   async revoke(me: Me, id: string) {
@@ -135,6 +147,12 @@ export class SessionsService {
     const org = await this.prisma.organisation.findUnique({ where: { id: orgId }, select: { settings: true } });
     const sec = (org?.settings as { v8?: { security?: { require2faRoles?: string[] } } } | null)?.v8?.security;
     return sec?.require2faRoles ?? settingsDefaults.security.require2faRoles;
+  }
+
+  /** v42: removes the tie to a Google account; the next "Continue with Google" ties the account again. */
+  async unlinkGoogle(me: Me) {
+    await this.prisma.user.update({ where: { id: me.id }, data: { googleSub: null, googleEmail: null } });
+    return this.overview(me);
   }
 
   async status(userId: string, orgId: string, roles: string[]) {
@@ -308,17 +326,20 @@ export class SessionsService {
   }
 
   async overview(me: Me): Promise<SecurityOverview> {
-    const [totp, passkeys, sessions, st] = await Promise.all([
+    const [totp, passkeys, sessions, st, user] = await Promise.all([
       this.prisma.userTotp.findUnique({ where: { userId: me.id } }),
       this.prisma.passkey.findMany({ where: { userId: me.id }, orderBy: { createdAt: 'asc' } }),
       this.list(me),
       this.status(me.id, me.orgId, me.roles),
+      this.prisma.user.findUnique({ where: { id: me.id }, select: { email: true, googleSub: true, googleEmail: true } }),
     ]);
     return {
       totp: { enabled: !!totp?.enabledAt, recoveryCodesLeft: totp?.enabledAt ? totp.recoveryCodes.length : 0 },
       passkeys: passkeys.map((p) => ({ id: p.id, name: p.name, createdAt: p.createdAt.toISOString(), lastUsedAt: p.lastUsedAt?.toISOString() ?? null })),
       sessions,
       required: st.required,
+      // A tie made for an older email no longer applies (the next Google sign-in ties again).
+      google: user?.googleSub && user.googleEmail && user.googleEmail === user.email ? { email: user.googleEmail } : null,
     };
   }
 }

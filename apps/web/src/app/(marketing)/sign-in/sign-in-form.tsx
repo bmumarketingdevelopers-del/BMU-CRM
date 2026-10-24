@@ -315,6 +315,8 @@ function googleErrors(reason: string, email: string | null): string {
   switch (reason) {
     case "no_account":
       return `No BMU account uses ${email ?? "that Google email"}. Choose the Google account with the email BMU has on file for you, or sign in with an email code.`;
+    case "other_google":
+      return "Your BMU account is tied to a different Google account. Choose that Google account, or sign in with an email code and unlink Google in Profile > Security.";
     case "unverified":
       return "Google could not confirm that email address. Sign in with an email code instead.";
     case "cancelled":

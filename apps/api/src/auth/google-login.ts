@@ -28,7 +28,8 @@ export function googleAuthUrl(state: string) {
   })}`;
 }
 
-export type GoogleIdentity = { email: string; emailVerified: boolean; name: string | null };
+/** sub: Google's permanent id for the account (never reused), used to tie a BMU account to one Google account. */
+export type GoogleIdentity = { sub: string; email: string; emailVerified: boolean; name: string | null };
 
 /** Exchanges the one-time code (server to server, with the client secret) and reads who signed in. */
 export async function googleIdentity(code: string): Promise<GoogleIdentity> {
@@ -49,8 +50,8 @@ export async function googleIdentity(code: string): Promise<GoogleIdentity> {
   if (!access_token) throw new Error('Google sign-in: no access token');
   const infoRes = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { authorization: `Bearer ${access_token}` }, signal: AbortSignal.timeout(10_000) });
   if (!infoRes.ok) throw new Error(`Google sign-in: could not read the account (${infoRes.status})`);
-  const u = (await infoRes.json()) as { email?: string; email_verified?: boolean | string; name?: string };
-  return { email: (u.email ?? '').trim().toLowerCase(), emailVerified: u.email_verified === true || u.email_verified === 'true', name: u.name ?? null };
+  const u = (await infoRes.json()) as { sub?: string; email?: string; email_verified?: boolean | string; name?: string };
+  return { sub: (u.sub ?? '').trim(), email: (u.email ?? '').trim().toLowerCase(), emailVerified: u.email_verified === true || u.email_verified === 'true', name: u.name ?? null };
 }
 
 /** Only paths inside the app ("/team/…"), never another site. */

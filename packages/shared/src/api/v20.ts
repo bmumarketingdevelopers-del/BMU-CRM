@@ -38,6 +38,8 @@ export const v20Api = (t: Transport) => ({
     passkeyOptions: () => t.post<{ options: Record<string, unknown>; token: string }>("/security/passkeys/options"),
     addPasskey: (token: string, response: unknown, name: string) => t.post<SecurityOverview["passkeys"][number]>("/security/passkeys", { token, response, name }),
     removePasskey: (id: string) => t.del<{ ok: true }>(`/security/passkeys/${id}`),
+    /** v42: untie "Continue with Google" from the Google account it was first used with. */
+    unlinkGoogle: () => t.del<SecurityOverview>("/security/google"),
     sessions: () => t.get<SessionView[]>("/security/sessions"),
     revokeSession: (id: string) => t.del<{ ok: true }>(`/security/sessions/${id}`),
     signOutOthers: () => t.post<{ signedOut: number }>("/security/sessions/sign-out-others"),

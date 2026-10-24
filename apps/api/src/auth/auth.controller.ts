@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpException, Logger, NotFoundException, Post, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, HttpException, Logger, NotFoundException, Post, Query, Req, Res } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
 import type { Request, Response } from 'express';
@@ -12,7 +12,7 @@ import { appUrl } from '../service/email.service.js';
 import { AuthService } from './auth.service.js';
 import { GOOGLE_STATE_COOKIE, GOOGLE_STATE_TTL_SECONDS, googleAuthUrl, googleIdentity, googleLoginEnabled, safeNext } from './google-login.js';
 import { MeService } from './me.service.js';
-import { SESSION_COOKIE, SESSION_TTL_SECONDS, type SessionClaims } from './session.js';
+import { SESSION_COOKIE, SESSION_COOKIE_MAX_SECONDS, type SessionClaims } from './session.js';
 import { SessionsService, type ReqInfo } from './sessions.service.js';
 
 const info = (req: Request): ReqInfo => ({ ip: req.ip, userAgent: req.headers['user-agent'] });
@@ -46,7 +46,7 @@ export class AuthController {
       httpOnly: true,
       sameSite: 'lax',
       secure: this.secureCookies(),
-      maxAge: SESSION_TTL_SECONDS * 1000,
+      maxAge: SESSION_COOKIE_MAX_SECONDS * 1000,
       path: '/',
     });
   }
@@ -107,9 +107,9 @@ export class AuthController {
       this.log.warn((e as Error).message);
       return back('failed');
     }
-    if (!identity.email || !identity.emailVerified) return back('unverified');
+    if (!identity.email || !identity.emailVerified || !identity.sub) return back('unverified');
     try {
-      const r = await this.auth.signInWithGoogle(identity.email, info(req));
+      const r = await this.auth.signInWithGoogle(identity.email, identity.sub, info(req));
       const next = safeNext(state.next);
       if ('needsSecondFactor' in r) {
         // Two-factor is on: the sign-in page asks for the app code or passkey. In the #fragment, so it never reaches a server log.
@@ -120,6 +120,7 @@ export class AuthController {
       return res.redirect(302, appUrl(`/sign-in?google=done${next ? `&next=${encodeURIComponent(next)}` : ''}`));
     } catch (e) {
       if (e instanceof NotFoundException) return res.redirect(302, appUrl(`/sign-in?google_error=no_account&email=${encodeURIComponent(identity.email)}`));
+      if (e instanceof ForbiddenException) return back('other_google');
       if (e instanceof HttpException && e.getStatus() === 429) return back('too_many');
       this.log.warn((e as Error).message);
       return back('failed');

@@ -61,6 +61,14 @@ export class SecurityController {
     return r;
   }
 
+  /** v42: untie "Continue with Google" from the Google account it was first used with. */
+  @Delete('google')
+  async unlinkGoogle(@CurrentUser() me: Me, @ClientIp() ip?: string) {
+    const r = await this.sessions.unlinkGoogle(me);
+    await this.audit.log(me, 'security.google_unlinked', 'User', me.id, undefined, undefined, ip);
+    return r;
+  }
+
   @Delete('passkeys/:id')
   async removePasskey(@CurrentUser() me: Me, @Param('id') id: string, @ClientIp() ip?: string) {
     const r = await this.sessions.removePasskey(me, id);

@@ -29,6 +29,7 @@ export function SecurityPanels({ required = false }: { required?: boolean }) {
       )}
       <TotpPanel s={s} onChange={sec.reload} />
       <PasskeyPanel s={s} onChange={sec.reload} />
+      <GooglePanel s={s} onChange={sec.reload} />
       <SessionsPanel s={s} onChange={sec.reload} />
     </div>
   );
@@ -189,8 +190,12 @@ function PasskeyPanel({ s, onChange }: { s: SecurityOverview; onChange: () => vo
   );
 }
 
-const methodLabel = (m: string) =>
-  m.startsWith("passkey") ? "Passkey" : m.includes("totp") ? "Code + authenticator" : m.includes("recovery") ? "Code + recovery code" : m.includes("passkey") ? "Code + passkey" : m.startsWith("api") ? "API" : "Sign-in code";
+const methodLabel = (m: string) => {
+  if (m.startsWith("passkey")) return "Passkey";
+  if (m.startsWith("api")) return "API";
+  const first = m.startsWith("google") ? "Google" : "Sign-in code";
+  return m.includes("totp") ? `${first} + authenticator` : m.includes("recovery") ? `${first} + recovery code` : m.includes("passkey") ? `${first} + passkey` : first;
+};
 
 function guessDevice() {
   if (typeof navigator === "undefined") return "Passkey";
@@ -225,6 +230,7 @@ function SessionsPanel({ s, onChange }: { s: SecurityOverview; onChange: () => v
               <span className="font-medium">{x.device}</span> {x.current && <Badge tone="green">This device</Badge>}
               <span className="block text-xs text-ink-muted">
                 {methodLabel(x.method)} · since {fmt.format(new Date(x.createdAt))} · last active {fmt.format(new Date(x.lastSeenAt))}
+                {x.expiresAt ? ` · ends ${fmt.format(new Date(x.expiresAt))}` : ""}
                 {x.ip ? ` · ${x.ip}` : ""}
               </span>
             </span>
@@ -239,6 +245,41 @@ function SessionsPanel({ s, onChange }: { s: SecurityOverview; onChange: () => v
       <div className="px-4 pb-3">
         <Note msg={msg} />
       </div>
+    </Panel>
+  );
+}
+
+/** v42: "Continue with Google" is tied to the Google account it was first used with; unlink to use another one. */
+function GooglePanel({ s, onChange }: { s: SecurityOverview; onChange: () => void }) {
+  const [msg, setMsg] = useState<Msg>();
+  return (
+    <Panel title="Google sign-in" subtitle="Continue with Google works only with the Google account you first used it with, so nobody else can use your email's Google account.">
+      {s.google ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <span>
+            Tied to the Google account <strong>{s.google.email}</strong>
+          </span>
+          <Button
+            variant="ghost"
+            className="px-3 py-1.5"
+            onClick={() => {
+              if (confirm("Unlink Google? Your next Continue with Google will tie your account to the Google account you choose then."))
+                void api.security.unlinkGoogle().then(
+                  () => {
+                    setMsg({ ok: true, text: "Google unlinked." });
+                    onChange();
+                  },
+                  (e: Error) => setMsg({ ok: false, text: e.message }),
+                );
+            }}
+          >
+            Unlink
+          </Button>
+        </div>
+      ) : (
+        <p className="text-sm text-ink-muted">Not used yet. The first time you choose Continue with Google on the sign-in page, your account is tied to that Google account.</p>
+      )}
+      <Note msg={msg} />
     </Panel>
   );
 }

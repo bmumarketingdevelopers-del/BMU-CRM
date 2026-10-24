@@ -1,4 +1,4 @@
-import { BadRequestException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomInt } from 'node:crypto';
 import { normaliseIdentifier, type Me } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -66,12 +66,20 @@ export class AuthService {
    * email code: the same account lookup (exists, not removed, not suspended), the same two-factor step and the same
    * session, so roles and permissions apply exactly as for any other sign-in.
    */
-  async signInWithGoogle(email: string, req: ReqInfo = {}): Promise<{ token: string; me: Me } | SecondFactorChallenge> {
+  async signInWithGoogle(email: string, googleSub: string, req: ReqInfo = {}): Promise<{ token: string; me: Me } | SecondFactorChallenge> {
     const identifier = normaliseIdentifier(email);
     this.limit(`google-ip:${req.ip}`, 40, 15 * 60_000, req.ip);
-    if (!identifier.includes('@')) throw new NotFoundException('No BMU account uses that Google email');
+    if (!identifier.includes('@') || !googleSub) throw new NotFoundException('No BMU account uses that Google email');
     const user = await this.findUser(identifier);
     if (!user) throw new NotFoundException('No BMU account uses that Google email');
+    // v42: the first Google sign-in ties the account to that Google account; later ones must be the same Google account
+    // (so a deleted and recreated address cannot be used by someone else). A changed email in the CRM, or Unlink in
+    // Profile > Security, lets the next Google sign-in tie it again.
+    const bound = !!user.googleSub && user.googleEmail === identifier;
+    if (bound && user.googleSub !== googleSub) {
+      throw new ForbiddenException({ statusCode: 403, code: 'google_account_mismatch', message: 'This BMU account is tied to a different Google account. Sign in with an email code, then unlink Google in Profile > Security.' });
+    }
+    if (!bound) await this.prisma.user.update({ where: { id: user.id }, data: { googleSub, googleEmail: identifier } });
     if (user.status === 'invited') await this.prisma.user.update({ where: { id: user.id }, data: { status: 'active' } });
     const next = await this.sessions.afterFirstFactor(user.id, user.orgId, req, 'google');
     if ('needsSecondFactor' in next) return next;
