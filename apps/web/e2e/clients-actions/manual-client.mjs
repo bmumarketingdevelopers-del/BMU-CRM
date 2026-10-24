@@ -35,7 +35,7 @@ await drawer.getByRole("button", { name: "Add client", exact: true }).click();
 await toast(lead).waitFor({ timeout: 15000 });
 check(/Finance|added|confirm/i.test(await toast(lead).innerText()), "toast confirms the client was added");
 await lead.waitForTimeout(800);
-await lead.getByPlaceholder("Search name, contact, phone, CM").fill(name);
+await lead.getByPlaceholder("Find client…").fill(name);
 const row = lead.locator("[data-client-row]").filter({ hasText: name });
 await row.first().waitFor({ timeout: 10000 });
 check(await row.getByText("Payment pending").isVisible(), "list row shows Payment pending");

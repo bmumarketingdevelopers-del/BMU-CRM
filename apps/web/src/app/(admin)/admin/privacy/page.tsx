@@ -26,13 +26,15 @@ function download(name: string, data: unknown) {
 }
 
 export default function PrivacyAdminPage() {
-  const founder = useActions().me.roles.includes("founder");
+  const roles = useActions().me.roles;
+  // Client Managers see the people at their own clients; the Founder and the Client Manager Lead see everyone.
+  const scoped = !roles.includes("founder") && !roles.includes("am_lead");
   const data = useLoad(() => api.securityAdmin.privacy());
   const [tab, setTab] = useState<"requests" | "consents" | "retention" | "breach">("requests");
   const d = data.data;
   return (
     <>
-      <PageTitle title="Privacy (DPDP)" subtitle={`Requests from people about their data, consent records, how long data is kept, and what to do after a breach. The public form is at /privacy.${founder ? "" : " You see the people at the clients you manage."}`} />
+      <PageTitle title="Privacy (DPDP)" subtitle={`Requests from people about their data, consent records, how long data is kept, and what to do after a breach. The public form is at /privacy.${scoped ? " You see the people at the clients you manage." : ""}`} />
       <LoadState loading={data.loading && !d} error={data.error} />
       {d && (
         <>

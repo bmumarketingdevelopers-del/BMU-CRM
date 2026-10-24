@@ -98,7 +98,6 @@ export function ClientsList() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, contact, phone, CM" aria-label="Search clients" className="w-full border border-border bg-surface-raised px-3 py-1.5 text-sm sm:w-72" />
         <button type="button" className={toggleCls(!filters.archived)} onClick={() => set({ archived: "" })}>
           Current
         </button>
@@ -179,10 +178,37 @@ export function ClientsList() {
             <StatTile label="Payment pending" value={all.filter((c) => c.paymentStatus === "pending").length} tone={all.some((c) => c.paymentStatus === "pending") ? "warn" : "default"} />
             <StatTile label="Watch or at risk" value={all.filter((c) => c.health !== "green").length} tone={all.some((c) => c.health === "red") ? "bad" : all.some((c) => c.health !== "green") ? "warn" : "default"} />
           </StatRow>
+          {/* Find client: sits on top of the list it searches (name, industry, contact, phone, email, Client Manager). */}
+          <div>
+          <div className="-mb-px flex items-center gap-2 border border-border bg-surface-raised px-3 py-2" data-testid="clients-search">
+            <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-ink-muted">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              type="text"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Find client…"
+              aria-label="Find client"
+              title="Search by client name, industry, contact name, phone, email or Client Manager"
+              className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none"
+            />
+            {q && (
+              <>
+                <span className="shrink-0 text-xs text-ink-muted">
+                  {rows.length} of {all.length}
+                </span>
+                <button type="button" onClick={() => setQ("")} aria-label="Clear search" className="shrink-0 px-1 text-ink-muted hover:text-ink">
+                  ×
+                </button>
+              </>
+            )}
+          </div>
           {rows.length === 0 ? (
             <div className="border border-border bg-surface-raised px-5 py-10 text-center text-sm" data-testid="clients-empty">
               {all.length || active || q ? (
-                <p className="text-ink-muted">No clients match these filters.</p>
+                <p className="text-ink-muted">{q ? `No client matches "${q}".` : "No clients match these filters."}</p>
               ) : (
                 <>
                   <p className="text-ink-muted">No clients yet</p>
@@ -197,6 +223,7 @@ export function ClientsList() {
           ) : (
             <ClientRows rows={rows} sel={sel} />
           )}
+          </div>
         </>
       )}
 

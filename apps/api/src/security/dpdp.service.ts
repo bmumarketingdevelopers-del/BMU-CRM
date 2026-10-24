@@ -25,10 +25,12 @@ import { startJob, type JobHandle } from '../runtime/jobs.js';
 const DAY = 86_400_000;
 type Contact = { name?: string; email?: string; phone?: string; company?: string };
 
-/** v43: privacy (DPDP) is for the Founder (everyone) and Client Managers (people at their own clients); not Branch Managers. */
+/** v43: privacy (DPDP) is for the Founder and the Client Manager Lead (everyone) and Client Managers (people at their own clients); not Branch Managers. */
 export const assertDpdp = (me: Me) => {
-  if (me.type !== 'staff' || !me.roles.some((r) => r === 'founder' || r === 'account_manager')) throw new ForbiddenException("Only the Founder or the client's Client Manager can manage data-protection requests");
+  if (me.type !== 'staff' || !me.roles.some((r) => r === 'founder' || r === 'am_lead' || r === 'account_manager')) throw new ForbiddenException("Only the Founder, the Client Manager Lead or the client's Client Manager can manage data-protection requests");
 };
+/** Sees every request, person and consent: the Founder and the Client Manager Lead. */
+const seesAll = (me: Me) => me.type === 'staff' && me.roles.some((r) => r === 'founder' || r === 'am_lead');
 const isFounder = (me: Me) => me.type === 'staff' && me.roles.includes('founder');
 const assertFounder = (me: Me, what: string) => {
   if (!isFounder(me)) throw new ForbiddenException(`Only the Founder can ${what}`);
@@ -76,6 +78,9 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
     const cms = clientIds.length ? await this.prisma.clientOrg.findMany({ where: { id: { in: clientIds }, orgId, amUserId: { not: null } }, select: { amUserId: true } }) : [];
     const cmIds = [...new Set(cms.map((c) => c.amUserId!))].filter((id) => !founders.some((f) => f.id === id));
     if (cmIds.length) await this.notifications.notify(orgId, cmIds, { ...message, link: '/team/privacy' });
+    // The Client Manager Lead hears about every request (they can step in for any Client Manager).
+    const leads = await this.prisma.user.findMany({ where: { orgId, deletedAt: null, status: 'active', roles: { some: { role: { baseRole: 'am_lead' } } }, id: { notIn: [...founders.map((f) => f.id), ...cmIds] } }, select: { id: true } });
+    if (leads.length) await this.notifications.notify(orgId, leads.map((l) => l.id), { ...message, link: '/admin/privacy' });
     return { id: r.id, dueAt: r.dueAt.toISOString() };
   }
 
@@ -117,7 +122,7 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
 
   /** v43: the Founder sees everything; a Client Manager only the people at the clients they manage. */
   private async scope(me: Me): Promise<Scope> {
-    if (isFounder(me)) return null;
+    if (seesAll(me)) return null;
     const people = await this.prisma.clientUser.findMany({ where: { clientOrg: { orgId: me.orgId, amUserId: me.id, deletedAt: null } }, select: { userId: true, user: { select: { email: true } } } });
     return { userIds: people.map((p) => p.userId), emails: people.map((p) => p.user.email?.toLowerCase()).filter((e): e is string => !!e) };
   }
@@ -163,7 +168,9 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
   async exportSubject(me: Me, type: 'lead' | 'user', id: string, ip?: string) {
     assertDpdp(me);
     const sc = await this.scope(me);
-    if (sc && (type === 'lead' || !sc.userIds.includes(id))) throw new ForbiddenException('You can only export people at the clients you manage');
+    // Leads are sales records: the Founder only. Client Managers: people at the clients they manage.
+    if (type === 'lead' && !isFounder(me)) throw new ForbiddenException('Only the Founder can export a lead');
+    if (sc && !sc.userIds.includes(id)) throw new ForbiddenException('You can only export people at the clients you manage');
     if (type === 'lead') {
       const lead = await this.prisma.lead.findFirst({ where: { id, orgId: me.orgId }, include: { activities: true } });
       if (!lead) throw new NotFoundException('Lead not found');

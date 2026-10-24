@@ -81,7 +81,7 @@ export default function DataPage() {
 
   return (
     <>
-      <PageTitle title="Data Export / Deletion (DPDP)" subtitle="Give a client a copy of everything we hold about them, or erase their people's personal details, as required by India's Digital Personal Data Protection Act. The Founder (every client) and Client Managers (the clients they manage); every action is audit-logged." />
+      <PageTitle title="Data Export / Deletion (DPDP)" subtitle="Give a client a copy of everything we hold about them, or erase their people's personal details, as required by India's Digital Personal Data Protection Act. The Founder and the Client Manager Lead (every client) and Client Managers (the clients they manage); every action is audit-logged." />
       {!data.data ? (
         <LoadState loading={data.loading} error={data.error} />
       ) : (
