@@ -1,6 +1,8 @@
 {
   "typescript.tsdk": "node_modules/typescript/lib",
-  "editor.formatOnSave": true,
+  // Off: this code base was not written in Prettier's layout, so formatting on save rewrote whole files (and made
+  // "the content of the file is newer" save conflicts). Format a file on purpose with Shift+Alt+F (uses .prettierrc).
+  "editor.formatOnSave": false,
   "editor.defaultFormatter": "esbenp.prettier-vscode",
   "[prisma]": { "editor.defaultFormatter": "Prisma.prisma" },
   "files.exclude": { "**/.turbo": true }
