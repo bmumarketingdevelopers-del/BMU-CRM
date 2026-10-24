@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpException, Logger, NotFoundException, Post, Query, Req, Res } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
 import type { Request, Response } from 'express';
 import { craftSpecialtyLabel, otpRequestSchema, otpVerifySchema, secondFactorSchema, type Me } from '@bmu/shared';
@@ -6,7 +7,10 @@ import { z } from 'zod';
 import { CurrentUser, Public } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { signToken, verifyToken } from '../integrations/crypto.js';
+import { appUrl } from '../service/email.service.js';
 import { AuthService } from './auth.service.js';
+import { GOOGLE_STATE_COOKIE, GOOGLE_STATE_TTL_SECONDS, googleAuthUrl, googleIdentity, googleLoginEnabled, safeNext } from './google-login.js';
 import { MeService } from './me.service.js';
 import { SESSION_COOKIE, SESSION_TTL_SECONDS, type SessionClaims } from './session.js';
 import { SessionsService, type ReqInfo } from './sessions.service.js';
@@ -30,12 +34,18 @@ export class AuthController {
     private readonly jwt: JwtService,
   ) {}
 
+  private readonly log = new Logger('GoogleSignIn');
+
+  // Secure (HTTPS-only) on a live server, unless the site itself is plain http (e.g. trying it on a LAN address).
+  private secureCookies() {
+    return process.env.NODE_ENV === 'production' && !(process.env.APP_URL ?? '').startsWith('http://');
+  }
+
   private setCookie(res: Response, token: string) {
     res.cookie(SESSION_COOKIE, token, {
       httpOnly: true,
       sameSite: 'lax',
-      // Secure (HTTPS-only) on a live server, unless the site itself is plain http (e.g. trying it on a LAN address).
-      secure: process.env.NODE_ENV === 'production' && !(process.env.APP_URL ?? '').startsWith('http://'),
+      secure: this.secureCookies(),
       maxAge: SESSION_TTL_SECONDS * 1000,
       path: '/',
     });
@@ -57,6 +67,63 @@ export class AuthController {
     const result = await this.auth.verifyOtp(identifier, code, info(req));
     if ('token' in result) this.setCookie(res, result.token);
     return result;
+  }
+
+  /** Which sign-in methods this server offers (the sign-in page shows "Continue with Google" only when it is set up). */
+  @Public()
+  @Get('methods')
+  methods() {
+    return { google: googleLoginEnabled() };
+  }
+
+  /** Continue with Google: sends the browser to Google's account chooser. */
+  @Public()
+  @Get('google/start')
+  googleStart(@Query('next') next: string | undefined, @Res() res: Response) {
+    if (!googleLoginEnabled()) return res.redirect(302, appUrl('/sign-in?google_error=off'));
+    const nonce = randomBytes(16).toString('base64url');
+    const state = signToken({ k: 'google_login', n: nonce, next: safeNext(next) }, GOOGLE_STATE_TTL_SECONDS);
+    res.cookie(GOOGLE_STATE_COOKIE, nonce, { httpOnly: true, sameSite: 'lax', secure: this.secureCookies(), maxAge: GOOGLE_STATE_TTL_SECONDS * 1000, path: '/' });
+    return res.redirect(302, googleAuthUrl(state));
+  }
+
+  /**
+   * Google sends the browser back here. Google only vouches for the email; the account, two-factor and session come from
+   * AuthService.signInWithGoogle, the same path as an email code.
+   */
+  @Public()
+  @Get('google/callback')
+  async googleCallback(@Query() q: Record<string, string | undefined>, @Req() req: Request, @Res() res: Response) {
+    const back = (reason: string) => res.redirect(302, appUrl(`/sign-in?google_error=${reason}`));
+    const nonce = (req.cookies as Record<string, string> | undefined)?.[GOOGLE_STATE_COOKIE];
+    res.clearCookie(GOOGLE_STATE_COOKIE, { path: '/' });
+    if (q.error) return back('cancelled');
+    const state = verifyToken<{ k: string; n: string; next?: string | null }>(q.state);
+    if (!state || state.k !== 'google_login' || !nonce || state.n !== nonce || !q.code) return back('expired');
+    let identity;
+    try {
+      identity = await googleIdentity(q.code);
+    } catch (e) {
+      this.log.warn((e as Error).message);
+      return back('failed');
+    }
+    if (!identity.email || !identity.emailVerified) return back('unverified');
+    try {
+      const r = await this.auth.signInWithGoogle(identity.email, info(req));
+      const next = safeNext(state.next);
+      if ('needsSecondFactor' in r) {
+        // Two-factor is on: the sign-in page asks for the app code or passkey. In the #fragment, so it never reaches a server log.
+        const frag = new URLSearchParams({ second: r.challenge, methods: r.methods.join(','), email: identity.email, ...(next ? { next } : {}) });
+        return res.redirect(302, appUrl(`/sign-in#${frag}`));
+      }
+      this.setCookie(res, r.token);
+      return res.redirect(302, appUrl(`/sign-in?google=done${next ? `&next=${encodeURIComponent(next)}` : ''}`));
+    } catch (e) {
+      if (e instanceof NotFoundException) return res.redirect(302, appUrl(`/sign-in?google_error=no_account&email=${encodeURIComponent(identity.email)}`));
+      if (e instanceof HttpException && e.getStatus() === 429) return back('too_many');
+      this.log.warn((e as Error).message);
+      return back('failed');
+    }
   }
 
   /** v20: second step for people with two-factor on: a 6-digit app code or a recovery code. */

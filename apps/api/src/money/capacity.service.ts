@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+
 import {
   bookingSchema,
   bookingUpdateSchema,
@@ -16,6 +17,7 @@ import {
   type WorkloadCell,
   type WorkloadView,
 } from '@bmu/shared';
+
 import { AuditService } from '../audit/audit.service.js';
 import { parse } from '../common/zod.js';
 import { hasRole } from '../creative/scope.js';
@@ -32,6 +34,7 @@ import {
   mondayOf,
   todayIst,
 } from './dates.js';
+
 import { WORKLOAD_MODE } from './workload-mode.js';
 
 const OPEN_TASK = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'];

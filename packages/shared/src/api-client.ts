@@ -251,6 +251,8 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
       requestOtp: (identifier: string) => post<{ sent: true; devCode?: string }>("/auth/otp/request", { identifier }),
       verifyOtp: (identifier: string, code: string) => post<SignInResult>("/auth/otp/verify", { identifier, code }),
       me: () => request<Me>("/auth/me"),
+      /** Sign-in methods this server offers, e.g. { google: true } when "Continue with Google" is set up. */
+      methods: () => request<{ google: boolean }>("/auth/methods"),
       logout: () => post<void>("/auth/logout"),
       demoAccounts: () => request<{ name: string; email: string; role: string }[]>("/auth/demo-accounts"),
     },

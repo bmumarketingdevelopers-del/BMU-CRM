@@ -147,13 +147,14 @@ export class SessionsService {
   }
 
   /** After the email/phone code: a token, or a challenge when this person has two-factor turned on. */
-  async afterFirstFactor(userId: string, orgId: string, req: ReqInfo): Promise<{ token: string } | SecondFactorChallenge> {
+  /** `method` is how the first step was done ('otp' email/mobile code, 'google'); it is kept on the session and the second step. */
+  async afterFirstFactor(userId: string, orgId: string, req: ReqInfo, method = 'otp'): Promise<{ token: string } | SecondFactorChallenge> {
     const [totp, passkeys] = await Promise.all([this.prisma.userTotp.findUnique({ where: { userId } }), this.prisma.passkey.count({ where: { userId } })]);
     const methods: SecondFactorChallenge['methods'] = [];
     if (totp?.enabledAt) methods.push('totp', 'recovery');
     if (passkeys) methods.push('passkey');
-    if (!methods.length) return { token: await this.issue(userId, orgId, 'otp', req) };
-    return { needsSecondFactor: true, challenge: signToken({ k: 'second_factor', u: userId, m: 'otp' } satisfies Challenge, 600), methods };
+    if (!methods.length) return { token: await this.issue(userId, orgId, method, req) };
+    return { needsSecondFactor: true, challenge: signToken({ k: 'second_factor', u: userId, m: method } satisfies Challenge, 600), methods };
   }
 
   async secondFactor(challenge: string, code: string, req: ReqInfo) {
@@ -168,12 +169,12 @@ export class SessionsService {
       const step = verifyTotp(unseal(totp.secretEnc)!, clean, totp.lastUsedStep);
       if (step === null) throw new BadRequestException('That code is not right. Check the time on your phone and try the newest code.');
       await this.prisma.userTotp.update({ where: { userId: user.id }, data: { lastUsedStep: step } });
-      return { token: await this.issue(user.id, user.orgId, 'otp+totp', req), userId: user.id };
+      return { token: await this.issue(user.id, user.orgId, `${c.m || 'otp'}+totp`, req), userId: user.id };
     }
     const h = hashCode(clean);
     if (!totp.recoveryCodes.includes(h)) throw new BadRequestException('That recovery code is not right or was already used');
     await this.prisma.userTotp.update({ where: { userId: user.id }, data: { recoveryCodes: totp.recoveryCodes.filter((x) => x !== h) } });
-    return { token: await this.issue(user.id, user.orgId, 'otp+recovery', req), userId: user.id };
+    return { token: await this.issue(user.id, user.orgId, `${c.m || 'otp'}+recovery`, req), userId: user.id };
   }
 
   async totpSetup(me: Me): Promise<TotpSetup> {
@@ -270,9 +271,11 @@ export class SessionsService {
     if (!c || c.k !== 'passkey_login') throw new UnauthorizedException('This passkey sign-in expired. Try again.');
     const pk = await this.prisma.passkey.findUnique({ where: { credentialId: response.id } });
     if (!pk) throw new UnauthorizedException('This passkey is not registered with BMU Hub');
+    let firstStep: string | null = null;
     if (pendingChallenge) {
       const p = verifyToken<Challenge>(pendingChallenge);
       if (!p || p.k !== 'second_factor' || p.u !== pk.userId) throw new UnauthorizedException('Use a passkey that belongs to this account');
+      firstStep = p.m || 'otp';
     }
     const rp = relyingParty();
     let v;
@@ -292,7 +295,7 @@ export class SessionsService {
     await this.prisma.passkey.update({ where: { id: pk.id }, data: { counter: v.authenticationInfo.newCounter, lastUsedAt: new Date() } });
     const user = await this.prisma.user.findFirst({ where: { id: pk.userId, deletedAt: null, status: { not: 'suspended' } } });
     if (!user) throw new UnauthorizedException('Account not active');
-    return { token: await this.issue(user.id, user.orgId, pendingChallenge ? 'otp+passkey' : 'passkey', req), userId: user.id };
+    return { token: await this.issue(user.id, user.orgId, firstStep ? `${firstStep}+passkey` : 'passkey', req), userId: user.id };
   }
 
   async removePasskey(me: Me, id: string) {

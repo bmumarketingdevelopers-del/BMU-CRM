@@ -61,6 +61,24 @@ export class AuthService {
     return process.env.NODE_ENV === 'production' ? { sent: true } : { sent: true, devCode: code };
   }
 
+  /**
+   * Sign in with Google: Google has confirmed the person owns this (verified) email. From here it is the same as a correct
+   * email code: the same account lookup (exists, not removed, not suspended), the same two-factor step and the same
+   * session, so roles and permissions apply exactly as for any other sign-in.
+   */
+  async signInWithGoogle(email: string, req: ReqInfo = {}): Promise<{ token: string; me: Me } | SecondFactorChallenge> {
+    const identifier = normaliseIdentifier(email);
+    this.limit(`google-ip:${req.ip}`, 40, 15 * 60_000, req.ip);
+    if (!identifier.includes('@')) throw new NotFoundException('No BMU account uses that Google email');
+    const user = await this.findUser(identifier);
+    if (!user) throw new NotFoundException('No BMU account uses that Google email');
+    if (user.status === 'invited') await this.prisma.user.update({ where: { id: user.id }, data: { status: 'active' } });
+    const next = await this.sessions.afterFirstFactor(user.id, user.orgId, req, 'google');
+    if ('needsSecondFactor' in next) return next;
+    const me = await this.me.load(user.id);
+    return { token: next.token, me: me! };
+  }
+
   async verifyOtp(raw: string, code: string, req: ReqInfo = {}): Promise<{ token: string; me: Me } | SecondFactorChallenge> {
     const identifier = normaliseIdentifier(raw);
     this.limit(`verify-ip:${req.ip}`, 40, 15 * 60_000, req.ip);
