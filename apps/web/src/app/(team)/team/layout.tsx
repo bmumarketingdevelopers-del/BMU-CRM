@@ -23,6 +23,8 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
         ...(me.roles.some((r) => ["sales_manager", "admin", "founder"].includes(r)) ? [{ label: "Discount approvals", href: "/team/approvals" }] : []),
         ...(me.permissions.leads_pipeline?.scope === "all" ? [{ label: "Renewals", href: "/team/renewals" }] : []),
         ...(isClientTeam ? [{ label: "Client 360", href: "/team/clients" }] : []),
+        // v43: Client Managers handle their own clients' data requests (export / delete, privacy).
+        ...(me.roles.includes("account_manager") ? [{ label: "Client data (DPDP)", href: "/team/client-data" }, { label: "Privacy requests", href: "/team/privacy" }] : []),
         { label: "Tasks", href: "/team/tasks" },
         ...(canQc ? [{ label: "QC queue", href: "/team/qc" }] : []),
         { label: "Review Studio", href: "/team/reviews" },

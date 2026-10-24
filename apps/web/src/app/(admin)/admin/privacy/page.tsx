@@ -8,6 +8,7 @@ import { Panel, StatRow, StatTile, Tabs } from "@/components/dash";
 import { Badge, Button, Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
+import { useActions } from "@/components/actions/actions-provider";
 
 type Msg = { ok: boolean; text: string } | undefined;
 const Note = ({ msg }: { msg: Msg }) => (msg ? <p className={`mt-3 text-sm ${msg.ok ? "text-ink" : "text-red"}`}>{msg.text}</p> : null);
@@ -25,12 +26,13 @@ function download(name: string, data: unknown) {
 }
 
 export default function PrivacyAdminPage() {
+  const founder = useActions().me.roles.includes("founder");
   const data = useLoad(() => api.securityAdmin.privacy());
   const [tab, setTab] = useState<"requests" | "consents" | "retention" | "breach">("requests");
   const d = data.data;
   return (
     <>
-      <PageTitle title="Privacy (DPDP)" subtitle="Requests from people about their data, consent records, how long data is kept, and what to do after a breach. The public form is at /privacy." />
+      <PageTitle title="Privacy (DPDP)" subtitle={`Requests from people about their data, consent records, how long data is kept, and what to do after a breach. The public form is at /privacy.${founder ? "" : " You see the people at the clients you manage."}`} />
       <LoadState loading={data.loading && !d} error={data.error} />
       {d && (
         <>
@@ -100,6 +102,8 @@ function Requests({ d, onChange }: { d: DpdpOverview; onChange: () => void }) {
 }
 
 function RequestRow({ r, act }: { r: DataRequestView; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
+  // v43: leads are the Founder's (Client Managers handle the people at their own clients).
+  const founder = useActions().me.roles.includes("founder");
   const [resolution, setResolution] = useState(r.resolution ?? "");
   const lead = r.matches.find((m) => m.type === "lead");
   const subject = r.subjectId ? r.matches.find((m) => m.id === r.subjectId) ?? lead ?? r.matches[0] : lead ?? r.matches[0];
@@ -128,7 +132,7 @@ function RequestRow({ r, act }: { r: DataRequestView; act: (fn: () => Promise<un
               Start
             </Button>
           )}
-          {subject && (subject.type === "lead" || subject.type === "user") && r.kind === "export" && (
+          {subject && (subject.type === "user" || (subject.type === "lead" && founder)) && r.kind === "export" && (
             <Button
               variant="secondary"
               className="px-3 py-1.5"
@@ -139,7 +143,7 @@ function RequestRow({ r, act }: { r: DataRequestView; act: (fn: () => Promise<un
               Download their data
             </Button>
           )}
-          {subject?.type === "lead" && r.kind === "deletion" && (
+          {subject?.type === "lead" && founder && r.kind === "deletion" && (
             <Button
               variant="ghost"
               className="px-3 py-1.5 text-[#b4432c]"
@@ -248,6 +252,8 @@ function Consents({ d, onChange }: { d: DpdpOverview; onChange: () => void }) {
 }
 
 function Retention({ rules, onChange }: { rules: RetentionRuleView[]; onChange: () => void }) {
+  // v43: these rules delete data across the whole organisation, so only the Founder changes or runs them.
+  const founder = useActions().me.roles.includes("founder");
   const [edit, setEdit] = useState(rules);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<Msg>();
@@ -267,9 +273,9 @@ function Retention({ rules, onChange }: { rules: RetentionRuleView[]; onChange: 
   return (
     <Panel
       title="How long data is kept"
-      subtitle="Turned-on rules run every night and anonymise or delete records older than the limit. Invoices are always kept for 8 years (GST)."
+      subtitle={`Turned-on rules run every night and anonymise or delete records older than the limit. Invoices are always kept for 8 years (GST).${founder ? "" : " They apply to the whole organisation, so only the Founder changes them."}`}
       action={
-        <div className="flex gap-2">
+        founder && <div className="flex gap-2">
           <Button variant="secondary" disabled={busy} onClick={() => run(async () => `Ran now: ${Object.entries((await api.securityAdmin.runRetention()).ran).map(([k, n]) => `${k.replaceAll("_", " ")} ${n}`).join(", ") || "nothing due"}.`)}>
             Run now
           </Button>

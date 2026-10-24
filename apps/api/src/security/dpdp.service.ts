@@ -23,12 +23,18 @@ import { claimOnce } from '../runtime/claims.js';
 import { startJob, type JobHandle } from '../runtime/jobs.js';
 
 const DAY = 86_400_000;
-const FA = ['founder', 'admin'];
 type Contact = { name?: string; email?: string; phone?: string; company?: string };
 
+/** v43: privacy (DPDP) is for the Founder (everyone) and Client Managers (people at their own clients); not Branch Managers. */
 export const assertDpdp = (me: Me) => {
-  if (me.type !== 'staff' || !me.roles.some((r) => FA.includes(r))) throw new ForbiddenException('Only the Founder or a Branch Manager can manage data-protection requests');
+  if (me.type !== 'staff' || !me.roles.some((r) => r === 'founder' || r === 'account_manager')) throw new ForbiddenException("Only the Founder or the client's Client Manager can manage data-protection requests");
 };
+const isFounder = (me: Me) => me.type === 'staff' && me.roles.includes('founder');
+const assertFounder = (me: Me, what: string) => {
+  if (!isFounder(me)) throw new ForbiddenException(`Only the Founder can ${what}`);
+};
+/** What a Client Manager may see: the people (ids and emails) at the clients they manage. Null for the Founder (everything). */
+type Scope = { userIds: string[]; emails: string[] } | null;
 
 @Injectable()
 export class DpdpService implements OnModuleInit, OnModuleDestroy {
@@ -62,8 +68,14 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
       data: { orgId, kind: input.kind, subjectType: subject?.type ?? 'lead', subjectId: subject?.id ?? null, requesterName: input.requesterName, requesterEmail: input.requesterEmail.toLowerCase(), details: input.details ?? null, dueAt: new Date(Date.now() + DATA_REQUEST_DAYS * DAY) },
     });
     await this.audit.logSystem(orgId, 'privacy.request_received', 'DataRequest', r.id, { kind: r.kind });
-    const admins = await this.prisma.user.findMany({ where: { orgId, deletedAt: null, status: 'active', roles: { some: { role: { baseRole: { in: FA } } } } }, select: { id: true } });
-    await this.notifications.notify(orgId, admins.map((a) => a.id), { kind: 'automation', title: `Privacy request: ${input.kind}`, body: `${input.requesterName} (${input.requesterEmail}). Due within ${DATA_REQUEST_DAYS} days.`, link: '/admin/privacy' });
+    // v43: the Founder, and the Client Manager of the client this person belongs to (if any).
+    const message = { kind: 'automation' as const, title: `Privacy request: ${input.kind}`, body: `${input.requesterName} (${input.requesterEmail}). Due within ${DATA_REQUEST_DAYS} days.` };
+    const founders = await this.prisma.user.findMany({ where: { orgId, deletedAt: null, status: 'active', roles: { some: { role: { baseRole: 'founder' } } } }, select: { id: true } });
+    await this.notifications.notify(orgId, founders.map((a) => a.id), { ...message, link: '/admin/privacy' });
+    const clientIds = found.filter((m) => m.type === 'client').map((m) => m.id);
+    const cms = clientIds.length ? await this.prisma.clientOrg.findMany({ where: { id: { in: clientIds }, orgId, amUserId: { not: null } }, select: { amUserId: true } }) : [];
+    const cmIds = [...new Set(cms.map((c) => c.amUserId!))].filter((id) => !founders.some((f) => f.id === id));
+    if (cmIds.length) await this.notifications.notify(orgId, cmIds, { ...message, link: '/team/privacy' });
     return { id: r.id, dueAt: r.dueAt.toISOString() };
   }
 
@@ -103,10 +115,24 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async list(me: Me) {
+  /** v43: the Founder sees everything; a Client Manager only the people at the clients they manage. */
+  private async scope(me: Me): Promise<Scope> {
+    if (isFounder(me)) return null;
+    const people = await this.prisma.clientUser.findMany({ where: { clientOrg: { orgId: me.orgId, amUserId: me.id, deletedAt: null } }, select: { userId: true, user: { select: { email: true } } } });
+    return { userIds: people.map((p) => p.userId), emails: people.map((p) => p.user.email?.toLowerCase()).filter((e): e is string => !!e) };
+  }
+
+  private requestWhere(me: Me, scope: Scope) {
+    return { orgId: me.orgId, ...(scope ? { OR: [{ requesterEmail: { in: scope.emails } }, { createdById: me.id }] } : {}) };
+  }
+
+  async list(me: Me, scope?: Scope) {
     assertDpdp(me);
-    const rows = await this.prisma.dataRequest.findMany({ where: { orgId: me.orgId }, orderBy: [{ status: 'asc' }, { dueAt: 'asc' }], take: 200 });
-    return Promise.all(rows.map((r) => this.view(r)));
+    const sc = scope === undefined ? await this.scope(me) : scope;
+    const rows = await this.prisma.dataRequest.findMany({ where: this.requestWhere(me, sc), orderBy: [{ status: 'asc' }, { dueAt: 'asc' }], take: 200 });
+    const views = await Promise.all(rows.map((r) => this.view(r)));
+    // A Client Manager sees only matches among their own clients' people (no leads or other clients).
+    return sc ? views.map((v) => ({ ...v, matches: v.matches.filter((m) => (m.type === 'user' && sc.userIds.includes(m.id)) || m.type === 'client') })) : views;
   }
 
   async create(me: Me, body: unknown, ip?: string) {
@@ -121,7 +147,7 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
 
   async update(me: Me, id: string, body: unknown, ip?: string) {
     assertDpdp(me);
-    const r = await this.prisma.dataRequest.findFirst({ where: { id, orgId: me.orgId } });
+    const r = await this.prisma.dataRequest.findFirst({ where: { ...this.requestWhere(me, await this.scope(me)), id } });
     if (!r) throw new NotFoundException('Request not found');
     const input = parse(dataRequestUpdateSchema, body);
     if ((input.status === 'done' || input.status === 'rejected') && !(input.resolution ?? r.resolution)) throw new BadRequestException('Write what was done (or why it was refused) before closing the request');
@@ -136,6 +162,8 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
   /** Everything held about one lead or person, as JSON (for an access request). */
   async exportSubject(me: Me, type: 'lead' | 'user', id: string, ip?: string) {
     assertDpdp(me);
+    const sc = await this.scope(me);
+    if (sc && (type === 'lead' || !sc.userIds.includes(id))) throw new ForbiddenException('You can only export people at the clients you manage');
     if (type === 'lead') {
       const lead = await this.prisma.lead.findFirst({ where: { id, orgId: me.orgId }, include: { activities: true } });
       if (!lead) throw new NotFoundException('Lead not found');
@@ -156,7 +184,8 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
 
   /** Erasure for a lead: contact details and free text are removed, the record stays for the sales numbers. */
   async eraseLead(me: Me, id: string, ip?: string) {
-    assertDpdp(me);
+    // Leads are sales records, not a Client Manager's clients.
+    assertFounder(me, 'erase a lead');
     const lead = await this.prisma.lead.findFirst({ where: { id, orgId: me.orgId } });
     if (!lead) throw new NotFoundException('Lead not found');
     if (lead.stage === 'won') throw new BadRequestException('This lead became a client. Use Data Export / Deletion for the client instead.');
@@ -175,7 +204,7 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
 
   async withdrawConsent(me: Me, id: string, ip?: string) {
     assertDpdp(me);
-    const c = await this.prisma.consent.findFirst({ where: { id, orgId: me.orgId } });
+    const c = await this.prisma.consent.findFirst({ where: { ...this.consentWhere(me, await this.scope(me)), id } });
     if (!c) throw new NotFoundException('Consent not found');
     await this.prisma.consent.update({ where: { id }, data: { withdrawnAt: new Date(), granted: false } });
     await this.audit.log(me, 'privacy.consent_withdrawn', 'Consent', id, undefined, { purpose: c.purpose }, ip);
@@ -200,7 +229,8 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
   }
 
   async saveRetention(me: Me, body: unknown, ip?: string) {
-    assertDpdp(me);
+    // These rules delete data across the whole organisation every night: the Founder only.
+    assertFounder(me, 'change the retention rules');
     const { rules } = parse(retentionSaveSchema, body);
     for (const r of rules) {
       const t = RETENTION_TYPES.find((x) => x.recordType === r.recordType);
@@ -267,15 +297,21 @@ export class DpdpService implements OnModuleInit, OnModuleDestroy {
 
   // ---------------------------------------------------------------------------------------------- overview
 
+  private consentWhere(me: Me, scope: Scope) {
+    return { orgId: me.orgId, ...(scope ? { OR: [{ subjectType: 'user', subjectId: { in: scope.userIds } }, { email: { in: scope.emails } }] } : {}) };
+  }
+
   async overview(me: Me): Promise<DpdpOverview> {
     assertDpdp(me);
+    const sc = await this.scope(me);
+    const where = this.consentWhere(me, sc);
     const [requests, retention, total, marketing, withdrawn, recent] = await Promise.all([
-      this.list(me),
+      this.list(me, sc),
       this.retention(me.orgId),
-      this.prisma.consent.count({ where: { orgId: me.orgId } }),
-      this.prisma.consent.count({ where: { orgId: me.orgId, purpose: 'marketing', withdrawnAt: null } }),
-      this.prisma.consent.count({ where: { orgId: me.orgId, withdrawnAt: { not: null } } }),
-      this.prisma.consent.findMany({ where: { orgId: me.orgId }, orderBy: { createdAt: 'desc' }, take: 30 }),
+      this.prisma.consent.count({ where }),
+      this.prisma.consent.count({ where: { ...where, purpose: 'marketing', withdrawnAt: null } }),
+      this.prisma.consent.count({ where: { ...where, withdrawnAt: { not: null } } }),
+      this.prisma.consent.findMany({ where, orderBy: { createdAt: 'desc' }, take: 30 }),
     ]);
     return {
       requests,

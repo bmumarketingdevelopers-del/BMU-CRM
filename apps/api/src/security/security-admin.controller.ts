@@ -156,7 +156,8 @@ export class SecurityAdminController {
   @Post('privacy/retention/run')
   @HttpCode(200)
   async runRetention(@CurrentUser() me: Me) {
-    assertDpdp(me);
+    // Deletes data across the whole organisation: the Founder only (v43).
+    if (me.type !== 'staff' || !me.roles.includes('founder')) throw new ForbiddenException('Only the Founder can run the retention rules');
     return { ran: await this.dpdp.runRetention(me.orgId) };
   }
 }

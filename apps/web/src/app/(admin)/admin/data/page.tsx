@@ -5,12 +5,14 @@ import type { DataClientRow } from "@bmu/shared";
 import { Column, DataTable, Panel, StatRow, StatTile } from "@/components/dash";
 import { Badge, Button, Input, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
+import { useActions } from "@/components/actions/actions-provider";
 import { useLoad } from "@/lib/use-load";
 import { Message, type Msg } from "../_platform/kit";
 
 const day = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 
 export default function DataPage() {
+  const founder = useActions().me.roles.includes("founder");
   const data = useLoad(() => api.adminPlatform.dataClients());
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string>();
@@ -79,14 +81,14 @@ export default function DataPage() {
 
   return (
     <>
-      <PageTitle title="Data Export / Deletion (DPDP)" subtitle="Give a client a copy of everything we hold about them, or erase their people's personal details, as required by India's Digital Personal Data Protection Act. Founder and Branch Manager only; every action is audit-logged." />
+      <PageTitle title="Data Export / Deletion (DPDP)" subtitle="Give a client a copy of everything we hold about them, or erase their people's personal details, as required by India's Digital Personal Data Protection Act. The Founder (every client) and Client Managers (the clients they manage); every action is audit-logged." />
       {!data.data ? (
         <LoadState loading={data.loading} error={data.error} />
       ) : (
         <div className="space-y-6">
           <StatRow cols={3}>
             <StatTile label="Clients" value={data.data.clients.length} />
-            <StatTile label="Data kept for" value={`${data.data.retentionDays} days`} hint={<a href="/admin/tenant" className="underline">change in Tenant Settings</a>} />
+            <StatTile label="Data kept for" value={`${data.data.retentionDays} days`} hint={founder ? <a href="/admin/tenant" className="underline">change in Tenant Settings</a> : "set by the Founder in Tenant Settings"} />
             <StatTile label="Clients with unpaid invoices" value={data.data.clients.filter((c) => c.unpaidInvoices).length} hint="personal data can't be deleted until paid" />
           </StatRow>
           {deleting && (

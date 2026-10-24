@@ -14,7 +14,7 @@ import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
-import { accessFor, assertOperations, assertPlatform, assertStaff } from './access.js';
+import { accessFor, assertClientData, assertOperations, assertPlatform, assertStaff, clientDataWhere } from './access.js';
 
 const OPERATIONS_SECTIONS = ['requirementChecklists', 'sla', 'gateRules'] as const;
 const PLATFORM_SECTIONS = ['notificationTemplates', 'branding', 'tenant'] as const;
@@ -75,10 +75,11 @@ export class PlatformController {
 
   @Get('data/clients')
   async dataClients(@CurrentUser() me: Me): Promise<DataOverview> {
-    assertPlatform(me);
+    assertClientData(me);
     const [rows, tenant] = await Promise.all([
       this.prisma.clientOrg.findMany({
-        where: { orgId: me.orgId, deletedAt: null },
+        // v43: a Client Manager sees only the clients they manage; the Founder sees all.
+        where: { orgId: me.orgId, deletedAt: null, ...clientDataWhere(me) },
         include: {
           users: { include: { user: { select: { status: true, name: true, email: true, phone: true } } } },
           invoices: { where: { status: { in: [...UNPAID] } }, select: { id: true } },
@@ -104,14 +105,14 @@ export class PlatformController {
   }
 
   private async client(me: Me, id: string) {
-    const c = await this.prisma.clientOrg.findFirst({ where: { id, orgId: me.orgId, deletedAt: null } });
+    const c = await this.prisma.clientOrg.findFirst({ where: { id, orgId: me.orgId, deletedAt: null, ...clientDataWhere(me) } });
     if (!c) throw new NotFoundException('Client not found');
     return c;
   }
 
   @Get('data/clients/:id/export')
   async exportClient(@CurrentUser() me: Me, @Param('id') id: string, @ClientIp() ip?: string): Promise<ClientDataExport> {
-    assertPlatform(me);
+    assertClientData(me);
     const client = await this.client(me, id);
     const [clientUsers, engagements, threads, invoices, brands] = await Promise.all([
       this.prisma.clientUser.findMany({ where: { clientOrgId: id }, include: { user: true } }),
@@ -163,7 +164,7 @@ export class PlatformController {
   @Post('data/clients/:id/anonymise')
   @HttpCode(200)
   async anonymise(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
-    assertPlatform(me);
+    assertClientData(me);
     const { confirmName } = parse(anonymiseSchema, body);
     const client = await this.client(me, id);
     if (confirmName.trim().toLowerCase() !== client.name.trim().toLowerCase()) throw new BadRequestException('The name you typed does not match the client name');

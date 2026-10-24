@@ -20,6 +20,18 @@ export function assertStaff(me: Me) {
 export function assertOperations(me: Me) {
   if (!canEditOperations(me)) throw new ForbiddenException('Only Founder, Branch Manager or department heads can change this');
 }
+/**
+ * v43 client data (Data Export / Deletion) and privacy (DPDP): the Founder for every client, and Client Managers for the
+ * clients they manage. Branch Managers no longer have it.
+ */
+export const isFounder = (me: Me) => isStaff(me) && me.roles.includes('founder');
+export const canClientData = (me: Me) => isStaff(me) && me.roles.some((r) => r === 'founder' || r === 'account_manager');
+export function assertClientData(me: Me) {
+  if (!canClientData(me)) throw new ForbiddenException("Only the Founder or the client's Client Manager can do this");
+}
+/** The clients `me` may act on: every client for the Founder, otherwise the ones they are Client Manager of. */
+export const clientDataWhere = (me: Me) => (isFounder(me) ? {} : { amUserId: me.id });
+
 export function assertPlatform(me: Me) {
   if (!isFounderOrAdmin(me)) throw new ForbiddenException('Only the Founder or a Branch Manager can do this');
 }

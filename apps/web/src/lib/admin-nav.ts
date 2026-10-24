@@ -185,7 +185,8 @@ const restricted: Record<string, string[]> = {
   "Discount Limits": FA,
   "Audit Log": FA,
   Integrations: FA,
-  "Data Export / Deletion (DPDP)": FA,
+  // v43: client data and privacy moved from Branch Managers to Client Managers (in the Team app); the Founder keeps them.
+  "Data Export / Deletion (DPDP)": ["founder"],
   "Tenant Settings": FA,
   "Discount Approvals": FA,
   Renewals: FA,
@@ -204,7 +205,7 @@ const restricted: Record<string, string[]> = {
   "Agent Run Log": FA,
   "API & Webhooks": FA,
   Security: FA,
-  "Privacy (DPDP)": FA,
+  "Privacy (DPDP)": ["founder"],
   "Forecast & Risks": NOT_HR,
   Metrics: NOT_HR,
 };
