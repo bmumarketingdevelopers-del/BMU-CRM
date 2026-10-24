@@ -1,6 +1,6 @@
 "use client";
 
-/** Global "+ New" button in the top bar. Lists the registered entries the person may use (see new-registry.tsx). */
+/** The one "+ New" button, at the top of the sidebar on every team/Command Centre page. Lists the registered entries the person may use (see new-registry.tsx). */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useActions } from "./actions-provider";
 import { newEntriesFor } from "./new-registry";
@@ -24,12 +24,12 @@ export function NewButton() {
   }, [open]);
   if (!entries.length) return null;
   return (
-    <div ref={box} className="relative">
-      <button type="button" data-new-button aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="bg-charcoal px-3 py-1.5 text-sm font-medium text-ivory hover:opacity-90" title="New (N)">
+    <div ref={box} className="relative px-5 pb-3">
+      <button type="button" data-new-button aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="w-full bg-charcoal px-3 py-2 text-left text-sm font-medium text-ivory hover:opacity-90" title="New (N)">
         + New
       </button>
       {open && (
-        <div role="menu" aria-label="Create new" className="absolute right-0 top-full z-50 mt-1 w-64 border border-border bg-surface py-1 shadow-lg">
+        <div role="menu" aria-label="Create new" className="absolute left-5 right-5 top-full z-50 -mt-2 border border-border bg-surface py-1 shadow-lg">
           {entries.map((e) => (
             <button
               key={e.id}

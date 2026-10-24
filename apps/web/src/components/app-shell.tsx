@@ -7,6 +7,7 @@ import { SignOutButton } from "./sign-out-button";
 import { SideNav, type NavSection } from "./side-nav";
 import { GlobalSearch } from "./global-search";
 import { ActionsProvider } from "./actions/actions-provider";
+import { NewButton } from "./actions/new-button";
 import { TopBar } from "./actions/top-bar";
 import { LiveProvider } from "@/lib/live";
 import { LiveStatus } from "./live/live-status";
@@ -44,6 +45,8 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
           </div>
           <NotificationBell />
         </div>
+        {/* The single "+ New" button (create a task, lead, client…): top of the sidebar, same spot on every page. */}
+        {me.type === "staff" && <NewButton />}
         {me.type === "staff" && <GlobalSearch surface={surface === "Command Centre" ? "admin" : "team"} />}
         <SideNav sections={nav} />
         <div className="hidden border-t border-border px-5 py-4 text-sm md:block">
