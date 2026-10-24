@@ -13,6 +13,7 @@ import {
   peopleEmploymentLabels,
   peopleMergePermissions,
   peopleMoveSchema,
+  peopleManagerChoices,
   peopleOnboardingLabels,
   peoplePermissionDiff,
   peopleRoleRank,
@@ -365,13 +366,33 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
     if (dept.branchId !== input.branchId) throw new BadRequestException(`${dept.name} belongs to the ${dept.branch.name} branch. Pick that branch or another department.`);
     if (dept.teams.length && !input.teamId) throw new BadRequestException(`Pick a team or pod in ${dept.name}`);
     if (input.teamId && !dept.teams.some((t) => t.id === input.teamId)) throw new BadRequestException(`That team is not part of ${dept.name}`);
-    const manager = await this.prisma.user.findFirst({ where: { id: input.managerId, orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null } });
+    const manager = await this.prisma.user.findFirst({
+      where: { id: input.managerId, orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null },
+      include: { roles: { select: { role: { select: { baseRole: true } } } } },
+    });
     if (!manager) throw new BadRequestException('Pick who they report to (an active team member)');
     const roles = await this.prisma.role.findMany({ where: { id: { in: input.roleIds }, orgId: me.orgId } });
     if (roles.length !== new Set(input.roleIds).size) throw new BadRequestException('Unknown role');
     for (const r of roles) {
       const p = rolePolicy(me, r.baseRole, 'add');
       if (!p.ok) throw new ForbiddenException(p.whyNot ?? "You can't give that role");
+    }
+    // Reports to someone above them: a manager in their department (Department Head, Sales Manager, AM Lead), their
+    // team's lead, or leadership (same rule as the "Reports to" list in Add person).
+    const ctx = { candidateRoles: roles.map((r) => r.baseRole), departmentId: dept.id, departmentHeadId: dept.headUserId, teamLeadId: input.teamId ? (dept.teams.find((t) => t.id === input.teamId)?.leadUserId ?? null) : null };
+    // The people who could be their manager: their department, its team lead and leadership.
+    const pool = await this.prisma.user.findMany({
+      where: {
+        orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null,
+        OR: [{ departmentId: dept.id }, { roles: { some: { role: { baseRole: { in: ['founder', 'admin'] } } } } }, ...(ctx.teamLeadId ? [{ id: ctx.teamLeadId }] : [])],
+      },
+      select: { id: true, name: true, departmentId: true, roles: { select: { role: { select: { baseRole: true } } } } },
+    });
+    const staffPool = pool.map((u) => ({ id: u.id, name: u.name, departmentId: u.departmentId, roles: u.roles.map((r) => r.role.baseRole) }));
+    const choices = peopleManagerChoices(ctx, staffPool);
+    if (!choices.some((c) => c.id === manager.id)) {
+      const best = choices.find((c) => c.recommended) ?? choices[0];
+      throw new BadRequestException(`${manager.name} can't be their manager: pick someone above their role${best ? `, such as ${best.name} (${best.why})` : ''}`);
     }
     if (input.onboarding.buddyId) {
       const buddy = await this.prisma.user.findFirst({ where: { id: input.onboarding.buddyId, orgId: me.orgId, type: 'staff', deletedAt: null, status: 'active' } });

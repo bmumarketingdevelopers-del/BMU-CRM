@@ -46,6 +46,73 @@ export function peopleRoleRank(baseRole: string): number {
 /** The most senior rank among a set of base roles. */
 export const peopleTopRank = (baseRoles: string[]) => (baseRoles.length ? Math.min(...baseRoles.map(peopleRoleRank)) : 99);
 
+const LEADERSHIP = ["founder", "admin"];
+/** Roles whose "Reports to" includes the Founder and Branch Managers (the leadership layer). */
+const LEADERSHIP_REPORTERS = ["founder", "admin", "department_head", "am_lead"];
+const roleLabel = (baseRole: string) => hierarchyData.team_roles.find((r) => r.id === baseRole)?.name.split(" (")[0] ?? baseRole;
+
+export type PeopleManagerCandidate = { id: string; departmentId: string | null; roles: string[] };
+export type PeopleManagerContext = { candidateRoles: string[]; departmentId: string | null; departmentHeadId?: string | null; teamLeadId?: string | null };
+
+/**
+ * Who a person may report to (Add person "Reports to"): someone more senior than their role, either in their own
+ * department or in leadership (Branch Manager, Founder), or the lead of their team. The API checks the same rule.
+ */
+export function peopleCanReportTo(ctx: PeopleManagerContext, m: PeopleManagerCandidate): boolean {
+  if (!ctx.candidateRoles.length) return false;
+  const mine = peopleTopRank(ctx.candidateRoles);
+  // Their team's lead, for people who do the work (not someone joining as a manager themselves).
+  if (ctx.teamLeadId && m.id === ctx.teamLeadId && mine > MANAGING_RANK) return true;
+  const theirs = peopleTopRank(m.roles);
+  // Nobody ranks above the Founder: a Founder reports to another Founder.
+  if (mine === 1) return m.roles.includes("founder");
+  if (theirs >= mine) return false;
+  // In the department only people who manage (Department Head, Sales Manager, AM Lead: rank 4 and above), not a
+  // senior individual contributor such as a QC reviewer or strategist.
+  return m.roles.some((r) => LEADERSHIP.includes(r)) || (!!ctx.departmentId && m.departmentId === ctx.departmentId && theirs <= MANAGING_RANK);
+}
+const MANAGING_RANK = 4;
+
+/**
+ * The "Reports to" choices, best fit first: the direct superior their role reports to in the hierarchy (the Department
+ * Head of their department for makers, the Sales Manager for sales executives, the Branch Manager for heads and leads…),
+ * then the team lead, then everyone else senior to them in the department, then leadership.
+ */
+export function peopleManagerChoices<T extends PeopleManagerCandidate & { name: string }>(ctx: PeopleManagerContext, staff: T[]): (T & { why: string; recommended: boolean })[] {
+  const top = [...ctx.candidateRoles].sort((a, b) => peopleRoleRank(a) - peopleRoleRank(b))[0];
+  const isHead = (m: T) => m.id === ctx.departmentHeadId || (m.roles.includes("department_head") && m.departmentId === ctx.departmentId);
+  // Roles that report to the Branch Manager (Finance, HR / Ops…) report to their Department Head when the department has one above them.
+  const byHierarchy = hierarchyData.team_roles.find((r) => r.id === top)?.reports_to ?? null;
+  const reportsTo = byHierarchy === "admin" && staff.some((m) => isHead(m) && peopleCanReportTo(ctx, m)) ? "department_head" : byHierarchy;
+  const direct = (m: T) =>
+    !!reportsTo &&
+    (reportsTo === "department_head"
+      ? m.id === ctx.departmentHeadId || (m.roles.includes("department_head") && m.departmentId === ctx.departmentId)
+      : m.roles.includes(reportsTo) && (LEADERSHIP.includes(reportsTo) || !ctx.departmentId || m.departmentId === ctx.departmentId || !m.departmentId));
+  const order = (m: T) => (direct(m) ? 0 : m.id === ctx.teamLeadId ? 1 : m.departmentId === ctx.departmentId ? 2 : 3);
+  const why = (m: T) => {
+    if (m.id === ctx.departmentHeadId) return "Department head";
+    if (m.id === ctx.teamLeadId) return "Team lead";
+    const best = [...m.roles].sort((a, b) => peopleRoleRank(a) - peopleRoleRank(b))[0];
+    return best ? roleLabel(best) : "";
+  };
+  let eligible = staff.filter((m) => peopleCanReportTo(ctx, m));
+  // Founder and Branch Manager are offered only to people joining in leadership (Department Head, Branch Manager,
+  // AM Lead, Founder). Everyone else reports inside their department, unless it has no manager above them yet.
+  if (!ctx.candidateRoles.some((r) => LEADERSHIP_REPORTERS.includes(r))) {
+    const inDepartment = eligible.filter((m) => !m.roles.some((r) => LEADERSHIP.includes(r)));
+    if (inDepartment.length) eligible = inDepartment;
+  }
+  return eligible
+    .map((m) => ({ ...m, why: why(m), recommended: direct(m) }))
+    .sort((a, b) => order(a) - order(b) || peopleTopRank(a.roles) - peopleTopRank(b.roles) || a.name.localeCompare(b.name));
+}
+
+/** Is `managerId` one of the "Reports to" choices for this person (the API checks this with the department's staff)? */
+export function peopleIsValidManager<T extends PeopleManagerCandidate & { name: string }>(ctx: PeopleManagerContext, staff: T[], managerId: string): boolean {
+  return peopleManagerChoices(ctx, staff).some((m) => m.id === managerId);
+}
+
 /** Merges role permissions: the widest scope wins (same as sign-in). */
 export function peopleMergePermissions(roles: { permissions: { capability: string; scope: AccessScope }[] }[]): Record<string, AccessScope> {
   const rank = (s: AccessScope) => ACCESS_SCOPES.indexOf(s);

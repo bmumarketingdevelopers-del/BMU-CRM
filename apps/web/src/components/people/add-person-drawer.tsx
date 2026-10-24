@@ -14,6 +14,7 @@ import {
   PEOPLE_EMPLOYMENT_TYPES,
   PEOPLE_ONBOARDING_CHOICES,
   peopleEmploymentLabels,
+  peopleManagerChoices,
   peopleMergePermissions,
   peopleOnboardingLabels,
   peopleScopeLabels,
@@ -68,13 +69,26 @@ const initial = (p: NewDrawerProps["prefill"] = {}): Values => ({
   note: "",
 });
 
-/** Department → its branch, a single team picked for you, and a sensible manager (team lead, else department head). */
+/** Who the new person may report to, best fit first (see peopleManagerChoices: someone above their role). */
+function managerChoices(x: Values, opts: PeopleOptions | undefined) {
+  if (!opts) return [];
+  const d = opts.departments.find((y) => y.id === x.departmentId);
+  const candidateRoles = opts.roles.filter((r) => r.id === x.roleId || x.extraRoleIds.includes(r.id)).map((r) => r.baseRole);
+  if (!d || !candidateRoles.length) return [];
+  const t = d.teams.find((y) => y.id === x.teamId) ?? (d.teams.length === 1 && !x.teamId ? d.teams[0] : undefined);
+  return peopleManagerChoices({ candidateRoles, departmentId: d.id, departmentHeadId: d.headId, teamLeadId: t?.leadId ?? null }, opts.staff);
+}
+
+/** Department → its branch, a single team picked for you, and their manager: the recommended superior for their role. */
 function resolvePlacement(x: Values, opts: PeopleOptions | undefined): Values {
   if (!opts) return x;
   const d = opts.departments.find((y) => y.id === x.departmentId);
   if (!d) return x;
   const t = d.teams.find((y) => y.id === x.teamId) ?? (d.teams.length === 1 && !x.teamId ? d.teams[0] : undefined);
-  return { ...x, branchId: d.branchId, teamId: t?.id ?? "", managerId: x.managerId || t?.leadId || d.headId || "" };
+  // Keep a chosen manager while they still fit the role and department; otherwise use the recommended one.
+  const choices = managerChoices(x, opts);
+  const managerId = choices.some((c) => c.id === x.managerId) ? x.managerId : (choices.find((c) => c.recommended) ?? choices[0])?.id ?? "";
+  return { ...x, branchId: d.branchId, teamId: t?.id ?? "", managerId };
 }
 
 export function AddPersonDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
@@ -94,7 +108,7 @@ export function AddPersonDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
   const roles = opts?.roles ?? [];
   const chosenRoles = roles.filter((r) => r.id === v.roleId || v.extraRoleIds.includes(r.id));
   const perms = useMemo(() => Object.entries(peopleMergePermissions(chosenRoles)).filter(([, s]) => s !== "none"), [chosenRoles]);
-  const staffInBranch = opts?.staff ?? [];
+  const reportsTo = useMemo(() => managerChoices(v, opts), [v, opts]);
 
   function validate() {
     const e: Partial<Record<keyof Values, string>> = {};
@@ -262,13 +276,14 @@ export function AddPersonDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
                 ))}
               </select>
             </Field>
-            <Field label="Reports to" required error={errors.managerId} htmlFor="ap-manager">
-              <select id="ap-manager" className={inputCls} value={v.managerId} onChange={(e) => set("managerId", e.target.value)}>
-                <option value="">Pick their manager</option>
-                {staffInBranch.map((s) => (
+            <Field label="Reports to" required error={errors.managerId} htmlFor="ap-manager" hint="Only people above their role: their department's manager, team lead or leadership">
+              <select id="ap-manager" className={inputCls} value={v.managerId} onChange={(e) => set("managerId", e.target.value)} disabled={!reportsTo.length}>
+                <option value="">{!v.roleId ? "Pick a role first" : !v.departmentId ? "Pick a department first" : reportsTo.length ? "Pick their manager" : "Nobody above this role yet"}</option>
+                {reportsTo.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
-                    {s.id === dept?.headId ? " (head)" : s.id === team?.leadId ? " (team lead)" : ""}
+                    {s.why ? ` · ${s.why}` : ""}
+                    {s.recommended ? " (recommended)" : ""}
                   </option>
                 ))}
               </select>

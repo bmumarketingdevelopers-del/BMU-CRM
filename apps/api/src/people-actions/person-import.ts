@@ -2,7 +2,7 @@
 // (roles HR may give, team required when the department has teams, manager, branch). Duplicates on email or mobile
 // are flagged and can't be imported twice.
 import { Injectable, type OnModuleInit } from '@nestjs/common';
-import { normaliseIdentifier, PEOPLE_EMPLOYMENT_TYPES, peopleAddPersonSchema, type Me } from '@bmu/shared';
+import { normaliseIdentifier, PEOPLE_EMPLOYMENT_TYPES, peopleAddPersonSchema, peopleManagerChoices, type Me } from '@bmu/shared';
 import { ActionsRegistry } from '../actions/registry.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PeopleActionsService } from './people-actions.service.js';
@@ -58,7 +58,7 @@ export class PersonImport implements OnModuleInit {
       this.prisma.role.findMany({ where: { orgId: me.orgId } }),
       this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null }, include: { teams: { where: { deletedAt: null } } } }),
       this.prisma.branch.findMany({ where: { orgId: me.orgId, deletedAt: null } }),
-      this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null }, select: { id: true, name: true, email: true } }),
+      this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null }, select: { id: true, name: true, email: true, departmentId: true, roles: { select: { role: { select: { baseRole: true } } } } } }),
     ]);
     return rows.map((r) => {
       const roleNames = (r.role ?? '').split(/[;|]/).map(lc).filter(Boolean);
@@ -97,6 +97,13 @@ export class PersonImport implements OnModuleInit {
 
   private async validate(me: Me, rows: Record<string, string>[]) {
     const resolved = await this.resolve(me, rows);
+    // Everyone who could be a manager, for the "Reports to" rule (same as Add person).
+    const staffPool = (
+      await this.prisma.user.findMany({
+        where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: { not: 'suspended' }, leftAt: null },
+        select: { id: true, name: true, departmentId: true, roles: { select: { role: { select: { baseRole: true } } } } },
+      })
+    ).map((u) => ({ id: u.id, name: u.name, departmentId: u.departmentId, roles: u.roles.map((x) => x.role.baseRole) }));
     const out: { errors: string[]; duplicate: string | null }[] = [];
     for (const [i, r] of resolved.entries()) {
       const raw = rows[i];
@@ -117,6 +124,16 @@ export class PersonImport implements OnModuleInit {
       if (r.dept && r.branch && r.dept.branchId !== r.branch.id) errors.push(`${r.dept.name} is not in the ${r.branch.name} branch`);
       if (r.dept && r.dept.teams.length && !r.team) errors.push(raw.team ? `${r.dept.name} has no team called "${raw.team}"` : `Pick a team or pod in ${r.dept.name}`);
       if (raw.manager && !r.manager) errors.push(`Nobody active matches "${raw.manager}"`);
+      // Same rule as Add person: they report to someone above their role (department manager, team lead or leadership).
+      const roleNames = r.roleRows.filter((x) => !!x).map((x) => x!.baseRole);
+      if (r.manager && r.dept && roleNames.length) {
+        const m = r.manager as { id: string; name: string };
+        const choices = peopleManagerChoices({ candidateRoles: roleNames, departmentId: r.dept.id, departmentHeadId: r.dept.headUserId, teamLeadId: r.team?.leadUserId ?? null }, staffPool);
+        if (!choices.some((c) => c.id === m.id)) {
+          const best = choices.find((c) => c.recommended) ?? choices[0];
+          errors.push(`${m.name} can't be their manager: pick someone above their role${best ? `, such as ${best.name} (${best.why})` : ''}`);
+        }
+      }
       if (raw.joining_date && (!/^\d{4}-\d{2}-\d{2}$/.test(raw.joining_date.trim()) || Number.isNaN(Date.parse(raw.joining_date)))) errors.push('Joining date must look like 2026-11-02');
       if (r.emp === 'bad') errors.push('Employment type must be full-time, intern or contract');
       let duplicate: string | null = null;
