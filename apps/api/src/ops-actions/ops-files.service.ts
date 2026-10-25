@@ -6,6 +6,7 @@ import { BadRequestException, ForbiddenException, GoneException, Injectable, Not
 import {
   fileKindFromMime,
   OPS_FILE_FOLDERS,
+  opsFileFolderLabels,
   OPS_FILE_MANAGER_ROLES,
   opsFileUpdateSchema,
   opsShareCreateSchema,
@@ -118,6 +119,16 @@ export class OpsFilesService implements OnModuleInit {
     // v36: by department (see file-access.ts).
     if (!canSeeFile(me, await fileScope(this.prisma, me), f)) throw new NotFoundException('File not found');
     return f;
+  }
+
+  /** The heads of a department: the one set on the department and anyone with the Department Head role in it. */
+  private async departmentHeads(departmentId: string | null): Promise<string[]> {
+    if (!departmentId) return [];
+    const [d, heads] = await Promise.all([
+      this.prisma.department.findUnique({ where: { id: departmentId }, select: { headUserId: true } }),
+      this.prisma.user.findMany({ where: { departmentId, deletedAt: null, status: 'active', roles: { some: { role: { baseRole: 'department_head' } } } }, select: { id: true } }),
+    ]);
+    return [...new Set([d?.headUserId, ...heads.map((h) => h.id)].filter((x): x is string => !!x))];
   }
 
   private async amOf(clientOrgId: string | null, engagementId: string | null) {
@@ -438,6 +449,18 @@ export class OpsFilesService implements OnModuleInit {
       },
     });
     await this.audit.log(me, 'file.uploaded', 'File', f.id, undefined, { name: f.name, clientOrgId: client.id, engagementId, folder, sizeBytes: f.sizeBytes }, ip);
+    // v45: the file's Department Head and the client's Client Manager hear about every team upload (not the uploader).
+    const [heads, am, dept] = await Promise.all([
+      this.departmentHeads(departmentId),
+      this.amOf(client.id, engagementId),
+      departmentId ? this.prisma.department.findUnique({ where: { id: departmentId }, select: { name: true } }) : null,
+    ]);
+    await this.notifications.notify(me.orgId, [...heads, am].filter((id) => id && id !== me.id), {
+      kind: 'file_uploaded',
+      title: `${me.name} uploaded ${f.name} for ${client.name}`,
+      body: `${dept?.name ?? 'No department'} · ${opsFileFolderLabels[folder] ?? folder}`,
+      link: `/team/files?client=${client.id}`,
+    });
     return { id: f.id, name: f.name, message: `${f.name} uploaded to ${client.name}` };
   }
 
