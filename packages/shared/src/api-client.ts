@@ -89,6 +89,19 @@ export type AuditRow = {
   after: unknown;
 };
 
+/** Audit Log search (v44): filters, a page of entries and the choices for the filter menus. */
+export type AuditQuery = { q?: string; actor?: string; area?: string; from?: string; to?: string; page?: number };
+export type AuditPage = {
+  rows: AuditRow[];
+  total: number;
+  page: number;
+  size: number;
+  /** "branch": a Branch Manager sees changes made by people in their branch. */
+  scope: "all" | "branch";
+  actors: { id: string; name: string }[];
+  areas: string[];
+};
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -287,6 +300,8 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
 
     audit: {
       list: () => request<AuditRow[]>("/audit"),
+      /** Search, filter and page through every entry. */
+      search: (q: AuditQuery = {}) => request<AuditPage>(`/audit/search?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]))}`),
     },
 
     proposals: {
