@@ -340,7 +340,7 @@ export function TeamView({ v }: { v: CraftManagerView }) {
           filename="team-workload"
           columns={[
             { header: "Person", value: (r) => r.name },
-            { header: "Specialty", value: (r) => r.specialtyLabel },
+            { header: "Job role", value: (r) => r.specialtyLabel },
             ...v.team.dates.map((d, i) => ({ header: d, value: (r: (typeof rows)[number]) => (r.heat[i] === null ? "leave" : r.heat[i]) })),
             { header: "On-time %", value: (r) => r.onTimePct ?? "" },
             { header: "QC first pass %", value: (r) => r.qcFirstPassPct ?? "" },
@@ -363,7 +363,7 @@ export function TeamView({ v }: { v: CraftManagerView }) {
               rowHref={(r) => r.href}
               columns={[
                 { key: "n", header: "Person", cell: (r) => <span className="font-medium">{r.name}</span> },
-                { key: "s", header: "Specialty", cell: (r) => <span className="text-ink-muted">{r.specialtyLabel}</span> },
+                { key: "s", header: "Job role", cell: (r) => <span className="text-ink-muted">{r.specialtyLabel}</span> },
                 { key: "o", header: "On-time (30d)", align: "right", cell: (r) => (r.onTimePct === null ? "—" : `${r.onTimePct}%`) },
                 { key: "q", header: "QC first pass", align: "right", cell: (r) => (r.qcFirstPassPct === null ? "—" : `${r.qcFirstPassPct}%`) },
                 { key: "d", header: "Done (30d)", align: "right", cell: (r) => r.done30 },

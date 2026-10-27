@@ -605,7 +605,7 @@ function EditPersonDrawer({ person, onClose, onDone }: { person: PersonLite; onC
               ))}
             </select>
           </Field>
-          <Field label="Specialty" htmlFor="ep-spec">
+          <Field label="Job role" htmlFor="ep-spec">
             <select id="ep-spec" className={inputCls} value={v.specialty} onChange={(e) => set("specialty", e.target.value)}>
               <option value="">None</option>
               {CRAFT_SPECIALTY_OPTIONS.map((s) => (

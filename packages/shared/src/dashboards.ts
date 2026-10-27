@@ -188,7 +188,7 @@ export const DASHBOARD_BUILTINS: Record<DashboardBuiltinKey, DashboardBuiltinDef
       { key: "kpis", label: "My numbers with period picker", size: "full" },
       { key: "next", label: "What to do next", size: "wide" },
       { key: "insights", label: "What the numbers say", size: "third" },
-      { key: "panels", label: "My specialty's panels", size: "full", hint: "Different for each specialty" },
+      { key: "panels", label: "My job role's panels", size: "full", hint: "Different for each job role" },
       { key: "workload", label: "Weekly workload", size: "full" },
     ],
   },

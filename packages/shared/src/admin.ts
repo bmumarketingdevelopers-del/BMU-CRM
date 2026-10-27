@@ -10,7 +10,7 @@ export const inviteUserSchema = z.object({
   teamId: z.string().optional(),
   managerId: z.string().optional(),
   branchId: z.string().optional(),
-  specialty: z.string().trim().toLowerCase().regex(/^[a-z][a-z_]{1,39}$/, "Pick a specialty from the list").nullable().optional(),
+  specialty: z.string().trim().toLowerCase().regex(/^[a-z][a-z_]{1,39}$/, "Pick a job role from the list").nullable().optional(),
 }).refine((v) => v.email || v.phone, { message: "Give an email or phone", path: ["email"] });
 export type InviteUser = z.infer<typeof inviteUserSchema>;
 
@@ -22,7 +22,7 @@ export const updateUserSchema = z.object({
   managerId: z.string().nullable().optional(),
   branchId: z.string().nullable().optional(),
   status: z.enum(["invited", "active", "suspended"]).optional(),
-  specialty: z.string().trim().toLowerCase().regex(/^[a-z][a-z_]{1,39}$/, "Pick a specialty from the list").nullable().optional(),
+  specialty: z.string().trim().toLowerCase().regex(/^[a-z][a-z_]{1,39}$/, "Pick a job role from the list").nullable().optional(),
 });
 export type UpdateUser = z.infer<typeof updateUserSchema>;
 

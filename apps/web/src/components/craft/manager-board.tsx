@@ -109,8 +109,8 @@ export function AssignmentBoard({ v, onChanged }: { v: CraftManagerView; onChang
             </option>
           ))}
         </Select>
-        <Select aria-label="Filter by specialty" value={specialty} onChange={(e) => setSpecialty(e.target.value)}>
-          <option value="">Any specialty</option>
+        <Select aria-label="Filter by job role" value={specialty} onChange={(e) => setSpecialty(e.target.value)}>
+          <option value="">Any job role</option>
           {v.filters.specialties.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
@@ -446,8 +446,8 @@ function AdhocTask({ v, onDone }: { v: CraftManagerView; onDone: (msg: string) =
         </Select>
       </label>
       <label className="text-xs md:col-span-2">
-        <span className="mb-1 block text-ink-muted">Specialty</span>
-        <Select className="w-full" value={specialty} onChange={(e) => setSpecialty(e.target.value)} aria-label="Specialty">
+        <span className="mb-1 block text-ink-muted">Job role</span>
+        <Select className="w-full" value={specialty} onChange={(e) => setSpecialty(e.target.value)} aria-label="Job role">
           <option value="">Anyone</option>
           {v.filters.specialties.map((s) => (
             <option key={s.id} value={s.id}>

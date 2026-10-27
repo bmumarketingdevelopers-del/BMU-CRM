@@ -152,7 +152,7 @@ function DetailsPanel({ p, onSaved }: { p: MyProfile; onSaved: () => void }) {
             ...(p.user.team ? [{ k: "Team", v: p.user.team }] : []),
             { k: "Manager", v: p.user.manager?.name ?? "—" },
             { k: "Role", v: p.user.roles.map(roleLabel).join(" + ") || "—" },
-            ...(p.user.specialty ? [{ k: "Specialty", v: craftSpecialtyLabel(p.user.specialty) }] : []),
+            ...(p.user.specialty ? [{ k: "Job role", v: craftSpecialtyLabel(p.user.specialty) }] : []),
           ]}
         />
       )}

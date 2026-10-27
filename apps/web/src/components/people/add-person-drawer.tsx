@@ -176,8 +176,8 @@ export function AddPersonDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
       footerNote={opts?.can.addNeedsApproval ? "A Founder or the HR Department Head approves before the person is added and invited." : v.sendInvite ? "They get an SMS and an email with a link to sign in. Status: Invited." : null}
       more={
         <>
-          <Field label="Specialty" hint="Picks their specialist dashboard (optional)">
-            <select className={inputCls} value={v.specialty} onChange={(e) => set("specialty", e.target.value)} aria-label="Specialty">
+          <Field label="Job role" hint="e.g. Developer, UX/UI designer. Picks their work dashboard (optional)">
+            <select className={inputCls} value={v.specialty} onChange={(e) => set("specialty", e.target.value)} aria-label="Job role">
               <option value="">None</option>
               {CRAFT_SPECIALTY_OPTIONS.map((s) => (
                 <option key={s.id} value={s.id}>

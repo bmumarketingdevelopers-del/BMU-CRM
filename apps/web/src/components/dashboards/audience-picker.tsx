@@ -24,7 +24,7 @@ const toggle = (xs: string[], x: string) => (xs.includes(x) ? xs.filter((y) => y
 
 export function PlacementSelect({ value, onChange }: { value: DashboardPlacement; onChange: (v: DashboardPlacement) => void }) {
   return (
-    <Field label="Where it shows" htmlFor="dash-placement" hint="A home page made for someone replaces their usual one. Named people win over specialties, then roles.">
+    <Field label="Where it shows" htmlFor="dash-placement" hint="A home page made for someone replaces their usual one. Named people win over job roles, then roles.">
       <Select id="dash-placement" value={value} onChange={(e) => onChange(e.target.value as DashboardPlacement)} className="w-full">
         {DASHBOARD_PLACEMENTS.map((p) => (
           <option key={p} value={p}>
@@ -55,7 +55,7 @@ export function AudiencePicker({ value, onChange, studio }: { value: DashboardAu
               ))}
             </div>
           </Field>
-          <Field label="Specialties">
+          <Field label="Job roles">
             <div className="flex flex-wrap gap-1.5">
               {studio.specialties.map((s) => (
                 <Chip key={s.id} on={value.specialties.includes(s.id)} label={s.label} onToggle={() => onChange({ ...value, specialties: toggle(value.specialties, s.id) })} />

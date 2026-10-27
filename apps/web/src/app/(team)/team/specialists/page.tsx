@@ -28,12 +28,12 @@ export default function SpecialistsPage() {
             <StatTile label="Busiest" value={busiest ? busiest.name.split(" ")[0] : "—"} hint={busiest ? `${busiest.open} open tasks` : undefined} />
           </StatRow>
           <Panel
-            title="By specialty"
+            title="By job role"
             flush
             action={
               <div className="flex items-center gap-2">
-                <Select aria-label="Filter by specialty" value={spec} onChange={(e) => setSpec(e.target.value)}>
-                  <option value="">All specialties</option>
+                <Select aria-label="Filter by job role" value={spec} onChange={(e) => setSpec(e.target.value)}>
+                  <option value="">All job roles</option>
                   {CRAFT_SPECIALTY_OPTIONS.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.label}
@@ -45,7 +45,7 @@ export default function SpecialistsPage() {
                   filename="specialists"
                   columns={[
                     { header: "Name", value: (r: CraftSpecialistRow) => r.name },
-                    { header: "Specialty", value: (r: CraftSpecialistRow) => r.specialtyLabel },
+                    { header: "Job role", value: (r: CraftSpecialistRow) => r.specialtyLabel },
                     { header: "Department", value: (r: CraftSpecialistRow) => r.department ?? "" },
                     { header: "Open", value: (r: CraftSpecialistRow) => r.open },
                     { header: "Overdue", value: (r: CraftSpecialistRow) => r.overdue },
@@ -61,10 +61,10 @@ export default function SpecialistsPage() {
               rows={rows}
               rowKey={(r) => r.id}
               rowHref={(r) => r.href}
-              empty="No one has a specialty yet. Set it on the Users page."
+              empty="No one has a job role yet. Set it on the Users page."
               columns={[
                 { key: "n", header: "Name", cell: (r) => <span className="font-medium">{r.name}</span> },
-                { key: "s", header: "Specialty", cell: (r) => <Badge tone="dark">{r.specialtyLabel}</Badge> },
+                { key: "s", header: "Job role", cell: (r) => <Badge tone="dark">{r.specialtyLabel}</Badge> },
                 { key: "d", header: "Department", cell: (r) => <span className="text-ink-muted">{r.department ?? "—"}</span> },
                 { key: "o", header: "Open", align: "right", cell: (r) => r.open },
                 { key: "l", header: "Overdue", align: "right", cell: (r) => (r.overdue ? <span className="font-medium text-red">{r.overdue}</span> : 0) },

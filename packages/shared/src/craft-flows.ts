@@ -60,7 +60,7 @@ export const craftSpecialtySchema = z
   .string()
   .trim()
   .toLowerCase()
-  .regex(/^[a-z][a-z_]{1,39}$/, "Pick a specialty from the list")
+  .regex(/^[a-z][a-z_]{1,39}$/, "Pick a job role from the list")
   .nullable();
 
 const ALL_STEP_KEYS = new Set<string>(CRAFT_SPECIALTIES.flatMap((s) => s.steps));
