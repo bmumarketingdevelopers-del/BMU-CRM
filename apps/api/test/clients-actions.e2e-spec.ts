@@ -498,6 +498,26 @@ describe('lists, bulk and import', () => {
     await http().get('/clients-actions/list').set(as('design')).expect(code(403));
   });
 
+  it('filters by service, onboarded dates and Client Manager', async () => {
+    const svc = await prisma.engagement.findFirstOrThrow({ where: { clientOrgId: ids.manual, deletedAt: null }, include: { service: true } });
+    const ofIds = (r: { body: { id: string }[] }) => r.body.map((c) => c.id);
+    const bySvc = await http().get(`/clients-actions/list?service=${encodeURIComponent(svc.service.name)}`).set(as('lead')).expect(code(200));
+    expect(ofIds(bySvc)).toContain(ids.manual);
+    expect(bySvc.body.every((c: { services: { serviceName: string }[] }) => c.services.some((s) => s.serviceName === svc.service.name))).toBe(true);
+    const noSvc = await http().get('/clients-actions/list?service=No%20such%20service').set(as('lead')).expect(code(200));
+    expect(noSvc.body).toEqual([]);
+    const row = bySvc.body.find((c: { id: string }) => c.id === ids.manual) as { onboardedAt: string; am: { id: string } | null };
+    const day = new Date(Date.parse(row.onboardedAt) + 330 * 60_000).toISOString().slice(0, 10);
+    expect(ofIds(await http().get(`/clients-actions/list?onboardedFrom=${day}&onboardedTo=${day}`).set(as('lead')).expect(code(200)))).toContain(ids.manual);
+    expect(ofIds(await http().get('/clients-actions/list?onboardedTo=2000-01-01').set(as('lead')).expect(code(200)))).not.toContain(ids.manual);
+    expect(ofIds(await http().get('/clients-actions/list?onboardedFrom=2999-01-01').set(as('lead')).expect(code(200)))).toEqual([]);
+    if (row.am) {
+      const byAm = await http().get(`/clients-actions/list?am=${row.am.id}&service=${encodeURIComponent(svc.service.name)}`).set(as('lead')).expect(code(200));
+      expect(ofIds(byAm)).toContain(ids.manual);
+      expect(byAm.body.every((c: { am: { id: string } | null }) => c.am?.id === row.am!.id)).toBe(true);
+    }
+  });
+
   it('bulk tags and archives with a reason (undo available); CMs cannot archive', async () => {
     const extra = await create('lead', base('Bulk One'));
     await http().post('/clients-actions/bulk').set(as('am')).send({ ids: [extra.client.id], action: 'archive', reason: 'Duplicate entry' }).expect(code(403));

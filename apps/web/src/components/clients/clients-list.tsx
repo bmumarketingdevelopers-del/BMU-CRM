@@ -15,8 +15,8 @@ import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { healthLabel, healthTone } from "@/components/clients-table";
 
-type Filters = Required<Pick<ClientsListQuery, "am" | "health" | "industry" | "branch" | "status" | "tag" | "archived">>;
-const EMPTY: Filters = { am: "", health: "", industry: "", branch: "", status: "", tag: "", archived: "" };
+type Filters = Required<Pick<ClientsListQuery, "am" | "health" | "industry" | "branch" | "status" | "tag" | "archived" | "service" | "onboardedFrom" | "onboardedTo">>;
+const EMPTY: Filters = { am: "", health: "", industry: "", branch: "", status: "", tag: "", archived: "", service: "", onboardedFrom: "", onboardedTo: "" };
 const STATUS: { value: string; label: string }[] = [
   { value: "active", label: "Active services" },
   { value: "onboarding", label: "Onboarding" },
@@ -24,6 +24,19 @@ const STATUS: { value: string; label: string }[] = [
   { value: "offboarding", label: "Offboarding" },
   { value: "no_services", label: "No services" },
 ];
+/** Today's date in India (YYYY-MM-DD), shifted by whole months. */
+const istDay = (monthsBack = 0, firstOfMonth = false) => {
+  const d = new Date(Date.now() + 330 * 60_000);
+  if (monthsBack || firstOfMonth) d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - monthsBack);
+  return d.toISOString().slice(0, 10);
+};
+const ONBOARDED_PICKS: { label: string; from: () => string }[] = [
+  { label: "This month", from: () => istDay(0, true) },
+  { label: "Last 3 months", from: () => istDay(2, true) },
+  { label: "This year", from: () => `${istDay().slice(0, 4)}-01-01` },
+];
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 const toggleCls = (on: boolean) => `border px-2.5 py-1.5 text-xs ${on ? "border-charcoal bg-charcoal text-ivory" : "border-border text-ink-muted hover:text-ink"}`;
 
 /** The Clients list: search, filters, saved views, bulk (reassign CM, tag, archive, export), add / migrate / import. */
@@ -55,7 +68,8 @@ export function ClientsList() {
   const active = Object.values(filters).filter(Boolean).length;
   const canAdd = clientsCanAdd(me);
   const tags = useMemo(() => [...new Map((all ?? []).flatMap((c) => c.tags).map((t) => [t.name, t])).values()], [all]);
-  const ams = useMemo(() => [...new Map((all ?? []).filter((c) => c.am).map((c) => [c.am!.id, c.am!.name])).entries()], [all]);
+  const ams = useMemo(() => [...new Map([...(opts.data?.ams.map((a) => [a.id, a.name] as [string, string]) ?? []), ...(all ?? []).filter((c) => c.am).map((c) => [c.am!.id, c.am!.name] as [string, string])]).entries()].sort((a, b) => a[1].localeCompare(b[1])), [all, opts.data]);
+  const services = useMemo(() => [...new Set([...(opts.data?.services.map((s) => s.name) ?? []), ...(all ?? []).flatMap((c) => c.services.map((s) => s.serviceName))])].sort(), [all, opts.data]);
 
   return (
     <div className="grid gap-4 [&>*]:min-w-0">
@@ -92,6 +106,7 @@ export function ClientsList() {
             { header: "Active services", value: (r) => r.activeServices },
             { header: "Services", value: (r) => r.services.map((s) => `${s.serviceName} (${s.currentGate})`).join("; ") },
             { header: "Tags", value: (r) => r.tags.map((t) => t.name).join("; ") },
+            { header: "Onboarded", value: (r) => fmtDay(r.onboardedAt) },
             { header: "Added", value: (r) => r.createdAt.slice(0, 10) },
           ]}
         />
@@ -126,9 +141,17 @@ export function ClientsList() {
           <select className={inputCls} value={filters.am} onChange={(e) => set({ am: e.target.value })} aria-label="Client Manager">
             <option value="">Any Client Manager</option>
             <option value="none">Unassigned</option>
-            {(opts.data?.ams.map((a) => [a.id, a.name] as [string, string]) ?? ams).map(([id, name]) => (
+            {ams.map(([id, name]) => (
               <option key={id} value={id}>
                 {name}
+              </option>
+            ))}
+          </select>
+          <select className={inputCls} value={filters.service} onChange={(e) => set({ service: e.target.value })} aria-label="Service">
+            <option value="">Any service</option>
+            {services.map((s) => (
+              <option key={s} value={s}>
+                {s}
               </option>
             ))}
           </select>
@@ -160,6 +183,24 @@ export function ClientsList() {
               ))}
             </select>
           )}
+          <div className="grid gap-1.5 sm:col-span-2 lg:col-span-3" data-testid="clients-onboarded">
+            <span className="text-xs text-ink-muted">Onboarded between</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="date" className={`${inputCls} w-auto`} value={filters.onboardedFrom} max={filters.onboardedTo || undefined} onChange={(e) => set({ onboardedFrom: e.target.value })} aria-label="Onboarded from" />
+              <span className="text-xs text-ink-muted">to</span>
+              <input type="date" className={`${inputCls} w-auto`} value={filters.onboardedTo} min={filters.onboardedFrom || undefined} onChange={(e) => set({ onboardedTo: e.target.value })} aria-label="Onboarded to" />
+              {ONBOARDED_PICKS.map((p) => (
+                <button key={p.label} type="button" className={toggleCls(filters.onboardedFrom === p.from() && filters.onboardedTo === istDay())} onClick={() => set({ onboardedFrom: p.from(), onboardedTo: istDay() })}>
+                  {p.label}
+                </button>
+              ))}
+              {(filters.onboardedFrom || filters.onboardedTo) && (
+                <button type="button" className="text-xs text-ink-muted underline" onClick={() => set({ onboardedFrom: "", onboardedTo: "" })}>
+                  Any date
+                </button>
+              )}
+            </div>
+          </div>
           {active > 0 && (
             <button type="button" className="justify-self-start text-xs text-ink-muted underline" onClick={() => setFilters(EMPTY)}>
               Clear filters
@@ -277,6 +318,7 @@ function ClientRows({ rows, sel }: { rows: ClientsListRow[]; sel: ReturnType<typ
                 {c.industry && <span>{c.industry}</span>}
                 {c.contact.name && <span>{c.contact.name}</span>}
                 {c.branch && <span>{c.branch}</span>}
+                <span>Onboarded {fmtDay(c.onboardedAt)}</span>
               </p>
               <p className="mt-0.5 flex flex-wrap gap-1">
                 {c.paymentStatus === "pending" && <Badge tone="amber">Payment pending</Badge>}

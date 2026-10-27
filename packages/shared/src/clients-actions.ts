@@ -341,8 +341,11 @@ export type ClientsListRow = {
   offboarding: ClientsOffboardStatus | null;
   archivedAt: string | null;
   createdAt: string;
+  /** Client since: the migrated client's tenure start, else the day the client was added. */
+  onboardedAt: string;
 };
-export type ClientsListQuery = { q?: string; am?: string; health?: string; industry?: string; branch?: string; status?: string; tag?: string; archived?: string };
+/** service: a service name; onboardedFrom / onboardedTo: IST dates (YYYY-MM-DD), both inclusive. */
+export type ClientsListQuery = { q?: string; am?: string; health?: string; industry?: string; branch?: string; status?: string; tag?: string; archived?: string; service?: string; onboardedFrom?: string; onboardedTo?: string };
 
 export type ClientsCreateResult = {
   client: { id: string; name: string };

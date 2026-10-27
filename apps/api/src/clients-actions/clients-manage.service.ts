@@ -38,6 +38,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assertStaff, contactOf, hasHandoverAccess, isAdmin, isClientLead, loadClient, runsClient, seesAllClients } from './clients-access.js';
+import { istDate } from '../flows/flow-util.js';
 import { ClientsCreateService } from './clients-create.service.js';
 
 const INACTIVE = ['paused', 'offboarding', 'closed', 'delivered'];
@@ -108,6 +109,7 @@ export class ClientsManageService implements OnModuleInit {
     if (q.health) where = { ...where, health: q.health };
     if (q.industry) where = { ...where, industry: q.industry };
     if (q.branch) where = { ...where, branchId: q.branch };
+    if (q.service) where = { AND: [where, { engagements: { some: { deletedAt: null, service: { name: q.service } } } }] };
     if (q.q?.trim()) {
       const s = q.q.trim();
       where = { AND: [where, { OR: [{ name: { contains: s, mode: 'insensitive' } }, { industry: { contains: s, mode: 'insensitive' } }, { gstin: { contains: s.toUpperCase() } }, { am: { name: { contains: s, mode: 'insensitive' } } }] }] };
@@ -143,8 +145,12 @@ export class ClientsManageService implements OnModuleInit {
         offboarding: off?.status ?? null,
         archivedAt: c.archivedAt?.toISOString() ?? null,
         createdAt: c.createdAt.toISOString(),
+        onboardedAt: (c.tenureStart ?? c.createdAt).toISOString(),
       };
     });
+    const day = /^\d{4}-\d{2}-\d{2}$/;
+    if (q.onboardedFrom && day.test(q.onboardedFrom)) out = out.filter((r) => istDate(new Date(r.onboardedAt)) >= q.onboardedFrom!);
+    if (q.onboardedTo && day.test(q.onboardedTo)) out = out.filter((r) => istDate(new Date(r.onboardedAt)) <= q.onboardedTo!);
     if (q.status === 'active') out = out.filter((r) => r.activeServices > 0);
     else if (q.status === 'onboarding') out = out.filter((r) => r.services.some((s) => s.currentGate === 'G1' && !INACTIVE.includes(s.status)));
     else if (q.status === 'payment_pending') out = out.filter((r) => r.paymentStatus === 'pending');
