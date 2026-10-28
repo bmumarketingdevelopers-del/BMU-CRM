@@ -1,23 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
-import { dashboardDefaultLayout } from "@bmu/shared";
-import { BarList, ColumnChart, Empty, Panel, StackBar, StatRow, StatTile } from "@/components/dash";
+import { Fragment, type ReactNode } from "react";
+import { dashboardDefaultLayout, type DashboardWidget } from "@bmu/shared";
+import { ColumnChart, Empty, Panel, StatRow, StatTile } from "@/components/dash";
 import { CustomiseLink } from "@/components/dashboards/customise-link";
 import { DashGrid, type DashLayoutProps } from "@/components/dashboards/grid";
 import { Badge, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { AiWeeklyDigest } from "@/components/ai/digest-panel";
-import { ForecastRisks } from "@/components/intelligence/forecast-risks";
-import { AttendanceTodayByDepartment } from "@/components/attendance/today-by-department";
-import { NewClientsPanel } from "@/components/clients/new-clients-panel";
 import { ContentWeekPanel } from "@/components/deliver/content-week-panel";
 import { ClientFilesPanel } from "@/components/ops/client-files-panel";
 import { Legend, WithData, fmtDateTime, inr, inrShort, pctText } from "./_insights/kit";
 
-const stageTone = ["grey", "muted", "amber", "dark", "green", "red"] as const;
+// Sections that open a Command Centre page: shown as cards, gathered into one row of cards where the first one sits.
+const CARD_SECTIONS = ["forecast_risks", "pipeline", "overdue_invoices", "at_risk_clients", "attendance_today", "new_clients"];
+// The weekly summary lists at most 6 overdue invoices and at-risk clients.
+const LIST_CAP = 6;
+const capped = (n: number) => (n >= LIST_CAP ? `${LIST_CAP}+` : n);
 
 export default function WeeklyReview({ layout, canEdit, dashboardId }: DashLayoutProps & { canEdit?: boolean; dashboardId?: string }) {
   return (
@@ -36,17 +37,48 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
       {(d) => {
         const m = d.money;
         const change = m && m.revenueLastMonthPaise ? ((m.revenueThisMonthPaise - m.revenueLastMonthPaise) / m.revenueLastMonthPaise) * 100 : null;
+        const overdue = d.attention.overdueInvoices;
+        const atRisk = d.attention.atRiskClients;
         const sections: Record<string, ReactNode> = {
           ai_digest: <AiWeeklyDigest />,
-          // v20: revenue forecast, churn risk, likely wins, slipping work and capacity, with reasons.
-          forecast_risks: (
-            <div className="min-w-0">
-              <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
-                Forecast &amp; risks · <Link href="/admin/intelligence" className="normal-case tracking-normal underline">open</Link>
-              </h2>
-              <ForecastRisks compact />
-            </div>
+          // v20: revenue forecast, churn risk, likely wins, slipping work and capacity, with reasons (on its own page).
+          forecast_risks: <PlaceCard href="/admin/intelligence" title="Forecast & risks" hint="Revenue forecast, churn risk, likely wins, slipping work and capacity, each with its reasons." />,
+          pipeline: (
+            <PlaceCard
+              href="/admin/pipeline"
+              title="Pipeline"
+              value={d.openLeads}
+              unit={d.openLeads === 1 ? "open lead" : "open leads"}
+              hint={
+                d.pipeline
+                  .filter((p) => p.count)
+                  .map((p) => `${p.count} ${p.label.toLowerCase()}`)
+                  .join(" · ") || "No leads yet."
+              }
+            />
           ),
+          overdue_invoices: overdue ? (
+            <PlaceCard
+              href="/admin/collections"
+              title="Overdue invoices"
+              value={capped(overdue.length)}
+              tone={overdue.length ? "warn" : "default"}
+              hint={overdue.length ? `Oldest is ${overdue[0].daysOverdue} days late.` : "No overdue invoices."}
+            />
+          ) : null,
+          at_risk_clients: (
+            <PlaceCard
+              href="/admin/client-health"
+              title="Clients at risk"
+              value={capped(atRisk.length)}
+              tone={atRisk.some((c) => c.score < 50) ? "bad" : atRisk.length ? "warn" : "default"}
+              hint={atRisk.length ? atRisk.slice(0, 3).map((c) => c.name).join(", ") : "Every client looks healthy."}
+            />
+          ),
+          // v30: who is in today (hidden for people without attendance access).
+          attendance_today: <AttendanceCard />,
+          // v33: clients added in the last 30 days (hidden for people who can't see them).
+          new_clients: <NewClientsCard />,
           money_tiles: m ? (
             <StatRow cols={4}>
               <StatTile
@@ -70,10 +102,6 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
               <StatTile label="QC pass rate" value={pctText(d.qcPassRate)} hint={`${d.qcChecksThisWeek} checks this week`} tone={d.qcPassRate !== null && d.qcPassRate < 70 ? "warn" : "default"} href="/admin/quality" />
             </StatRow>
           ),
-          // v30: who is in today, by department (hidden for people without attendance access).
-          attendance_today: <AttendanceTodayByDepartment />,
-          // v33: clients added in the last 30 days, and who added them (including Client Managers).
-          new_clients: <NewClientsPanel />,
           // v34: social content at a glance.
           content_week: <ContentWeekPanel />,
           // v35: every file sent to and received from clients (Founder).
@@ -83,43 +111,6 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
               <ColumnChart data={m.byMonth.map((p) => ({ label: p.label, value: p.collectedPaise, secondary: p.invoicedPaise }))} format={inrShort} highlightLast={false} />
             </Panel>
           ) : null,
-          pipeline: (
-            <Panel
-              className="min-w-0 h-full"
-              title="Pipeline"
-              subtitle="Leads by stage"
-              action={
-                <Link href="/admin/pipeline" className="text-xs text-ink-muted hover:text-ink">
-                  Open pipeline →
-                </Link>
-              }
-            >
-              {d.pipeline.some((p) => p.count) ? (
-                <>
-                  <StackBar parts={d.pipeline.map((p, i) => ({ label: p.label, value: p.count, tone: stageTone[i] ?? "dark" }))} />
-                  <div className="mt-6 border-t border-border pt-5">
-                    <BarList items={d.pipeline.filter((p) => p.stage !== "lost").map((p) => ({ label: p.label, value: p.count, highlight: p.stage === "won", href: "/admin/pipeline" }))} format={(n) => `${n} lead${n === 1 ? "" : "s"}`} />
-                  </div>
-                </>
-              ) : (
-                <Empty>No leads yet.</Empty>
-              )}
-            </Panel>
-          ),
-          overdue_invoices: d.attention.overdueInvoices ? (
-            <Attention title="Overdue invoices" href="/admin/collections" empty="No overdue invoices.">
-              {d.attention.overdueInvoices.map((i) => (
-                <Row key={i.id} href={`/admin/finance/invoices/${i.id}`} title={i.client} meta={`${i.number} · ${i.daysOverdue} days late`} right={<span className="tabular-nums">{inr(i.balancePaise)}</span>} />
-              ))}
-            </Attention>
-          ) : null,
-          at_risk_clients: (
-            <Attention title="Clients at risk" href="/admin/client-health" empty="Every client looks healthy.">
-              {d.attention.atRiskClients.map((c) => (
-                <Row key={c.id} href={`/team/clients/${c.id}`} title={c.name} meta={c.reasons.slice(0, 2).join(" · ")} right={<Badge tone={c.score < 50 ? "red" : "amber"}>{c.score}/100</Badge>} />
-              ))}
-            </Attention>
-          ),
           blocked_tasks: (
             <Attention title="Blocked tasks" href="/team/tasks" empty="Nothing is blocked.">
               {d.attention.blockedTasks.map((t) => (
@@ -135,10 +126,77 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
             </Attention>
           ),
         };
-        return <DashGrid host="command_centre" items={layout ?? dashboardDefaultLayout("command_centre")} sections={sections} wrap={wrap} />;
+        const items = layout ?? dashboardDefaultLayout("command_centre");
+        // The Studio editor (wrap) keeps each card on its own so it can be moved or hidden.
+        if (wrap) return <DashGrid host="command_centre" items={items} sections={sections} wrap={wrap} />;
+        const cards = items.filter(isCard);
+        sections.cards = cards.length ? (
+          <div className="min-w-0">
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Open a section</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {cards.map((w) => (
+                <Fragment key={w.id}>{sections[w.section]}</Fragment>
+              ))}
+            </div>
+          </div>
+        ) : null;
+        const at = items.findIndex(isCard);
+        const grouped = at < 0 ? items : [...items.slice(0, at), { id: "command_centre.cards", type: "section" as const, size: "full" as const, dashboard: "command_centre" as const, section: "cards" }, ...items.slice(at).filter((w) => !isCard(w))];
+        return <DashGrid host="command_centre" items={grouped} sections={sections} />;
       }}
     </WithData>
   );
+}
+
+const isCard = (w: DashboardWidget): w is Extract<DashboardWidget, { type: "section" }> => w.type === "section" && w.dashboard === "command_centre" && CARD_SECTIONS.includes(w.section);
+
+/** A card that opens a Command Centre page: a title, an optional headline number and one line of context. */
+function PlaceCard({ href, title, value, unit, hint, tone = "default" }: { href: string; title: string; value?: ReactNode; unit?: string; hint: ReactNode; tone?: "default" | "warn" | "bad" }) {
+  const toneCls = { default: "", warn: "text-[#9a6b00]", bad: "text-[#b4432c]" }[tone];
+  return (
+    <Link href={href} className="group flex h-full min-w-0 flex-col border border-border bg-surface-raised p-5 transition-colors hover:bg-canvas/50">
+      <span className="flex items-center justify-between gap-3">
+        <span className="text-[15px] font-semibold tracking-tight">{title}</span>
+        <span aria-hidden className="text-ink-muted transition-colors group-hover:text-ink">
+          →
+        </span>
+      </span>
+      {value !== undefined && (
+        <span className={`mt-3 text-[28px] leading-none font-semibold tracking-tight tabular-nums ${toneCls}`}>
+          {value}
+          {unit && <span className="ml-2 text-sm font-normal tracking-normal text-ink-muted">{unit}</span>}
+        </span>
+      )}
+      <span className="mt-2 text-xs text-ink-muted">{hint}</span>
+    </Link>
+  );
+}
+
+/** Today's attendance in one line; hidden for people without attendance access (403) or with no departments. */
+function AttendanceCard() {
+  const s = useLoad(() => api.adminOrg.attendanceToday(), { live: false });
+  const d = s.data;
+  if (!d || !d.departments.length) return null;
+  const t = d.totals;
+  const off = d.todayKind.kind !== "working";
+  return (
+    <PlaceCard
+      href="/admin/attendance"
+      title={`Attendance today${d.scope.all ? "" : ` · ${d.scope.departments.join(", ")}`}`}
+      value={off ? undefined : `${t.in}/${t.total}`}
+      unit={off ? undefined : "in"}
+      tone={!off && t.notIn ? "warn" : "default"}
+      hint={off ? (d.todayKind.kind === "holiday" ? `Holiday${d.todayKind.label ? `: ${d.todayKind.label}` : ""}. No check-in needed.` : "Weekly off. No check-in needed.") : `${t.late} late · ${t.onLeave} on leave · ${t.notIn} not checked in`}
+    />
+  );
+}
+
+/** Clients added in the last 30 days; hidden for people who can't see them (403). */
+function NewClientsCard() {
+  const s = useLoad(() => api.insights.newClients(), { live: ["ClientOrg"] });
+  const d = s.data;
+  if (!d) return null;
+  return <PlaceCard href="/admin/clients" title="New clients" value={d.total} unit={`in ${d.days} days`} hint={d.byCm ? `${d.byCm} added by Client Managers.` : d.total ? "Open to see who added them." : "No clients added lately."} />;
 }
 
 function Attention({ title, href, empty, children }: { title: string; href: string; empty: string; children: ReactNode[] }) {
