@@ -12,7 +12,7 @@ import type {
   ViewAsView,
 } from "../security-types.js";
 import type { GoalInput, GoalView, IntelligenceOverview, MetricAlertEventView, MetricAlertInput, MetricAlertView, MetricUnit, MetricValueView, ScheduledReportInput, ScheduledReportView } from "../metrics/index.js";
-import type { QuickActionInput, SyncOpInput, SyncOpResult, SyncPullView } from "../sync/index.js";
+import type { QuickActionInput, SyncOpInput, SyncOpResult, SyncPullView, WebPushConfig, WebPushSubscribeInput } from "../sync/index.js";
 
 const qs = (params: Record<string, string | undefined>) => {
   const s = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => !!e[1])).toString();
@@ -92,5 +92,10 @@ export const v20Api = (t: Transport) => ({
     registerPush: (token: string, platform: "ios" | "android" | "web") => t.post<{ ok: true }>("/devices/push-token", { token, platform }),
     unregisterPush: (token: string) => t.del<{ ok: true }>(`/devices/push-token/${encodeURIComponent(token)}`),
     quickAction: (body: QuickActionInput) => t.post<{ ok: true; message: string }>("/devices/quick-action", body),
+    // v44 browser notifications (Web Push)
+    webPushConfig: () => t.get<WebPushConfig>("/devices/web-push"),
+    webPushSubscribe: (sub: WebPushSubscribeInput) => t.post<WebPushConfig>("/devices/web-push", sub),
+    webPushUnsubscribe: (endpoint: string) => t.post<WebPushConfig>("/devices/web-push/remove", { endpoint }),
+    webPushTest: () => t.post<{ sent: number }>("/devices/web-push/test"),
   },
 });

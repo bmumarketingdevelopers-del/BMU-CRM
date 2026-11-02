@@ -2,16 +2,24 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { NotificationView } from "@bmu/shared";
 import { api } from "@/lib/api";
+import { browserAlertsSupported, syncBrowserAlerts } from "@/lib/web-push";
 import { when } from "@/components/request-bits";
 import { useLiveChanges } from "@/lib/live";
 
-/** In-app notifications. v13: new ones appear at once (live updates); still checks every 30 seconds as a fallback. Every item deep-links to the exact screen. */
+/**
+ * In-app notifications. v13: new ones appear at once (live updates); still checks every 30 seconds as a fallback. Every
+ * item deep-links to the exact screen. v44: also keeps this browser's notifications (Web Push) linked to who is signed in,
+ * and offers to turn them on until the person has decided.
+ */
 export function NotificationBell() {
   const [data, setData] = useState<{ unread: number; items: NotificationView[] }>();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const path = usePathname() ?? "";
+  const [askPush, setAskPush] = useState(false);
 
   const refresh = useCallback(() => {
     api.notifications.list().then(setData, () => {});
@@ -23,6 +31,11 @@ export function NotificationBell() {
     return () => clearInterval(t);
   }, [refresh]);
   useLiveChanges(refresh, ["Notification"]);
+
+  useEffect(() => {
+    void syncBrowserAlerts().finally(() => setAskPush(browserAlertsSupported() && Notification.permission === "default"));
+  }, []);
+  const profile = path.startsWith("/client") ? "/client/profile" : path.startsWith("/creator") ? "/creator/profile" : "/team/profile";
 
   useEffect(() => {
     if (!open) return;
@@ -87,6 +100,11 @@ export function NotificationBell() {
             })}
             {data && data.items.length === 0 && <li className="px-3 py-6 text-center text-ink-muted">You&apos;re all caught up.</li>}
           </ul>
+          {askPush && (
+            <Link href={profile} onClick={() => setOpen(false)} className="block border-t border-border px-3 py-2 text-xs text-ink-muted hover:bg-canvas/50 hover:text-ink">
+              Get these as pop-ups even when BMU Hub is closed. Turn on browser notifications →
+            </Link>
+          )}
         </div>
       )}
     </div>

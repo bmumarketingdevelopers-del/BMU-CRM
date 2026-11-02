@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { clientRoleLabels, type ClientTeamRole, type Me, type NotificationView } from "@bmu/shared";
 import { Empty, KeyValues, Panel } from "@/components/dash";
+import { BrowserAlertsPanel } from "@/components/service/browser-alerts";
 import { NotificationPrefsPanel } from "@/components/service/notification-prefs";
 import { ago } from "@/components/workspace/format";
 import { Button, Input, LoadState, PageTitle } from "@/components/ui";
@@ -21,6 +22,7 @@ export default function ClientProfilePage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
         <div className="grid content-start gap-6">
           {me.data ? <Details me={me.data} onSaved={me.reload} /> : <LoadState loading={me.loading} error={me.error} />}
+          <BrowserAlertsPanel />
           <NotificationPrefsPanel />
         </div>
         <Panel

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { formatINR, rupeesToPaise, type CreatorProfile } from "@bmu/shared";
 import { Empty, KeyValues, Panel } from "@/components/dash";
+import { BrowserAlertsPanel } from "@/components/service/browser-alerts";
 import { Badge, Button, Input, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
@@ -14,7 +15,10 @@ export default function CreatorProfilePage() {
   return (
     <div className="[&_.grid>*]:min-w-0">
       <PageTitle title="Profile" subtitle="Your details, the niches you create for and your standard rates. BMU sees these when choosing creators." />
-      {!p ? <LoadState loading={loaded.loading} error={loaded.error} /> : <ProfileBody key={JSON.stringify(p)} p={p} onSaved={setFresh} />}
+      <div className="grid gap-6">
+        {!p ? <LoadState loading={loaded.loading} error={loaded.error} /> : <ProfileBody key={JSON.stringify(p)} p={p} onSaved={setFresh} />}
+        <BrowserAlertsPanel />
+      </div>
     </div>
   );
 }

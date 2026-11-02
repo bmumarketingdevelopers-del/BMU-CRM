@@ -259,6 +259,19 @@ export const quickActionSchema = z.object({
 export type QuickActionInput = z.infer<typeof quickActionSchema>;
 export const pushTokenSchema = z.object({ token: z.string().trim().min(10).max(300), platform: z.enum(["ios", "android", "web"]) });
 
+// ------------------------------------------------------------------------------------------------ browser notifications
+
+/** v44: a browser's Web Push subscription (PushSubscription.toJSON()), sent when someone turns browser notifications on. */
+export const webPushSubscribeSchema = z.object({
+  endpoint: z.string().trim().url("Not a push address").max(1000),
+  keys: z.object({ p256dh: z.string().trim().min(20).max(200), auth: z.string().trim().min(8).max(100) }),
+});
+export type WebPushSubscribeInput = z.infer<typeof webPushSubscribeSchema>;
+/** available: the server has its push keys (VAPID) set up; publicKey is what the browser subscribes with. */
+export type WebPushConfig = { available: boolean; publicKey: string | null; devices: number };
+/** What the browser's service worker receives with each push. */
+export type WebPushPayload = { id: string; title: string; body: string | null; link: string | null; critical: boolean };
+
 /** Which quick actions a notification gets on the phone. */
 export function pushCategory(n: { kind: string; link: string | null; ref?: string | null }): { category: PushCategory; ref: string | null } {
   if (n.kind === "approval_needed" && n.ref) return { category: "approval", ref: n.ref };

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { LEAVE_TYPES, craftSpecialtyLabel, leaveTypeLabels, roleLabel, type LeaveType, type MyProfile } from "@bmu/shared";
+import { BrowserAlertsPanel } from "@/components/service/browser-alerts";
 import { NotificationPrefsPanel } from "@/components/service/notification-prefs";
 import { SecurityPanels } from "@/components/security/security-panel";
 import { MyCorrections } from "@/components/attendance/corrections";
@@ -64,6 +65,8 @@ export default function ProfilePage() {
             <LeaveTable p={p} onDone={setFresh} />
           </Panel>
         )}
+
+        <BrowserAlertsPanel />
 
         <NotificationPrefsPanel />
 
