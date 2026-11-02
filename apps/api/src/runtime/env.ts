@@ -48,6 +48,7 @@ export function checkEnv(env: NodeJS.ProcessEnv = process.env): EnvReport {
     { name: 'Forecast service (Python)', on: set('FORECAST_URL') },
     { name: 'File storage (Supabase)', on: set('SUPABASE_URL') && set('SUPABASE_SECRET_KEY') },
     { name: 'Google Meet (Google Calendar)', on: set('GOOGLE_CLIENT_ID') && set('GOOGLE_CLIENT_SECRET') },
+    { name: 'Browser notifications (Web Push)', on: set('VAPID_PUBLIC_KEY') && set('VAPID_PRIVATE_KEY') },
   ];
   return { errors, warnings, optional };
 }

@@ -3757,6 +3757,25 @@ model PushToken {
   @@map("push_tokens")
 }
 
+/// v44 browser notifications: one row per browser that turned them on (Web Push), so alerts arrive with the CRM tab
+/// closed. The endpoint belongs to the browser's push service; p256dh and auth are the browser's public keys.
+model WebPushSubscription {
+  id         String   @id @default(cuid())
+  orgId      String
+  userId     String
+  /// The sign-in it was turned on in: alerts stop when that session is signed out or ends.
+  sessionId  String?
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("web_push_subscriptions")
+}
+
 /// v21: one row per running backend process (API or worker), refreshed every 20 seconds, for System health.
 model RuntimeProcess {
   id         String   @id
