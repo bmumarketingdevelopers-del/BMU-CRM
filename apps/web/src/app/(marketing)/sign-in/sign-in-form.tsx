@@ -6,6 +6,7 @@ import { startAuthentication } from "@simplewebauthn/browser";
 import { homePathFor, needsSecondFactor, type Me, type SecondFactorChallenge } from "@bmu/shared";
 import { Button, Input } from "@/components/ui";
 import { api } from "@/lib/api";
+import { resetBrowserAlertsAsk } from "@/lib/web-push";
 
 type Demo = { name: string; email: string; role: string };
 
@@ -31,6 +32,8 @@ export function SignInForm() {
   const [hashNext, setHashNext] = useState<string | null>(null);
 
   useEffect(() => {
+    // The next sign-in asks again to turn on browser notifications (if still undecided).
+    resetBrowserAlertsAsk();
     api.auth
       .demoAccounts()
       .then(setDemo)

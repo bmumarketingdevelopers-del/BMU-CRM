@@ -58,8 +58,36 @@ export async function disableBrowserAlerts() {
   await sub.unsubscribe().catch(() => false);
 }
 
+// Asked once per sign-in: after login the browser's own prompt (or the in-app bar) shows once, "Not now" holds until the
+// next sign-in. Cleared on sign-out and on the sign-in page.
+const ASKED_KEY = "bmu-browser-alerts-asked";
+export function browserAlertsAsked() {
+  try {
+    return localStorage.getItem(ASKED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+export function markBrowserAlertsAsked() {
+  try {
+    localStorage.setItem(ASKED_KEY, "1");
+  } catch {}
+}
+export function resetBrowserAlertsAsk() {
+  try {
+    localStorage.removeItem(ASKED_KEY);
+  } catch {}
+}
+
+/**
+ * Chrome, Edge, Opera and Brave show the permission prompt without a click; Firefox and Safari only after one (those
+ * get the in-app bar instead). Only Chromium browsers have navigator.userAgentData.
+ */
+export const canAskWithoutClick = () => typeof navigator !== "undefined" && "userAgentData" in navigator;
+
 /** On sign-out: this browser stops getting this person's alerts (it re-links if they, or someone else, turn it on). */
 export async function forgetBrowserAlerts() {
+  resetBrowserAlertsAsk();
   const sub = browserAlertsSupported() ? await subscription().catch(() => null) : null;
   if (sub) await api.devices.webPushUnsubscribe(sub.endpoint).catch(() => {});
 }

@@ -11,6 +11,7 @@ import { NewButton } from "./actions/new-button";
 import { TopBar } from "./actions/top-bar";
 import { LiveProvider } from "@/lib/live";
 import { LiveStatus } from "./live/live-status";
+import { BrowserAlertsPrompt } from "./service/browser-alerts-prompt";
 
 /** Client-app branding from Command Centre → Branding & Theme. */
 export type ShellBrand = { name: string; primary: string; accent: string; logoUrl: string };
@@ -63,6 +64,7 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
       <main className="min-w-0 flex-1 bg-surface px-5 py-8 md:px-10 md:py-10">
         <div className="mx-auto max-w-6xl">
           {me.type === "staff" && <TopBar />}
+          <BrowserAlertsPrompt />
           {children}
         </div>
       </main>
