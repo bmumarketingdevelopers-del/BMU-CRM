@@ -10,9 +10,10 @@ import { Button, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 
 function NewQuote() {
-  const params = useSearchParams();
+  // useSearchParams() can be null outside a request (e.g. while building): read the client once, safely.
+  const preset = useSearchParams()?.get("clientId") ?? "";
   const router = useRouter();
-  const [meta, setMeta] = useState<QuoteMeta>({ clientOrgId: params.get("clientId") ?? "", engagementId: "", templateId: "", preparedFor: [], validUntil: inDays(15) });
+  const [meta, setMeta] = useState<QuoteMeta>({ clientOrgId: preset, engagementId: "", templateId: "", preparedFor: [], validUntil: inDays(15) });
   const [content, setContent] = useState<QuoteContent>(emptyContent());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -31,7 +32,7 @@ function NewQuote() {
     <>
       <PageTitle title="New quotation" subtitle="Pick the client and a template, edit it for this client, then save. You'll see the document and can send it next." />
       <div className="grid max-w-4xl gap-6">
-        <QuoteMetaForm meta={meta} onChange={setMeta} onTemplate={(c) => setContent(c)} fixedClient={!!params.get("clientId")} />
+        <QuoteMetaForm meta={meta} onChange={setMeta} onTemplate={(c) => setContent(c)} fixedClient={!!preset} />
         <QuoteEditor value={content} onChange={setContent} />
         <SaveBar busy={busy} error={error}>
           <Button onClick={save} disabled={busy} data-testid="quote-save">
