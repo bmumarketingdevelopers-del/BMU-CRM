@@ -143,6 +143,16 @@ function GstForm({ value, canEdit }: { value: Gst; canEdit: boolean }) {
           <Field label="Branch">
             <Input value={v.bankBranch ?? ""} onChange={set("bankBranch")} />
           </Field>
+          {/* v45: shown in the payment box of quotations (and invoices). */}
+          <Field label="Account name">
+            <Input value={v.bankAccountName ?? ""} onChange={set("bankAccountName")} placeholder="BUILD MY UNIVERSEE" />
+          </Field>
+          <Field label="SWIFT code">
+            <Input value={v.bankSwift ?? ""} onChange={set("bankSwift")} />
+          </Field>
+          <Field label="Website">
+            <Input value={v.website ?? ""} onChange={set("website")} placeholder="www.bmumarketing.in" />
+          </Field>
         </fieldset>
         {canEdit && (
           <div className="mt-5 flex items-center gap-4">

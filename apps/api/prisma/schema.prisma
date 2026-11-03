@@ -3850,3 +3850,56 @@ model ProjectMilestone {
   @@index([clientOrgId, status])
   @@map("project_milestones")
 }
+
+/// v45 quotations: the Client Manager makes one for a client (from a template, edited), sends it, and the client
+/// accepts it in the app; the advance invoice is created then, and the CM raises the balance invoice later.
+model Quotation {
+  id               String    @id @default(cuid())
+  orgId            String
+  clientOrgId      String
+  engagementId     String?
+  templateId       String?
+  /// BMU/Q/2026/1024
+  number           String
+  /// draft | sent | accepted | declined | cancelled (expired is worked out from validUntil)
+  status           String    @default("draft")
+  /// The document: project wording, lines, scope, timeline, terms, advance % (see QuoteContent in @bmu/shared)
+  content          Json
+  preparedFor      String[]  @default([])
+  subtotalPaise    Int
+  gstPaise         Int
+  totalPaise       Int
+  gstRatePct       Float     @default(18)
+  validUntil       DateTime  @db.Date
+  createdById      String?
+  sentAt           DateTime?
+  sentById         String?
+  acceptedAt       DateTime?
+  acceptedById     String?
+  acceptedName     String?
+  declinedAt       DateTime?
+  declineReason    String?
+  advanceInvoiceId String?
+  balanceInvoiceId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([orgId, number])
+  @@index([orgId, clientOrgId])
+  @@map("quotations")
+}
+
+/// v45: quotation templates per service (scope, timeline, terms and starting cost lines); the CM edits per quote.
+model QuoteTemplate {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  serviceKey  String?
+  content     Json
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([orgId])
+  @@map("quote_templates")
+}

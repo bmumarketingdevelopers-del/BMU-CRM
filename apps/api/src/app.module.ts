@@ -22,6 +22,7 @@ import { OpsAnalyticsModule } from './ops-analytics/ops-analytics.module.js';
 import { AnalyticsModule } from './analytics/analytics.module.js';
 import { AutomationsModule } from './automations/automations.module.js';
 import { ServiceModule } from './service/service.module.js';
+import { QuotesModule } from './quotes/quotes.module.js';
 import { CraftModule } from './craft/craft.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { TeamFlowsModule } from './team-flows/team-flows.module.js';
@@ -72,7 +73,7 @@ import { ProjectFlowController } from './deliver/project-flow.controller.js';
 import { ProjectFlowService } from './deliver/project-flow.service.js';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RuntimeModule, StorageModule, AuditModule, AuthModule, OrgModule, ProposalsModule, SettingsModule, InsightsModule, AdminOrgModule, AdminPlatformModule, WorkspaceModule, AutomationsModule, AnalyticsModule, OpsAnalyticsModule, FlowsModule, ServiceModule, CraftModule, AiModule, TeamFlowsModule, ActionsModule, ClientsActionsModule, PeopleActionsModule, OpsActionsModule, DashboardsModule, PlatformModule, CustomiseModule, WorkflowsModule, AgentsModule, CreativeModule, CommsModule, MoneyModule, IntegrationsModule, SecurityModule, IntelligenceModule, DevicesModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RuntimeModule, StorageModule, AuditModule, AuthModule, OrgModule, ProposalsModule, SettingsModule, InsightsModule, AdminOrgModule, AdminPlatformModule, WorkspaceModule, AutomationsModule, AnalyticsModule, OpsAnalyticsModule, FlowsModule, ServiceModule, CraftModule, AiModule, TeamFlowsModule, ActionsModule, ClientsActionsModule, PeopleActionsModule, OpsActionsModule, DashboardsModule, PlatformModule, CustomiseModule, WorkflowsModule, AgentsModule, CreativeModule, CommsModule, MoneyModule, IntegrationsModule, SecurityModule, IntelligenceModule, DevicesModule, QuotesModule],
   controllers: [
     HealthController,
     CatalogueController,

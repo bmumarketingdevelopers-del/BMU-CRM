@@ -32,6 +32,7 @@ import { flowsApi } from "./api/flows.js";
 import { sellFlowsApi } from "./api/sell-flows.js";
 import { serviceFlowsApi } from "./api/service-flows.js";
 import { deliverFlowsApi } from "./api/deliver-flows.js";
+import { quotationsApi } from "./api/quotations.js";
 import { craftFlowsApi } from "./api/craft-flows.js";
 import { aiFlowsApi } from "./api/ai-flows.js";
 import { teamFlowsApi } from "./api/team-flows.js";
@@ -228,6 +229,8 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
 
   return {
     ...settingsApi(t),
+    // v45 quotations
+    ...quotationsApi(t),
     ...insightsApi(t),
     ...adminOrgApi(t),
     ...adminPlatformApi(t),

@@ -37,6 +37,8 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
         { label: "Meetings", href: "/team/meetings" },
         // v29: Client Managers create and sign invoices for their own clients.
         ...(me.roles.some((r) => ["am_lead", "account_manager"].includes(r)) ? [{ label: "Invoices", href: "/team/invoices" }] : []),
+        // v45: quotations the client accepts in the app (the advance invoice follows).
+        ...(me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager", "finance"].includes(r)) ? [{ label: "Quotations", href: "/team/quotes" }] : []),
         { label: "Goals", href: "/team/goals" },
         { label: "Documents", href: "/team/docs" },
         ...(me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager", "department_head"].includes(r)) ? [{ label: "Creators", href: "/team/creators" }] : []),

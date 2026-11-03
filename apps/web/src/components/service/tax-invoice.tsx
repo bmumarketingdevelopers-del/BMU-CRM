@@ -4,7 +4,10 @@
 // wording, tax, total, amount in words, signature and company seal); page 2 is the payment receipt (paid, part paid),
 // the credit note (credited) or how to pay (new subscription, due, overdue), with the terms. Fixed colours and type so
 // the screen theme never changes the document; the print copy sits outside the app shell so the PDF is only the invoice.
-import { useSyncExternalStore, type ReactNode } from "react";
+// v45: BMU's document design (as on quotations): logo, cream pages with a green edge, a dark amount box, dark table
+// header, green total, and a payment box with the UPI QR. Every GST detail stays as it was.
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import QRCode from "qrcode";
 import { createPortal } from "react-dom";
 import { formatINR, paymentMethodLabels, serviceInvoiceVariantInfo, type ServiceInvoiceVariant, type ServiceTaxInvoice } from "@bmu/shared";
 import { Button } from "@/components/ui";
@@ -12,10 +15,14 @@ import { Button } from "@/components/ui";
 const day = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 const d = (iso: string) => day.format(new Date(iso));
 
+const INK = "#121619";
+const GREEN = "#8cb63c";
 const PRINT_CSS = `
 .inv-doc { font-family: var(--font-albert-sans), "Segoe UI", Arial, sans-serif; color: #1c2430; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .inv-doc .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.inv-sheet { width: 210mm; max-width: 100%; min-height: 297mm; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,.12); margin: 0 auto 24px; padding: 14mm 14mm 12mm; display: flex; flex-direction: column; box-sizing: border-box; }
+.inv-sheet { width: 210mm; max-width: 100%; min-height: 297mm; background: #f7f6f2; box-shadow: 0 1px 3px rgba(0,0,0,.12); margin: 0 auto 24px; padding: 12mm 14mm 0; display: flex; flex-direction: column; box-sizing: border-box; position: relative; overflow: hidden; }
+.inv-sheet::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3.2mm; background: ${GREEN}; }
+.inv-card { background: #fff; border-radius: 10px; border: 1px solid #e7e5df; }
 @media screen { .inv-print-root { display: none; } }
 @media screen and (max-width: 820px) { .inv-sheet { min-height: 0; padding: 20px; } }
 @media print {
@@ -66,13 +73,35 @@ function Stamp({ v }: { v: ServiceInvoiceVariant }) {
   );
 }
 
-const Label = ({ children }: { children: ReactNode }) => <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6b7280]">{children}</p>;
+const Label = ({ children }: { children: ReactNode }) => (
+  <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: GREEN }}>
+    {children}
+  </p>
+);
+
+function UpiQr({ uri }: { uri: string | null }) {
+  const [src, setSrc] = useState<string>();
+  useEffect(() => {
+    if (!uri) return;
+    QRCode.toDataURL(uri, { margin: 0, width: 220, color: { dark: INK, light: "#ffffff" } }).then(setSrc, () => setSrc(undefined));
+  }, [uri]);
+  if (!uri || !src) return null;
+  return (
+    <div className="shrink-0 text-center" data-testid="invoice-upi-qr">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a generated data URL */}
+      <img src={src} alt="UPI QR code" className="mx-auto h-[26mm] w-[26mm]" />
+      <p className="mt-1 text-[9.5px] text-[#6b7280]">Scan to pay via UPI</p>
+    </div>
+  );
+}
 
 function Letterhead({ t, title }: { t: ServiceTaxInvoice; title: string }) {
   return (
-    <header className="flex items-start justify-between gap-6 border-b-2 border-[#121f2f] pb-4">
+    <header className="flex items-start justify-between gap-6 border-b border-[#dcdad3] pb-4">
       <div className="min-w-0 max-w-[60%]">
-        <p className="text-[18px] font-semibold leading-tight text-[#121f2f]">{t.seller.legalName}</p>
+        {/* eslint-disable-next-line @next/next/no-img-element -- a static brand image in /public */}
+        <img src="/bmu-logo.png" alt={t.seller.legalName} style={{ height: "14mm", width: "auto" }} className="mb-2" />
+        <p className="text-[14px] font-semibold leading-tight text-[#121619]">{t.seller.legalName}</p>
         <p className="mt-1 text-[11.5px] leading-snug text-[#4b5563]">{t.seller.address}</p>
         <p className="mt-1 text-[11.5px] leading-snug text-[#4b5563]">
           {[t.seller.email, t.seller.phone].filter(Boolean).join("  ·  ")}
@@ -83,7 +112,7 @@ function Letterhead({ t, title }: { t: ServiceTaxInvoice; title: string }) {
         </p>
       </div>
       <div className="shrink-0 text-right">
-        <p className="text-[20px] font-bold tracking-[0.08em] text-[#121f2f]">{title}</p>
+        <p className="text-[28px] font-extrabold leading-none tracking-tight text-[#121619]">{title}</p>
         <div className="mt-1.5">
           <Stamp v={t.variant} />
         </div>
@@ -94,9 +123,9 @@ function Letterhead({ t, title }: { t: ServiceTaxInvoice; title: string }) {
 
 function Footer({ t, page }: { t: ServiceTaxInvoice; page: 1 | 2 }) {
   return (
-    <footer className="mt-auto flex items-end justify-between border-t border-[#e5e7eb] pt-2 text-[10px] text-[#6b7280]">
+    <footer className="mt-auto flex items-end justify-between pb-[6mm] pt-3 text-[10px] text-[#6b7280]">
       <span>
-        {t.seller.legalName}  ·  Invoice {t.number}
+        {t.seller.website ? `${t.seller.website.replace(/^https?:\/\/(www\.)?/, "")}  ·  ` : ""}Invoice {t.number}
       </span>
       <span>Page {page} of 2</span>
     </footer>
@@ -124,7 +153,10 @@ function Signature({ t }: { t: ServiceTaxInvoice }) {
 
 function Row({ k, v, strong, muted }: { k: string; v: string; strong?: boolean; muted?: boolean }) {
   return (
-    <div className={`flex justify-between gap-6 py-[3px] ${strong ? "border-t border-[#1c2430] pt-1.5 text-[13.5px] font-semibold" : "text-[12px]"} ${muted ? "text-[#6b7280]" : ""}`}>
+    <div
+      className={`flex justify-between gap-6 ${strong ? "mt-1.5 rounded-[8px] px-3 py-2 text-[13.5px] font-bold text-[#121619]" : "border-b border-[#e7e5df] bg-white px-3 py-1.5 text-[12px]"} ${muted ? "text-[#6b7280]" : ""}`}
+      style={strong ? { background: GREEN } : undefined}
+    >
       <span>{k}</span>
       <span className="num">{v}</span>
     </div>
@@ -166,18 +198,36 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
         </dl>
       </div>
 
+      <div className="mt-4 flex items-center gap-6 rounded-[12px] px-6 py-4 text-white" style={{ background: INK }} data-testid="invoice-amount-box">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/80">{t.balancePaise > 0 ? "Amount due" : t.paidPaise > 0 ? "Paid" : "Invoice total"}</p>
+          <p className="num text-[30px] font-extrabold leading-tight" style={{ color: GREEN }}>
+            {formatINR(t.balancePaise > 0 ? t.balancePaise : t.totalPaise)}
+          </p>
+          <p className="text-[11px] text-white/75">Inclusive of {t.ratePct}% GST{t.balancePaise > 0 ? ` · due by ${d(t.dueDate)}` : ""}</p>
+        </div>
+        <div className="border-l border-white/15 pl-6 text-center">
+          <p className="text-[15px] font-bold leading-tight">{t.number}</p>
+          <p className="text-[10.5px] text-white/75">Invoice no.</p>
+        </div>
+        <div className="border-l border-white/15 pl-6 text-center">
+          <p className="text-[15px] font-bold leading-tight">{d(t.date)}</p>
+          <p className="text-[10.5px] text-white/75">Invoice date</p>
+        </div>
+      </div>
+
       <table className="mt-4 w-full border-collapse text-[12px]">
         <thead>
-          <tr className="bg-[#121f2f] text-left text-[10px] uppercase tracking-[0.12em] text-white">
+          <tr className="text-left text-[10px] uppercase tracking-[0.12em] text-white" style={{ background: INK }}>
             <th className="w-8 px-2 py-2 font-semibold">#</th>
             <th className="px-2 py-2 font-semibold">Description of service</th>
             <th className="w-20 px-2 py-2 font-semibold">SAC</th>
             <th className="w-32 px-2 py-2 text-right font-semibold">Amount (₹)</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="bg-white">
           {t.lines.map((l, i) => (
-            <tr key={i} className="border-b border-[#e5e7eb] align-top">
+            <tr key={i} className="border-b border-[#e7e5df] align-top">
               <td className="px-2 py-2.5 text-[#6b7280]">{i + 1}</td>
               <td className="px-2 py-2.5">
                 <p className="font-medium text-[#1c2430]">{l.title}</p>
@@ -230,7 +280,8 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
 
 function HowToPay({ t }: { t: ServiceTaxInvoice }) {
   return (
-    <div className="grid grid-cols-2 gap-6 text-[12px]">
+    <div className="inv-card flex items-center gap-6 border-l-[3px] px-5 py-4" style={{ borderLeftColor: GREEN }} data-testid="invoice-payment">
+    <div className="grid flex-1 grid-cols-2 gap-6 text-[12px]">
       <div>
         <Label>Pay online</Label>
         <p className="leading-snug text-[#4b5563]">Open this invoice in BMU Hub → Billing and press Pay (cards, UPI, net banking).</p>
@@ -266,6 +317,8 @@ function HowToPay({ t }: { t: ServiceTaxInvoice }) {
       ) : (
         <div />
       )}
+    </div>
+    <UpiQr uri={t.payment.upiUri} />
     </div>
   );
 }
@@ -392,7 +445,8 @@ function PageTwo({ t }: { t: ServiceTaxInvoice }) {
   );
 }
 
-function Document({ t }: { t: ServiceTaxInvoice }) {
+/** The two pages alone (the print copy, and for checks). */
+export function TaxInvoicePages({ t }: { t: ServiceTaxInvoice }) {
   return (
     <div className="inv-doc">
       <PageOne t={t} />
@@ -414,13 +468,13 @@ export function TaxInvoice({ t, actions }: { t: ServiceTaxInvoice; actions?: Rea
         <span className="text-xs text-ink-muted">Two A4 pages. In the print window choose “Save as PDF”, and turn off “Headers and footers”.</span>
       </div>
       <div className="overflow-x-auto bg-[#eceef1] py-6" id="tax-invoice" data-testid="tax-invoice">
-        <Document t={t} />
+        <TaxInvoicePages t={t} />
       </div>
       {/* The print copy lives directly under <body>, outside the app's menus, so only the invoice is printed. */}
       {mounted &&
         createPortal(
           <div className="inv-print-root" aria-hidden="true">
-            <Document t={t} />
+            <TaxInvoicePages t={t} />
           </div>,
           document.body,
         )}

@@ -19,7 +19,7 @@ const navFor = (canBill: boolean): NavSection[] => [
       { label: "Files", href: "/client/files" },
       { label: "Asset library", href: "/client/assets" },
       { label: "Brand kit", href: "/client/brand-kit" },
-      ...(canBill ? [{ label: "Billing", href: "/client/billing" }] : []),
+      ...(canBill ? [{ label: "Quotations", href: "/client/quotes" }, { label: "Billing", href: "/client/billing" }] : []),
       { label: "Reports", href: "/client/reports" },
       { label: "Insights", href: "/client/insights" },
       { label: "Messages", href: "/client/messages" },

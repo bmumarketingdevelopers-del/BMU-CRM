@@ -52,7 +52,8 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   const credited = notes.reduce((s, n) => s + n.totalPaise, 0);
   const open = ['issued', 'partially_paid', 'overdue'].includes(inv.status);
   const balance = open ? Math.max(0, inv.totalPaise - paid - credited) : 0;
-  const payee = gst.legalName || tenant.name;
+  // v45: the bank account name (GST settings) when set, else the legal name.
+  const payee = gst.bankAccountName?.trim() || gst.legalName || tenant.name;
   const upiId = gst.upiId?.trim() || null;
   const upiUri = upiId && balance > 0 ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payee)}&am=${(balance / 100).toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Invoice ${inv.number}`)}` : null;
   const email = tenant.supportEmail?.trim() || BMU_EMAIL;

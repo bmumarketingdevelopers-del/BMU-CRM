@@ -141,7 +141,7 @@ export type ClientHealthRow = {
 export const PAYMENT_METHODS = ["bank", "upi", "cash", "cheque"] as const;
 export type OfflineMethod = (typeof PAYMENT_METHODS)[number];
 export const paymentMethodLabels: Record<string, string> = { bank: "Bank transfer", upi: "UPI", cash: "Cash", cheque: "Cheque", razorpay: "Razorpay", test: "Test payment", tds: "TDS deducted by client" };
-export const invoiceKindLabels: Record<string, string> = { first_payment: "First payment", retainer: "Retainer", project_balance: "Project balance", addon: "Add-on", standard: "Standard" };
+export const invoiceKindLabels: Record<string, string> = { first_payment: "First payment", retainer: "Retainer", project_balance: "Project balance", addon: "Add-on", standard: "Standard", quote_advance: "Quotation advance", quote_balance: "Quotation balance" };
 
 /** What finance sees: "overdue" is worked out from the due date, "void" means cancelled. */
 export type InvoiceDisplayStatus = "draft" | "issued" | "partially_paid" | "paid" | "overdue" | "void" | "credit_noted";

@@ -20,7 +20,7 @@ export const settingsSchemas = {
   requirementChecklists: z.record(z.string(), z.array(z.object({ label: z.string().trim().min(1).max(200), type: z.string().min(1) })).max(50)),
   sla: z.object({ firstReplyMinutes: z.record(z.enum(REQUEST_TYPES), z.number().int().min(15).max(5400)), messageReply: z.enum(["same_working_day", "next_working_day"]) }),
   gateRules: z.object({ planDeadlineWorkingDays: z.number().int().min(1).max(30), blockProductionOnOverdueInvoice: z.boolean(), requireQcBeforeSend: z.literal(true), releaseFilesAfterFinalPayment: z.literal(true) }),
-  gst: z.object({ gstin: z.string().trim().max(15), legalName: z.string().trim().max(200), state: z.string().trim().max(60), stateCode: z.string().trim().max(2), ratePct: z.number().min(0).max(28), sacCode: z.string().trim().max(10), invoicePrefix: z.string().trim().min(1).max(10), address: z.string().trim().max(500).optional(), upiId: z.string().trim().max(100).optional(), bankName: z.string().trim().max(100).optional(), bankAccount: z.string().trim().max(40).optional(), bankIfsc: z.string().trim().max(20).optional(), bankBranch: z.string().trim().max(100).optional() }),
+  gst: z.object({ gstin: z.string().trim().max(15), legalName: z.string().trim().max(200), state: z.string().trim().max(60), stateCode: z.string().trim().max(2), ratePct: z.number().min(0).max(28), sacCode: z.string().trim().max(10), invoicePrefix: z.string().trim().min(1).max(10), address: z.string().trim().max(500).optional(), upiId: z.string().trim().max(100).optional(), bankName: z.string().trim().max(100).optional(), bankAccount: z.string().trim().max(40).optional(), bankIfsc: z.string().trim().max(20).optional(), bankBranch: z.string().trim().max(100).optional(), /** v45 */ bankAccountName: z.string().trim().max(120).optional(), bankSwift: z.string().trim().max(20).optional(), website: z.string().trim().max(120).optional() }),
   // v10 service: overdue invoice reminders (dunning) at these days past the due date.
   dunning: z.object({ enabled: z.boolean(), steps: z.array(z.number().int().min(1).max(120)).min(1).max(6), workingDays: z.boolean(), emailClient: z.boolean(), messageClient: z.boolean(), alertFinance: z.boolean() }),
   accounting: z.object({ tool: z.enum(["none", "tally", "zoho_books", "quickbooks"]), lastExportAt: z.string().nullable() }),
@@ -137,7 +137,7 @@ export const settingsDefaults: AllSettings = {
   },
   sla: { firstReplyMinutes: { ...SLA_FIRST_REPLY_MIN }, messageReply: "same_working_day" },
   gateRules: { planDeadlineWorkingDays: 4, blockProductionOnOverdueInvoice: true, requireQcBeforeSend: true, releaseFilesAfterFinalPayment: true },
-  gst: { gstin: "", legalName: "BMU Marketing", state: "Karnataka", stateCode: "29", ratePct: 18, sacCode: "998361", invoicePrefix: "BMU", address: BMU_ADDRESS, upiId: "", bankName: "", bankAccount: "", bankIfsc: "", bankBranch: "" },
+  gst: { gstin: "", legalName: "BMU Marketing", state: "Karnataka", stateCode: "29", ratePct: 18, sacCode: "998361", invoicePrefix: "BMU", address: BMU_ADDRESS, upiId: "", bankName: "", bankAccount: "", bankIfsc: "", bankBranch: "", bankAccountName: "", bankSwift: "", website: "www.bmumarketing.in" },
   dunning: { enabled: true, steps: [1, 7, 14], workingDays: true, emailClient: true, messageClient: true, alertFinance: true },
   accounting: { tool: "none", lastExportAt: null },
   notificationTemplates: Object.fromEntries(NOTIFICATION_KINDS.map((k) => [k.key, { inApp: true, email: k.audience === "client", whatsapp: false, text: "" }])),

@@ -32,6 +32,7 @@ import { GateTrack } from "@/components/gate-track";
 import { ago, fmtDate, fmtDay, human } from "@/components/workspace/format";
 import { Badge, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
+import { ClientQuotations } from "@/components/quotes/client-quotations";
 import { UploadFilesButton } from "@/components/ops/upload-files-button";
 import { CustomFieldsPanel } from "@/components/custom-fields-panel";
 import { AdResults } from "@/components/integrations/ad-results";
@@ -262,6 +263,8 @@ export default function Client360Page({ params, searchParams }: { params: Promis
               <Empty>No services yet.</Empty>
             )}
           </Panel>
+          {/* v45: quotations sent to this client (accepted ones create the advance invoice). */}
+          <ClientQuotations clientId={id} />
           {d && d.quotes.length > 0 && (
             <Panel title="Quotes" subtitle="New services and tier changes the client approves and pays" flush>
               <ul className="divide-y divide-border" data-testid="quotes">
