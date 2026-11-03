@@ -43,6 +43,15 @@ export function emitNotificationsCreated(rows: CreatedNotice[]) {
   }
 }
 
+export type NoticeRow = { orgId: string; userId: string; kind: string; title: string; body?: string | null; link?: string | null; critical?: boolean; ref?: string | null };
+/** Saves in-app notices written outside notify() and still sends them on to phones and browsers. */
+export async function saveNotices(prisma: Pick<PrismaService, 'notification'>, data: NoticeRow[]) {
+  if (!data.length) return [];
+  const rows = await prisma.notification.createManyAndReturn({ data });
+  emitNotificationsCreated(rows.map((r) => ({ id: r.id, orgId: r.orgId, userId: r.userId, kind: r.kind, title: r.title, body: r.body, link: r.link, critical: r.critical, ref: r.ref ?? undefined })));
+  return rows;
+}
+
 const fillTemplate = (tpl: string, n: Notice) => tpl.replace(/\{(title|body|link)\}/g, (_, k: 'title' | 'body' | 'link') => n[k] ?? '');
 
 type Template = { inApp?: boolean; email?: boolean; whatsapp?: boolean; text?: string };
@@ -130,12 +139,10 @@ export class NotificationsService {
       const dup = new Set(recent.map((r) => r.userId));
       inApp = inApp.filter((u) => !dup.has(u.id));
     }
-    if (inApp.length) {
-      const rows = await this.prisma.notification.createManyAndReturn({
-        data: inApp.map((u) => ({ orgId, userId: u.id, kind: n.kind, title: n.title, body: n.body, link: n.link, critical: n.critical ?? false, ref: n.ref ?? null })),
-      });
-      emitNotificationsCreated(rows.map((r) => ({ id: r.id, orgId: r.orgId, userId: r.userId, kind: r.kind, title: r.title, body: r.body, link: r.link, critical: r.critical, ref: r.ref ?? undefined })));
-    }
+    await saveNotices(
+      this.prisma,
+      inApp.map((u) => ({ orgId, userId: u.id, kind: n.kind, title: n.title, body: n.body, link: n.link, critical: n.critical ?? false, ref: n.ref ?? null })),
+    );
     for (const u of inApp) this.log.log(`→ ${u.id}: ${n.title}${n.link ? ` (${n.link})` : ''}`);
     if (n.noEmail) return;
     const now = new Date();

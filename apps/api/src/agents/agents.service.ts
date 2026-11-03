@@ -40,6 +40,7 @@ import { AiOffError, AiRefusal, AiService, textOf, type AiOut, type AiRunner } f
 import { startOfMonth } from '../insights/ist.js';
 import { eventBus, type BusEvent } from '../platform/event-bus.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { saveNotices } from '../notifications/notifications.service.js';
 import { readFile } from 'node:fs/promises';
 import { ACTIONS } from './catalogue.js';
 import { KnowledgeService } from './knowledge.service.js';
@@ -445,7 +446,7 @@ export class AgentsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (key === 'analyst' && o.trigger !== 'ask' && !o.isEval) {
-      await this.prisma.notification.create({ data: { orgId: a.orgId, userId: acting.id, kind: 'agent', title: 'Analyst: your monthly founder report is ready', body: out.text.slice(0, 200), link: `/admin/agents/runs/${run.id}` } });
+      await saveNotices(this.prisma, [{ orgId: a.orgId, userId: acting.id, kind: 'agent', title: 'Analyst: your monthly founder report is ready', body: out.text.slice(0, 200), link: `/admin/agents/runs/${run.id}` }]);
     }
     return finished;
   }

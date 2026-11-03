@@ -15,7 +15,7 @@ import {
   type WorkCalendar,
 } from '@bmu/shared';
 import type { AuditService } from '../audit/audit.service.js';
-import type { NotificationsService } from '../notifications/notifications.service.js';
+import { saveNotices, type NotificationsService } from '../notifications/notifications.service.js';
 import type { EmailService } from '../service/email.service.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { Subject } from './subjects.js';
@@ -159,7 +159,7 @@ async function notifyUsers(ctx: ActionCtx, ids: string[], title: string, body: s
     await ctx.notifications.notify(ctx.orgId, ids, { kind, title, body, link: link ?? undefined, noEmail: true });
     return;
   }
-  await ctx.prisma.notification.createMany({ data: [...new Set(ids)].map((userId) => ({ orgId: ctx.orgId, userId, kind, title, body, link })) });
+  await saveNotices(ctx.prisma, [...new Set(ids)].map((userId) => ({ orgId: ctx.orgId, userId, kind, title, body, link })));
 }
 
 const step = (action: AutomationAction['type'], ok: boolean, text: string, skipped = false): AutomationStep => ({ action, ok, text, ...(skipped ? { skipped: true } : {}) });

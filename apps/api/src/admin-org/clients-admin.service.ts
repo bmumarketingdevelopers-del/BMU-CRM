@@ -13,6 +13,7 @@ import type { EngagementStatus, Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { ReassignService } from '../actions/reassign.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { saveNotices } from '../notifications/notifications.service.js';
 import { AM_ROLES, assertCatalogue, assertClientAdmin } from './access.js';
 
 /** Not counted as active work. */
@@ -108,8 +109,8 @@ export class ClientsAdminService {
     });
     await this.audit.log(me, 'client.am_reassigned', 'ClientOrg', client.id, { amUserId: client.amUserId }, { amUserId: am.id, engagementsMoved: moved }, ip);
     await this.reassign.record(me, 'client_am', [{ id: client.id, fromUserId: client.amUserId, toUserId: am.id }], 'other', 'Changed in Command Centre → CM workload');
-    await this.prisma.notification.create({
-      data: {
+    await saveNotices(this.prisma, [
+      {
         orgId: me.orgId,
         userId: am.id,
         kind: 'client_assigned',
@@ -117,7 +118,7 @@ export class ClientsAdminService {
         body: `${me.name} assigned this client to you${moved ? ` with ${moved} open engagement${moved === 1 ? '' : 's'}` : ''}.`,
         link: '/team/clients',
       },
-    });
+    ]);
     return this.workload(me);
   }
 
@@ -227,8 +228,8 @@ export class ClientsAdminService {
     await this.audit.log(me, `${LIFECYCLE_ACTION}.${input.action}`, 'Engagement', id, { status: row.status }, { status: next, reason: input.reason ?? null }, ip);
     if (row.am && row.am.id !== me.id) {
       const verb = { pause: 'paused', offboard: 'moved to offboarding', close: 'closed', reactivate: 'reactivated' }[input.action];
-      await this.prisma.notification.create({
-        data: {
+      await saveNotices(this.prisma, [
+        {
           orgId: me.orgId,
           userId: row.am.id,
           kind: 'engagement_status',
@@ -236,7 +237,7 @@ export class ClientsAdminService {
           body: input.reason ? `${me.name}: ${input.reason}` : `By ${me.name}`,
           link: `/team/projects/${id}`,
         },
-      });
+      ]);
     }
     return this.one(me, id);
   }

@@ -20,6 +20,7 @@ import {
 import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { saveNotices } from '../notifications/notifications.service.js';
 import { hasRole } from './util.js';
 
 export type Upload = { path: string; originalname: string; mimetype: string; size: number };
@@ -365,7 +366,7 @@ export class CreatorsService {
 
   private async notify(orgId: string, userId: string | null | undefined, kind: string, title: string, link: string, body?: string) {
     if (!userId) return;
-    await this.prisma.notification.create({ data: { orgId, userId, kind, title, body, link } });
+    await saveNotices(this.prisma, [{ orgId, userId, kind, title, body, link }]);
   }
 
   private async notifyCreator(creatorId: string, orgId: string, title: string, link: string, body?: string) {

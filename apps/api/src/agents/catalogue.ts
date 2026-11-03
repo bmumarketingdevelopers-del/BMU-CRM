@@ -11,6 +11,7 @@ import { ReassignService } from '../actions/reassign.service.js';
 import type { UndoRow } from '../actions/registry.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { saveNotices } from '../notifications/notifications.service.js';
 import { ProductionService } from '../production/production.service.js';
 import { RequestsService } from '../requests/requests.service.js';
 import { SellService } from '../sell/sell.service.js';
@@ -237,9 +238,9 @@ export const ACTIONS: Record<AgentAction, ActionImpl> = {
       if (!u) throw new BadRequestException('Notifications only go to active team members');
     },
     apply: async (i, ctx) => {
-      const n = await get(ctx.ref, PrismaService).notification.create({
-        data: { orgId: ctx.me.orgId, userId: String(i.userId), kind: 'agent', title: `${ctx.agentLabel}: ${String(i.title)}`, body: (i.body as string | undefined) ?? null, link: (i.link as string | undefined) ?? null },
-      });
+      const [n] = await saveNotices(get(ctx.ref, PrismaService), [
+        { orgId: ctx.me.orgId, userId: String(i.userId), kind: 'agent', title: `${ctx.agentLabel}: ${String(i.title)}`, body: (i.body as string | undefined) ?? null, link: (i.link as string | undefined) ?? null },
+      ]);
       return { message: 'Notification sent', link: (i.link as string | undefined) ?? null, undo: [{ model: 'notification', id: n.id, delete: true }] };
     },
   },

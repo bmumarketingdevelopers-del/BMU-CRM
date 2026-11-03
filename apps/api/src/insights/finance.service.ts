@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, type OnModuleInit } from '@nestjs/common';
 import { ApprovalsService } from '../actions/approvals.service.js';
 import { ActionsRegistry } from '../actions/registry.js';
-import { applyNotificationTemplate } from '../notifications/notifications.service.js';
+import { applyNotificationTemplate, saveNotices } from '../notifications/notifications.service.js';
 import {
   ACCOUNTING_FORMATS,
   financialYear,
@@ -227,8 +227,8 @@ export class FinanceService implements OnModuleInit {
     if (!people.length) throw new BadRequestException('No owner or finance person on this client account to remind');
     const late = inv.daysOverdue > 0 ? ` It was due ${inv.daysOverdue} day${inv.daysOverdue === 1 ? '' : 's'} ago.` : '';
     for (const p of people) {
-      await this.prisma.notification.create({
-        data: {
+      await saveNotices(this.prisma, [
+        {
           orgId: me.orgId,
           userId: p.userId,
           kind: 'invoice_reminder',
@@ -237,7 +237,7 @@ export class FinanceService implements OnModuleInit {
           link: `/client/billing/${inv.id}`,
           critical: inv.daysOverdue > 30,
         },
-      });
+      ]);
     }
     await this.audit.log(me, 'invoice.reminder_sent', 'Invoice', id, undefined, { notified: people.length, balancePaise: inv.balancePaise }, ip);
     return { notified: people.length };
@@ -433,7 +433,7 @@ export class FinanceService implements OnModuleInit {
     if (creator) {
       // Goes through the org's notification templates like every other notice.
       const n = await applyNotificationTemplate(this.prisma, me.orgId, { kind: 'payout_paid', title: `Payout of ${formatINR(p.netPaise)} sent`, body: `${formatINR(p.tdsPaise)} TDS deducted. Reference ${ref}.`, link: '/creator/payouts' });
-      if (n?.channels.includes('inApp')) await this.prisma.notification.create({ data: { orgId: me.orgId, userId: creator.userId, kind: n.kind, title: n.title, body: n.body, link: n.link } });
+      if (n?.channels.includes('inApp')) await saveNotices(this.prisma, [{ orgId: me.orgId, userId: creator.userId, kind: n.kind, title: n.title, body: n.body, link: n.link }]);
     }
     return { id };
   }

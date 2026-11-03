@@ -24,7 +24,7 @@ import {
 } from '@bmu/shared';
 import type { Prisma, TaskStatus } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
-import { applyNotificationTemplate } from '../notifications/notifications.service.js';
+import { applyNotificationTemplate, saveNotices } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { AWAY_LEAVE, loadLeaveRouting, paidAccrued, splitPaid } from '../admin-org/leave-flow.js';
@@ -569,7 +569,7 @@ export class TeamWorkspaceService {
     const notice = await applyNotificationTemplate(this.prisma, me.orgId, { kind: 'leave_request', title, body, link: head ? '/team/approvals' : '/admin/attendance#leave' });
     const to = head ? [head] : routing.hrFor(me.id);
     if (notice?.channels.includes('inApp') && to.length) {
-      await this.prisma.notification.createMany({ data: to.map((userId) => ({ orgId: me.orgId, userId, kind: notice.kind, title: notice.title, body: notice.body, link: notice.link })) });
+      await saveNotices(this.prisma, to.map((userId) => ({ orgId: me.orgId, userId, kind: notice.kind, title: notice.title, body: notice.body, link: notice.link })));
     }
     return this.profile(me);
   }

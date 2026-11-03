@@ -13,7 +13,7 @@ import request from 'supertest';
 import webpush from 'web-push';
 import { AppModule } from '../src/app.module.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { NotificationsService } from '../src/notifications/notifications.service.js';
+import { NotificationsService, saveNotices } from '../src/notifications/notifications.service.js';
 import { allowedPushEndpoint, WebPushService } from '../src/devices/web-push.service.js';
 
 let app: INestApplication;
@@ -108,6 +108,13 @@ describe('Browser notifications', () => {
     const r = (await http().post('/devices/web-push/test').set(as('design')).expect(200)).body;
     expect(r.sent).toBeGreaterThanOrEqual(1);
     expect(received.length).toBeGreaterThan(before);
+  });
+
+  it('also pushes notices saved outside notify() (client assigned, leave requests, invoice reminders…)', async () => {
+    const before = received.filter((r) => r.path.includes('design-laptop')).length;
+    await saveNotices(prisma, [{ orgId, userId: users.design, kind: 'client_assigned', title: `Direct ${stamp}`, link: '/team/clients' }]);
+    await waitFor(() => received.filter((r) => r.path.includes('design-laptop')).length > before);
+    expect(received.filter((r) => r.path.includes('design-laptop')).length).toBe(before + 1);
   });
 
   it('holds ordinary alerts in quiet hours, but critical ones still go (high urgency)', async () => {
