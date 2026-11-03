@@ -14,6 +14,8 @@ export const GOOGLE_STATE_TTL_SECONDS = 600;
 
 export const googleLoginEnabled = () => !!process.env.GOOGLE_CLIENT_ID?.trim() && !!process.env.GOOGLE_CLIENT_SECRET?.trim();
 export const googleRedirectUri = () => `${apiPublicUrl()}/auth/google/callback`;
+/** Where sign-in must start: the same address Google comes back to, so the state cookie is there on the way back. */
+export const googleStartUri = () => `${apiPublicUrl()}/auth/google/start`;
 
 /** Google's account chooser, asking only for the person's identity (no access to their mail or files). */
 export function googleAuthUrl(state: string) {

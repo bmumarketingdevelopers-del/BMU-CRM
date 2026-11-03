@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { signToken, verifyToken } from '../integrations/crypto.js';
 import { appUrl } from '../service/email.service.js';
 import { AuthService } from './auth.service.js';
-import { GOOGLE_STATE_COOKIE, GOOGLE_STATE_TTL_SECONDS, googleAuthUrl, googleIdentity, googleLoginEnabled, safeNext } from './google-login.js';
+import { GOOGLE_STATE_COOKIE, GOOGLE_STATE_TTL_SECONDS, googleAuthUrl, googleIdentity, googleLoginEnabled, googleStartUri, safeNext } from './google-login.js';
 import { MeService } from './me.service.js';
 import { SESSION_COOKIE, SESSION_COOKIE_MAX_SECONDS, type SessionClaims } from './session.js';
 import { SessionsService, type ReqInfo } from './sessions.service.js';
@@ -79,8 +79,17 @@ export class AuthController {
   /** Continue with Google: sends the browser to Google's account chooser. */
   @Public()
   @Get('google/start')
-  googleStart(@Query('next') next: string | undefined, @Res() res: Response) {
+  googleStart(@Query('next') next: string | undefined, @Query('hop') hop: string | undefined, @Req() req: Request, @Res() res: Response) {
     if (!googleLoginEnabled()) return res.redirect(302, appUrl('/sign-in?google_error=off'));
+    // Google always comes back to the main address (APP_URL / API_PUBLIC_URL). Started on another address of the site
+    // (www or not, a vercel.app link), the state cookie would be left there and missing on the way back ("took too
+    // long"), so start again on the main address. `hop` stops a loop if a proxy hides the real host.
+    const start = new URL(googleStartUri());
+    const here = (req.get('x-forwarded-host') ?? req.get('host') ?? '').split(',')[0].trim().toLowerCase();
+    if (!hop && here && here !== start.host.toLowerCase()) {
+      const n = safeNext(next);
+      return res.redirect(302, `${start.href}?${new URLSearchParams({ hop: '1', ...(n ? { next: n } : {}) })}`);
+    }
     const nonce = randomBytes(16).toString('base64url');
     const state = signToken({ k: 'google_login', n: nonce, next: safeNext(next) }, GOOGLE_STATE_TTL_SECONDS);
     res.cookie(GOOGLE_STATE_COOKIE, nonce, { httpOnly: true, sameSite: 'lax', secure: this.secureCookies(), maxAge: GOOGLE_STATE_TTL_SECONDS * 1000, path: '/' });
