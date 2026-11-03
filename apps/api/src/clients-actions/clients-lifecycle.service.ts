@@ -17,6 +17,7 @@ import {
   workingMinutesBetween,
   type ClientsGate,
   type ClientsOffboardCheck,
+  type ClientsAddServicesInput,
   type ClientsQuoteInput,
   type Me,
 } from '@bmu/shared';
@@ -159,6 +160,42 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.audit.log(me, input.kind === 'add_service' ? 'client.service_quoted' : 'engagement.tier_quoted', input.kind === 'add_service' ? 'ClientOrg' : 'Engagement', input.kind === 'add_service' ? c.id : p.engagementId!, null, { quoteId: q.id, what, amountPaise: p.amountPaise, effective: p.effective }, ip);
     await this.notifications.notify(me.orgId, await this.owners(c.id), { kind: 'quote_ready', title: `Quote ready: ${what}`, body: p.amountPaise ? `To pay now: ₹${Math.round((p.amountPaise * 1.18) / 100).toLocaleString('en-IN')} incl. GST` : 'Nothing to pay now. Approve it in the app.', link: '/client/settings', critical: true });
     return { quoteId: q.id, message: `Quote sent to ${c.name}: ${what}` };
+  }
+
+  /**
+   * v43: the Client Manager adds one or more services for the client at once. Each starts at Gate 1 with its own
+   * onboarding checklist straight away: no quote, no approval and nothing sent to the client. The Client Manager sends
+   * quotations, dues and the first month as invoices; later months of a monthly service are invoiced automatically.
+   */
+  async addServices(me: Me, clientOrgId: string, input: ClientsAddServicesInput, ip?: string) {
+    const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
+    if (!(clientsCanAddEngagement(me) && (runsClient(me, c) || hasRole(me, 'sales_manager')))) throw new ForbiddenException("Only the client's Client Manager, a Sales Manager or a Branch Manager can add a service");
+    if (c.offboarding) throw new BadRequestException('This client is being offboarded');
+    const items = input.items ?? [];
+    if (new Set(items.map((i) => i.serviceId)).size !== items.length) throw new BadRequestException('The same service is listed twice');
+    // Same checks as a quote: a live price-book service and tier, not already running, start month not in the past.
+    const priced: Awaited<ReturnType<ClientsLifecycleService['price']>>[] = [];
+    for (const i of items) priced.push(await this.price(me.orgId, c.id, { kind: 'add_service', serviceId: i.serviceId, tier: i.tier, startMonth: i.startMonth }));
+    const services = await this.prisma.service.findMany({ where: { id: { in: priced.map((p) => p.serviceId) } } });
+    const reqs = new Map<string, Awaited<ReturnType<typeof requirementsFor>>>();
+    for (const s of services) reqs.set(s.id, await requirementsFor(this.settings, me.orgId, s.key));
+    const ids = await this.prisma.$transaction(async (tx) => {
+      const out: string[] = [];
+      for (const p of priced) {
+        const service = services.find((s) => s.id === p.serviceId)!;
+        out.push(await createEngagementTx(tx, { orgId: me.orgId, clientOrgId: c.id, service, tier: p.tier, amId: c.amUserId, startMonth: p.startMonth, paymentPending: false, requirements: reqs.get(service.id) ?? [], byUserId: me.id }));
+      }
+      return out;
+    });
+    for (const [n, id] of ids.entries()) {
+      await this.audit.log(me, 'engagement.created', 'Engagement', id, null, { service: priced[n].serviceName, tier: priced[n].tier, gate: 'G1', startMonth: priced[n].startMonth, source: 'cm_added', note: input.note ?? null }, ip);
+    }
+    // The client's Client Manager is told when someone else added them (the client is not told).
+    if (c.amUserId && c.amUserId !== me.id) {
+      await this.notifications.notify(me.orgId, [c.amUserId], { kind: 'service_added', title: `${c.name}: ${ids.length} service${ids.length === 1 ? '' : 's'} added`, body: `${me.name} added ${priced.map((p) => `${p.serviceName} (${p.tier})`).join(', ')}. Send the client the invoices.`, link: `/team/clients/${c.id}?tab=services`, noEmail: true });
+    }
+    const names = priced.map((p) => `${p.serviceName} (${p.tier})`).join(', ');
+    return { engagementIds: ids, message: `Added ${names} for ${c.name}. Nothing was sent to the client; send quotations and dues as invoices.` };
   }
 
   /** client_owner (request): the client asks; the CM checks and sends it. */

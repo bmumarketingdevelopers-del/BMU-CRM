@@ -37,14 +37,17 @@ function Err({ error }: { error?: string }) {
   ) : null;
 }
 
-/** "+ New → Engagement" / Client 360 → Services → "+ Add service": sends a quote the client Owner approves and pays. */
+/**
+ * "+ New → Engagement" / Client 360 → Services → "+ Add services". v43: the Client Manager adds one or more services
+ * at once; each starts at Gate 1 with its onboarding checklist straight away. No quote and nothing is sent to the
+ * client: quotations, dues and the first month go out as invoices (later months of a monthly service automatically).
+ */
+type ServiceRow = { key: number; serviceId: string; tier: string; startMonth: string };
 export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
   const [opts, setOpts] = useState<ClientsFormOptions>();
   const [clients, setClients] = useState<ClientsListRow[]>();
   const [clientId, setClientId] = useState(prefill?.clientId ?? "");
-  const [serviceId, setServiceId] = useState("");
-  const [tier, setTier] = useState<string>("starter");
-  const [startMonth, setStartMonth] = useState(thisMonth());
+  const [rows, setRows] = useState<ServiceRow[]>([{ key: 1, serviceId: "", tier: "starter", startMonth: thisMonth() }]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -53,17 +56,21 @@ export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
     api.clientsActions.formOptions().then(setOpts, (e: Error) => setError(e.message));
     if (!prefill?.clientId) api.clientsActions.list({}).then(setClients, () => setClients([]));
   }, [open, prefill?.clientId]);
-  const service = opts?.services.find((s) => s.id === serviceId);
-  const price = service?.tiers.find((t) => t.tier === tier)?.pricePaise ?? 0;
-  const dueNow = service ? (service.billingType === "monthly" ? price : Math.round(price / 2)) : 0;
+  const set = (key: number, patch: Partial<ServiceRow>) => setRows((x) => x.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const svc = (id: string) => opts?.services.find((s) => s.id === id);
+  const total = rows.reduce((sum, r) => sum + (svc(r.serviceId)?.tiers.find((t) => t.tier === r.tier)?.pricePaise ?? 0), 0);
   async function save() {
     setError(undefined);
     if (!clientId) return setError("Pick the client");
-    if (!serviceId) return setError("Pick a service");
+    const picked = rows.filter((r) => r.serviceId);
+    if (!picked.length) return setError("Pick at least one service");
+    if (new Set(picked.map((r) => r.serviceId)).size !== picked.length) return setError("The same service is listed twice");
     setSaving(true);
     try {
-      const r = await api.clientsActions.quote(clientId, { kind: "add_service", serviceId, tier: tier as "starter", startMonth, note: note.trim() || undefined });
+      const r = await api.clientsActions.addServices(clientId, { items: picked.map((x) => ({ serviceId: x.serviceId, tier: x.tier as "starter", startMonth: x.startMonth })), note: note.trim() || undefined });
       onSaved(clientId, r.message);
+      setRows([{ key: 1, serviceId: "", tier: "starter", startMonth: thisMonth() }]);
+      setNote("");
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -72,7 +79,17 @@ export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
     }
   }
   return (
-    <ActionDrawer open={open} title="Add a service" subtitle="The client's Owner approves the quote in their app and pays; the service then starts at Gate 1 with its own onboarding checklist." onClose={onClose} onSubmit={save} saving={saving} error={error} saveLabel="Send quote" testId="add-service-drawer">
+    <ActionDrawer
+      open={open}
+      title="Add services"
+      subtitle="Add every service the client needs. Each starts at Gate 1 with its own onboarding checklist. Nothing is sent to the client: send quotations, dues and the first month as invoices (+ New → Invoice)."
+      onClose={onClose}
+      onSubmit={save}
+      saving={saving}
+      error={error}
+      saveLabel={rows.filter((r) => r.serviceId).length > 1 ? `Add ${rows.filter((r) => r.serviceId).length} services` : "Add services"}
+      testId="add-service-drawer"
+    >
       {!prefill?.clientId && (
         <Field label="Client" required htmlFor="as-client">
           <select id="as-client" className={inputCls} value={clientId} onChange={(e) => setClientId(e.target.value)}>
@@ -85,36 +102,49 @@ export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
           </select>
         </Field>
       )}
-      <Field label="Service" required htmlFor="as-service">
-        <select id="as-service" className={inputCls} value={serviceId} onChange={(e) => { setServiceId(e.target.value); setTier(opts?.services.find((s) => s.id === e.target.value)?.tiers[0]?.tier ?? "starter"); }}>
-          <option value="">{opts ? "Pick…" : "Loading…"}</option>
-          {(opts?.services ?? []).map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Tier" required htmlFor="as-tier">
-          <select id="as-tier" className={inputCls} value={tier} onChange={(e) => setTier(e.target.value)}>
-            {(service?.tiers ?? []).map((t) => (
-              <option key={t.tier} value={t.tier}>
-                {t.tier} · {formatINR(t.pricePaise)}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Start month" required htmlFor="as-month">
-          <input id="as-month" type="month" className={inputCls} min={thisMonth()} value={startMonth} onChange={(e) => setStartMonth(e.target.value)} />
-        </Field>
-      </div>
-      {service && (
+      {rows.map((r, i) => {
+        const service = svc(r.serviceId);
+        return (
+          <div key={r.key} className="grid gap-2 border border-border p-3" data-testid="add-service-row">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium">Service {i + 1}</span>
+              {rows.length > 1 && (
+                <button type="button" className="text-xs text-ink-muted underline hover:text-red" onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))} aria-label={`Remove service ${i + 1}`}>
+                  Remove
+                </button>
+              )}
+            </div>
+            <select className={inputCls} value={r.serviceId} onChange={(e) => set(r.key, { serviceId: e.target.value, tier: svc(e.target.value)?.tiers[0]?.tier ?? "starter" })} aria-label={`Service ${i + 1}`}>
+              <option value="">{opts ? "Pick a service…" : "Loading…"}</option>
+              {(opts?.services ?? []).map((s) => (
+                <option key={s.id} value={s.id} disabled={rows.some((y) => y.key !== r.key && y.serviceId === s.id)}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <select className={inputCls} value={r.tier} onChange={(e) => set(r.key, { tier: e.target.value })} aria-label={`Tier for service ${i + 1}`} disabled={!service}>
+                {(service?.tiers ?? []).map((t) => (
+                  <option key={t.tier} value={t.tier}>
+                    {t.tier} · {formatINR(t.pricePaise)}
+                  </option>
+                ))}
+              </select>
+              <input type="month" className={inputCls} min={thisMonth()} value={r.startMonth} onChange={(e) => set(r.key, { startMonth: e.target.value })} aria-label={`Start month for service ${i + 1}`} />
+            </div>
+            {service && <p className="text-xs text-ink-muted">{service.billingType === "monthly" ? "Monthly retainer: send the first month as an invoice; later months are invoiced automatically." : "Project: send the advance and the balance as invoices."}</p>}
+          </div>
+        );
+      })}
+      <button type="button" className="justify-self-start text-sm underline" onClick={() => setRows((x) => [...x, { key: Math.max(...x.map((y) => y.key)) + 1, serviceId: "", tier: "starter", startMonth: thisMonth() }])} data-testid="add-service-more">
+        + Add another service
+      </button>
+      {total > 0 && (
         <p className="border border-border bg-canvas/60 px-3 py-2 text-sm">
-          Billing: {service.billingType === "monthly" ? "monthly retainer, first month in advance" : "project, 50% now and 50% before handover"}. To pay now: <strong>{formatINR(dueNow)}</strong> + GST.
+          Price list total: <strong>{formatINR(total)}</strong> + GST. Not sent to the client.
         </p>
       )}
-      <Field label="Note for the client" htmlFor="as-note">
+      <Field label="Note (team only)" htmlFor="as-note">
         <TextArea id="as-note" className="min-h-16" value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
     </ActionDrawer>

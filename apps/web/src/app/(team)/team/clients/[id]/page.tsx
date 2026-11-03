@@ -213,7 +213,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
 
       {tab === "services" && (
         <div className="grid gap-6">
-          <Panel title="Services" subtitle="Milestones G1 → G5 for each service" action={can?.addService ? <button type="button" className={addCls} onClick={() => openNew("engagement", { clientId: id }, changed)}>+ Add service</button> : undefined} flush>
+          <Panel title="Services" subtitle="Milestones G1 → G5 for each service" action={can?.addService ? <button type="button" className={addCls} onClick={() => openNew("engagement", { clientId: id }, changed)}>+ Add services</button> : undefined} flush>
             {c.services.length ? (
               <ul className="divide-y divide-border">
                 {c.services.map((s) => {

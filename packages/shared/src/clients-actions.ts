@@ -180,6 +180,18 @@ export const clientsQuoteSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("change_tier"), engagementId: z.string().min(1, "Pick the service"), tier: z.enum(TIERS), effective: z.enum(["next_cycle", "now_prorata"]).default("next_cycle"), note: z.string().trim().max(1000).optional() }),
 ]);
 export type ClientsQuoteInput = z.input<typeof clientsQuoteSchema>;
+/**
+ * v43: the Client Manager adds one or more services for an onboarded client at once. They start at Gate 1 straight
+ * away, without a quote and without telling the client; quotations, dues and the first month go out as invoices.
+ */
+export const clientsAddServicesSchema = z.object({
+  items: z
+    .array(z.object({ serviceId: z.string().min(1, "Pick a service"), tier: z.enum(TIERS), startMonth: month }))
+    .min(1, "Add at least one service")
+    .max(20, "Add at most 20 services at once"),
+  note: z.string().trim().max(1000).optional(),
+});
+export type ClientsAddServicesInput = z.input<typeof clientsAddServicesSchema>;
 export const CLIENTS_QUOTE_STATUSES = ["requested", "sent", "approved", "applied", "declined", "cancelled"] as const;
 export type ClientsQuoteStatus = (typeof CLIENTS_QUOTE_STATUSES)[number];
 export const clientsQuoteStatusLabels: Record<ClientsQuoteStatus, { team: string; client: string }> = {

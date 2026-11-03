@@ -17,6 +17,7 @@ import {
   clientsPastInvoiceSchema,
   clientsPauseSchema,
   clientsQuoteSchema,
+  clientsAddServicesSchema,
   clientsRaiseRequestSchema,
   clientsSetGateSchema,
   normaliseIdentifier,
@@ -184,6 +185,13 @@ export class ClientsActionsController {
   @Post(':id/quotes')
   async quote(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
     const r = await this.lifecycle.createQuote(me, id, parse(clientsQuoteSchema, body), ip);
+    return { ...(await this.manage.detail(me, id)), message: r.message };
+  }
+
+  /** v43: add one or more services at once, straight away (no quote, nothing sent to the client). */
+  @Post(':id/services')
+  async addServices(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    const r = await this.lifecycle.addServices(me, id, parse(clientsAddServicesSchema, body), ip);
     return { ...(await this.manage.detail(me, id)), message: r.message };
   }
 
