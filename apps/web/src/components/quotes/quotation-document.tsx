@@ -1,8 +1,8 @@
 "use client";
 
 // v45: BMU's quotation on A4. Page 1: header, from / prepared for / project, the total box, the cost breakdown, totals
-// and amount in words. Page 2 (only when added): what's included and the timeline. v46, last page: the fixed terms, the
-// payment box with a UPI QR, the two signature lines and the thank-you card, all together. Fixed colours so the app theme never changes the
+// and amount in words. Page 2 (only when added): what's included and the timeline. v46, last page, in this order: the
+// payment box with a UPI QR, the fixed terms, the two signature lines and the thank-you card. Fixed colours so the app theme never changes the
 // document; the print copy sits directly under <body> so "Save as PDF" gives only the quotation.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -242,18 +242,8 @@ function PageThree({ q, page }: { q: QuoteView; page: number }) {
   return (
     <section className="qd-sheet" data-testid="quote-page-3">
       <SmallHeader q={q} />
-      <p className="qd-label mt-4">Terms</p>
-      <h2 className="mt-1 text-[28px] font-extrabold leading-tight tracking-tight">Terms &amp; conditions</h2>
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        {c.terms.map((t) => (
-          <div key={t.title} className="qd-bar px-4 py-3">
-            <p className="text-[13px] font-bold">{t.title}</p>
-            <p className="mt-1 text-[11px] leading-snug text-[#374151]">{t.text}</p>
-          </div>
-        ))}
-      </div>
       {(shown.length > 0 || pay.upiUri) && (
-        <div className="qd-bar mt-4 flex items-center gap-6 px-5 py-3" data-testid="quote-payment">
+        <div className="qd-card mt-4 flex items-center gap-6 border-l-[3px] px-5 py-3" style={{ borderLeftColor: GREEN }} data-testid="quote-payment">
           <div className="min-w-0 flex-1">
             <p className="qd-label mb-1">Payment details</p>
             <dl className="grid grid-cols-[32mm_1fr] gap-y-1 text-[11px]">
@@ -268,6 +258,16 @@ function PageThree({ q, page }: { q: QuoteView; page: number }) {
           <Qr uri={pay.upiUri} />
         </div>
       )}
+      <p className="qd-label mt-4">Terms</p>
+      <h2 className="mt-1 text-[28px] font-extrabold leading-tight tracking-tight">Terms &amp; conditions</h2>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        {c.terms.map((t) => (
+          <div key={t.title} className="qd-bar px-4 py-3">
+            <p className="text-[13px] font-bold">{t.title}</p>
+            <p className="mt-1 text-[11px] leading-snug text-[#374151]">{t.text}</p>
+          </div>
+        ))}
+      </div>
       <div className="mt-5 grid grid-cols-2 gap-10">
         <div>
           <p className="qd-label">Accepted by client</p>
