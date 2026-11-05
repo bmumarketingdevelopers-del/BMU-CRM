@@ -2,8 +2,9 @@
 
 // v45: the quotation editor, used for a quotation (client, prepared-for lines, valid until, template) and for a
 // template (name, service). Everything else is the document: project, highlights, cost lines (quantity × rate or a
-// percentage of the fees), scope cards, timeline, terms and the advance % invoiced when the client accepts.
-import { useState } from "react";
+// percentage of the fees) and the advance % invoiced when the client accepts. v46: scope and timeline are optional;
+// the terms are fixed, so they are not edited here (the server adds them to every quotation).
+import { useRef, useState } from "react";
 import { formatINR, quoteTotals, type QuoteContent, type QuoteLine } from "@bmu/shared";
 import { Button, Input, Select } from "@/components/ui";
 
@@ -23,6 +24,9 @@ export const emptyContent = (): QuoteContent => ({
   advancePct: 50,
   footerLine: "",
 });
+
+/** Before saving: optional cards and steps left blank are dropped. */
+export const cleanContent = (c: QuoteContent): QuoteContent => ({ ...c, scope: c.scope.filter((s) => s.title.trim()), timeline: c.timeline.filter((t) => t.title.trim() && t.label.trim()) });
 
 function Fixed({ label, values, max, onChange, placeholder }: { label: string; values: string[]; max: number; onChange: (v: string[]) => void; placeholder: string }) {
   const rows = [...values, ...Array(Math.max(0, max - values.length)).fill("")].slice(0, max);
@@ -50,6 +54,17 @@ export function QuoteEditor({
   const t = quoteTotals(v.lines, gstRatePct);
   const line = (i: number, patch: Partial<QuoteLine>) => set("lines", v.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const [bulletsDraft, setBulletsDraft] = useState<Record<number, string>>({});
+  // v46: unticking keeps what was typed, so ticking again brings it back.
+  const kept = useRef<{ scope: QuoteContent["scope"]; timeline: QuoteContent["timeline"] }>({ scope: [], timeline: [] });
+  const toggleScope = (on: boolean) => {
+    setBulletsDraft({});
+    if (!on) kept.current.scope = v.scope;
+    set("scope", on ? (kept.current.scope.length ? kept.current.scope : [{ title: "", bullets: [] }]) : []);
+  };
+  const toggleTimeline = (on: boolean) => {
+    if (!on) kept.current.timeline = v.timeline;
+    set("timeline", on ? (kept.current.timeline.length ? kept.current.timeline : [{ label: "Week 1", title: "", text: "" }]) : []);
+  };
   return (
     <div className="grid gap-6" data-testid="quote-editor">
       <section className="grid gap-3">
@@ -133,15 +148,19 @@ export function QuoteEditor({
           Advance invoiced when the client accepts:
           <Input type="number" min={0} max={100} className="w-20" value={v.advancePct} onChange={(e) => set("advancePct", Math.max(0, Math.min(100, Number(e.target.value) || 0)))} aria-label="Advance percent" />% ({formatINR(Math.round((t.subtotalPaise * v.advancePct) / 100))} + GST)
         </label>
+        {v.advancePct !== 50 && <p className="text-xs text-[#9a6b00]">The fixed terms on the quotation say 50% advance.</p>}
       </section>
 
       <section className="grid gap-3">
-        <p className={h}>What&apos;s included (page 2)</p>
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input type="checkbox" checked={v.scope.length > 0} onChange={(e) => toggleScope(e.target.checked)} data-testid="quote-scope-toggle" />
+          Add the scope of work (optional)
+        </label>
         {v.scope.map((s, i) => (
           <div key={i} className="grid gap-2 border border-border p-3">
             <div className="flex gap-2">
               <Input value={s.title} onChange={(e) => set("scope", v.scope.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} placeholder="Card title, e.g. Deliverables per influencer" aria-label={`Scope card ${i + 1} title`} />
-              <button type="button" className="text-xs text-ink-muted underline hover:text-red" onClick={() => set("scope", v.scope.filter((_, j) => j !== i))}>
+              <button type="button" className="text-xs text-ink-muted underline hover:text-red" onClick={() => (setBulletsDraft({}), set("scope", v.scope.filter((_, j) => j !== i)))}>
                 Remove
               </button>
             </div>
@@ -157,7 +176,7 @@ export function QuoteEditor({
             />
           </div>
         ))}
-        {v.scope.length < 6 && (
+        {v.scope.length > 0 && v.scope.length < 6 && (
           <button type="button" className="justify-self-start text-sm underline" onClick={() => set("scope", [...v.scope, { title: "", bullets: [] }])}>
             + Add a card
           </button>
@@ -165,7 +184,10 @@ export function QuoteEditor({
       </section>
 
       <section className="grid gap-3">
-        <p className={h}>Timeline (page 2)</p>
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input type="checkbox" checked={v.timeline.length > 0} onChange={(e) => toggleTimeline(e.target.checked)} data-testid="quote-timeline-toggle" />
+          Add the timeline (optional)
+        </label>
         {v.timeline.map((x, i) => (
           <div key={i} className="grid gap-2 sm:grid-cols-[7rem_12rem_1fr_auto]">
             <Input value={x.label} onChange={(e) => set("timeline", v.timeline.map((y, j) => (j === i ? { ...y, label: e.target.value } : y)))} placeholder="Week 1" aria-label={`Timeline ${i + 1} label`} />
@@ -176,7 +198,7 @@ export function QuoteEditor({
             </button>
           </div>
         ))}
-        {v.timeline.length < 8 && (
+        {v.timeline.length > 0 && v.timeline.length < 8 && (
           <button type="button" className="justify-self-start text-sm underline" onClick={() => set("timeline", [...v.timeline, { label: `Week ${v.timeline.length + 1}`, title: "", text: "" }])}>
             + Add a step
           </button>
@@ -184,21 +206,8 @@ export function QuoteEditor({
       </section>
 
       <section className="grid gap-3">
-        <p className={h}>Terms &amp; conditions (page 3)</p>
-        {v.terms.map((x, i) => (
-          <div key={i} className="grid gap-2 sm:grid-cols-[12rem_1fr_auto]">
-            <Input value={x.title} onChange={(e) => set("terms", v.terms.map((y, j) => (j === i ? { ...y, title: e.target.value } : y)))} placeholder="Payment" aria-label={`Term ${i + 1} title`} />
-            <textarea className={`${area} h-14`} value={x.text} onChange={(e) => set("terms", v.terms.map((y, j) => (j === i ? { ...y, text: e.target.value } : y)))} placeholder="50% advance on confirmation…" aria-label={`Term ${i + 1} text`} />
-            <button type="button" className="text-xs text-ink-muted underline hover:text-red" onClick={() => set("terms", v.terms.filter((_, j) => j !== i))}>
-              Remove
-            </button>
-          </div>
-        ))}
-        {v.terms.length < 12 && (
-          <button type="button" className="justify-self-start text-sm underline" onClick={() => set("terms", [...v.terms, { title: "", text: "" }])}>
-            + Add a term
-          </button>
-        )}
+        <p className={h}>Last page</p>
+        <p className="text-sm text-ink-muted">The terms &amp; conditions, payment details and signature lines are added to every quotation automatically.</p>
         <Input value={v.footerLine} onChange={(e) => set("footerLine", e.target.value)} placeholder="Thank-you line, e.g. Let's put your project in front of Bengaluru's home buyers." aria-label="Thank-you line" maxLength={160} />
       </section>
     </div>

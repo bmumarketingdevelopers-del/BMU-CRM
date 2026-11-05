@@ -3857,7 +3857,10 @@ model Quotation {
   id               String    @id @default(cuid())
   orgId            String
   clientOrgId      String
+  /// The first service (the invoices link to it)
   engagementId     String?
+  /// v46: every service the quotation is for
+  engagementIds    String[]  @default([])
   templateId       String?
   /// BMU/Q/2026/1024
   number           String

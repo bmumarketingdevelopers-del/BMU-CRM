@@ -4,7 +4,7 @@
 // Founders, Branch Managers and the CM Lead manage them.
 import { useState } from "react";
 import { quoteTemplateContent, type QuoteContent, type QuoteTemplateRow } from "@bmu/shared";
-import { emptyContent, QuoteEditor, SaveBar } from "@/components/quotes/quote-editor";
+import { cleanContent, emptyContent, QuoteEditor, SaveBar } from "@/components/quotes/quote-editor";
 import { Button, Input, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
@@ -26,7 +26,7 @@ export default function QuoteTemplatesPage() {
     setBusy(true);
     setMsg(undefined);
     try {
-      await api.quotes.saveTemplate({ ...draft.content, name: draft.name, serviceKey: draft.serviceKey || null }, draft.id);
+      await api.quotes.saveTemplate({ ...cleanContent(draft.content), name: draft.name, serviceKey: draft.serviceKey || null }, draft.id);
       setDraft(undefined);
       setMsg({ ok: true, text: "Template saved." });
       list.reload();
@@ -40,7 +40,7 @@ export default function QuoteTemplatesPage() {
     <>
       <PageTitle
         title="Quotation templates"
-        subtitle="One per service: the cost lines, what's included, the timeline and the terms. Client Managers pick one when they make a quotation and edit it for the client."
+        subtitle="One per service: the cost lines, and the scope and timeline if you want them. Client Managers pick one when they make a quotation and edit it for the client. The terms are fixed and added to every quotation."
         action={!draft ? <Button onClick={() => open()}>New template</Button> : undefined}
       />
       {msg && <p className={`mb-3 text-sm ${msg.ok ? "text-green" : "text-red"}`}>{msg.text}</p>}
@@ -88,7 +88,7 @@ export default function QuoteTemplatesPage() {
               <span>
                 <span className="font-medium">{t.name}</span>
                 <span className="block text-xs text-ink-muted">
-                  {t.title} · {t.lines.length} cost line{t.lines.length === 1 ? "" : "s"} · {t.terms.length} terms{t.serviceKey ? ` · ${t.serviceKey}` : ""}
+                  {t.title} · {t.lines.length} cost line{t.lines.length === 1 ? "" : "s"}{t.serviceKey ? ` · ${t.serviceKey}` : ""}
                 </span>
               </span>
               <Button variant="secondary" onClick={() => open(t)}>

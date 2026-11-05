@@ -1,13 +1,13 @@
 "use client";
 
-// v45: the parts of a quotation around the document: the client, the service it is for, "prepared for" lines and
+// v45: the parts of a quotation around the document: the client, the services it is for (v46: several), "prepared for" lines and
 // the valid-until date; plus a template picker that loads a template's content into the editor.
 import { useEffect, useState } from "react";
 import { quoteTemplateContent, type ClientsListRow, type QuoteContent, type QuoteTemplateRow } from "@bmu/shared";
 import { Input, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 
-export type QuoteMeta = { clientOrgId: string; engagementId: string; templateId: string; preparedFor: string[]; validUntil: string };
+export type QuoteMeta = { clientOrgId: string; engagementIds: string[]; templateId: string; preparedFor: string[]; validUntil: string };
 
 export const inDays = (n: number) => new Date(Date.now() + 330 * 60_000 + n * 86_400_000).toISOString().slice(0, 10);
 
@@ -23,7 +23,7 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, fixedClient }: { met
     if (!meta.clientOrgId) return;
     api.clientsActions
       .get(meta.clientOrgId)
-      .then((d) => setServices(d.services.map((s) => ({ id: s.id, name: `${s.serviceName} (${s.tier})` }))))
+      .then((d) => setServices(d.services.filter((s) => s.status !== "closed").map((s) => ({ id: s.id, name: `${s.serviceName} (${s.tier})` }))))
       .catch(() => setServices([]));
   }, [meta.clientOrgId]);
   const set = (patch: Partial<QuoteMeta>) => onChange({ ...meta, ...patch });
@@ -32,7 +32,7 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, fixedClient }: { met
     <div className="grid gap-3 sm:grid-cols-2" data-testid="quote-meta">
       <label className="grid gap-1 text-xs font-medium">
         Client
-        <Select value={meta.clientOrgId} onChange={(e) => set({ clientOrgId: e.target.value, engagementId: "" })} disabled={fixedClient} aria-label="Client">
+        <Select value={meta.clientOrgId} onChange={(e) => set({ clientOrgId: e.target.value, engagementIds: [] })} disabled={fixedClient} aria-label="Client">
           <option value="">{clients ? "Pick the client…" : "Loading…"}</option>
           {(clients ?? []).filter((c) => !c.archivedAt).map((c) => (
             <option key={c.id} value={c.id}>
@@ -41,17 +41,21 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, fixedClient }: { met
           ))}
         </Select>
       </label>
-      <label className="grid gap-1 text-xs font-medium">
-        Service it is for (optional)
-        <Select value={meta.engagementId} onChange={(e) => set({ engagementId: e.target.value })} aria-label="Service">
-          <option value="">None</option>
-          {services.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </Select>
-      </label>
+      <fieldset className="grid gap-1 sm:col-span-2" data-testid="quote-services">
+        <legend className="mb-1 text-xs font-medium">Services this quotation is for (tick any number)</legend>
+        {services.length ? (
+          <div className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
+            {services.map((s) => (
+              <label key={s.id} className="flex items-center gap-2">
+                <input type="checkbox" checked={meta.engagementIds.includes(s.id)} onChange={(e) => set({ engagementIds: e.target.checked ? [...meta.engagementIds, s.id] : meta.engagementIds.filter((x) => x !== s.id) })} aria-label={s.name} />
+                {s.name}
+              </label>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-ink-muted">{meta.clientOrgId ? "This client has no services yet." : "Pick the client first."}</p>
+        )}
+      </fieldset>
       {onTemplate && (
         <label className="grid gap-1 text-xs font-medium">
           Start from a template

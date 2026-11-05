@@ -55,7 +55,8 @@ export type QuoteTemplateInput = z.input<typeof quoteTemplateSchema>;
 
 export const quoteSaveSchema = quoteContentSchema.extend({
   clientOrgId: z.string().min(1, "Pick the client"),
-  engagementId: z.string().optional().nullable(),
+  /** v46: the client's services this quotation is for (any number, or none). */
+  engagementIds: z.array(z.string().min(1)).max(20).default([]),
   templateId: z.string().optional().nullable(),
   /** "Prepared for" lines under the client's name, e.g. "Real Estate Developer", "Bengaluru, Karnataka". */
   preparedFor: z.array(text(120)).max(3).default([]),
@@ -89,7 +90,9 @@ export type QuoteView = {
   validUntil: string;
   seller: { name: string; addressLines: string[]; website: string; gstin: string | null; signatory: string };
   client: { id: string; name: string; preparedFor: string[] };
-  engagementId: string | null;
+  engagementIds: string[];
+  /** v46: names of those services, printed under the project. */
+  services: string[];
   templateId: string | null;
   content: QuoteContent;
   amounts: number[];
@@ -124,6 +127,18 @@ export const quoteTemplateContent = (t: QuoteTemplateRow): QuoteContent => ({
   footerLine: t.footerLine,
 });
 
+/** v46: BMU's terms & conditions: fixed, added to every quotation by the server, and not editable. */
+export const QUOTE_FIXED_TERMS: { title: string; text: string }[] = [
+  { title: "Payment", text: "50% advance on confirmation. Remaining 50% before content goes live." },
+  { title: "Validity", text: "This quotation is valid for 15 days from the date of issue." },
+  { title: "Travel", text: "Influencer travel to the site within Bengaluru is included. Outstation travel is billed separately." },
+  { title: "Approvals", text: "One round of revisions per Reel. Client feedback within 48 hours keeps the schedule on track." },
+  { title: "Paid boosting", text: "Ad spend to boost influencer content is not included and can be quoted separately." },
+  { title: "Replacements", text: "If an approved influencer drops out, we replace them with a similar profile at no extra cost." },
+  { title: "Results", text: "Reach and engagement figures are estimates. Organic performance can't be guaranteed." },
+  { title: "Compliance", text: "All posts carry a paid partnership or #ad tag as per ASCI guidelines. RERA number shown where required." },
+];
+
 /** The starting template (from BMU's influencer-campaign quotation). */
 export const DEFAULT_QUOTE_TEMPLATE: QuoteTemplateInput = {
   name: "Influencer Campaign",
@@ -151,16 +166,7 @@ export const DEFAULT_QUOTE_TEMPLATE: QuoteTemplateInput = {
     { label: "Week 3", title: "Approve & publish", text: "Client approves content; posts go live on schedule." },
     { label: "Week 4", title: "Report", text: "Reach, views, engagement and enquiries report." },
   ],
-  terms: [
-    { title: "Payment", text: "50% advance on confirmation. Remaining 50% before content goes live." },
-    { title: "Validity", text: "This quotation is valid for 15 days from the date of issue." },
-    { title: "Travel", text: "Influencer travel to the site within Bengaluru is included. Outstation travel is billed separately." },
-    { title: "Approvals", text: "One round of revisions per Reel. Client feedback within 48 hours keeps the schedule on track." },
-    { title: "Paid boosting", text: "Ad spend to boost influencer content is not included and can be quoted separately." },
-    { title: "Replacements", text: "If an approved influencer drops out, we replace them with a similar profile at no extra cost." },
-    { title: "Results", text: "Reach and engagement figures are estimates. Organic performance can't be guaranteed." },
-    { title: "Compliance", text: "All posts carry a paid partnership or #ad tag as per ASCI guidelines. RERA number shown where required." },
-  ],
+  terms: QUOTE_FIXED_TERMS,
   advancePct: 50,
   footerLine: "Let's put your project in front of Bengaluru's home buyers.",
 };

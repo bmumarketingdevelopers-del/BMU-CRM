@@ -6,7 +6,7 @@ import Link from "next/link";
 import { use, useState } from "react";
 import { formatINR, quoteStatusLabels, type QuoteContent, type QuoteView } from "@bmu/shared";
 import { QuotationDocument } from "@/components/quotes/quotation-document";
-import { QuoteEditor, SaveBar } from "@/components/quotes/quote-editor";
+import { cleanContent, QuoteEditor, SaveBar } from "@/components/quotes/quote-editor";
 import { QuoteMetaForm, type QuoteMeta } from "@/components/quotes/quote-meta";
 import { Badge, Button, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -37,7 +37,7 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
     }
   };
   const startEdit = () =>
-    setEditing({ meta: { clientOrgId: q.client.id, engagementId: q.engagementId ?? "", templateId: q.templateId ?? "", preparedFor: q.client.preparedFor, validUntil: q.validUntil }, content: q.content });
+    setEditing({ meta: { clientOrgId: q.client.id, engagementIds: q.engagementIds, templateId: q.templateId ?? "", preparedFor: q.client.preparedFor, validUntil: q.validUntil }, content: q.content });
   const status = quoteStatusLabels[q.status].team;
   return (
     <>
@@ -70,7 +70,7 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
             <Button
               disabled={busy}
               onClick={async () => {
-                if (await run(() => api.quotes.update(q.id, { ...editing.content, ...editing.meta, engagementId: editing.meta.engagementId || null, templateId: editing.meta.templateId || null }), "Saved.")) setEditing(undefined);
+                if (await run(() => api.quotes.update(q.id, { ...cleanContent(editing.content), ...editing.meta, templateId: editing.meta.templateId || null }), "Saved.")) setEditing(undefined);
               }}
               data-testid="quote-update"
             >

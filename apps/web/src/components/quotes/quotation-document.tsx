@@ -1,8 +1,8 @@
 "use client";
 
-// v45: BMU's quotation, three A4 pages. Page 1: header, from / prepared for / project, the total box, the cost
-// breakdown, totals, amount in words and the payment box with a UPI QR. Page 2: what's included and the timeline.
-// Page 3: terms, the two signature lines and the thank-you footer. Fixed colours so the app theme never changes the
+// v45: BMU's quotation on A4. Page 1: header, from / prepared for / project, the total box, the cost breakdown, totals
+// and amount in words. Page 2 (only when added): what's included and the timeline. v46, last page: the fixed terms, the
+// payment box with a UPI QR, the two signature lines and the thank-you card, all together. Fixed colours so the app theme never changes the
 // document; the print copy sits directly under <body> so "Save as PDF" gives only the quotation.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
@@ -23,6 +23,7 @@ const CSS = `
 .qd-sheet::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3.2mm; background: ${GREEN}; }
 .qd-label { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: ${GREEN}; }
 .qd-card { background: #fff; border-radius: 10px; border: 1px solid #e7e5df; }
+.qd-bar { background: #fff; border-left: 3px solid ${GREEN}; border-radius: 0 8px 8px 0; }
 @media screen { .qd-print-root { display: none; } }
 @media screen and (max-width: 820px) { .qd-sheet { min-height: 0; padding: 20px 20px 28px; } }
 @media print {
@@ -32,6 +33,9 @@ const CSS = `
   .qd-print-root { display: block !important; }
   .qd-sheet { box-shadow: none; margin: 0; width: 210mm; height: 297mm; min-height: 0; break-after: page; page-break-after: always; }
   .qd-sheet:last-child { break-after: auto; page-break-after: auto; }
+  /* A long cost breakdown runs on to the next page instead of being cut off. */
+  .qd-flow { height: auto; min-height: 296.5mm; overflow: visible; }
+  .qd-flow tr { break-inside: avoid; }
 }`;
 
 function Logo({ white, h = 14 }: { white?: boolean; h?: number }) {
@@ -67,7 +71,7 @@ function Qr({ uri }: { uri: string | null }) {
   return (
     <div className="text-center">
       {/* eslint-disable-next-line @next/next/no-img-element -- a generated data URL */}
-      <img src={src} alt="UPI QR code" className="mx-auto h-[28mm] w-[28mm]" />
+      <img src={src} alt="UPI QR code" className="mx-auto h-[24mm] w-[24mm]" />
       <p className="mt-1 text-[9.5px] text-[#6b7280]">Scan to pay via UPI</p>
     </div>
   );
@@ -75,18 +79,8 @@ function Qr({ uri }: { uri: string | null }) {
 
 function PageOne({ q }: { q: QuoteView }) {
   const c = q.content;
-  const pay = q.payment;
-  const rows: [string, string | null][] = [
-    ["Account name", pay.accountName],
-    ["Account number", pay.accountNumber],
-    ["IFSC", pay.ifsc],
-    ["SWIFT code", pay.swift],
-    ["Bank", pay.bank],
-    ["UPI ID", pay.upiId],
-  ];
-  const shown = rows.filter((r): r is [string, string] => !!r[1]);
   return (
-    <section className="qd-sheet" data-testid="quote-page-1">
+    <section className="qd-sheet qd-flow" data-testid="quote-page-1">
       <header className="flex items-start justify-between gap-6">
         <Logo h={17} />
         <div className="text-right">
@@ -124,6 +118,7 @@ function PageOne({ q }: { q: QuoteView }) {
           {c.projectLines.map((l) => (
             <p key={l}>{l}</p>
           ))}
+          {q.services.length > 0 && <p className="mt-1 text-[#4b5563]" data-testid="quote-services-printed">{q.services.join(" · ")}</p>}
         </div>
       </div>
       <div className="mt-5 flex items-center gap-6 rounded-[12px] px-7 py-5 text-white" style={{ background: INK }}>
@@ -182,22 +177,6 @@ function PageOne({ q }: { q: QuoteView }) {
         </div>
       </div>
       <p className="mt-2 text-right text-[10.5px] text-[#4b5563]">Amount in words: {q.amountInWords}.</p>
-      {(shown.length > 0 || pay.upiUri) && (
-        <div className="qd-card mt-4 flex items-center gap-6 border-l-[3px] px-6 py-4" style={{ borderLeftColor: GREEN }} data-testid="quote-payment">
-          <div className="min-w-0 flex-1">
-            <p className="qd-label mb-2">Payment details</p>
-            <dl className="grid grid-cols-[34mm_1fr] gap-y-1 text-[11.5px]">
-              {shown.map(([k, v]) => (
-                <div key={k} className="contents">
-                  <dt className="text-[#6b7280]">{k}</dt>
-                  <dd className="font-semibold">{v}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-          <Qr uri={pay.upiUri} />
-        </div>
-      )}
       <Footer q={q} page={1} />
     </section>
   );
@@ -207,7 +186,7 @@ function PageTwo({ q }: { q: QuoteView }) {
   const c = q.content;
   if (!c.scope.length && !c.timeline.length) return null;
   return (
-    <section className="qd-sheet" data-testid="quote-page-2">
+    <section className="qd-sheet qd-flow" data-testid="quote-page-2">
       <SmallHeader q={q} />
       {c.scope.length > 0 && (
         <>
@@ -250,27 +229,49 @@ function PageTwo({ q }: { q: QuoteView }) {
 
 function PageThree({ q, page }: { q: QuoteView; page: number }) {
   const c = q.content;
+  const pay = q.payment;
+  const rows: [string, string | null][] = [
+    ["Account name", pay.accountName],
+    ["Account number", pay.accountNumber],
+    ["IFSC", pay.ifsc],
+    ["SWIFT code", pay.swift],
+    ["Bank", pay.bank],
+    ["UPI ID", pay.upiId],
+  ];
+  const shown = rows.filter((r): r is [string, string] => !!r[1]);
   return (
     <section className="qd-sheet" data-testid="quote-page-3">
       <SmallHeader q={q} />
-      {c.terms.length > 0 && (
-        <>
-          <p className="qd-label mt-5">Terms</p>
-          <h2 className="mt-1 text-[30px] font-extrabold tracking-tight">Terms &amp; conditions</h2>
-          <div className="mt-5 grid grid-cols-2 gap-4">
-            {c.terms.map((t) => (
-              <div key={t.title} className="qd-card border-l-[3px] px-5 py-4" style={{ borderLeftColor: GREEN }}>
-                <p className="text-[13px] font-bold">{t.title}</p>
-                <p className="mt-1 text-[11.5px] leading-snug text-[#374151]">{t.text}</p>
-              </div>
-            ))}
+      <p className="qd-label mt-4">Terms</p>
+      <h2 className="mt-1 text-[28px] font-extrabold leading-tight tracking-tight">Terms &amp; conditions</h2>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        {c.terms.map((t) => (
+          <div key={t.title} className="qd-bar px-4 py-3">
+            <p className="text-[13px] font-bold">{t.title}</p>
+            <p className="mt-1 text-[11px] leading-snug text-[#374151]">{t.text}</p>
           </div>
-        </>
+        ))}
+      </div>
+      {(shown.length > 0 || pay.upiUri) && (
+        <div className="qd-bar mt-4 flex items-center gap-6 px-5 py-3" data-testid="quote-payment">
+          <div className="min-w-0 flex-1">
+            <p className="qd-label mb-1">Payment details</p>
+            <dl className="grid grid-cols-[32mm_1fr] gap-y-1 text-[11px]">
+              {shown.map(([k, v]) => (
+                <div key={k} className="contents">
+                  <dt className="text-[#6b7280]">{k}</dt>
+                  <dd className="font-semibold">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          <Qr uri={pay.upiUri} />
+        </div>
       )}
-      <div className="mt-9 grid grid-cols-2 gap-10">
+      <div className="mt-5 grid grid-cols-2 gap-10">
         <div>
           <p className="qd-label">Accepted by client</p>
-          <div className="mt-10 border-b-2" style={{ borderColor: INK }}>
+          <div className="mt-9 border-b-2" style={{ borderColor: INK }}>
             {q.acceptedName && (
               <p className="pb-1 text-[13px] font-semibold" data-testid="quote-accepted-by">
                 {q.acceptedName}
@@ -282,14 +283,14 @@ function PageThree({ q, page }: { q: QuoteView; page: number }) {
         </div>
         <div>
           <p className="qd-label">For {q.seller.name}</p>
-          <div className="mt-10 border-b-2" style={{ borderColor: INK }} />
+          <div className="mt-9 border-b-2" style={{ borderColor: INK }} />
           <p className="mt-1.5 text-[10.5px] text-[#6b7280]">{q.seller.signatory}</p>
         </div>
       </div>
-      <div className="mt-auto mb-[8mm] flex items-center gap-7 rounded-[12px] px-8 py-6 text-white" style={{ background: INK }}>
-        <Logo white h={14} />
+      <div className="mt-auto flex items-center gap-7 rounded-[12px] px-8 py-5 text-white" style={{ background: INK }}>
+        <Logo white h={13} />
         <div>
-          <p className="text-[20px] font-bold" style={{ color: GREEN }}>
+          <p className="text-[20px] font-bold leading-tight" style={{ color: GREEN }}>
             Thank you.
           </p>
           {c.footerLine && <p className="mt-0.5 text-[12px] text-white/85">{c.footerLine}</p>}
