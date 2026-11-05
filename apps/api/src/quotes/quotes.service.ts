@@ -8,6 +8,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import {
   BMU_ADDRESS,
   DEFAULT_QUOTE_TEMPLATE,
+  QUOTE_FIXED_TERMS,
   quoteContentSchema,
   quoteDecisionSchema,
   quoteSaveSchema,
@@ -82,15 +83,18 @@ export class QuotesService {
   // ------------------------------------------------------------------------------------------------ views
 
   private async view(me: Me, q: QuoteDb): Promise<QuoteView> {
-    const [gst, tenant, branding, client, invoices, creator] = await Promise.all([
+    const [gst, tenant, branding, client, invoices, creator, engagements] = await Promise.all([
       this.settings.get(q.orgId, 'gst'),
       this.settings.get(q.orgId, 'tenant'),
       readInvoiceBranding(this.prisma, q.orgId),
       this.prisma.clientOrg.findUniqueOrThrow({ where: { id: q.clientOrgId }, select: { id: true, name: true } }),
       this.prisma.invoice.findMany({ where: { id: { in: [q.advanceInvoiceId, q.balanceInvoiceId].filter((x): x is string => !!x) } }, select: { id: true, number: true, status: true, totalPaise: true } }),
       q.createdById ? this.prisma.user.findUnique({ where: { id: q.createdById }, select: { name: true } }) : null,
+      q.engagementIds.length ? this.prisma.engagement.findMany({ where: { id: { in: q.engagementIds } }, select: { id: true, service: { select: { name: true } } } }) : [],
     ]);
-    const content = q.content as unknown as QuoteContent;
+    const stored = q.content as unknown as QuoteContent;
+    // v46: the fixed terms (a quotation keeps the wording it was sent with).
+    const content = { ...stored, terms: stored.terms?.length && q.status !== 'draft' ? stored.terms : QUOTE_FIXED_TERMS };
     const t = quoteTotals(content.lines, q.gstRatePct);
     const status = this.status(q);
     const founder = branding.signatoryName ? null : await this.prisma.user.findFirst({ where: { orgId: q.orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, select: { name: true }, orderBy: { createdAt: 'asc' } });
@@ -110,7 +114,8 @@ export class QuotesService {
       validUntil: q.validUntil.toISOString().slice(0, 10),
       seller: { name: gst.legalName || tenant.name, addressLines: address, website: gst.website?.trim() || 'www.bmumarketing.in', gstin: gst.gstin?.trim() || null, signatory },
       client: { id: client.id, name: client.name, preparedFor: q.preparedFor },
-      engagementId: q.engagementId,
+      engagementIds: q.engagementIds,
+      services: q.engagementIds.map((id) => engagements.find((e) => e.id === id)?.service.name).filter((x): x is string => !!x),
       templateId: q.templateId,
       content,
       amounts: t.amounts,
@@ -204,16 +209,19 @@ export class QuotesService {
     await this.assertManage(me, input.clientOrgId);
     const client = await this.prisma.clientOrg.findFirst({ where: { id: input.clientOrgId, orgId: me.orgId, deletedAt: null } });
     if (!client) throw new BadRequestException('Pick the client');
-    if (input.engagementId && !(await this.prisma.engagement.count({ where: { id: input.engagementId, clientOrgId: client.id, deletedAt: null } }))) throw new BadRequestException('That service is not this client’s');
+    const serviceIds = [...new Set(input.engagementIds ?? [])];
+    if (serviceIds.length && (await this.prisma.engagement.count({ where: { id: { in: serviceIds }, clientOrgId: client.id, deletedAt: null } })) !== serviceIds.length) throw new BadRequestException('Pick services this client signed up for');
     if (input.validUntil < ymdIst()) throw new BadRequestException('The valid-until date is in the past');
     const gst = await this.settings.get(me.orgId, 'gst');
-    const { clientOrgId, engagementId, templateId, preparedFor, validUntil, ...rest } = input;
-    const content = parse(quoteContentSchema, rest) as QuoteContent;
+    const { clientOrgId, engagementIds: _services, templateId, preparedFor, validUntil, ...rest } = input;
+    // v46: the terms are fixed; whatever was sent, every quotation carries BMU's terms.
+    const content = { ...(parse(quoteContentSchema, rest) as QuoteContent), terms: QUOTE_FIXED_TERMS };
     const t = quoteTotals(content.lines, gst.ratePct ?? 18);
     if (t.subtotalPaise <= 0) throw new BadRequestException('The total is zero; add the rates');
     return {
       clientOrgId,
-      engagementId: engagementId || null,
+      engagementId: serviceIds[0] ?? null,
+      engagementIds: serviceIds,
       templateId: templateId || null,
       preparedFor: (preparedFor ?? []).filter(Boolean),
       validUntil: new Date(`${validUntil}T00:00:00Z`),
@@ -256,7 +264,9 @@ export class QuotesService {
     await this.assertManage(me, before.clientOrgId);
     if (!['draft', 'sent'].includes(before.status)) throw new BadRequestException(`This quotation is ${before.status}`);
     if (this.status(before) === 'expired') throw new BadRequestException('It has expired. Make a new quotation with a new valid-until date.');
-    const q = await this.prisma.quotation.update({ where: { id }, data: { status: 'sent', sentAt: before.sentAt ?? new Date(), sentById: me.id } });
+    // v46: the wording it goes out with is kept on the quotation.
+    const fixedContent = before.status === 'draft' ? { ...(before.content as unknown as QuoteContent), terms: QUOTE_FIXED_TERMS } : (before.content as unknown as QuoteContent);
+    const q = await this.prisma.quotation.update({ where: { id }, data: { status: 'sent', sentAt: before.sentAt ?? new Date(), sentById: me.id, content: fixedContent as unknown as Prisma.InputJsonValue } });
     const content = q.content as unknown as QuoteContent;
     const total = `₹${Math.round(q.totalPaise / 100).toLocaleString('en-IN')}`;
     await this.notifications.notify(q.orgId, await this.clientUsers(q.clientOrgId), {

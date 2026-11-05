@@ -51,7 +51,11 @@ describe('quotations (v45)', () => {
     expect(tpl.lines).toHaveLength(2);
 
     const { id: _id, name: _n, serviceKey: _s, updatedAt: _u, ...content } = tpl as unknown as Record<string, unknown>;
-    const body = { ...content, clientOrgId: ids.sunrise, templateId: tpl.id, preparedFor: ['Real Estate Developer', 'Bengaluru, Karnataka'], validUntil: inDays(15) };
+    // v46: several of the client's services; the terms are fixed whatever is sent.
+    const services = await prisma.engagement.findMany({ where: { clientOrgId: ids.sunrise, deletedAt: null }, select: { id: true, service: { select: { name: true } } }, take: 2 });
+    expect(services.length).toBe(2);
+    const body = { ...content, terms: [{ title: 'Changed', text: 'Someone tried to change the terms' }], clientOrgId: ids.sunrise, engagementIds: services.map((s) => s.id), templateId: tpl.id, preparedFor: ['Real Estate Developer', 'Bengaluru, Karnataka'], validUntil: inDays(15) };
+    await http().post('/quotes').set(as('cm')).send({ ...body, engagementIds: ['not-this-client'] }).expect(400);
     await http().post('/quotes').set(as('producer')).send(body).expect(403);
     const res = await http().post('/quotes').set(as('cm')).send(body);
     expect(res.status, JSON.stringify(res.body)).toBe(201);
@@ -60,6 +64,8 @@ describe('quotations (v45)', () => {
     // 6 × ₹10,000 + 15% management = ₹69,000; GST 18% ₹12,420; total ₹81,420 (as in BMU's quotation).
     expect(q).toMatchObject({ status: 'draft', subtotalPaise: 6_900_000, gstPaise: 1_242_000, totalPaise: 8_142_000 });
     expect(q.amounts).toEqual([6_000_000, 900_000]);
+    expect(q.services.sort()).toEqual(services.map((s) => s.service.name).sort());
+    expect(q.content.terms.map((t: { title: string }) => t.title)).toEqual(['Payment', 'Validity', 'Travel', 'Approvals', 'Paid boosting', 'Replacements', 'Results', 'Compliance']);
     expect(q.number).toMatch(/^BMU\/Q\/\d{4}\/\d{4}$/);
 
     // Drafts aren't visible to the client.
