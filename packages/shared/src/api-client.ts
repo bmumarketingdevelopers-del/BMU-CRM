@@ -2,6 +2,7 @@ import type { EnquiryInput, Health } from "./schemas.js";
 import type { Me } from "./auth.js";
 import type { LeadRow, LeadUpdate } from "./crm.js";
 import type { InviteUser, OrgTree, OrgUser, RoleWithPermissions, UpdateUser } from "./admin.js";
+import type { ServiceGroupInput, ServiceGroupView, SubServiceInput } from "./service-groups.js";
 import type { CreateProposal, PricedAddOn, PricedBundle, PricedService, ProposalView } from "./proposals.js";
 import type { ClientInvoice, ClientOverview, ClientRow } from "./client.js";
 import type { ClientOnboarding, ClientPlanView, EngagementDetail, EngagementRow, PlanContent } from "./delivery.js";
@@ -293,6 +294,11 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
         request<CatalogueAdmin>(`/catalogue/add-ons/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(input) }),
       removeAddOn: (name: string) => request<CatalogueAdmin>(`/catalogue/add-ons/${encodeURIComponent(name)}`, { method: "DELETE" }),
       versions: () => request<{ id: string; version: string; status: string; effectiveFrom: string; proposals: number }[]>("/catalogue/versions"),
+      groups: () => request<ServiceGroupView[]>("/catalogue/groups"),
+      addGroup: (input: ServiceGroupInput) => post<ServiceGroupView[]>("/catalogue/groups", input),
+      saveGroup: (id: string, input: ServiceGroupInput) => patch<ServiceGroupView[]>(`/catalogue/groups/${id}`, input),
+      addSubService: (groupId: string, input: SubServiceInput) => post<ServiceGroupView[]>(`/catalogue/groups/${groupId}/sub-services`, input),
+      saveSubService: (id: string, input: SubServiceInput) => patch<ServiceGroupView[]>(`/catalogue/sub-services/${id}`, input),
     },
 
     leads: {

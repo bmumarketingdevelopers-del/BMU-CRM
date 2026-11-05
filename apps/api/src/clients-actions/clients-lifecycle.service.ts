@@ -18,6 +18,7 @@ import {
   type ClientsGate,
   type ClientsOffboardCheck,
   type ClientsAddServicesInput,
+  type ClientsSubServicesInput,
   type ClientsQuoteInput,
   type Me,
 } from '@bmu/shared';
@@ -172,10 +173,30 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (!(clientsCanAddEngagement(me) && (runsClient(me, c) || hasRole(me, 'sales_manager')))) throw new ForbiddenException("Only the client's Client Manager, a Sales Manager or a Branch Manager can add a service");
     if (c.offboarding) throw new BadRequestException('This client is being offboarded');
     const items = input.items ?? [];
-    if (new Set(items.map((i) => i.serviceId)).size !== items.length) throw new BadRequestException('The same service is listed twice');
-    // Same checks as a quote: a live price-book service and tier, not already running, start month not in the past.
-    const priced: Awaited<ReturnType<ClientsLifecycleService['price']>>[] = [];
-    for (const i of items) priced.push(await this.price(me.orgId, c.id, { kind: 'add_service', serviceId: i.serviceId, tier: i.tier, startMonth: i.startMonth }));
+    if (new Set(items.map((i) => i.groupId ?? i.serviceId)).size !== items.length) throw new BadRequestException('The same service is listed twice');
+    // Older form: same checks as a quote. v47 service groups: the sub-services must be the group's; a group already
+    // running for this client takes the newly ticked sub-services instead of starting a second project.
+    type NewService = { serviceId: string; serviceName: string; label: string; tier: Tier; startMonth: string | null; billingType?: string; subServiceIds: string[]; monthlyFeePaise: number | null };
+    const priced: NewService[] = [];
+    const extended: { id: string; label: string; subServiceIds: string[]; monthlyFeePaise: number | null }[] = [];
+    for (const i of items) {
+      if (!i.groupId) {
+        const p = await this.price(me.orgId, c.id, { kind: 'add_service', serviceId: i.serviceId!, tier: i.tier!, startMonth: i.startMonth });
+        priced.push({ ...p, label: `${p.serviceName} (${p.tier})`, subServiceIds: [], monthlyFeePaise: null });
+        continue;
+      }
+      const subServiceIds = [...new Set(i.subServiceIds ?? [])];
+      const g = await this.groupWith(me.orgId, { id: i.groupId }, subServiceIds);
+      if (g.archivedAt) throw new BadRequestException(`${g.name} is no longer offered`);
+      const running = await this.prisma.engagement.findFirst({ where: { clientOrgId: c.id, serviceId: g.serviceId, deletedAt: null, status: { notIn: ['closed', 'delivered'] } } });
+      if (running) {
+        extended.push({ id: running.id, label: g.name, subServiceIds: [...new Set([...running.subServiceIds, ...subServiceIds])], monthlyFeePaise: i.monthlyFeePaise ?? running.monthlyFeePaise });
+        continue;
+      }
+      if (i.startMonth < istMonth()) throw new BadRequestException('The start month is in the past');
+      const billingType = i.billingType ?? 'monthly';
+      priced.push({ serviceId: g.serviceId, serviceName: g.name, label: g.name, tier: 'starter', startMonth: i.startMonth, billingType, subServiceIds, monthlyFeePaise: billingType === 'monthly' ? (i.monthlyFeePaise ?? null) : null });
+    }
     const services = await this.prisma.service.findMany({ where: { id: { in: priced.map((p) => p.serviceId) } } });
     const reqs = new Map<string, Awaited<ReturnType<typeof requirementsFor>>>();
     for (const s of services) reqs.set(s.id, await requirementsFor(this.settings, me.orgId, s.key));
@@ -183,19 +204,45 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
       const out: string[] = [];
       for (const p of priced) {
         const service = services.find((s) => s.id === p.serviceId)!;
-        out.push(await createEngagementTx(tx, { orgId: me.orgId, clientOrgId: c.id, service, tier: p.tier, amId: c.amUserId, startMonth: p.startMonth, paymentPending: false, requirements: reqs.get(service.id) ?? [], byUserId: me.id }));
+        out.push(await createEngagementTx(tx, { orgId: me.orgId, clientOrgId: c.id, service: { ...service, billingType: (p.billingType ?? service.billingType) as typeof service.billingType }, tier: p.tier, amId: c.amUserId, startMonth: p.startMonth, paymentPending: false, requirements: reqs.get(service.id) ?? [], byUserId: me.id, subServiceIds: p.subServiceIds, monthlyFeePaise: p.monthlyFeePaise }));
       }
+      for (const x of extended) await tx.engagement.update({ where: { id: x.id }, data: { subServiceIds: x.subServiceIds, monthlyFeePaise: x.monthlyFeePaise } });
       return out;
     });
     for (const [n, id] of ids.entries()) {
-      await this.audit.log(me, 'engagement.created', 'Engagement', id, null, { service: priced[n].serviceName, tier: priced[n].tier, gate: 'G1', startMonth: priced[n].startMonth, source: 'cm_added', note: input.note ?? null }, ip);
+      await this.audit.log(me, 'engagement.created', 'Engagement', id, null, { service: priced[n].serviceName, tier: priced[n].tier, gate: 'G1', startMonth: priced[n].startMonth, subServiceIds: priced[n].subServiceIds, source: 'cm_added', note: input.note ?? null }, ip);
     }
+    for (const x of extended) await this.audit.log(me, 'engagement.sub_services_changed', 'Engagement', x.id, null, { subServiceIds: x.subServiceIds, source: 'cm_added' }, ip);
+    const names = [...priced, ...extended].map((p) => p.label).join(', ');
+    const count = priced.length + extended.length;
     // The client's Client Manager is told when someone else added them (the client is not told).
     if (c.amUserId && c.amUserId !== me.id) {
-      await this.notifications.notify(me.orgId, [c.amUserId], { kind: 'service_added', title: `${c.name}: ${ids.length} service${ids.length === 1 ? '' : 's'} added`, body: `${me.name} added ${priced.map((p) => `${p.serviceName} (${p.tier})`).join(', ')}. Send the client the invoices.`, link: `/team/clients/${c.id}?tab=services`, noEmail: true });
+      await this.notifications.notify(me.orgId, [c.amUserId], { kind: 'service_added', title: `${c.name}: ${count} service${count === 1 ? '' : 's'} added`, body: `${me.name} added ${names}. Send the client the invoices.`, link: `/team/clients/${c.id}?tab=services`, noEmail: true });
     }
-    const names = priced.map((p) => `${p.serviceName} (${p.tier})`).join(', ');
-    return { engagementIds: ids, message: `Added ${names} for ${c.name}. Nothing was sent to the client; send quotations and dues as invoices.` };
+    return { engagementIds: [...ids, ...extended.map((x) => x.id)], message: `Added ${names} for ${c.name}. Nothing was sent to the client; send quotations and dues as invoices.` };
+  }
+
+  /** v47: a service group, checking every sub-service belongs to it. */
+  private async groupWith(orgId: string, where: { id: string } | { serviceId: string }, subServiceIds: string[]) {
+    const g = await this.prisma.serviceGroup.findFirst({ where: { orgId, ...where }, include: { subServices: { select: { id: true } } } });
+    if (!g) throw new BadRequestException('Pick a service from the list');
+    if (!subServiceIds.length) throw new BadRequestException(`Tick at least one sub-service for ${g.name}`);
+    if (subServiceIds.some((id) => !g.subServices.some((s) => s.id === id))) throw new BadRequestException(`Pick sub-services of ${g.name}`);
+    return g;
+  }
+
+  /** v47: change a running service group's sub-services and monthly fee. */
+  async setSubServices(me: Me, engagementId: string, input: ClientsSubServicesInput, ip?: string) {
+    const e = await this.prisma.engagement.findFirst({ where: { id: engagementId, orgId: me.orgId, deletedAt: null } });
+    if (!e) throw new NotFoundException('Service not found');
+    const { client: c } = await loadClient(this.prisma, me, e.clientOrgId, { write: true });
+    if (!(clientsCanAddEngagement(me) && (runsClient(me, c) || hasRole(me, 'sales_manager')))) throw new ForbiddenException("Only the client's Client Manager, a Sales Manager or a Branch Manager can change this");
+    const subServiceIds = [...new Set(input.subServiceIds)];
+    const g = await this.groupWith(me.orgId, { serviceId: e.serviceId }, subServiceIds);
+    const monthlyFeePaise = e.billingType === 'monthly' ? (input.monthlyFeePaise === undefined ? e.monthlyFeePaise : input.monthlyFeePaise) : null;
+    await this.prisma.engagement.update({ where: { id: e.id }, data: { subServiceIds, monthlyFeePaise } });
+    await this.audit.log(me, 'engagement.sub_services_changed', 'Engagement', e.id, { subServiceIds: e.subServiceIds, monthlyFeePaise: e.monthlyFeePaise }, { subServiceIds, monthlyFeePaise }, ip);
+    return { message: `${g.name} updated for ${c.name}` };
   }
 
   /** client_owner (request): the client asks; the CM checks and sends it. */

@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Patch, Put } from '@nestjs/common';
-import { addOnInputSchema, rupeesToPaise, services, setBundleDiscountSchema, setTierPriceSchema, type CatalogueAdmin, type Me, type ServiceSummary } from '@bmu/shared';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Put } from '@nestjs/common';
+import { addOnInputSchema, rupeesToPaise, SERVICE_GROUPS_BOOK, serviceGroupInputSchema, services, setBundleDiscountSchema, setTierPriceSchema, subServiceInputSchema, type CatalogueAdmin, type Me, type ServiceGroupView, type ServiceSummary } from '@bmu/shared';
 import { AuditService } from '../audit/audit.service.js';
 import { ClientIp, CurrentUser, Public, RequireCapability } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CatalogueService } from './catalogue.service.js';
+import { createServiceGroupTx, listServiceGroups } from './service-groups.js';
 
 @Controller('catalogue')
 export class CatalogueController {
@@ -138,11 +139,69 @@ export class CatalogueController {
     return this.admin(me);
   }
 
+  // v47: service groups and sub-services. Hiding keeps running projects intact; the name of a group is its project's name.
+
+  @Get('groups')
+  @RequireCapability('catalogue_pricing_engine')
+  groups(@CurrentUser() me: Me): Promise<ServiceGroupView[]> {
+    return listServiceGroups(this.prisma, me.orgId, { all: true });
+  }
+
+  @Post('groups')
+  @RequireCapability('catalogue_pricing_engine')
+  async addGroup(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string): Promise<ServiceGroupView[]> {
+    const { name } = parse(serviceGroupInputSchema, body);
+    const all = await listServiceGroups(this.prisma, me.orgId, { all: true });
+    if (all.some((g) => g.name.toLowerCase() === name.toLowerCase())) throw new BadRequestException('A service with that name already exists');
+    const g = await this.prisma.$transaction((tx) => createServiceGroupTx(tx, me.orgId, name, all.length));
+    await this.audit.log(me, 'service_group.created', 'ServiceGroup', g.id, null, { name }, ip);
+    return listServiceGroups(this.prisma, me.orgId, { all: true });
+  }
+
+  @Patch('groups/:id')
+  @RequireCapability('catalogue_pricing_engine')
+  async saveGroup(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string): Promise<ServiceGroupView[]> {
+    const input = parse(serviceGroupInputSchema, body);
+    const g = await this.prisma.serviceGroup.findFirst({ where: { id, orgId: me.orgId } });
+    if (!g) throw new NotFoundException('Service not found');
+    if (await this.prisma.serviceGroup.count({ where: { orgId: me.orgId, name: { equals: input.name, mode: 'insensitive' }, id: { not: id } } })) throw new BadRequestException('A service with that name already exists');
+    await this.prisma.$transaction([
+      this.prisma.serviceGroup.update({ where: { id }, data: { name: input.name, ...(input.archived === undefined ? {} : { archivedAt: input.archived ? (g.archivedAt ?? new Date()) : null }) } }),
+      this.prisma.service.update({ where: { id: g.serviceId }, data: { name: input.name, track: input.name } }),
+    ]);
+    await this.audit.log(me, 'service_group.changed', 'ServiceGroup', id, { name: g.name, archived: !!g.archivedAt }, input, ip);
+    return listServiceGroups(this.prisma, me.orgId, { all: true });
+  }
+
+  @Post('groups/:id/sub-services')
+  @RequireCapability('catalogue_pricing_engine')
+  async addSubService(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string): Promise<ServiceGroupView[]> {
+    const { name, covers } = parse(subServiceInputSchema, body);
+    const g = await this.prisma.serviceGroup.findFirst({ where: { id, orgId: me.orgId }, include: { subServices: true } });
+    if (!g) throw new NotFoundException('Service not found');
+    if (g.subServices.some((s) => s.name.toLowerCase() === name.toLowerCase())) throw new BadRequestException('That sub-service is already listed');
+    const s = await this.prisma.subService.create({ data: { orgId: me.orgId, groupId: id, name, covers, sortOrder: g.subServices.length } });
+    await this.audit.log(me, 'sub_service.created', 'SubService', s.id, null, { group: g.name, name }, ip);
+    return listServiceGroups(this.prisma, me.orgId, { all: true });
+  }
+
+  @Patch('sub-services/:id')
+  @RequireCapability('catalogue_pricing_engine')
+  async saveSubService(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string): Promise<ServiceGroupView[]> {
+    const input = parse(subServiceInputSchema, body);
+    const s = await this.prisma.subService.findFirst({ where: { id, orgId: me.orgId } });
+    if (!s) throw new NotFoundException('Sub-service not found');
+    if (await this.prisma.subService.count({ where: { groupId: s.groupId, name: { equals: input.name, mode: 'insensitive' }, id: { not: id } } })) throw new BadRequestException('That sub-service is already listed');
+    await this.prisma.subService.update({ where: { id }, data: { name: input.name, covers: input.covers, ...(input.archived === undefined ? {} : { archivedAt: input.archived ? (s.archivedAt ?? new Date()) : null }) } });
+    await this.audit.log(me, 'sub_service.changed', 'SubService', id, { name: s.name, covers: s.covers, archived: !!s.archivedAt }, input, ip);
+    return listServiceGroups(this.prisma, me.orgId, { all: true });
+  }
+
   /** Price book history: every version and how many proposals were priced from it. */
   @Get('versions')
   @RequireCapability('catalogue_pricing_engine')
   async versions(@CurrentUser() me: Me) {
-    const books = await this.prisma.priceBook.findMany({ where: { orgId: me.orgId }, orderBy: { effectiveFrom: 'desc' }, take: 30 });
+    const books = await this.prisma.priceBook.findMany({ where: { orgId: me.orgId, version: { not: SERVICE_GROUPS_BOOK } }, orderBy: { effectiveFrom: 'desc' }, take: 30 });
     const counts = await this.prisma.proposal.groupBy({ by: ['priceBookId'], where: { priceBookId: { in: books.map((b) => b.id) } }, _count: true });
     return books.map((b) => ({ id: b.id, version: b.version, status: b.status, effectiveFrom: b.effectiveFrom.toISOString(), proposals: counts.find((c) => c.priceBookId === b.id)?._count ?? 0 }));
   }

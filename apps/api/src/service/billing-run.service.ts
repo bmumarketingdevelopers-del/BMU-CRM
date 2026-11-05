@@ -50,7 +50,8 @@ export class BillingRunService {
     private readonly billing: ServiceBillingService,
   ) {}
 
-  private async monthlyPrice(e: { serviceId: string; tier: Prisma.EngagementGetPayload<object>['tier']; service: { key: string }; clientOrg: { leadId: string | null } }) {
+  private async monthlyPrice(e: { serviceId: string; tier: Prisma.EngagementGetPayload<object>['tier']; monthlyFeePaise: number | null; service: { key: string }; clientOrg: { leadId: string | null } }) {
+    if (e.monthlyFeePaise) return e.monthlyFeePaise; // v47: a service group's agreed fee
     if (e.clientOrg.leadId) {
       const p = await this.prisma.proposal.findFirst({ where: { leadId: e.clientOrg.leadId, status: 'accepted' }, orderBy: { acceptedAt: 'desc' } });
       const line = (p?.lines as { kind?: string; key?: string; billingType?: string; netPaise?: number }[] | undefined)?.find((l) => l.kind === 'service' && l.key === e.service.key);
@@ -83,6 +84,7 @@ export class BillingRunService {
         client: e.clientOrg.name,
         service: e.service.name,
         tier: e.tier,
+        grouped: e.subServiceIds.length > 0,
         amountPaise: amount,
         gstPaise,
         totalPaise: amount + gstPaise,
@@ -133,7 +135,7 @@ export class BillingRunService {
             kind: 'retainer',
             period: input.period,
             dueInDays: input.dueInDays,
-            lines: [{ label: `${line.service} (${line.tier}): retainer for ${input.period}`, amountPaise: line.amountPaise }],
+            lines: [{ label: `${line.service}${line.grouped ? '' : ` (${line.tier})`}: retainer for ${input.period}`, amountPaise: line.amountPaise }],
           },
           gst,
         );

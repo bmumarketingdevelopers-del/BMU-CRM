@@ -22,7 +22,7 @@ import type {
   ClientsListRow,
   ClientsPastInvoice,
   ClientsQuoteInput,
-  ClientsAddServicesInput,
+  ClientsSubServicesInput, ClientsAddServicesInput,
   ClientsRaiseRequest,
 } from "../clients-actions.js";
 
@@ -51,6 +51,7 @@ export const clientsActionsApi = (t: Transport) => ({
     quote: (id: string, input: ClientsQuoteInput) => t.post<ClientsDetail & { message: string }>(`/clients-actions/${id}/quotes`, input),
     /** v43: add one or more services straight away (no quote, nothing sent to the client). */
     addServices: (id: string, input: ClientsAddServicesInput) => t.post<ClientsDetail & { message: string }>(`/clients-actions/${id}/services`, input),
+    setSubServices: (engagementId: string, input: ClientsSubServicesInput) => t.post<Done>(`/clients-actions/engagements/${engagementId}/sub-services`, input),
     sendQuote: (quoteId: string) => t.post<ClientsDetail>(`/clients-actions/quotes/${quoteId}/send`),
     cancelQuote: (quoteId: string) => t.post<ClientsDetail>(`/clients-actions/quotes/${quoteId}/cancel`),
     pause: (engagementId: string, input: { reason: string; until: string }) => t.post<Done>(`/clients-actions/engagements/${engagementId}/pause`, input),

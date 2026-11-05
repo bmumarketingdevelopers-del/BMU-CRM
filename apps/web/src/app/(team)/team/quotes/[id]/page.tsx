@@ -64,7 +64,7 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
       {msg && <p className={`mb-3 text-sm ${msg.ok ? "text-green" : "text-red"}`}>{msg.text}</p>}
       {editing ? (
         <div className="grid max-w-4xl gap-6">
-          <QuoteMetaForm meta={editing.meta} onChange={(meta) => setEditing({ ...editing, meta })} fixedClient />
+          <QuoteMetaForm meta={editing.meta} onChange={(meta) => setEditing({ ...editing, meta })} onServices={(update) => setEditing((e) => e && { ...e, content: update(e.content) })} fixedClient />
           <QuoteEditor value={editing.content} onChange={(content) => setEditing({ ...editing, content })} gstRatePct={q.gstRatePct} />
           <SaveBar busy={busy}>
             <Button

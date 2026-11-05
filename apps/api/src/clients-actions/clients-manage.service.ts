@@ -29,6 +29,7 @@ import {
   type ClientTeamRole,
   type Me,
 } from '@bmu/shared';
+import { SERVICE_GROUP_KEY_PREFIX } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import { hasRole, PeopleDirectory } from '../actions/people.js';
 import { RecordsService } from '../actions/records.service.js';
@@ -208,7 +209,7 @@ export class ClientsManageService implements OnModuleInit {
       c.branchId ? this.prisma.branch.findUnique({ where: { id: c.branchId }, select: { id: true, name: true } }) : null,
       this.prisma.clientBrand.findMany({ where: { clientOrgId: c.id, deletedAt: null }, orderBy: { name: 'asc' } }),
       this.prisma.clientUser.findMany({ where: { clientOrgId: c.id, user: { deletedAt: null } }, include: { user: true }, orderBy: { user: { createdAt: 'asc' } } }),
-      this.prisma.engagement.findMany({ where: { clientOrgId: c.id, deletedAt: null }, include: { service: { select: { name: true } } }, orderBy: { createdAt: 'asc' } }),
+      this.prisma.engagement.findMany({ where: { clientOrgId: c.id, deletedAt: null }, include: { service: { select: { name: true, key: true } } }, orderBy: { createdAt: 'asc' } }),
       this.prisma.clientServiceQuote.findMany({ where: { clientOrgId: c.id }, orderBy: { createdAt: 'desc' }, take: 30 }),
       this.prisma.approvalRequest.findMany({ where: { orgId: me.orgId, status: 'pending', OR: [{ targetId: c.id }, { targetId: { startsWith: `${c.id}:` } }, { targetType: 'engagement', targetId: { in: (await this.prisma.engagement.findMany({ where: { clientOrgId: c.id }, select: { id: true } })).map((e) => e.id) } }] }, orderBy: { createdAt: 'desc' } }),
       this.pendingInvites(me.orgId, c.id),
@@ -223,6 +224,7 @@ export class ClientsManageService implements OnModuleInit {
     const closed = off?.status === 'closed';
     const trail = await this.prisma.assignment.findMany({ where: { orgId: me.orgId, targetType: 'client_am', targetId: c.id }, orderBy: { at: 'desc' }, take: 20 });
     const names = await this.people.names(trail.flatMap((a) => [a.fromUserId, a.toUserId, a.byId]).filter((x): x is string => !!x));
+    const subs = await this.prisma.subService.findMany({ where: { id: { in: engagements.flatMap((e) => e.subServiceIds) } }, select: { id: true, name: true, covers: true } });
     const amHistory = trail.map((a) => ({ id: a.id, at: a.at.toISOString(), from: a.fromUserId ? (names.get(a.fromUserId) ?? null) : null, to: a.toUserId ? (names.get(a.toUserId) ?? null) : null, by: names.get(a.byId) ?? 'Someone', reason: a.reason, note: a.note, handoverNote: a.handoverNote }));
     return {
       id: c.id,
@@ -240,7 +242,7 @@ export class ClientsManageService implements OnModuleInit {
       brands: brands.map((b) => ({ id: b.id, name: b.name, address: b.location })),
       users: users.map((u) => ({ id: u.userId, name: u.user.name, email: u.user.email, phone: u.user.phone, role: ((CLIENT_TEAM_ROLES as readonly string[]).includes(u.clientRole) ? u.clientRole : 'client_viewer') as ClientTeamRole, status: u.user.status, brandScope: u.brandScope })),
       pendingInvites: invites,
-      services: engagements.map((e) => ({ id: e.id, serviceName: e.service.name, serviceId: e.serviceId, tier: e.tier, billingType: e.billingType, status: e.status, currentGate: e.currentGate, migrated: e.migrated, paymentPending: e.paymentPending, pausedUntil: e.pausedUntil?.toISOString() ?? null, pauseReason: e.pauseReason, startMonth: e.startMonth })),
+      services: engagements.map((e) => ({ id: e.id, serviceName: e.service.name, serviceId: e.serviceId, tier: e.tier, grouped: e.service.key.startsWith(SERVICE_GROUP_KEY_PREFIX), subServices: e.subServiceIds.flatMap((id) => subs.filter((s) => s.id === id)), monthlyFeePaise: e.monthlyFeePaise, billingType: e.billingType, status: e.status, currentGate: e.currentGate, migrated: e.migrated, paymentPending: e.paymentPending, pausedUntil: e.pausedUntil?.toISOString() ?? null, pauseReason: e.pauseReason, startMonth: e.startMonth })),
       quotes: await this.quoteViews(quotes),
       pendingApprovals: pendingApprovals.map((a) => ({ id: a.id, action: a.action, summary: a.summary, status: a.status, createdAt: a.createdAt.toISOString() })),
       offboarding: off,

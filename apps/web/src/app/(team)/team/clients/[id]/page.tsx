@@ -24,7 +24,7 @@ import { HistoryTab } from "@/components/actions/history-tab";
 import { RowMenu, type RowMenuItem } from "@/components/actions/row-menu";
 import { AddTaskButton } from "@/components/actions/tasks/add-task-button";
 import { healthLabel, healthTone } from "@/components/clients-table";
-import { BrandDialog, ChangeTierDialog, EditClientDrawer, HealthDialog, InviteUserDrawer, OffboardDialog, PauseDialog, SetGateDialog } from "@/components/clients/client-dialogs";
+import { BrandDialog, ChangeTierDialog, SubServicesDialog, EditClientDrawer, HealthDialog, InviteUserDrawer, OffboardDialog, PauseDialog, SetGateDialog } from "@/components/clients/client-dialogs";
 import { DataTable, Empty, Grid, Meter, Panel, StatRow, StatTile } from "@/components/dash";
 import { ApprovalRuleCard } from "@/components/deliver/approval-rule";
 import { JourneyPanel } from "@/components/flows/journey-timeline";
@@ -51,7 +51,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number]["value"];
 type Service = ClientsDetail["services"][number];
-type Modal = { kind: "edit" | "invite" | "brand" | "health" | "offboard" | "archive" } | { kind: "tier" | "pause" | "gate"; service: Service } | null;
+type Modal = { kind: "edit" | "invite" | "brand" | "health" | "offboard" | "archive" } | { kind: "tier" | "pause" | "gate" | "subs"; service: Service } | null;
 type Notify = ReturnType<typeof useActions>["notify"];
 
 const addCls = "border border-border bg-surface-raised px-3 py-1.5 text-sm hover:border-ink";
@@ -226,10 +226,13 @@ export default function Client360Page({ params, searchParams }: { params: Promis
                           {s.serviceName}
                         </Link>
                         <p className="text-xs text-ink-muted capitalize">
-                          {s.tier} · {s.billingType.replace("_", "-")} · {human(s.status)}
+                          {sd?.grouped ? "" : `${s.tier} · `}
+                          {s.billingType.replace("_", "-")} · {human(s.status)}
                         </p>
+                        {!!sd?.subServices.length && <p className="mt-0.5 text-xs text-ink-muted" data-testid="service-subs">{sd.subServices.map((x) => x.name).join(", ")}</p>}
                         <p className="mt-1 flex flex-wrap gap-1">
                           {sd?.paymentPending && <Badge tone="amber">Waiting for first payment</Badge>}
+                          {sd?.grouped && sd.billingType === "monthly" && !sd.monthlyFeePaise && <Badge tone="amber">No monthly fee set</Badge>}
                           {sd?.migrated && <Badge>Migrated at {sd.currentGate}</Badge>}
                           {sd?.pausedUntil && <Badge tone="amber">Paused until {fmtDay.format(new Date(sd.pausedUntil))}</Badge>}
                         </p>
@@ -248,7 +251,8 @@ export default function Client360Page({ params, searchParams }: { params: Promis
                             { key: "open", label: "Open project", href: `/team/projects/${s.id}` },
                             { key: "task", label: "Add task", onSelect: () => openNew("task", { clientId: id, engagementId: s.id }, changed) },
                             { key: "request", label: "Raise request", hidden: !can?.raiseRequest, onSelect: () => openNew("request", { clientId: id, engagementId: s.id }, changed) },
-                            { key: "tier", label: "Change tier", hidden: !can?.changeTier || ["closed", "offboarding"].includes(sd.status), onSelect: () => setModal({ kind: "tier", service: sd }) },
+                            { key: "subs", label: "Edit sub-services", hidden: !sd.grouped || !can?.changeTier || ["closed", "offboarding"].includes(sd.status), onSelect: () => setModal({ kind: "subs", service: sd }) },
+                            { key: "tier", label: "Change tier", hidden: sd.grouped || !can?.changeTier || ["closed", "offboarding"].includes(sd.status), onSelect: () => setModal({ kind: "tier", service: sd }) },
                             { key: "pause", label: "Pause service", hidden: !can?.pause || !!sd.pausedUntil || ["closed", "offboarding", "delivered", "paused"].includes(sd.status), onSelect: () => setModal({ kind: "pause", service: sd }) },
                             { key: "resume", label: "Resume service", hidden: !can?.pause || !sd.pausedUntil, onSelect: () => api.clientsActions.resume(sd.id).then((r) => done(r.message), fail) },
                             { key: "gate", label: "Set current gate", hidden: !can?.setGate || !sd.migrated, onSelect: () => setModal({ kind: "gate", service: sd }) },
@@ -545,6 +549,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
       {d && modal?.kind === "health" && <HealthDialog client={d} open onClose={() => setModal(null)} onDone={done} />}
       {d && modal?.kind === "offboard" && <OffboardDialog client={d} open onClose={() => setModal(null)} onDone={done} />}
       {d && modal?.kind === "tier" && <ChangeTierDialog client={d} engagementId={modal.service.id} open onClose={() => setModal(null)} onDone={done} />}
+      {modal?.kind === "subs" && <SubServicesDialog service={modal.service} open onClose={() => setModal(null)} onDone={done} />}
       {modal?.kind === "pause" && <PauseDialog service={modal.service} open onClose={() => setModal(null)} onDone={done} />}
       {modal?.kind === "gate" && <SetGateDialog service={modal.service} open onClose={() => setModal(null)} onDone={done} />}
       {modal?.kind === "brand" && (

@@ -17,7 +17,7 @@ import {
   clientsPastInvoiceSchema,
   clientsPauseSchema,
   clientsQuoteSchema,
-  clientsAddServicesSchema,
+  clientsSubServicesSchema, clientsAddServicesSchema,
   clientsRaiseRequestSchema,
   clientsSetGateSchema,
   normaliseIdentifier,
@@ -123,6 +123,12 @@ export class ClientsActionsController {
   @HttpCode(200)
   async cancelQuote(@CurrentUser() me: Me, @Param('id') id: string, @ClientIp() ip?: string) {
     return this.manage.detail(me, await this.lifecycle.cancelQuote(me, id, ip));
+  }
+
+  /** v47: which sub-services a running service has, and its monthly fee. */
+  @Post('engagements/:id/sub-services')
+  setSubServices(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.lifecycle.setSubServices(me, id, parse(clientsSubServicesSchema, body), ip);
   }
 
   @Post('engagements/:id/pause')

@@ -25,6 +25,8 @@ export const quoteLineSchema = z.object({
   unitPricePaise: z.number().int().min(0).max(10_000_000_000).default(0),
   /** Percentage of the unit lines (percent lines). */
   pct: z.number().min(0).max(100).default(0),
+  /** v47: the sub-service this line came from, so unticking its service takes it away again. */
+  subServiceId: z.string().optional(),
 });
 export type QuoteLine = z.infer<typeof quoteLineSchema>;
 
@@ -170,3 +172,22 @@ export const DEFAULT_QUOTE_TEMPLATE: QuoteTemplateInput = {
   advancePct: 50,
   footerLine: "Let's put your project in front of Bengaluru's home buyers.",
 };
+
+/** v47: a service ticked on a quotation, with its sub-services. */
+export type QuoteServicePick = { name: string; subServices: { id: string; name: string; covers: string }[] };
+export const quoteServicesTitle = (picks: QuoteServicePick[]) => picks.map((p) => p.name).join(", ").slice(0, 160);
+
+/**
+ * v47: the project name becomes the ticked service names (unless the manager typed their own), and the cost lines start
+ * with the ticked sub-services and what they cover, ready to edit and price. Lines already there keep their edits.
+ */
+export function applyQuoteServices<C extends { title: string; lines: QuoteLine[] }>(c: C, picks: QuoteServicePick[], autoTitles: string[] = []): C {
+  const subs = picks.flatMap((p) => p.subServices);
+  const ids = new Set(subs.map((s) => s.id));
+  const kept = c.lines.filter((l) => !l.subServiceId || ids.has(l.subServiceId));
+  const fromSubs = subs.map((s) => kept.find((l) => l.subServiceId === s.id) ?? { title: s.name.slice(0, 160), details: s.covers.slice(0, 600), kind: "unit" as const, qty: 1, unitPricePaise: 0, pct: 0, subServiceId: s.id });
+  const others = kept.filter((l) => !l.subServiceId && (l.title.trim() || l.details.trim() || l.unitPricePaise || l.pct));
+  const lines = [...fromSubs, ...others].slice(0, 30);
+  const title = !c.title.trim() || autoTitles.includes(c.title) ? quoteServicesTitle(picks) : c.title;
+  return { ...c, title, lines: lines.length ? lines : [{ title: "", details: "", kind: "unit", qty: 1, unitPricePaise: 0, pct: 0 }] };
+}

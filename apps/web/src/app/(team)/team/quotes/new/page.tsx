@@ -32,7 +32,7 @@ function NewQuote() {
     <>
       <PageTitle title="New quotation" subtitle="Pick the client and a template, edit it for this client, then save. You'll see the document and can send it next." />
       <div className="grid max-w-4xl gap-6">
-        <QuoteMetaForm meta={meta} onChange={setMeta} onTemplate={(c) => setContent(c)} fixedClient={!!preset} />
+        <QuoteMetaForm meta={meta} onChange={setMeta} onTemplate={(c) => setContent(c)} onServices={setContent} fixedClient={!!preset} />
         <QuoteEditor key={meta.templateId} value={content} onChange={setContent} />
         <SaveBar busy={busy} error={error}>
           <Button onClick={save} disabled={busy} data-testid="quote-save">

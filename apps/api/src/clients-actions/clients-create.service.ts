@@ -39,6 +39,7 @@ import { ServiceBillingService } from '../service/service-billing.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { AM_BASE_ROLES, assertStaff, contactOf, isAdmin, loadClient } from './clients-access.js';
 import { createEngagementTx, requirementsFor } from './clients-engagements.js';
+import { listServiceGroups } from '../catalogue/service-groups.js';
 
 type Tx = Prisma.TransactionClient;
 type Parsed = ReturnType<typeof clientsCreateSchema.parse>;
@@ -130,11 +131,12 @@ export class ClientsCreateService implements OnModuleInit {
 
   async formOptions(me: Me): Promise<ClientsFormOptions> {
     assertStaff(me);
-    const [branches, book, used, ams] = await Promise.all([
+    const [branches, book, used, ams, groups] = await Promise.all([
       this.prisma.branch.findMany({ where: { orgId: me.orgId, deletedAt: null }, orderBy: { name: 'asc' } }),
       this.activeBook(me.orgId),
       this.prisma.clientOrg.findMany({ where: { orgId: me.orgId, deletedAt: null, industry: { not: null } }, select: { industry: true }, distinct: ['industry'] }),
       this.amSuggest(me),
+      listServiceGroups(this.prisma, me.orgId),
     ]);
     // v33: a Client Manager's new clients are their own, so they are the only choice.
     const own = clientsAddsOwnOnly(me);
@@ -143,6 +145,7 @@ export class ClientsCreateService implements OnModuleInit {
       branches: branches.map((b) => ({ id: b.id, name: b.name, city: b.city })),
       industries,
       services: this.bookServices(book),
+      groups,
       ams: own ? ams.filter((a) => a.id === me.id).map((a) => ({ ...a, suggested: true })) : ams,
       roles: CLIENT_TEAM_ROLES.map((r) => ({ key: r, label: clientRoleLabels[r].name })),
       canMigrate: clientsCanAdd(me),

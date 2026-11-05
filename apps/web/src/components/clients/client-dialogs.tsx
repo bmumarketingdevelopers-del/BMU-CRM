@@ -19,6 +19,7 @@ import {
   type ClientsFormOptions,
   type ClientsListRow,
   type ClientTeamRole,
+  type ServiceGroupView,
 } from "@bmu/shared";
 import { api } from "@/lib/api";
 import { ActionDialog, ActionDrawer, Field, inputCls, TextArea } from "@/components/actions/action-drawer";
@@ -37,17 +38,38 @@ function Err({ error }: { error?: string }) {
   ) : null;
 }
 
+/** v47: the sub-services of one service, to tick. */
+function SubServiceTicks({ group, value, onChange }: { group: ServiceGroupView; value: string[]; onChange: (ids: string[]) => void }) {
+  return (
+    <fieldset className="grid gap-1" data-testid="sub-service-ticks">
+      <legend className="mb-1 text-xs font-medium">Sub-services the client needs</legend>
+      <div className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
+        {group.subServices.map((x) => (
+          <label key={x.id} className="flex items-start gap-2" title={x.covers}>
+            <input type="checkbox" className="mt-1" checked={value.includes(x.id)} onChange={(e) => onChange(e.target.checked ? [...value, x.id] : value.filter((y) => y !== x.id))} aria-label={x.name} />
+            {x.name}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 /**
  * "+ New → Engagement" / Client 360 → Services → "+ Add services". v43: the Client Manager adds one or more services
  * at once; each starts at Gate 1 with its onboarding checklist straight away. No quote and nothing is sent to the
  * client: quotations, dues and the first month go out as invoices (later months of a monthly service automatically).
+ * v47: a service is one of BMU's groups, with the sub-services the client needs ticked under it. Ticking more under a
+ * group the client already has adds them to that project.
  */
-type ServiceRow = { key: number; serviceId: string; tier: string; startMonth: string };
+type ServiceRow = { key: number; groupId: string; subServiceIds: string[]; billingType: "monthly" | "one_time"; fee: string; startMonth: string };
+const emptyRow = (key: number): ServiceRow => ({ key, groupId: "", subServiceIds: [], billingType: "monthly", fee: "", startMonth: thisMonth() });
+const feePaise = (v: string) => (v.trim() ? Math.round((Number(v.replace(/[^\d.]/g, "")) || 0) * 100) : null);
 export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
   const [opts, setOpts] = useState<ClientsFormOptions>();
   const [clients, setClients] = useState<ClientsListRow[]>();
   const [clientId, setClientId] = useState(prefill?.clientId ?? "");
-  const [rows, setRows] = useState<ServiceRow[]>([{ key: 1, serviceId: "", tier: "starter", startMonth: thisMonth() }]);
+  const [rows, setRows] = useState<ServiceRow[]>([emptyRow(1)]);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -57,19 +79,22 @@ export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
     if (!prefill?.clientId) api.clientsActions.list({}).then(setClients, () => setClients([]));
   }, [open, prefill?.clientId]);
   const set = (key: number, patch: Partial<ServiceRow>) => setRows((x) => x.map((r) => (r.key === key ? { ...r, ...patch } : r)));
-  const svc = (id: string) => opts?.services.find((s) => s.id === id);
-  const total = rows.reduce((sum, r) => sum + (svc(r.serviceId)?.tiers.find((t) => t.tier === r.tier)?.pricePaise ?? 0), 0);
+  const group = (id: string) => opts?.groups.find((g) => g.id === id);
   async function save() {
     setError(undefined);
     if (!clientId) return setError("Pick the client");
-    const picked = rows.filter((r) => r.serviceId);
+    const picked = rows.filter((r) => r.groupId);
     if (!picked.length) return setError("Pick at least one service");
-    if (new Set(picked.map((r) => r.serviceId)).size !== picked.length) return setError("The same service is listed twice");
+    const empty = picked.find((r) => !r.subServiceIds.length);
+    if (empty) return setError(`Tick at least one sub-service for ${group(empty.groupId)?.name}`);
     setSaving(true);
     try {
-      const r = await api.clientsActions.addServices(clientId, { items: picked.map((x) => ({ serviceId: x.serviceId, tier: x.tier as "starter", startMonth: x.startMonth })), note: note.trim() || undefined });
+      const r = await api.clientsActions.addServices(clientId, {
+        items: picked.map((x) => ({ groupId: x.groupId, subServiceIds: x.subServiceIds, billingType: x.billingType, monthlyFeePaise: x.billingType === "monthly" ? feePaise(x.fee) : null, startMonth: x.startMonth })),
+        note: note.trim() || undefined,
+      });
       onSaved(clientId, r.message);
-      setRows([{ key: 1, serviceId: "", tier: "starter", startMonth: thisMonth() }]);
+      setRows([emptyRow(1)]);
       setNote("");
       onClose();
     } catch (e) {
@@ -82,12 +107,12 @@ export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
     <ActionDrawer
       open={open}
       title="Add services"
-      subtitle="Add every service the client needs. Each starts at Gate 1 with its own onboarding checklist. Nothing is sent to the client: send quotations, dues and the first month as invoices (+ New → Invoice)."
+      subtitle="Pick each service and tick the sub-services the client needs. New services start at Gate 1 with an onboarding checklist. Nothing is sent to the client: send the quotation and dues yourself."
       onClose={onClose}
       onSubmit={save}
       saving={saving}
       error={error}
-      saveLabel={rows.filter((r) => r.serviceId).length > 1 ? `Add ${rows.filter((r) => r.serviceId).length} services` : "Add services"}
+      saveLabel={rows.filter((r) => r.groupId).length > 1 ? `Add ${rows.filter((r) => r.groupId).length} services` : "Add services"}
       testId="add-service-drawer"
     >
       {!prefill?.clientId && (
@@ -103,7 +128,7 @@ export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
         </Field>
       )}
       {rows.map((r, i) => {
-        const service = svc(r.serviceId);
+        const g = group(r.groupId);
         return (
           <div key={r.key} className="grid gap-2 border border-border p-3" data-testid="add-service-row">
             <div className="flex items-center justify-between">
@@ -114,40 +139,73 @@ export function AddServiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerP
                 </button>
               )}
             </div>
-            <select className={inputCls} value={r.serviceId} onChange={(e) => set(r.key, { serviceId: e.target.value, tier: svc(e.target.value)?.tiers[0]?.tier ?? "starter" })} aria-label={`Service ${i + 1}`}>
+            <select className={inputCls} value={r.groupId} onChange={(e) => set(r.key, { groupId: e.target.value, subServiceIds: [] })} aria-label={`Service ${i + 1}`}>
               <option value="">{opts ? "Pick a service…" : "Loading…"}</option>
-              {(opts?.services ?? []).map((s) => (
-                <option key={s.id} value={s.id} disabled={rows.some((y) => y.key !== r.key && y.serviceId === s.id)}>
-                  {s.name}
+              {(opts?.groups ?? []).map((x) => (
+                <option key={x.id} value={x.id} disabled={rows.some((y) => y.key !== r.key && y.groupId === x.id)}>
+                  {x.name}
                 </option>
               ))}
             </select>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <select className={inputCls} value={r.tier} onChange={(e) => set(r.key, { tier: e.target.value })} aria-label={`Tier for service ${i + 1}`} disabled={!service}>
-                {(service?.tiers ?? []).map((t) => (
-                  <option key={t.tier} value={t.tier}>
-                    {t.tier} · {formatINR(t.pricePaise)}
-                  </option>
-                ))}
-              </select>
-              <input type="month" className={inputCls} min={thisMonth()} value={r.startMonth} onChange={(e) => set(r.key, { startMonth: e.target.value })} aria-label={`Start month for service ${i + 1}`} />
-            </div>
-            {service && <p className="text-xs text-ink-muted">{service.billingType === "monthly" ? "Monthly retainer: send the first month as an invoice; later months are invoiced automatically." : "Project: send the advance and the balance as invoices."}</p>}
+            {g && (
+              <>
+                <SubServiceTicks group={g} value={r.subServiceIds} onChange={(ids) => set(r.key, { subServiceIds: ids })} />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <select className={inputCls} value={r.billingType} onChange={(e) => set(r.key, { billingType: e.target.value as ServiceRow["billingType"] })} aria-label={`Billing for service ${i + 1}`}>
+                    <option value="monthly">Monthly</option>
+                    <option value="one_time">One-time project</option>
+                  </select>
+                  <input type="month" className={inputCls} min={thisMonth()} value={r.startMonth} onChange={(e) => set(r.key, { startMonth: e.target.value })} aria-label={`Start month for service ${i + 1}`} />
+                </div>
+                {r.billingType === "monthly" && <input className={inputCls} inputMode="decimal" value={r.fee} onChange={(e) => set(r.key, { fee: e.target.value })} placeholder="Monthly fee (₹, before GST)" aria-label={`Monthly fee for service ${i + 1}`} />}
+                <p className="text-xs text-ink-muted">{r.billingType === "monthly" ? "Send the first month as an invoice. Later months are invoiced automatically at this fee; with no fee, no monthly invoice is raised." : "Project: the quotation raises the advance and the balance invoices."}</p>
+              </>
+            )}
           </div>
         );
       })}
-      <button type="button" className="justify-self-start text-sm underline" onClick={() => setRows((x) => [...x, { key: Math.max(...x.map((y) => y.key)) + 1, serviceId: "", tier: "starter", startMonth: thisMonth() }])} data-testid="add-service-more">
+      <button type="button" className="justify-self-start text-sm underline" onClick={() => setRows((x) => [...x, emptyRow(Math.max(...x.map((y) => y.key)) + 1)])} data-testid="add-service-more">
         + Add another service
       </button>
-      {total > 0 && (
-        <p className="border border-border bg-canvas/60 px-3 py-2 text-sm">
-          Price list total: <strong>{formatINR(total)}</strong> + GST. Not sent to the client.
-        </p>
-      )}
       <Field label="Note (team only)" htmlFor="as-note">
         <TextArea id="as-note" className="min-h-16" value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
     </ActionDrawer>
+  );
+}
+
+/** v47: Client 360: change which sub-services a running service has, and its monthly fee. */
+export function SubServicesDialog({ service, open, onClose, onDone }: { service: ClientsDetail["services"][number]; open: boolean; onClose: () => void; onDone: (m: string) => void }) {
+  const [groups, setGroups] = useState<ServiceGroupView[]>();
+  const [ids, setIds] = useState(service.subServices.map((s) => s.id));
+  const [fee, setFee] = useState(service.monthlyFeePaise ? String(service.monthlyFeePaise / 100) : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    if (open) api.clientsActions.formOptions().then((o) => setGroups(o.groups), (e: Error) => setError(e.message));
+  }, [open]);
+  const group = groups?.find((g) => g.serviceId === service.serviceId);
+  async function save() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const r = await api.clientsActions.setSubServices(service.id, { subServiceIds: ids, monthlyFeePaise: service.billingType === "monthly" ? feePaise(fee) : null });
+      onDone(r.message);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+  return (
+    <ActionDialog open={open} title={`Sub-services: ${service.serviceName}`} onClose={onClose} testId="sub-services-dialog" footer={<><button type="button" className={primary} disabled={busy || !ids.length} onClick={save}>Save</button><button type="button" className={cancel} onClick={onClose}>Cancel</button></>}>
+      {group ? <SubServiceTicks group={group} value={ids} onChange={setIds} /> : <p className="text-sm text-ink-muted">Loading…</p>}
+      {service.billingType === "monthly" && (
+        <Field label="Monthly fee (₹, before GST)" htmlFor="ss-fee">
+          <input id="ss-fee" className={inputCls} inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} />
+        </Field>
+      )}
+      <Err error={error} />
+    </ActionDialog>
   );
 }
 

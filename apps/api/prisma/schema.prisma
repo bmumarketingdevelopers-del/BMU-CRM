@@ -660,6 +660,10 @@ model Engagement {
   migrationReason String?
   /// v11 clients: first month of service, e.g. "2026-11"
   startMonth      String?
+  /// v47: the sub-services ticked for this service group
+  subServiceIds   String[]  @default([])
+  /// v47: what a monthly service group bills each month (it has no price-list tier)
+  monthlyFeePaise Int?
 
   clientOrg ClientOrg @relation(fields: [clientOrgId], references: [id])
   service   Service   @relation(fields: [serviceId], references: [id])
@@ -3849,6 +3853,41 @@ model ProjectMilestone {
   @@index([engagementId])
   @@index([clientOrgId, status])
   @@map("project_milestones")
+}
+
+/// v47: what BMU sells. A group is what a client signs up for (one project); sub-services are ticked under it.
+/// Rows are hidden, never deleted, because running projects point at them.
+model ServiceGroup {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  sortOrder  Int       @default(0)
+  /// The Service row a project of this group uses (in the hidden "service-groups" price book)
+  serviceId  String
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  subServices SubService[]
+
+  @@unique([orgId, name])
+  @@map("service_groups")
+}
+
+model SubService {
+  id         String    @id @default(cuid())
+  orgId      String
+  groupId    String
+  name       String
+  /// "What it covers": the starting text of its line on a quotation
+  covers     String    @default("")
+  sortOrder  Int       @default(0)
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  group ServiceGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, name])
+  @@map("sub_services")
 }
 
 /// v45 quotations: the Client Manager makes one for a client (from a template, edited), sends it, and the client

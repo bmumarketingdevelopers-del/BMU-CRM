@@ -41,7 +41,7 @@ export class DeliveryService implements OnModuleInit {
         clientOrgId: e.clientOrgId,
         engagementId: e.id,
         kind: 'project_balance',
-        lines: [{ label: `${e.service.name} (${e.tier}): balance before handover`, amountPaise: balance }],
+        lines: [{ label: `${e.service.name}${e.subServiceIds.length ? '' : ` (${e.tier})`}: balance before handover`, amountPaise: balance }],
       }),
     );
     await this.audit.logSystem(e.orgId, 'invoice.issued', 'Invoice', inv.id, { kind: 'project_balance', totalPaise: inv.totalPaise });

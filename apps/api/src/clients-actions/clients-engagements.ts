@@ -46,6 +46,9 @@ export type NewEngagement = {
   paymentPending: boolean;
   requirements: { label: string; type: string }[];
   byUserId: string;
+  /** v47: a service group's ticked sub-services and monthly fee. */
+  subServiceIds?: string[];
+  monthlyFeePaise?: number | null;
 };
 
 /** Creates the engagement + its first cycle (and migrated approvals). Returns the engagement id. */
@@ -71,6 +74,8 @@ export async function createEngagementTx(tx: Tx, e: NewEngagement): Promise<stri
       paymentPending: e.paymentPending,
       migrated: !!e.migrate,
       migrationReason: e.migrate?.reason ?? null,
+      subServiceIds: e.subServiceIds ?? [],
+      monthlyFeePaise: e.monthlyFeePaise ?? null,
     },
   });
   await tx.cycle.create({

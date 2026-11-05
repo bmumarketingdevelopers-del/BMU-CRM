@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatINR, withGst, type CatalogueAdmin } from "@bmu/shared";
+import { ServiceGroupsAdmin } from "@/components/catalogue/service-groups-admin";
 import { Badge, Button, Card, Input, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
@@ -55,6 +56,11 @@ export default function CataloguePage() {
       {saved && !error && <p className="mb-4 border border-green bg-green/10 px-4 py-2 text-sm">{saved}</p>}
       <LoadState loading={cat.loading} error={cat.error} />
 
+      <ServiceGroupsAdmin />
+
+      <details className="mb-8">
+        <summary className="cursor-pointer font-semibold">Old price list (running projects and proposals still use it)</summary>
+        <div className="mt-4">
       {[...tracks.entries()].map(([track, list]) => (
         <section key={track} className="mb-8">
           <h2 className="mb-2 font-semibold">{track}</h2>
@@ -103,6 +109,8 @@ export default function CataloguePage() {
           </div>
         </section>
       ))}
+        </div>
+      </details>
 
       {data && (
         <>

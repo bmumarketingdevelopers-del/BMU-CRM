@@ -3,6 +3,7 @@
 // request actions (raise on behalf, reassign, add-on quote limit, convert to tasks, internal approval).
 import { z } from "zod";
 import { TIERS, type Tier } from "./catalogue.js";
+import type { ServiceGroupView } from "./service-groups.js";
 import { REQUEST_TYPES } from "./requests.js";
 import { SERVICE_GSTIN_RE } from "./service-flows.js";
 import { CLIENT_TEAM_ROLES, type ClientTeamRole } from "./workspace-types.js";
@@ -184,9 +185,26 @@ export type ClientsQuoteInput = z.input<typeof clientsQuoteSchema>;
  * v43: the Client Manager adds one or more services for an onboarded client at once. They start at Gate 1 straight
  * away, without a quote and without telling the client; quotations, dues and the first month go out as invoices.
  */
+const subServiceFee = z.number().int().min(0).max(2_000_000_000).nullable().optional();
+/** v47: change which sub-services a running service has, and its monthly fee. */
+export const clientsSubServicesSchema = z.object({ subServiceIds: z.array(z.string().min(1)).min(1, "Tick at least one sub-service").max(60), monthlyFeePaise: subServiceFee });
+export type ClientsSubServicesInput = z.input<typeof clientsSubServicesSchema>;
 export const clientsAddServicesSchema = z.object({
   items: z
-    .array(z.object({ serviceId: z.string().min(1, "Pick a service"), tier: z.enum(TIERS), startMonth: month }))
+    .array(
+      z
+        .object({
+          /** v47: a service group with the sub-services ticked; the older form sends serviceId + tier. */
+          groupId: z.string().min(1).optional(),
+          subServiceIds: z.array(z.string().min(1)).max(60).default([]),
+          billingType: z.enum(["monthly", "one_time"]).optional(),
+          monthlyFeePaise: subServiceFee,
+          serviceId: z.string().min(1).optional(),
+          tier: z.enum(TIERS).optional(),
+          startMonth: month,
+        })
+        .refine((i) => (i.groupId ? i.subServiceIds.length > 0 : !!i.serviceId && !!i.tier), "Pick a service and at least one sub-service"),
+    )
     .min(1, "Add at least one service")
     .max(20, "Add at most 20 services at once"),
   note: z.string().trim().max(1000).optional(),
@@ -328,6 +346,8 @@ export type ClientsFormOptions = {
   branches: { id: string; name: string; city: string }[];
   industries: string[];
   services: { id: string; key: string; name: string; billingType: string; tiers: { tier: Tier; pricePaise: number; isFromPrice: boolean }[] }[];
+  /** v47: the service groups and sub-services a Client Manager picks from. */
+  groups: ServiceGroupView[];
   ams: ClientsAmSuggestion[];
   roles: { key: ClientTeamRole; label: string }[];
   canMigrate: boolean;
@@ -389,7 +409,7 @@ export type ClientsDetail = {
   brands: { id: string; name: string; address: string | null }[];
   users: ClientsUserRow[];
   pendingInvites: ClientsPendingInvite[];
-  services: { id: string; serviceName: string; serviceId: string; tier: Tier; billingType: string; status: string; currentGate: string; migrated: boolean; paymentPending: boolean; pausedUntil: string | null; pauseReason: string | null; startMonth: string | null }[];
+  services: { id: string; serviceName: string; serviceId: string; tier: Tier; grouped: boolean; subServices: { id: string; name: string; covers: string }[]; monthlyFeePaise: number | null; billingType: string; status: string; currentGate: string; migrated: boolean; paymentPending: boolean; pausedUntil: string | null; pauseReason: string | null; startMonth: string | null }[];
   quotes: ClientsQuote[];
   pendingApprovals: { id: string; action: string; summary: string; status: string; createdAt: string }[];
   offboarding: ClientsOffboarding | null;

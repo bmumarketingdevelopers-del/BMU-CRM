@@ -55,4 +55,5 @@ export * from "./sync/index.js";
 export * from "./api/v20.js";
 export * from "./invoice-branding.js";
 export * from "./quotations.js";
+export * from "./service-groups.js";
 export * from "./api/quotations.js";

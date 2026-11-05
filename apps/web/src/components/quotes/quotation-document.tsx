@@ -118,7 +118,7 @@ function PageOne({ q }: { q: QuoteView }) {
           {c.projectLines.map((l) => (
             <p key={l}>{l}</p>
           ))}
-          {q.services.length > 0 && <p className="mt-1 text-[#4b5563]" data-testid="quote-services-printed">{q.services.join(" · ")}</p>}
+          {q.services.some((n) => !c.title.includes(n)) && <p className="mt-1 text-[#4b5563]" data-testid="quote-services-printed">{q.services.join(" · ")}</p>}
         </div>
       </div>
       <h2 className="mt-6 text-[12px] font-bold">Cost breakdown</h2>

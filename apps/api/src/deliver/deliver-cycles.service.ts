@@ -63,7 +63,8 @@ export class DeliverCyclesService implements OnModuleInit {
   }
 
   /** Monthly price: the accepted proposal line (after discounts) when there is one, else the tier price. */
-  private async monthlyPricePaise(e: { serviceId: string; tier: string; service: { key: string }; clientOrg: { leadId: string | null } }) {
+  private async monthlyPricePaise(e: { serviceId: string; tier: string; monthlyFeePaise: number | null; service: { key: string }; clientOrg: { leadId: string | null } }) {
+    if (e.monthlyFeePaise) return e.monthlyFeePaise; // v47: a service group's agreed fee
     if (e.clientOrg.leadId) {
       const p = await this.prisma.proposal.findFirst({ where: { leadId: e.clientOrg.leadId, status: 'accepted' }, orderBy: { acceptedAt: 'desc' } });
       const line = (p?.lines as { kind?: string; key?: string; netPaise?: number }[] | undefined)?.find((l) => l.kind === 'service' && l.key === e.service.key);
@@ -298,7 +299,7 @@ export class DeliverCyclesService implements OnModuleInit {
             clientOrgId: e.clientOrgId,
             engagementId,
             kind: 'retainer',
-            lines: [{ label: `${e.service.name} (${e.tier}) retainer for ${deliverPeriodLabel(period)} (${period})`, amountPaise: priceP }],
+            lines: [{ label: `${e.service.name}${e.subServiceIds.length ? '' : ` (${e.tier})`} retainer for ${deliverPeriodLabel(period)} (${period})`, amountPaise: priceP }],
           });
         }
         if (inv && !existing) await tx.invoice.update({ where: { id: inv.id }, data: { period } });

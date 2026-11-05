@@ -218,7 +218,7 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
       footerNote={v.engagements.length && !migration && v.payment !== "none" ? <>First payment: {formatINR(firstPayment)} + GST{v.payment === "offline" ? " · Finance confirms it before Gate 1" : " · paid in the client app"}</> : draft.savedAt ? "Draft saved" : null}
     >
       <div className="flex gap-2" role="radiogroup" aria-label="Start mode">
-        <button type="button" role="radio" aria-checked={!migration} className={seg(!migration)} onClick={() => set({ startMode: "onboarding", payment: v.payment === "none" ? "online" : v.payment })}>
+        <button type="button" role="radio" aria-checked={!migration} className={seg(!migration)} onClick={() => set({ startMode: "onboarding", engagements: [], payment: v.payment === "none" ? "online" : v.payment })}>
           <span className="block font-medium">New onboarding</span>
           <span className="block text-xs opacity-80">Starts at Gate 1</span>
         </button>
@@ -311,7 +311,7 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
         </div>
       )}
 
-      <Section title="Services" hint={migration ? "Set the gate each service is at today, with a reason." : "Optional: add them now or later from Client 360."}>
+      <Section title="Services" hint={migration ? "Set the gate each service is at today, with a reason." : "After saving, add the services and sub-services from Client 360 → Services."}>
         {v.engagements.map((l, i) => {
           const s = services.get(l.serviceId);
           return (
@@ -364,9 +364,11 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
             </div>
           );
         })}
+        {migration && (
         <button type="button" className="border border-dashed border-border px-3 py-2 text-sm hover:border-ink" onClick={() => set({ engagements: [...v.engagements, { serviceId: "", tier: "starter", startMonth: thisMonth(), currentGate: migration ? "G3" : "", gateReason: "" }] })}>
           + Add a service
         </button>
+        )}
         {migration ? (
           <Field label="Why is this client being migrated?" required error={errors.migrationReason} htmlFor="ac-mig">
             <input id="ac-mig" className={inputCls} value={v.migrationReason} placeholder="e.g. Existing client from the old spreadsheet" onChange={(e) => set({ migrationReason: e.target.value })} />

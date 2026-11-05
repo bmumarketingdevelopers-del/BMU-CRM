@@ -343,6 +343,8 @@ export type ServiceBillingRunLine = {
   client: string;
   service: string;
   tier: string;
+  /** v47: a service group, which has no price-list tier. */
+  grouped?: boolean;
   amountPaise: number;
   gstPaise: number;
   totalPaise: number;
