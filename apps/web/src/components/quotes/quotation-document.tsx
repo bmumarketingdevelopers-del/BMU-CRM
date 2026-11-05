@@ -1,9 +1,11 @@
 "use client";
 
 // v45: BMU's quotation on A4. Page 1: header, from / prepared for / project, the cost breakdown, totals
-// and amount in words. Page 2 (only when added): what's included and the timeline. v46, last page, in this order: the
+// and amount in words. Then (only when added): what's included and the timeline. v46, last page, in this order: the
 // payment box with a UPI QR, the fixed terms, the two signature lines and the thank-you card. Fixed colours so the app theme never changes the
 // document; the print copy sits directly under <body> so "Save as PDF" gives only the quotation.
+// v48: pages follow the content: long cost breakdowns continue on their own sheets (layoutQuote), the last page's blocks
+// share the sheet so no gap is left under the thank-you card, and it joins the last cost sheet when there is room.
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
@@ -77,10 +79,45 @@ function Qr({ uri }: { uri: string | null }) {
   );
 }
 
-function PageOne({ q }: { q: QuoteView }) {
+/** Sizes in mm on the A4 sheet, measured from printed quotations and rounded up. */
+const MM = { bottom: 281, firstTop: 66, lineOfText: 3.7, nextTop: 34, totals: 34, closing: 160 };
+const rowsOf = (text: string, perRow: number) => text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perRow)), 0);
+const rowMm = (l: QuoteView["content"]["lines"][number]) => 9.5 + (rowsOf(l.title, 80) - 1) * 4 + (l.details ? rowsOf(l.details, 92) * 3.5 : 0);
+
+/** Which cost lines go on which sheet, and whether the last page fits under them. */
+export function layoutQuote(q: QuoteView) {
+  const { client: p, content: c, seller } = q;
+  const party = 1 + (p.owner ? 1 : 0) + (p.email ? rowsOf(p.email, 30) : 0) + (p.address ? rowsOf(p.address, 32) : 0) + p.preparedFor.reduce((n, l) => n + rowsOf(l, 32), 0);
+  const project = rowsOf(c.title, 30) + c.projectLines.reduce((n, l) => n + rowsOf(l, 32), 0);
+  let room = MM.bottom - MM.firstTop - Math.max(party, project, seller.addressLines.length + 3) * MM.lineOfText;
+  const sheets: number[][] = [[]];
+  c.lines.forEach((l, i) => {
+    const h = rowMm(l);
+    if (h > room && sheets[sheets.length - 1].length) {
+      sheets.push([]);
+      room = MM.bottom - MM.nextTop;
+    }
+    sheets[sheets.length - 1].push(i);
+    room -= h;
+  });
+  // The totals never sit alone: the last line moves with them.
+  const last = sheets[sheets.length - 1];
+  if (room < MM.totals && last.length > 1) {
+    const moved = last.pop()!;
+    sheets.push([moved]);
+    room = MM.bottom - MM.nextTop - rowMm(c.lines[moved]);
+  }
+  const extra = c.scope.length > 0 || c.timeline.length > 0;
+  return { sheets, closingOnLast: !extra && room - MM.totals >= MM.closing };
+}
+
+function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows: number[]; page: number; first: boolean; last: boolean; closing: boolean }) {
   const c = q.content;
   return (
-    <section className="qd-sheet qd-flow" data-testid="quote-page-1">
+    <section className="qd-sheet qd-flow" data-testid={`quote-page-${page}`}>
+      {!first && <SmallHeader q={q} />}
+      {first && (
+        <>
       <header className="flex items-start justify-between gap-6">
         <Logo h={11} />
         <div className="text-right">
@@ -107,7 +144,10 @@ function PageOne({ q }: { q: QuoteView }) {
         </div>
         <div>
           <p className="qd-label mb-1.5">Prepared for</p>
-          <p className="font-semibold">{q.client.name}</p>
+          <p className="font-semibold">{q.client.company}</p>
+          {q.client.owner && <p>{q.client.owner}</p>}
+          {q.client.email && <p className="break-words">{q.client.email}</p>}
+          {q.client.address && <p className="whitespace-pre-line">{q.client.address}</p>}
           {q.client.preparedFor.map((l) => (
             <p key={l}>{l}</p>
           ))}
@@ -122,7 +162,9 @@ function PageOne({ q }: { q: QuoteView }) {
         </div>
       </div>
       <h2 className="mt-6 text-[12px] font-bold">Cost breakdown</h2>
-      <table className="mt-2 w-full border-collapse text-[10px]" data-testid="quote-lines">
+        </>
+      )}
+      <table className={`${first ? "mt-2" : "mt-4"} w-full border-collapse text-[10px]`} data-testid={first ? "quote-lines" : undefined}>
         <thead>
           <tr className="text-left text-[8.5px] font-bold uppercase tracking-[0.1em] text-white" style={{ background: INK }}>
             <th className="w-[9mm] px-3 py-2">#</th>
@@ -133,7 +175,9 @@ function PageOne({ q }: { q: QuoteView }) {
           </tr>
         </thead>
         <tbody className="bg-white">
-          {c.lines.map((l, i) => (
+          {rows.map((i) => {
+            const l = c.lines[i];
+            return (
             <tr key={i} className="border-b border-[#e7e5df] align-top">
               <td className="num px-3 py-2">{String(i + 1).padStart(2, "0")}</td>
               <td className="px-3 py-2">
@@ -144,9 +188,12 @@ function PageOne({ q }: { q: QuoteView }) {
               <td className="num px-3 py-2">{l.kind === "percent" ? "on fees" : money(l.unitPricePaise)}</td>
               <td className="num px-3 py-2 text-right">{money(q.amounts[i] ?? 0)}</td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
+      {last && (
+        <>
       <div className="mt-3 ml-auto w-[72mm] text-[10px]">
         <div className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-1.5">
           <span>Subtotal</span>
@@ -162,16 +209,19 @@ function PageOne({ q }: { q: QuoteView }) {
         </div>
       </div>
       <p className="mt-2 text-right text-[9px] text-[#4b5563]">Amount in words: {q.amountInWords}.</p>
-      <Footer q={q} page={1} />
+        </>
+      )}
+      {closing && <Closing q={q} compact />}
+      <Footer q={q} page={page} />
     </section>
   );
 }
 
-function PageTwo({ q }: { q: QuoteView }) {
+function PageTwo({ q, page }: { q: QuoteView; page: number }) {
   const c = q.content;
   if (!c.scope.length && !c.timeline.length) return null;
   return (
-    <section className="qd-sheet qd-flow" data-testid="quote-page-2">
+    <section className="qd-sheet qd-flow" data-testid="quote-scope-page">
       <SmallHeader q={q} />
       {c.scope.length > 0 && (
         <>
@@ -207,12 +257,12 @@ function PageTwo({ q }: { q: QuoteView }) {
           </div>
         </>
       )}
-      <Footer q={q} page={2} />
+      <Footer q={q} page={page} />
     </section>
   );
 }
 
-function PageThree({ q, page }: { q: QuoteView; page: number }) {
+function Closing({ q, compact }: { q: QuoteView; compact?: boolean }) {
   const c = q.content;
   const pay = q.payment;
   const rows: [string, string | null][] = [
@@ -225,76 +275,86 @@ function PageThree({ q, page }: { q: QuoteView; page: number }) {
   ];
   const shown = rows.filter((r): r is [string, string] => !!r[1]);
   return (
-    <section className="qd-sheet" data-testid="quote-page-3">
-      <SmallHeader q={q} />
-      {(shown.length > 0 || pay.upiUri) && (
-        <div className="qd-card mt-4 flex items-center gap-6 border-l-[3px] px-5 py-3" style={{ borderLeftColor: GREEN }} data-testid="quote-payment">
-          <div className="min-w-0 flex-1">
-            <p className="qd-label mb-1">Payment details</p>
-            <dl className="grid grid-cols-[30mm_1fr] gap-y-0.5 text-[10px]">
-              {shown.map(([k, v]) => (
-                <div key={k} className="contents">
-                  <dt className="text-[#6b7280]">{k}</dt>
-                  <dd className="font-semibold">{v}</dd>
-                </div>
-              ))}
-            </dl>
+      <div className={`flex flex-1 flex-col justify-between pb-2 ${compact ? "gap-3 pt-4" : "gap-6 pt-5"}`} data-testid="quote-closing">
+        {(shown.length > 0 || pay.upiUri) && (
+          <div className={`qd-card flex items-center gap-6 border-l-[3px] px-5 ${compact ? "py-2" : "py-4"}`} style={{ borderLeftColor: GREEN }} data-testid="quote-payment">
+            <div className="min-w-0 flex-1">
+              <p className="qd-label mb-1">Payment details</p>
+              <dl className={`grid grid-cols-[30mm_1fr] ${compact ? "gap-y-0.5 text-[9.5px]" : "gap-y-1 text-[10.5px]"}`}>
+                {shown.map(([k, v]) => (
+                  <div key={k} className="contents">
+                    <dt className="text-[#6b7280]">{k}</dt>
+                    <dd className="font-semibold">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <Qr uri={pay.upiUri} />
           </div>
-          <Qr uri={pay.upiUri} />
-        </div>
-      )}
-      <p className="qd-label mt-5">Terms</p>
-      <h2 className="mt-0.5 text-[16px] font-bold leading-tight">Terms &amp; conditions</h2>
-      <div className="mt-3 grid grid-cols-2 gap-2.5">
-        {c.terms.map((t) => (
-          <div key={t.title} className="qd-bar px-3.5 py-2">
-            <p className="text-[10.5px] font-bold">{t.title}</p>
-            <p className="mt-0.5 text-[9.5px] leading-snug text-[#374151]">{t.text}</p>
+        )}
+        <div>
+          <p className="qd-label">Terms</p>
+          <h2 className="mt-0.5 text-[16px] font-bold leading-tight">Terms &amp; conditions</h2>
+          <div className={`grid grid-cols-2 ${compact ? "mt-2 gap-2" : "mt-3 gap-3"}`}>
+            {c.terms.map((t) => (
+              <div key={t.title} className={compact ? "qd-bar px-3 py-1.5" : "qd-bar px-4 py-3"}>
+                <p className={`font-bold ${compact ? "text-[10px]" : "text-[11px]"}`}>{t.title}</p>
+                <p className={`mt-0.5 text-[#374151] ${compact ? "text-[9px] leading-snug" : "text-[10px] leading-normal"}`}>{t.text}</p>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="mt-7 grid grid-cols-2 gap-10">
-        <div>
-          <p className="qd-label">Accepted by client</p>
-          <div className="mt-9 border-b" style={{ borderColor: INK }}>
-            {q.acceptedName && (
-              <p className="pb-1 text-[11px] font-semibold" data-testid="quote-accepted-by">
-                {q.acceptedName}
-                {q.acceptedAt ? <span className="ml-2 text-[9.5px] font-normal text-[#4b5563]">accepted in the app on {fmt(q.acceptedAt)}</span> : null}
-              </p>
-            )}
+        </div>
+        <div className="grid grid-cols-2 gap-10">
+          <div>
+            <p className="qd-label">Accepted by client</p>
+            <div className={`${compact ? "mt-7" : "mt-12"} border-b`} style={{ borderColor: INK }}>
+              {q.acceptedName && (
+                <p className="pb-1 text-[11px] font-semibold" data-testid="quote-accepted-by">
+                  {q.acceptedName}
+                  {q.acceptedAt ? <span className="ml-2 text-[9.5px] font-normal text-[#4b5563]">accepted in the app on {fmt(q.acceptedAt)}</span> : null}
+                </p>
+              )}
+            </div>
+            <p className="mt-1 text-[9px] text-[#6b7280]">Name, signature &amp; date</p>
           </div>
-          <p className="mt-1 text-[9px] text-[#6b7280]">Name, signature &amp; date</p>
+          <div>
+            <p className="qd-label">For {q.seller.name}</p>
+            <div className={`${compact ? "mt-7" : "mt-12"} border-b`} style={{ borderColor: INK }} />
+            <p className="mt-1 text-[9px] text-[#6b7280]">{q.seller.signatory}</p>
+          </div>
         </div>
-        <div>
-          <p className="qd-label">For {q.seller.name}</p>
-          <div className="mt-9 border-b" style={{ borderColor: INK }} />
-          <p className="mt-1 text-[9px] text-[#6b7280]">{q.seller.signatory}</p>
+        <div className="flex items-center gap-5 rounded-[6px] px-5 py-3 text-white" style={{ background: INK }}>
+          <Logo white h={8} />
+          <div>
+            <p className="text-[12.5px] font-bold leading-tight" style={{ color: GREEN }}>
+              Thank you.
+            </p>
+            {c.footerLine && <p className="mt-0.5 text-[9.5px] text-white/85">{c.footerLine}</p>}
+            <p className="text-[9.5px] text-white/85">{q.seller.website.replace(/^https?:\/\/(www\.)?/, "")}</p>
+          </div>
         </div>
       </div>
-      <div className="mt-8 flex items-center gap-5 rounded-[6px] px-5 py-3 text-white" style={{ background: INK }}>
-        <Logo white h={8} />
-        <div>
-          <p className="text-[12.5px] font-bold leading-tight" style={{ color: GREEN }}>
-            Thank you.
-          </p>
-          {c.footerLine && <p className="mt-0.5 text-[9.5px] text-white/85">{c.footerLine}</p>}
-          <p className="text-[9.5px] text-white/85">{q.seller.website.replace(/^https?:\/\/(www\.)?/, "")}</p>
-        </div>
-      </div>
-      <Footer q={q} page={page} />
-    </section>
   );
 }
 
 /** The pages alone (the print copy, and for checks). */
 export function QuotationPages({ q }: { q: QuoteView }) {
-  const two = q.content.scope.length > 0 || q.content.timeline.length > 0;
+  const { sheets, closingOnLast } = layoutQuote(q);
+  const scope = q.content.scope.length > 0 || q.content.timeline.length > 0;
+  const next = sheets.length + 1;
   return (
     <div className="qd">
-      <PageOne q={q} />
-      {two && <PageTwo q={q} />}
-      <PageThree q={q} page={two ? 3 : 2} />
+      {sheets.map((rows, i) => (
+        <CostPage key={i} q={q} rows={rows} page={i + 1} first={i === 0} last={i === sheets.length - 1} closing={closingOnLast && i === sheets.length - 1} />
+      ))}
+      {scope && <PageTwo q={q} page={next} />}
+      {!closingOnLast && (
+        <section className="qd-sheet" data-testid="quote-last-page">
+          <SmallHeader q={q} />
+          <Closing q={q} />
+          <Footer q={q} page={scope ? next + 1 : next} />
+        </section>
+      )}
     </div>
   );
 }

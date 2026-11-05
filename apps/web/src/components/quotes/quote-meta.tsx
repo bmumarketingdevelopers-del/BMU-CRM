@@ -16,6 +16,7 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, onServices, fixedCli
   const [templates, setTemplates] = useState<QuoteTemplateRow[]>();
   const [services, setServices] = useState<(QuoteServicePick & { id: string; label: string })[]>([]);
   const templateTitle = useRef("");
+  const [who, setWho] = useState<{ printed: string[]; missing: string[] }>();
   useEffect(() => {
     api.clientsActions.list({}).then(setClients, () => setClients([]));
     if (onTemplate) api.quotes.templates().then(setTemplates, () => setTemplates([]));
@@ -24,7 +25,11 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, onServices, fixedCli
     if (!meta.clientOrgId) return;
     api.clientsActions
       .get(meta.clientOrgId)
-      .then((d) => setServices(d.services.filter((s) => s.status !== "closed").map((s) => ({ id: s.id, name: s.serviceName, label: s.grouped ? s.serviceName : `${s.serviceName} (${s.tier})`, subServices: s.subServices }))))
+      .then((d) => {
+        const fields: [string, string | null][] = [["owner name", d.contact.name], ["email", d.contact.email ?? d.billing.billingEmail], ["address", d.billing.billingAddress]];
+        setWho({ printed: [d.billing.billingName || d.name, ...fields.flatMap(([, v]) => (v ? [v] : []))], missing: fields.filter(([, v]) => !v).map(([k]) => k) });
+        setServices(d.services.filter((s) => s.status !== "closed").map((s) => ({ id: s.id, name: s.serviceName, label: s.grouped ? s.serviceName : `${s.serviceName} (${s.tier})`, subServices: s.subServices })));
+      })
       .catch(() => setServices([]));
   }, [meta.clientOrgId]);
   const set = (patch: Partial<QuoteMeta>) => onChange({ ...meta, ...patch });
@@ -93,7 +98,14 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, onServices, fixedCli
         <Input type="date" min={inDays(0)} value={meta.validUntil} onChange={(e) => set({ validUntil: e.target.value })} aria-label="Valid until" />
       </label>
       <div className="grid gap-1 sm:col-span-2">
-        <span className="text-xs font-medium">Prepared for: lines under the client&apos;s name</span>
+        <span className="text-xs font-medium">Prepared for</span>
+        {who && (
+          <p className="text-sm text-ink-muted" data-testid="quote-prepared-for">
+            Printed from the client&apos;s record: {who.printed.join(" · ")}
+            {who.missing.length > 0 && <span className="text-[#9a6b00]"> Missing: {who.missing.join(", ")}. Add it with Edit client on Client 360.</span>}
+          </p>
+        )}
+        <span className="mt-1 text-xs font-medium">Extra lines (optional)</span>
         <div className="grid gap-2 sm:grid-cols-3">
           {prepared.map((v, i) => (
             <Input key={i} value={v} placeholder={["e.g. Real Estate Developer", "e.g. Bengaluru, Karnataka", ""][i]} onChange={(e) => set({ preparedFor: prepared.map((x, j) => (j === i ? e.target.value : x)).filter(Boolean) })} aria-label={`Prepared for line ${i + 1}`} />

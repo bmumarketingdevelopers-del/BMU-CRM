@@ -34,9 +34,12 @@ beforeAll(async () => {
   const cm = (await prisma.clientOrg.findUniqueOrThrow({ where: { id: sunrise }, include: { am: true } })).am!;
   tokens.cm = await signIn(cm.email!);
   tokens.founder = await signIn('founder@bmu.demo');
+  tokens.client = await signIn('client@sunrise.demo');
 });
 
 afterAll(async () => {
+  await prisma.task.deleteMany({ where: { title: 'Test task' } });
+  await prisma.clientServiceQuote.deleteMany({ where: { engagementId: { in: made } } });
   await prisma.requirementItem.deleteMany({ where: { cycle: { engagementId: { in: made } } } });
   await prisma.cycle.deleteMany({ where: { engagementId: { in: made } } });
   await prisma.engagement.deleteMany({ where: { id: { in: made } } });
@@ -113,6 +116,53 @@ describe('service groups (v47)', () => {
     await http().patch(`/catalogue/sub-services/${sub.id}`).set(as('founder')).send({ name: sub.name, covers: 'Covers that', archived: true }).expect(200);
     const form = ((await http().get('/clients-actions/form-options').set(as('cm')).expect(200)).body as ClientsFormOptions).groups;
     expect(form.find((x) => x.id === g.id)!.subServices.some((s) => s.id === sub.id)).toBe(false);
+  });
+
+  it('a service is deleted only when the client agrees', async () => {
+    const g = groups[1];
+    const add = await http().post(`/clients-actions/${sunrise}/services`).set(as('cm')).send({ items: [{ groupId: g.id, subServiceIds: [g.subServices[0].id], billingType: 'monthly', startMonth: month }] }).expect(201);
+    const id = (add.body.services as { id: string; serviceName: string }[]).find((s) => s.serviceName === g.name)!.id;
+    made.push(id);
+    const task = await prisma.task.create({ data: { orgId: (await prisma.engagement.findUniqueOrThrow({ where: { id } })).orgId, title: 'Test task', engagementId: id, status: 'todo' } });
+
+    await http().post(`/clients-actions/engagements/${id}/remove`).set(as('cm')).send({ reason: 'x' }).expect(400);
+    await http().post(`/clients-actions/engagements/${id}/remove`).set(as('cm')).send({ reason: 'Client paused this work' }).expect(201);
+    await http().post(`/clients-actions/engagements/${id}/remove`).set(as('cm')).send({ reason: 'Asked twice' }).expect(400);
+    expect((await prisma.engagement.findUniqueOrThrow({ where: { id } })).deletedAt).toBeNull();
+
+    // Declining changes nothing, and the manager can ask again.
+    const first = await prisma.clientServiceQuote.findFirstOrThrow({ where: { engagementId: id, kind: 'remove_service', status: 'sent' } });
+    await http().post(`/client-actions/quotes/${first.id}/approve`).set(as('cm')).expect(403);
+    await http().post(`/client-actions/quotes/${first.id}/decline`).set(as('client')).send({ reason: 'Keep it' }).expect(200);
+    expect((await prisma.engagement.findUniqueOrThrow({ where: { id } })).deletedAt).toBeNull();
+
+    await http().post(`/clients-actions/engagements/${id}/remove`).set(as('cm')).send({ reason: 'Agreed on the call' }).expect(201);
+    const second = await prisma.clientServiceQuote.findFirstOrThrow({ where: { engagementId: id, kind: 'remove_service', status: 'sent' } });
+    await http().post(`/client-actions/quotes/${second.id}/approve`).set(as('client')).expect(200);
+    const row = await prisma.engagement.findUniqueOrThrow({ where: { id } });
+    expect(row.deletedAt).not.toBeNull();
+    expect(row.status).toBe('closed');
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: task.id } })).status).toBe('cancelled');
+    const detail = (await http().get(`/clients-actions/${sunrise}`).set(as('cm')).expect(200)).body as { services: { id: string }[] };
+    expect(detail.services.some((s) => s.id === id)).toBe(false);
+    await prisma.task.delete({ where: { id: task.id } });
+    await prisma.clientServiceQuote.deleteMany({ where: { engagementId: id } });
+  });
+
+  it('prepared for prints the client record, and a sent quotation keeps it', async () => {
+    const before = await prisma.clientOrg.findUniqueOrThrow({ where: { id: sunrise } });
+    await prisma.clientOrg.update({ where: { id: sunrise }, data: { billingAddress: '12 MG Road, Bengaluru', legalName: 'Sunrise Legal Pvt Ltd', primaryContact: { name: 'Asha Rao', email: 'asha@sunrise.test' } } });
+    const line = { title: 'SEO', details: '', kind: 'unit', qty: 1, unitPricePaise: 100000, pct: 0 };
+    const q = (await http().post('/quotes').set(as('cm')).send({ title: 'Test project', lines: [line], clientOrgId: sunrise, validUntil: new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10) }).expect(201)).body;
+    try {
+      expect(q.client).toMatchObject({ company: 'Sunrise Legal Pvt Ltd', owner: 'Asha Rao', email: 'asha@sunrise.test', address: '12 MG Road, Bengaluru' });
+      await http().post(`/quotes/${q.id}/send`).set(as('cm')).expect(200);
+      await prisma.clientOrg.update({ where: { id: sunrise }, data: { billingAddress: 'Somewhere new' } });
+      expect((await http().get(`/quotes/${q.id}`).set(as('cm')).expect(200)).body.client.address).toBe('12 MG Road, Bengaluru');
+    } finally {
+      await prisma.quotation.delete({ where: { id: q.id } });
+      await prisma.clientOrg.update({ where: { id: sunrise }, data: { billingAddress: before.billingAddress, legalName: before.legalName, primaryContact: before.primaryContact ?? undefined } });
+    }
   });
 
   it('a quotation starts from what was ticked and keeps the edits', () => {

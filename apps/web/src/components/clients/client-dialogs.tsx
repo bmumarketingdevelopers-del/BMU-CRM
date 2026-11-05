@@ -191,8 +191,10 @@ export function SubServicesDialog({ service, open, onClose, onDone }: { service:
     try {
       const r = await api.clientsActions.setSubServices(service.id, { subServiceIds: ids, monthlyFeePaise: service.billingType === "monthly" ? feePaise(fee) : null });
       onDone(r.message);
+      onClose();
     } catch (e) {
       setError((e as Error).message);
+    } finally {
       setBusy(false);
     }
   }
@@ -204,6 +206,35 @@ export function SubServicesDialog({ service, open, onClose, onDone }: { service:
           <input id="ss-fee" className={inputCls} inputMode="decimal" value={fee} onChange={(e) => setFee(e.target.value)} />
         </Field>
       )}
+      <Err error={error} />
+    </ActionDialog>
+  );
+}
+
+/** v48: Client 360: ask the client's Owner to agree to deleting a service. Nothing changes until they approve. */
+export function RemoveServiceDialog({ service, open, onClose, onDone }: { service: ClientsDetail["services"][number]; open: boolean; onClose: () => void; onDone: (m: string) => void }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  async function send() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const r = await api.clientsActions.requestRemoval(service.id, reason.trim());
+      onDone(r.message);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <ActionDialog open={open} title={`Delete ${service.serviceName}`} onClose={onClose} testId="remove-service-dialog" footer={<><button type="button" className={primary} disabled={busy || reason.trim().length < 3} onClick={send}>Send to the client</button><button type="button" className={cancel} onClick={onClose}>Cancel</button></>}>
+      <p>The client&apos;s Owner gets this request in their app. If they approve, the service is deleted: its open tasks are cancelled and monthly invoices stop. Invoices already issued stay. If they decline, nothing changes.</p>
+      <Field label="Reason (the client sees this)" required htmlFor="rs-reason">
+        <TextArea id="rs-reason" className="min-h-16" value={reason} onChange={(e) => setReason(e.target.value)} />
+      </Field>
       <Err error={error} />
     </ActionDialog>
   );

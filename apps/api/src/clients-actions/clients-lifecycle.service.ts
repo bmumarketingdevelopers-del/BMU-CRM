@@ -222,6 +222,38 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     return { engagementIds: [...ids, ...extended.map((x) => x.id)], message: `Added ${names} for ${c.name}. Nothing was sent to the client; send quotations and dues as invoices.` };
   }
 
+  /**
+   * v48: the Client Manager asks to delete a service. It waits in the client Owner's quotes list; nothing changes until
+   * they approve (applyQuote), and declining leaves the service running.
+   */
+  async requestRemoval(me: Me, id: string, reason: string, ip?: string) {
+    const { e, client: c } = await this.engagementFor(me, id);
+    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can ask to delete a service");
+    if (c.offboarding) throw new BadRequestException('This client is being offboarded');
+    if (e.status === 'closed') throw new BadRequestException(`${e.service.name} is already closed`);
+    if (await this.prisma.clientServiceQuote.count({ where: { engagementId: e.id, kind: 'remove_service', status: 'sent' } })) throw new BadRequestException(`${c.name} has not answered the last request to delete ${e.service.name} yet`);
+    const owners = await this.owners(c.id);
+    if (!owners.length) throw new BadRequestException(`${c.name} has no Owner login to agree to this. Invite one first.`);
+    const q = await this.prisma.clientServiceQuote.create({
+      data: { orgId: me.orgId, clientOrgId: c.id, kind: 'remove_service', engagementId: e.id, serviceId: e.serviceId, tier: e.tier, status: 'sent', note: reason, requestedById: me.id, sentById: me.id },
+    });
+    await this.audit.log(me, 'engagement.removal_requested', 'Engagement', e.id, null, { quoteId: q.id, service: e.service.name, reason }, ip);
+    await this.notifications.notify(me.orgId, owners, { kind: 'quote_ready', title: `Please confirm: remove ${e.service.name}`, body: `${reason} It is only removed if you approve.`, link: '/client/settings', critical: true });
+    return { message: `Sent to ${c.name}. ${e.service.name} is deleted only when they approve.` };
+  }
+
+  /** v48: the client agreed. The project leaves every list, billing stops and its open tasks are cancelled; invoices stay. */
+  private async removeService(q: { id: string; orgId: string; engagementId: string | null; clientOrgId: string }, name: string, clientName: string, amUserId: string | null) {
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.engagement.update({ where: { id: q.engagementId! }, data: { status: 'closed', endDate: now, deletedAt: now } }),
+      this.prisma.task.updateMany({ where: { engagementId: q.engagementId!, status: { in: [...OPEN_TASK] } }, data: { status: 'cancelled' } }),
+      this.prisma.clientServiceQuote.update({ where: { id: q.id }, data: { status: 'applied', appliedAt: now, resultEngagementId: q.engagementId } }),
+    ]);
+    await this.audit.logSystem(q.orgId, 'engagement.removed', 'Engagement', q.engagementId!, { service: name, quoteId: q.id });
+    await this.notifications.notify(q.orgId, [amUserId], { kind: 'service_removed', title: `${clientName}: ${name} deleted`, body: 'The client agreed. Its open tasks are cancelled and no more monthly invoices are raised. Invoices already issued stay.', link: `/team/clients/${q.clientOrgId}?tab=services` });
+  }
+
   /** v47: a service group, checking every sub-service belongs to it. */
   private async groupWith(orgId: string, where: { id: string } | { serviceId: string }, subServiceIds: string[]) {
     const g = await this.prisma.serviceGroup.findFirst({ where: { orgId, ...where }, include: { subServices: { select: { id: true } } } });
@@ -318,7 +350,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     });
     await this.audit.log(me, 'client.quote_approved', q.kind === 'change_tier' ? 'Engagement' : 'ClientOrg', q.kind === 'change_tier' ? q.engagementId! : clientOrgId, { status: 'sent' }, { quoteId: q.id, status: 'approved', invoiceId }, ip);
     const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: clientOrgId }, select: { name: true, amUserId: true } });
-    await this.notifications.notify(me.orgId, [c.amUserId], { kind: 'quote_approved', title: `${c.name} approved: ${service.name} ${q.kind === 'add_service' ? `(${q.tier})` : `→ ${q.tier}`}`, body: invoiceId ? 'Invoice issued; it applies once paid.' : 'It applies now.', link: `/team/clients/${clientOrgId}?tab=services` });
+    if (q.kind !== 'remove_service') await this.notifications.notify(me.orgId, [c.amUserId], { kind: 'quote_approved', title: `${c.name} approved: ${service.name} ${q.kind === 'add_service' ? `(${q.tier})` : `→ ${q.tier}`}`, body: invoiceId ? 'Invoice issued; it applies once paid.' : 'It applies now.', link: `/team/clients/${clientOrgId}?tab=services` });
     if (q.kind === 'change_tier' && q.fromTier && clientsTierRank[q.tier] < clientsTierRank[q.fromTier]) {
       const leads = await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'am_lead' } } } }, select: { id: true } });
       await this.notifications.notify(me.orgId, leads.map((l) => l.id), { kind: 'tier_downgrade', title: `${c.name} is downgrading ${service.name} to ${q.tier}`, body: `From the next cycle (was ${q.fromTier}).`, link: `/team/clients/${clientOrgId}?tab=services`, critical: true });
@@ -335,7 +367,8 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.clientServiceQuote.update({ where: { id }, data: { status: 'declined', note: reason ? `${q.note ? `${q.note} · ` : ''}Declined: ${reason}` : q.note } });
     await this.audit.log(me, 'client.quote_declined', 'ClientOrg', clientOrgId, { status: q.status }, { quoteId: id, reason: reason ?? null }, ip);
     const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: clientOrgId }, select: { name: true, amUserId: true } });
-    await this.notifications.notify(me.orgId, [c.amUserId], { kind: 'quote_declined', title: `${c.name} declined a service quote`, body: reason, link: `/team/clients/${clientOrgId}?tab=services` });
+    const keeping = q.kind === 'remove_service' ? (await this.prisma.service.findUniqueOrThrow({ where: { id: q.serviceId } })).name : null;
+    await this.notifications.notify(me.orgId, [c.amUserId], { kind: 'quote_declined', title: keeping ? `${c.name} wants to keep ${keeping}` : `${c.name} declined a service quote`, body: reason, link: `/team/clients/${clientOrgId}?tab=services` });
   }
 
   /** Applies an approved (and paid) quote: a new engagement at G1 with its own checklist, or the new tier. */
@@ -344,6 +377,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     if (q.status !== 'approved') return;
     const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: q.clientOrgId } });
     const service = await this.prisma.service.findUniqueOrThrow({ where: { id: q.serviceId } });
+    if (q.kind === 'remove_service') return this.removeService(q, service.name, c.name, c.amUserId);
     let engagementId = q.engagementId;
     if (q.kind === 'add_service') {
       const reqs = await requirementsFor(this.settings, q.orgId, service.key);

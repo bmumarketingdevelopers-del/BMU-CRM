@@ -9,6 +9,7 @@ import {
   BMU_ADDRESS,
   DEFAULT_QUOTE_TEMPLATE,
   QUOTE_FIXED_TERMS,
+  type QuoteClientDetails,
   quoteContentSchema,
   quoteDecisionSchema,
   quoteSaveSchema,
@@ -82,12 +83,23 @@ export class QuotesService {
 
   // ------------------------------------------------------------------------------------------------ views
 
+  /** v48: who the quotation is prepared for, from the client's record: its contact, else the lead's, else its Owner's login. */
+  private async clientDetails(clientOrgId: string): Promise<QuoteClientDetails> {
+    const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: clientOrgId }, select: { name: true, legalName: true, billingAddress: true, billingEmail: true, primaryContact: true, leadId: true } });
+    type Contact = { name?: string | null; email?: string | null } | null;
+    const lead = !c.primaryContact && c.leadId ? await this.prisma.lead.findUnique({ where: { id: c.leadId }, select: { contact: true } }) : null;
+    const contact = (c.primaryContact ?? lead?.contact ?? null) as Contact;
+    const owner = await this.prisma.clientUser.findFirst({ where: { clientOrgId, clientRole: 'client_owner', user: { deletedAt: null } }, select: { user: { select: { name: true, email: true } } } });
+    return { company: c.legalName || c.name, owner: contact?.name || owner?.user.name || null, email: contact?.email || c.billingEmail || owner?.user.email || null, address: c.billingAddress || null };
+  }
+
   private async view(me: Me, q: QuoteDb): Promise<QuoteView> {
-    const [gst, tenant, branding, client, invoices, creator, engagements] = await Promise.all([
+    const [gst, tenant, branding, client, details, invoices, creator, engagements] = await Promise.all([
       this.settings.get(q.orgId, 'gst'),
       this.settings.get(q.orgId, 'tenant'),
       readInvoiceBranding(this.prisma, q.orgId),
       this.prisma.clientOrg.findUniqueOrThrow({ where: { id: q.clientOrgId }, select: { id: true, name: true } }),
+      (q.content as { clientDetails?: QuoteClientDetails }).clientDetails ?? this.clientDetails(q.clientOrgId),
       this.prisma.invoice.findMany({ where: { id: { in: [q.advanceInvoiceId, q.balanceInvoiceId].filter((x): x is string => !!x) } }, select: { id: true, number: true, status: true, totalPaise: true } }),
       q.createdById ? this.prisma.user.findUnique({ where: { id: q.createdById }, select: { name: true } }) : null,
       q.engagementIds.length ? this.prisma.engagement.findMany({ where: { id: { in: q.engagementIds } }, select: { id: true, service: { select: { name: true } } } }) : [],
@@ -113,7 +125,7 @@ export class QuotesService {
       date: (q.sentAt ?? q.createdAt).toISOString(),
       validUntil: q.validUntil.toISOString().slice(0, 10),
       seller: { name: gst.legalName || tenant.name, addressLines: address, website: gst.website?.trim() || 'www.bmumarketing.in', gstin: gst.gstin?.trim() || null, signatory },
-      client: { id: client.id, name: client.name, preparedFor: q.preparedFor },
+      client: { id: client.id, name: client.name, preparedFor: q.preparedFor, ...details },
       engagementIds: q.engagementIds,
       services: q.engagementIds.map((id) => engagements.find((e) => e.id === id)?.service.name).filter((x): x is string => !!x),
       templateId: q.templateId,
@@ -265,7 +277,7 @@ export class QuotesService {
     if (!['draft', 'sent'].includes(before.status)) throw new BadRequestException(`This quotation is ${before.status}`);
     if (this.status(before) === 'expired') throw new BadRequestException('It has expired. Make a new quotation with a new valid-until date.');
     // v46: the wording it goes out with is kept on the quotation.
-    const fixedContent = before.status === 'draft' ? { ...(before.content as unknown as QuoteContent), terms: QUOTE_FIXED_TERMS } : (before.content as unknown as QuoteContent);
+    const fixedContent = before.status === 'draft' ? { ...(before.content as unknown as QuoteContent), terms: QUOTE_FIXED_TERMS, clientDetails: await this.clientDetails(before.clientOrgId) } : (before.content as unknown as QuoteContent);
     const q = await this.prisma.quotation.update({ where: { id }, data: { status: 'sent', sentAt: before.sentAt ?? new Date(), sentById: me.id, content: fixedContent as unknown as Prisma.InputJsonValue } });
     const content = q.content as unknown as QuoteContent;
     const total = `₹${Math.round(q.totalPaise / 100).toLocaleString('en-IN')}`;

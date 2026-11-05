@@ -91,7 +91,8 @@ export type QuoteView = {
   date: string;
   validUntil: string;
   seller: { name: string; addressLines: string[]; website: string; gstin: string | null; signatory: string };
-  client: { id: string; name: string; preparedFor: string[] };
+  /** v48: company, owner, email and address come from the client's record (kept as they were when it was sent). */
+  client: { id: string; name: string; preparedFor: string[] } & QuoteClientDetails;
   engagementIds: string[];
   /** v46: names of those services, printed under the project. */
   services: string[];
@@ -172,6 +173,8 @@ export const DEFAULT_QUOTE_TEMPLATE: QuoteTemplateInput = {
   advancePct: 50,
   footerLine: "Let's put your project in front of Bengaluru's home buyers.",
 };
+
+export type QuoteClientDetails = { company: string; owner: string | null; email: string | null; address: string | null };
 
 /** v47: a service ticked on a quotation, with its sub-services. */
 export type QuoteServicePick = { name: string; subServices: { id: string; name: string; covers: string }[] };

@@ -189,6 +189,8 @@ const subServiceFee = z.number().int().min(0).max(2_000_000_000).nullable().opti
 /** v47: change which sub-services a running service has, and its monthly fee. */
 export const clientsSubServicesSchema = z.object({ subServiceIds: z.array(z.string().min(1)).min(1, "Tick at least one sub-service").max(60), monthlyFeePaise: subServiceFee });
 export type ClientsSubServicesInput = z.input<typeof clientsSubServicesSchema>;
+/** v48: the Client Manager asks the client's Owner to agree to deleting a service. */
+export const clientsRemoveServiceSchema = z.object({ reason: z.string().trim().min(3, "Say why").max(500) });
 export const clientsAddServicesSchema = z.object({
   items: z
     .array(
@@ -222,7 +224,7 @@ export const clientsQuoteStatusLabels: Record<ClientsQuoteStatus, { team: string
 };
 export type ClientsQuote = {
   id: string;
-  kind: "add_service" | "change_tier";
+  kind: "add_service" | "change_tier" | "remove_service";
   serviceName: string;
   tier: Tier;
   fromTier: Tier | null;

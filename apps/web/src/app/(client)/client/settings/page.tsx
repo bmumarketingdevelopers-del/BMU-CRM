@@ -352,15 +352,15 @@ function ServicesPanel({ account, canEdit, busy, run }: { account: ClientsAccoun
             {account.quotes.map((q) => (
               <li key={q.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm" data-testid="client-quote">
                 <span className="min-w-0">
-                  <span className="font-medium">{q.kind === "add_service" ? `New: ${q.serviceName}` : `${q.serviceName}: ${q.fromTier} → ${q.tier}`}</span>
+                  <span className="font-medium">{q.kind === "remove_service" ? `Remove: ${q.serviceName}` : q.kind === "add_service" ? `New: ${q.serviceName}` : `${q.serviceName}: ${q.fromTier} → ${q.tier}`}</span>
                   <span className="block text-xs text-ink-muted">
-                    {q.status === "requested" ? "Waiting for your Client Manager to price it" : `${formatINR(q.amountPaise + q.gstPaise)} incl. GST`}
+                    {q.kind === "remove_service" ? `${q.note ?? ""} It stops only if you approve.` : q.status === "requested" ? "Waiting for your Client Manager to price it" : `${formatINR(q.amountPaise + q.gstPaise)} incl. GST`}
                     {q.monthlyDiffPaise !== null && q.status !== "requested" ? ` · ${q.monthlyDiffPaise >= 0 ? "+" : ""}${formatINR(q.monthlyDiffPaise)} a month` : ""}
                   </span>
                 </span>
                 {q.status === "sent" && canEdit ? (
                   <span className="flex gap-2">
-                    <button type="button" className={primary} disabled={!!busy} onClick={() => run(q.id, () => api.clientAccount.approveQuote(q.id), q.amountPaise > 0 ? "Approved. Pay the invoice in Billing to start." : "Approved. The change is done.")}>
+                    <button type="button" className={primary} disabled={!!busy} onClick={() => run(q.id, () => api.clientAccount.approveQuote(q.id), q.kind === "remove_service" ? `${q.serviceName} removed.` : q.amountPaise > 0 ? "Approved. Pay the invoice in Billing to start." : "Approved. The change is done.")}>
                       Approve
                     </button>
                     <button type="button" className={secondary} disabled={!!busy} onClick={() => run(q.id, () => api.clientAccount.declineQuote(q.id), "Quote declined")}>
