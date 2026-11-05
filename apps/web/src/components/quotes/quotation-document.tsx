@@ -1,6 +1,6 @@
 "use client";
 
-// v45: BMU's quotation on A4. Page 1: header, from / prepared for / project, the total box, the cost breakdown, totals
+// v45: BMU's quotation on A4. Page 1: header, from / prepared for / project, the cost breakdown, totals
 // and amount in words. Page 2 (only when added): what's included and the timeline. v46, last page, in this order: the
 // payment box with a UPI QR, the fixed terms, the two signature lines and the thank-you card. Fixed colours so the app theme never changes the
 // document; the print copy sits directly under <body> so "Save as PDF" gives only the quotation.
@@ -19,11 +19,11 @@ const money = (p: number) => formatINR(p).replace(/\.00$/, "");
 const CSS = `
 .qd { font-family: var(--font-albert-sans), "Segoe UI", Arial, sans-serif; color: ${INK}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .qd .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.qd-sheet { width: 210mm; max-width: 100%; min-height: 297mm; background: ${PAPER}; box-shadow: 0 1px 3px rgba(0,0,0,.14); margin: 0 auto 24px; padding: 13mm 14mm 0; display: flex; flex-direction: column; box-sizing: border-box; position: relative; overflow: hidden; }
+.qd-sheet { width: 210mm; max-width: 100%; min-height: 297mm; background: ${PAPER}; box-shadow: 0 1px 3px rgba(0,0,0,.14); margin: 0 auto 24px; padding: 12mm 15mm 0; display: flex; flex-direction: column; box-sizing: border-box; position: relative; overflow: hidden; }
 .qd-sheet::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3.2mm; background: ${GREEN}; }
-.qd-label { font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: ${GREEN}; }
-.qd-card { background: #fff; border-radius: 10px; border: 1px solid #e7e5df; }
-.qd-bar { background: #fff; border-left: 3px solid ${GREEN}; border-radius: 0 8px 8px 0; }
+.qd-label { font-size: 8.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: ${GREEN}; }
+.qd-card { background: #fff; border-radius: 6px; border: 1px solid #e7e5df; }
+.qd-bar { background: #fff; border-left: 3px solid ${GREEN}; border-radius: 0 4px 4px 0; }
 @media screen { .qd-print-root { display: none; } }
 @media screen and (max-width: 820px) { .qd-sheet { min-height: 0; padding: 20px 20px 28px; } }
 @media print {
@@ -45,7 +45,7 @@ function Logo({ white, h = 14 }: { white?: boolean; h?: number }) {
 
 function Footer({ q, page }: { q: QuoteView; page: number }) {
   return (
-    <footer className="mt-auto flex items-center justify-between pb-[6mm] pt-3 text-[10.5px] text-[#6b7280]">
+    <footer className="mt-auto flex items-center justify-between pb-[6mm] pt-3 text-[9px] text-[#6b7280]">
       <span>{q.seller.website.replace(/^https?:\/\/(www\.)?/, "")}</span>
       <span className="num">{String(page).padStart(2, "0")}</span>
     </footer>
@@ -54,9 +54,9 @@ function Footer({ q, page }: { q: QuoteView; page: number }) {
 
 function SmallHeader({ q }: { q: QuoteView }) {
   return (
-    <header className="flex items-center justify-between border-b border-[#dcdad3] pb-3">
-      <Logo h={9} />
-      <span className="text-[11px] text-[#6b7280]">Quotation · {q.number}</span>
+    <header className="flex items-center justify-between border-b border-[#dcdad3] pb-2.5">
+      <Logo h={7} />
+      <span className="text-[9px] text-[#6b7280]">Quotation · {q.number}</span>
     </header>
   );
 }
@@ -71,8 +71,8 @@ function Qr({ uri }: { uri: string | null }) {
   return (
     <div className="text-center">
       {/* eslint-disable-next-line @next/next/no-img-element -- a generated data URL */}
-      <img src={src} alt="UPI QR code" className="mx-auto h-[24mm] w-[24mm]" />
-      <p className="mt-1 text-[9.5px] text-[#6b7280]">Scan to pay via UPI</p>
+      <img src={src} alt="UPI QR code" className="mx-auto h-[20mm] w-[20mm]" />
+      <p className="mt-1 text-[8px] text-[#6b7280]">Scan to pay via UPI</p>
     </div>
   );
 }
@@ -82,10 +82,10 @@ function PageOne({ q }: { q: QuoteView }) {
   return (
     <section className="qd-sheet qd-flow" data-testid="quote-page-1">
       <header className="flex items-start justify-between gap-6">
-        <Logo h={17} />
+        <Logo h={11} />
         <div className="text-right">
-          <p className="text-[34px] font-extrabold leading-none tracking-tight">QUOTATION</p>
-          <dl className="mt-3 grid grid-cols-[auto_auto] justify-end gap-x-6 gap-y-1 text-[11.5px]">
+          <p className="text-[20px] font-bold leading-none tracking-[0.04em]">QUOTATION</p>
+          <dl className="mt-2 grid grid-cols-[auto_auto] justify-end gap-x-5 gap-y-0.5 text-[9.5px]">
             <dt className="text-[#6b7280]">Quote No.</dt>
             <dd className="num">{q.number}</dd>
             <dt className="text-[#6b7280]">Date</dt>
@@ -95,9 +95,9 @@ function PageOne({ q }: { q: QuoteView }) {
           </dl>
         </div>
       </header>
-      <div className="mt-5 grid grid-cols-3 gap-6 border-t border-[#dcdad3] pt-5 text-[11.5px] leading-snug">
+      <div className="mt-4 grid grid-cols-3 gap-6 border-t border-[#dcdad3] pt-4 text-[10px] leading-snug">
         <div>
-          <p className="qd-label mb-2">From</p>
+          <p className="qd-label mb-1.5">From</p>
           <p className="font-semibold">{q.seller.name}</p>
           {q.seller.addressLines.map((l) => (
             <p key={l}>{l}</p>
@@ -106,14 +106,14 @@ function PageOne({ q }: { q: QuoteView }) {
           {q.seller.gstin && <p className="mt-1 text-[#6b7280]">GSTIN {q.seller.gstin}</p>}
         </div>
         <div>
-          <p className="qd-label mb-2">Prepared for</p>
+          <p className="qd-label mb-1.5">Prepared for</p>
           <p className="font-semibold">{q.client.name}</p>
           {q.client.preparedFor.map((l) => (
             <p key={l}>{l}</p>
           ))}
         </div>
         <div>
-          <p className="qd-label mb-2">Project</p>
+          <p className="qd-label mb-1.5">Project</p>
           <p className="font-semibold">{c.title}</p>
           {c.projectLines.map((l) => (
             <p key={l}>{l}</p>
@@ -121,62 +121,47 @@ function PageOne({ q }: { q: QuoteView }) {
           {q.services.length > 0 && <p className="mt-1 text-[#4b5563]" data-testid="quote-services-printed">{q.services.join(" · ")}</p>}
         </div>
       </div>
-      <div className="mt-5 flex items-center gap-6 rounded-[12px] px-7 py-5 text-white" style={{ background: INK }}>
-        <div className="min-w-0 flex-1">
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/80">Total investment</p>
-          <p className="num text-[38px] font-extrabold leading-tight" style={{ color: GREEN }}>
-            {money(q.totalPaise)}
-          </p>
-          <p className="text-[11px] text-white/75">Inclusive of {q.gstRatePct}% GST</p>
-        </div>
-        {c.stats.map((s) => (
-          <div key={s.label} className="border-l border-white/15 pl-6 text-center">
-            <p className="text-[21px] font-bold leading-tight">{s.value}</p>
-            <p className="text-[10.5px] text-white/75">{s.label}</p>
-          </div>
-        ))}
-      </div>
-      <h2 className="mt-6 text-[17px] font-bold">Cost breakdown</h2>
-      <table className="mt-2 w-full border-collapse text-[11.5px]" data-testid="quote-lines">
+      <h2 className="mt-6 text-[12px] font-bold">Cost breakdown</h2>
+      <table className="mt-2 w-full border-collapse text-[10px]" data-testid="quote-lines">
         <thead>
-          <tr className="text-left text-[10px] font-bold uppercase tracking-[0.12em] text-white" style={{ background: INK }}>
-            <th className="w-[9mm] px-3 py-2.5">#</th>
-            <th className="px-3 py-2.5">Description</th>
-            <th className="px-3 py-2.5">Qty</th>
-            <th className="px-3 py-2.5">Rate</th>
-            <th className="px-3 py-2.5 text-right">Amount</th>
+          <tr className="text-left text-[8.5px] font-bold uppercase tracking-[0.1em] text-white" style={{ background: INK }}>
+            <th className="w-[9mm] px-3 py-2">#</th>
+            <th className="px-3 py-2">Description</th>
+            <th className="px-3 py-2">Qty</th>
+            <th className="px-3 py-2">Rate</th>
+            <th className="px-3 py-2 text-right">Amount</th>
           </tr>
         </thead>
         <tbody className="bg-white">
           {c.lines.map((l, i) => (
             <tr key={i} className="border-b border-[#e7e5df] align-top">
-              <td className="num px-3 py-3">{String(i + 1).padStart(2, "0")}</td>
-              <td className="px-3 py-3">
+              <td className="num px-3 py-2">{String(i + 1).padStart(2, "0")}</td>
+              <td className="px-3 py-2">
                 <p className="font-semibold">{l.title}</p>
-                {l.details && <p className="mt-0.5 text-[11px] leading-snug text-[#4b5563]">{l.details}</p>}
+                {l.details && <p className="mt-0.5 text-[9.5px] leading-snug text-[#4b5563]">{l.details}</p>}
               </td>
-              <td className="num px-3 py-3">{l.kind === "percent" ? `${l.pct}%` : l.qty}</td>
-              <td className="num px-3 py-3">{l.kind === "percent" ? "on fees" : money(l.unitPricePaise)}</td>
-              <td className="num px-3 py-3 text-right">{money(q.amounts[i] ?? 0)}</td>
+              <td className="num px-3 py-2">{l.kind === "percent" ? `${l.pct}%` : l.qty}</td>
+              <td className="num px-3 py-2">{l.kind === "percent" ? "on fees" : money(l.unitPricePaise)}</td>
+              <td className="num px-3 py-2 text-right">{money(q.amounts[i] ?? 0)}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <div className="mt-3 ml-auto w-[88mm] text-[12px]">
-        <div className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-2">
+      <div className="mt-3 ml-auto w-[72mm] text-[10px]">
+        <div className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-1.5">
           <span>Subtotal</span>
           <span className="num">{money(q.subtotalPaise)}</span>
         </div>
-        <div className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-2">
+        <div className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-1.5">
           <span>GST @ {q.gstRatePct}%</span>
           <span className="num">{money(q.gstPaise)}</span>
         </div>
-        <div className="mt-1.5 flex justify-between rounded-[8px] px-3 py-2.5 text-[14px] font-bold" style={{ background: GREEN }}>
+        <div className="mt-1 flex justify-between rounded-[4px] px-3 py-1.5 text-[11.5px] font-bold" style={{ background: GREEN }}>
           <span>Grand total</span>
           <span className="num">{money(q.totalPaise)}</span>
         </div>
       </div>
-      <p className="mt-2 text-right text-[10.5px] text-[#4b5563]">Amount in words: {q.amountInWords}.</p>
+      <p className="mt-2 text-right text-[9px] text-[#4b5563]">Amount in words: {q.amountInWords}.</p>
       <Footer q={q} page={1} />
     </section>
   );
@@ -190,13 +175,13 @@ function PageTwo({ q }: { q: QuoteView }) {
       <SmallHeader q={q} />
       {c.scope.length > 0 && (
         <>
-          <p className="qd-label mt-5">Scope of work</p>
-          <h2 className="mt-1 text-[30px] font-extrabold tracking-tight">What&apos;s included</h2>
-          <div className="mt-5 grid grid-cols-2 gap-4">
+          <p className="qd-label mt-4">Scope of work</p>
+          <h2 className="mt-0.5 text-[16px] font-bold">What&apos;s included</h2>
+          <div className="mt-3 grid grid-cols-2 gap-3">
             {c.scope.map((s) => (
-              <div key={s.title} className="qd-card border-t-[3px] px-6 py-5" style={{ borderTopColor: GREEN }}>
-                <p className="text-[13.5px] font-bold">{s.title}</p>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-[11.5px] leading-snug text-[#374151]">
+              <div key={s.title} className="qd-card border-t-2 px-4 py-3" style={{ borderTopColor: GREEN }}>
+                <p className="text-[11px] font-bold">{s.title}</p>
+                <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[9.5px] leading-snug text-[#374151]">
                   {s.bullets.map((b) => (
                     <li key={b}>{b}</li>
                   ))}
@@ -208,15 +193,15 @@ function PageTwo({ q }: { q: QuoteView }) {
       )}
       {c.timeline.length > 0 && (
         <>
-          <h2 className="mt-7 text-[17px] font-bold">Timeline</h2>
-          <div className="mt-3 grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(4, c.timeline.length)}, minmax(0, 1fr))` }}>
+          <h2 className="mt-6 text-[12px] font-bold">Timeline</h2>
+          <div className="mt-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(4, c.timeline.length)}, minmax(0, 1fr))` }}>
             {c.timeline.map((t) => (
-              <div key={t.label + t.title} className="rounded-[10px] px-5 py-4 text-white" style={{ background: INK }}>
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: GREEN }}>
+              <div key={t.label + t.title} className="rounded-[6px] px-3.5 py-3 text-white" style={{ background: INK }}>
+                <p className="text-[8.5px] font-bold uppercase tracking-[0.14em]" style={{ color: GREEN }}>
                   {t.label}
                 </p>
-                <p className="mt-2 text-[13.5px] font-bold leading-snug">{t.title}</p>
-                {t.text && <p className="mt-1.5 text-[11px] leading-snug text-white/75">{t.text}</p>}
+                <p className="mt-1 text-[11px] font-bold leading-snug">{t.title}</p>
+                {t.text && <p className="mt-1 text-[9.5px] leading-snug text-white/75">{t.text}</p>}
               </div>
             ))}
           </div>
@@ -246,7 +231,7 @@ function PageThree({ q, page }: { q: QuoteView; page: number }) {
         <div className="qd-card mt-4 flex items-center gap-6 border-l-[3px] px-5 py-3" style={{ borderLeftColor: GREEN }} data-testid="quote-payment">
           <div className="min-w-0 flex-1">
             <p className="qd-label mb-1">Payment details</p>
-            <dl className="grid grid-cols-[32mm_1fr] gap-y-1 text-[11px]">
+            <dl className="grid grid-cols-[30mm_1fr] gap-y-0.5 text-[10px]">
               {shown.map(([k, v]) => (
                 <div key={k} className="contents">
                   <dt className="text-[#6b7280]">{k}</dt>
@@ -258,43 +243,43 @@ function PageThree({ q, page }: { q: QuoteView; page: number }) {
           <Qr uri={pay.upiUri} />
         </div>
       )}
-      <p className="qd-label mt-4">Terms</p>
-      <h2 className="mt-1 text-[28px] font-extrabold leading-tight tracking-tight">Terms &amp; conditions</h2>
-      <div className="mt-3 grid grid-cols-2 gap-3">
+      <p className="qd-label mt-5">Terms</p>
+      <h2 className="mt-0.5 text-[16px] font-bold leading-tight">Terms &amp; conditions</h2>
+      <div className="mt-3 grid grid-cols-2 gap-2.5">
         {c.terms.map((t) => (
-          <div key={t.title} className="qd-bar px-4 py-3">
-            <p className="text-[13px] font-bold">{t.title}</p>
-            <p className="mt-1 text-[11px] leading-snug text-[#374151]">{t.text}</p>
+          <div key={t.title} className="qd-bar px-3.5 py-2">
+            <p className="text-[10.5px] font-bold">{t.title}</p>
+            <p className="mt-0.5 text-[9.5px] leading-snug text-[#374151]">{t.text}</p>
           </div>
         ))}
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-10">
+      <div className="mt-7 grid grid-cols-2 gap-10">
         <div>
           <p className="qd-label">Accepted by client</p>
-          <div className="mt-9 border-b-2" style={{ borderColor: INK }}>
+          <div className="mt-9 border-b" style={{ borderColor: INK }}>
             {q.acceptedName && (
-              <p className="pb-1 text-[13px] font-semibold" data-testid="quote-accepted-by">
+              <p className="pb-1 text-[11px] font-semibold" data-testid="quote-accepted-by">
                 {q.acceptedName}
-                {q.acceptedAt ? <span className="ml-2 text-[11px] font-normal text-[#4b5563]">accepted in the app on {fmt(q.acceptedAt)}</span> : null}
+                {q.acceptedAt ? <span className="ml-2 text-[9.5px] font-normal text-[#4b5563]">accepted in the app on {fmt(q.acceptedAt)}</span> : null}
               </p>
             )}
           </div>
-          <p className="mt-1.5 text-[10.5px] text-[#6b7280]">Name, signature &amp; date</p>
+          <p className="mt-1 text-[9px] text-[#6b7280]">Name, signature &amp; date</p>
         </div>
         <div>
           <p className="qd-label">For {q.seller.name}</p>
-          <div className="mt-9 border-b-2" style={{ borderColor: INK }} />
-          <p className="mt-1.5 text-[10.5px] text-[#6b7280]">{q.seller.signatory}</p>
+          <div className="mt-9 border-b" style={{ borderColor: INK }} />
+          <p className="mt-1 text-[9px] text-[#6b7280]">{q.seller.signatory}</p>
         </div>
       </div>
-      <div className="mt-auto flex items-center gap-7 rounded-[12px] px-8 py-5 text-white" style={{ background: INK }}>
-        <Logo white h={13} />
+      <div className="mt-8 flex items-center gap-5 rounded-[6px] px-5 py-3 text-white" style={{ background: INK }}>
+        <Logo white h={8} />
         <div>
-          <p className="text-[20px] font-bold leading-tight" style={{ color: GREEN }}>
+          <p className="text-[12.5px] font-bold leading-tight" style={{ color: GREEN }}>
             Thank you.
           </p>
-          {c.footerLine && <p className="mt-0.5 text-[12px] text-white/85">{c.footerLine}</p>}
-          <p className="text-[12px] text-white/85">{q.seller.website.replace(/^https?:\/\/(www\.)?/, "")}</p>
+          {c.footerLine && <p className="mt-0.5 text-[9.5px] text-white/85">{c.footerLine}</p>}
+          <p className="text-[9.5px] text-white/85">{q.seller.website.replace(/^https?:\/\/(www\.)?/, "")}</p>
         </div>
       </div>
       <Footer q={q} page={page} />

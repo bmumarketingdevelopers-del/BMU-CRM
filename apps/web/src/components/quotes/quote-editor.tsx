@@ -71,23 +71,6 @@ export function QuoteEditor({
         <p className={h}>Project</p>
         <Input value={v.title} onChange={(e) => set("title", e.target.value)} placeholder="Project name, e.g. Bengaluru Influencer Campaign" aria-label="Project name" maxLength={160} />
         <Fixed label="Lines under the project name" values={v.projectLines} max={3} onChange={(x) => set("projectLines", x)} placeholder="e.g. 6 micro-influencers" />
-        <div className="grid gap-1">
-          <span className="text-xs font-medium">Highlights beside the total (up to 3)</span>
-          {[0, 1, 2].map((i) => {
-            const s = v.stats[i] ?? { value: "", label: "" };
-            const put = (patch: Partial<typeof s>) => {
-              const next = [...v.stats];
-              next[i] = { ...s, ...patch };
-              set("stats", next.filter((x) => x && (x.value || x.label)));
-            };
-            return (
-              <div key={i} className="grid grid-cols-[8rem_1fr] gap-2">
-                <Input value={s.value} onChange={(e) => put({ value: e.target.value })} placeholder={i === 0 ? "6" : ""} aria-label={`Highlight ${i + 1} value`} maxLength={24} />
-                <Input value={s.label} onChange={(e) => put({ label: e.target.value })} placeholder={i === 0 ? "Influencers" : ""} aria-label={`Highlight ${i + 1} label`} maxLength={40} />
-              </div>
-            );
-          })}
-        </div>
       </section>
 
       <section className="grid gap-3">
