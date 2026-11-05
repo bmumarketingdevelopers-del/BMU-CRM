@@ -2,7 +2,7 @@
 // CGST + SGST inside the same state, IGST across states, amount in words in the Indian format.
 // v27: the design (new subscription, due, overdue, part paid, paid, credited), the printed wording of each line
 // (AI-written for manual invoices), the Founder's signature and company seal, and the terms on page 2.
-import { BMU_ADDRESS, BMU_EMAIL, BMU_PHONE, serviceAmountInWords, serviceGstStateName, serviceInvoiceVariant, formatINR, type ServiceTaxInvoice } from '@bmu/shared';
+import { BMU_ADDRESS, BMU_EMAIL, BMU_PHONE, quotePlanLabels, serviceAmountInWords, serviceGstStateName, serviceInvoiceVariant, formatINR, type ServiceTaxInvoice } from '@bmu/shared';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { SettingsService } from '../settings/settings.service.js';
 import { escapeHtml } from './email.service.js';
@@ -63,6 +63,9 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   // v28: the seal and signature are printed only once the invoice is signed with the signing password.
   const signed = !!inv.signedAt;
   const signer = inv.signedById ? await prisma.user.findUnique({ where: { id: inv.signedById }, select: { name: true } }) : null;
+  // v49: raised from a quotation: it prints in the quotation's design.
+  const fromQuote = inv.kind.startsWith('quote_') ? await prisma.quotation.findFirst({ where: { orgId, OR: [{ advanceInvoiceId: inv.id }, { balanceInvoiceId: inv.id }] } }) : null;
+  const quoted = fromQuote?.content as { title?: string; planType?: keyof typeof quotePlanLabels | ''; clientDetails?: { owner?: string | null }; signedBy?: { name: string; role: string } } | undefined;
   const founder = branding.signatoryName ? null : await prisma.user.findFirst({ where: { orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, orderBy: { createdAt: 'asc' }, select: { name: true } });
   return {
     id: inv.id,
@@ -133,6 +136,7 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
     payments: inv.payments.map((p) => ({ at: p.at.toISOString(), amountPaise: p.amountPaise, method: p.method, ref: p.ref })),
     creditNotes: notes.map((n) => ({ number: n.number, at: n.createdAt.toISOString(), totalPaise: n.totalPaise, reason: n.reason })),
     reverseCharge: false,
+    quote: fromQuote ? { number: fromQuote.number, title: quoted?.title ?? '', plan: quoted?.planType ? quotePlanLabels[quoted.planType] : null, owner: quoted?.clientDetails?.owner ?? null, signedBy: quoted?.signedBy ? { name: quoted.signedBy.name, role: quoted.signedBy.role } : null } : null,
   };
 }
 

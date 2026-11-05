@@ -14,7 +14,7 @@ export function ClientQuotations({ clientId }: { clientId: string }) {
   return (
     <Panel
       title="Quotations"
-      subtitle="Sent to the client to accept in their app; the advance invoice is created when they accept"
+      subtitle="Sent to the client to sign in their app; send the invoice once they have paid"
       action={
         <Link href={`/team/quotes/new?clientId=${clientId}`} className="text-sm underline" data-testid="client-quote-new">
           + New quotation

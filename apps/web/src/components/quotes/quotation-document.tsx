@@ -9,16 +9,17 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
-import { formatINR, type QuoteView } from "@bmu/shared";
+import { formatINR, quotePlanLabels, type QuoteView } from "@bmu/shared";
 
-const INK = "#121619";
-const GREEN = "#8cb63c";
+export const INK = "#121619";
+export const GREEN = "#8cb63c";
+const INSTAGRAM = "https://www.instagram.com/bmu_marketing_official/";
 const PAPER = "#f7f6f2";
 const day = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
 const fmt = (iso: string) => day.format(new Date(iso.length === 10 ? `${iso}T00:00:00+05:30` : iso));
 const money = (p: number) => formatINR(p).replace(/\.00$/, "");
 
-const CSS = `
+export const QD_CSS = `
 .qd { font-family: var(--font-albert-sans), "Segoe UI", Arial, sans-serif; color: ${INK}; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .qd .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .qd-sheet { width: 210mm; max-width: 100%; min-height: 297mm; background: ${PAPER}; box-shadow: 0 1px 3px rgba(0,0,0,.14); margin: 0 auto 24px; padding: 12mm 15mm 0; display: flex; flex-direction: column; box-sizing: border-box; position: relative; overflow: hidden; }
@@ -40,17 +41,43 @@ const CSS = `
   .qd-flow tr { break-inside: avoid; }
 }`;
 
-function Logo({ white, h = 14 }: { white?: boolean; h?: number }) {
+export function Logo({ white, h = 14 }: { white?: boolean; h?: number }) {
   // eslint-disable-next-line @next/next/no-img-element -- a static brand image in /public
   return <img src={white ? "/bmu-logo-white.png" : "/bmu-logo.png"} alt="BMU Marketing" style={{ height: `${h}mm`, width: "auto" }} />;
 }
 
-function Footer({ q, page }: { q: QuoteView; page: number }) {
+/** v49: on every page: logo and website, page number, and the Instagram QR. */
+export function DocFooter({ website, page }: { website: string; page: number }) {
+  const site = website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
   return (
-    <footer className="mt-auto flex items-center justify-between pb-[6mm] pt-3 text-[9px] text-[#6b7280]">
-      <span>{q.seller.website.replace(/^https?:\/\/(www\.)?/, "")}</span>
-      <span className="num">{String(page).padStart(2, "0")}</span>
+    <footer className="mt-auto grid grid-cols-3 items-center gap-3 pb-[6mm] pt-3 text-[9px] text-[#6b7280]" data-testid="doc-footer">
+      <div className="flex items-center gap-2.5">
+        <Logo h={6} />
+        <a href={`https://www.${site}`}>{site}</a>
+      </div>
+      <span className="num text-center">{String(page).padStart(2, "0")}</span>
+      <a href={INSTAGRAM} className="flex items-center justify-end gap-2 text-right leading-tight">
+        <span>
+          Follow us on Instagram
+          <br />
+          @bmu_marketing_official
+        </span>
+        <QrImage uri={INSTAGRAM} alt="Instagram QR code" className="h-[11mm] w-[11mm]" />
+      </a>
     </footer>
+  );
+}
+
+/** v49: the line to sign on, with the signature and seal on it when there are any. */
+export function SignBox({ signature, seal, compact, children }: { signature: string | null; seal: string | null; compact?: boolean; children?: React.ReactNode }) {
+  return (
+    <div className={`mt-1 flex items-end gap-3 border-b ${compact ? "h-[12mm]" : "h-[17mm]"}`} style={{ borderColor: INK }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- an uploaded image */}
+      {signature && <img src={signature} alt="Signature" className="max-h-full max-w-[38mm] object-contain" />}
+      {/* eslint-disable-next-line @next/next/no-img-element -- an uploaded image */}
+      {seal && <img src={seal} alt="Seal" className="max-h-full max-w-[20mm] object-contain" />}
+      {children}
+    </div>
   );
 }
 
@@ -63,24 +90,27 @@ function SmallHeader({ q }: { q: QuoteView }) {
   );
 }
 
-function Qr({ uri }: { uri: string | null }) {
+function QrImage({ uri, alt, className }: { uri: string; alt: string; className: string }) {
   const [src, setSrc] = useState<string>();
   useEffect(() => {
-    if (!uri) return;
     QRCode.toDataURL(uri, { margin: 0, width: 220, color: { dark: INK, light: "#ffffff" } }).then(setSrc, () => setSrc(undefined));
   }, [uri]);
-  if (!uri || !src) return null;
+  // eslint-disable-next-line @next/next/no-img-element -- a generated data URL
+  return src ? <img src={src} alt={alt} className={className} /> : <span className={`inline-block ${className}`} />;
+}
+
+export function Qr({ uri }: { uri: string | null }) {
+  if (!uri) return null;
   return (
     <div className="text-center">
-      {/* eslint-disable-next-line @next/next/no-img-element -- a generated data URL */}
-      <img src={src} alt="UPI QR code" className="mx-auto h-[20mm] w-[20mm]" />
+      <QrImage uri={uri} alt="UPI QR code" className="mx-auto h-[20mm] w-[20mm]" />
       <p className="mt-1 text-[8px] text-[#6b7280]">Scan to pay via UPI</p>
     </div>
   );
 }
 
 /** Sizes in mm on the A4 sheet, measured from printed quotations and rounded up. */
-const MM = { bottom: 281, firstTop: 66, lineOfText: 3.7, nextTop: 34, totals: 34, closing: 160 };
+const MM = { bottom: 275, firstTop: 66, lineOfText: 3.7, nextTop: 34, totals: 34, closing: 164 };
 const rowsOf = (text: string, perRow: number) => text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perRow)), 0);
 const rowMm = (l: QuoteView["content"]["lines"][number]) => 9.5 + (rowsOf(l.title, 80) - 1) * 4 + (l.details ? rowsOf(l.details, 92) * 3.5 : 0);
 
@@ -88,8 +118,8 @@ const rowMm = (l: QuoteView["content"]["lines"][number]) => 9.5 + (rowsOf(l.titl
 export function layoutQuote(q: QuoteView) {
   const { client: p, content: c, seller } = q;
   const party = 1 + (p.owner ? 1 : 0) + (p.email ? rowsOf(p.email, 30) : 0) + (p.address ? rowsOf(p.address, 32) : 0) + p.preparedFor.reduce((n, l) => n + rowsOf(l, 32), 0);
-  const project = rowsOf(c.title, 30) + c.projectLines.reduce((n, l) => n + rowsOf(l, 32), 0);
-  let room = MM.bottom - MM.firstTop - Math.max(party, project, seller.addressLines.length + 3) * MM.lineOfText;
+  const project = rowsOf(c.title, 30) + (c.planType ? 1 : 0) + c.projectLines.reduce((n, l) => n + rowsOf(l, 32), 0);
+  let room = MM.bottom - MM.firstTop - Math.max(party, project, seller.addressLines.length + 3) * MM.lineOfText - (c.overview ? 8 + rowsOf(c.overview, 110) * MM.lineOfText : 0);
   const sheets: number[][] = [[]];
   c.lines.forEach((l, i) => {
     const h = rowMm(l);
@@ -155,12 +185,19 @@ function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows:
         <div>
           <p className="qd-label mb-1.5">Project</p>
           <p className="font-semibold">{c.title}</p>
+          {c.planType && <p data-testid="quote-plan">{quotePlanLabels[c.planType]}</p>}
           {c.projectLines.map((l) => (
             <p key={l}>{l}</p>
           ))}
           {q.services.some((n) => !c.title.includes(n)) && <p className="mt-1 text-[#4b5563]" data-testid="quote-services-printed">{q.services.join(" · ")}</p>}
         </div>
       </div>
+      {c.overview && (
+        <div className="mt-4 border-t border-[#dcdad3] pt-3">
+          <p className="qd-label mb-1">Project overview</p>
+          <p className="text-[10px] leading-snug" data-testid="quote-overview">{c.overview}</p>
+        </div>
+      )}
       <h2 className="mt-6 text-[12px] font-bold">Cost breakdown</h2>
         </>
       )}
@@ -212,7 +249,7 @@ function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows:
         </>
       )}
       {closing && <Closing q={q} compact />}
-      <Footer q={q} page={page} />
+      <DocFooter website={q.seller.website} page={page} />
     </section>
   );
 }
@@ -257,7 +294,7 @@ function PageTwo({ q, page }: { q: QuoteView; page: number }) {
           </div>
         </>
       )}
-      <Footer q={q} page={page} />
+      <DocFooter website={q.seller.website} page={page} />
     </section>
   );
 }
@@ -295,34 +332,35 @@ function Closing({ q, compact }: { q: QuoteView; compact?: boolean }) {
         <div>
           <p className="qd-label">Terms</p>
           <h2 className="mt-0.5 text-[16px] font-bold leading-tight">Terms &amp; conditions</h2>
-          <div className={`grid grid-cols-2 ${compact ? "mt-2 gap-2" : "mt-3 gap-3"}`}>
+          {/* v49: numbered terms; quotations sent before keep their titled terms. */}
+          <ol className={`list-decimal pl-4 text-[#374151] ${compact ? "mt-1.5 space-y-0.5 text-[9px] leading-snug" : "mt-3 space-y-1.5 text-[10.5px] leading-normal"}`} data-testid="quote-terms">
             {c.terms.map((t) => (
-              <div key={t.title} className={compact ? "qd-bar px-3 py-1.5" : "qd-bar px-4 py-3"}>
-                <p className={`font-bold ${compact ? "text-[10px]" : "text-[11px]"}`}>{t.title}</p>
-                <p className={`mt-0.5 text-[#374151] ${compact ? "text-[9px] leading-snug" : "text-[10px] leading-normal"}`}>{t.text}</p>
-              </div>
+              <li key={t.title + t.text}>
+                {!/^\d+$/.test(t.title) && <strong>{t.title}: </strong>}
+                {t.text}
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
         <div className="grid grid-cols-2 gap-10">
           <div>
             <p className="qd-label">Accepted by client</p>
-            <div className={`${compact ? "mt-7" : "mt-12"} border-b`} style={{ borderColor: INK }}>
-              {q.acceptedName && (
-                <p className="pb-1 text-[11px] font-semibold" data-testid="quote-accepted-by">
-                  {q.acceptedName}
-                  {q.acceptedAt ? <span className="ml-2 text-[9.5px] font-normal text-[#4b5563]">accepted in the app on {fmt(q.acceptedAt)}</span> : null}
-                </p>
-              )}
-            </div>
-            <p className="mt-1 text-[9px] text-[#6b7280]">Name, signature &amp; date</p>
-          </div>
-          <div>
-            <p className="qd-label">For {q.seller.name}</p>
-            <div className={`${compact ? "mt-7" : "mt-12"} border-b`} style={{ borderColor: INK }} />
-            <p className="mt-1 text-[9px] text-[#6b7280]">{q.seller.signatory}</p>
-          </div>
+          <SignBox signature={q.acceptance.signatureUrl} seal={q.acceptance.sealUrl} compact={compact}>
+            {q.acceptedName && (
+              <p className="ml-auto pb-1 text-right text-[11px] font-semibold" data-testid="quote-accepted-by">
+                {q.acceptedName}
+                {q.acceptedAt ? <span className="block text-[9px] font-normal text-[#4b5563]">accepted on {fmt(q.acceptedAt)}</span> : null}
+              </p>
+            )}
+          </SignBox>
+          <p className="mt-1 text-[9px] text-[#6b7280]">Name, signature &amp; date</p>
         </div>
+        <div>
+          <p className="qd-label">For {q.seller.name}</p>
+          <SignBox signature={q.signer.signatureUrl} seal={q.signer.sealUrl} compact={compact} />
+          <p className="mt-1 text-[9px] text-[#6b7280]" data-testid="quote-signer">{[q.signer.name, q.signer.role].filter(Boolean).join(", ")}</p>
+        </div>
+      </div>
         <div className="flex items-center gap-5 rounded-[6px] px-5 py-3 text-white" style={{ background: INK }}>
           <Logo white h={8} />
           <div>
@@ -352,7 +390,7 @@ export function QuotationPages({ q }: { q: QuoteView }) {
         <section className="qd-sheet" data-testid="quote-last-page">
           <SmallHeader q={q} />
           <Closing q={q} />
-          <Footer q={q} page={scope ? next + 1 : next} />
+          <DocFooter website={q.seller.website} page={scope ? next + 1 : next} />
         </section>
       )}
     </div>
@@ -366,7 +404,7 @@ export function QuotationDocument({ q, actions }: { q: QuoteView; actions?: Reac
   const mounted = useSyncExternalStore(noop, () => true, () => false);
   return (
     <>
-      <style>{CSS}</style>
+      <style>{QD_CSS}</style>
       <div className="no-print mb-4 flex flex-wrap items-center gap-3">
         <button type="button" onClick={() => window.print()} className="bg-charcoal px-4 py-2 text-sm font-medium text-ivory" data-testid="quote-pdf">
           Download PDF

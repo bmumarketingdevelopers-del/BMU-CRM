@@ -28,7 +28,7 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, onServices, fixedCli
       .then((d) => {
         const fields: [string, string | null][] = [["owner name", d.contact.name], ["email", d.contact.email ?? d.billing.billingEmail], ["address", d.billing.billingAddress]];
         setWho({ printed: [d.billing.billingName || d.name, ...fields.flatMap(([, v]) => (v ? [v] : []))], missing: fields.filter(([, v]) => !v).map(([k]) => k) });
-        setServices(d.services.filter((s) => s.status !== "closed").map((s) => ({ id: s.id, name: s.serviceName, label: s.grouped ? s.serviceName : `${s.serviceName} (${s.tier})`, subServices: s.subServices })));
+        setServices(d.services.filter((s) => s.status !== "closed").map((s) => ({ id: s.id, name: s.serviceName, label: s.grouped ? s.serviceName : `${s.serviceName} (${s.tier})`, billingType: s.billingType, subServices: s.subServices })));
       })
       .catch(() => setServices([]));
   }, [meta.clientOrgId]);

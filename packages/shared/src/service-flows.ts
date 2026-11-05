@@ -248,6 +248,8 @@ export type ServiceTaxInvoice = {
   payments: { at: string; amountPaise: number; method: string; ref: string | null }[];
   creditNotes: { number: string; at: string; totalPaise: number; reason: string }[];
   reverseCharge: false;
+  /** v49: raised from a quotation: printed in the quotation's design, without the client's acceptance. */
+  quote: { number: string; title: string; plan: string | null; owner: string | null; signedBy: { name: string; role: string } | null } | null;
 };
 
 export type ServiceBillingDetails = {

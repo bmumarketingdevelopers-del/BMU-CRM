@@ -3919,6 +3919,14 @@ model Quotation {
   acceptedAt       DateTime?
   acceptedById     String?
   acceptedName     String?
+  /// v49: what the client added when accepting: signature and seal images, or the signed copy
+  clientSignatureFileId String?
+  clientSealFileId      String?
+  signedCopyFileId      String?
+  /// v49: what the client asked to change; cleared when it is sent again
+  changeRequest    String?
+  /// v49: [{ amountPaise, reference, at, by }] the client's "I have paid" notes
+  paymentNotes     Json      @default("[]")
   declinedAt       DateTime?
   declineReason    String?
   advanceInvoiceId String?

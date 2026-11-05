@@ -17,7 +17,7 @@ import { buildTaxInvoice } from './tax-invoice.js';
 const hash = (password: string, salt: string) => scryptSync(password, salt, 64).toString('hex');
 
 /** Signature and seal images that invoices may show (by file id): only files uploaded for invoice signing. */
-export const SIGNING_FILE_TAGS = ['invoice-signature', 'invoice-seal', 'cm-signature'];
+export const SIGNING_FILE_TAGS = ['invoice-signature', 'invoice-seal', 'cm-signature', 'quote-client-signature', 'quote-client-seal'];
 export const signingFileUrl = (fileId: string) => `/api/invoice-branding/file/${fileId}`;
 
 /** "Client Manager", or "Client Manager Lead" for the CM Lead. */

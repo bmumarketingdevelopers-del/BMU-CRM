@@ -2,13 +2,25 @@
 // 1. The client's Client Manager (or leadership / Finance) makes a quotation for a client from a template per service,
 //    edits it and sends it. The client's Owner and Finance users are told; it shows on their portal.
 // 2. The client's Owner accepts it in the app (typing their name) or declines it with a reason.
-// 3. On accept the advance invoice (advance % of the subtotal, GST on top) is created and sent as usual (held for the
-//    seal and signature when that rule is on). The CM raises the balance invoice later from the quotation.
+// 3. v49: accepting needs the Owner's signature (and seal), or the signed copy uploaded; they can also ask for changes,
+//    which sends it back to the manager to edit and send again. It is signed for BMU by whoever sends it.
+// 4. The client pays and says so ("I have paid"); the CM and Founders are told. The CM or a Founder then sends the advance
+//    and balance invoices from the quotation, in its design, and what the client reported is recorded on them.
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   BMU_ADDRESS,
   DEFAULT_QUOTE_TEMPLATE,
+  INVOICE_IMAGE_MAX_BYTES,
+  INVOICE_IMAGE_TYPES,
+  QUOTE_ACCEPT_FILE_KINDS,
+  QUOTE_SIGNED_COPY_MAX_BYTES,
+  quotePaidSchema,
+  type QuoteAcceptFileKind,
+  type QuotePaymentNote,
   QUOTE_FIXED_TERMS,
+  QUOTE_OVERVIEW_MAX,
+  quoteOverviewSchema,
   type QuoteClientDetails,
   quoteContentSchema,
   quoteDecisionSchema,
@@ -24,11 +36,15 @@ import {
   type QuoteView,
 } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
+import { AiService, textOf } from '../ai/ai.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { parse } from '../common/zod.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { issueInvoiceTx } from '../requests/billing.service.js';
+import { relPath, sha256, type OpsUpload } from '../ops-actions/ops-util.js';
+import { BillingService, issueInvoiceTx } from '../requests/billing.service.js';
+import { cmDesignation, signingFileUrl } from '../service/cm-signing.service.js';
+import { sendStoredFile } from '../storage/file-store.js';
 import { readInvoiceBranding } from '../service/invoice-branding.service.js';
 import { ServiceBillingService } from '../service/service-billing.service.js';
 import { SettingsService } from '../settings/settings.service.js';
@@ -36,6 +52,10 @@ import { SettingsService } from '../settings/settings.service.js';
 type QuoteDb = NonNullable<Awaited<ReturnType<PrismaService['quotation']['findFirst']>>>;
 const has = (me: Me, ...roles: string[]) => me.roles.some((r) => roles.includes(r));
 const LEAD = ['founder', 'admin', 'am_lead'];
+type Signer = { name: string; role: string; signatureFileId: string | null; sealFileId: string | null };
+type Stamped = { clientDetails?: QuoteClientDetails; signedBy?: Signer };
+const ACCEPT_TAGS: Record<QuoteAcceptFileKind, string> = { signature: 'quote-client-signature', seal: 'quote-client-seal', signed_copy: 'quote-signed-copy' };
+const notesOf = (q: { paymentNotes: unknown }) => (q.paymentNotes ?? []) as QuotePaymentNote[];
 const ymdIst = (d = new Date()) => new Date(d.getTime() + 330 * 60_000).toISOString().slice(0, 10);
 
 @Injectable()
@@ -46,6 +66,8 @@ export class QuotesService {
     private readonly notifications: NotificationsService,
     private readonly settings: SettingsService,
     private readonly billing: ServiceBillingService,
+    private readonly payments: BillingService,
+    private readonly ai: AiService,
   ) {}
 
   // ------------------------------------------------------------------------------------------------ access
@@ -93,13 +115,47 @@ export class QuotesService {
     return { company: c.legalName || c.name, owner: contact?.name || owner?.user.name || null, email: contact?.email || c.billingEmail || owner?.user.email || null, address: c.billingAddress || null };
   }
 
+  /** v49: two lines on what BMU will do for the client, for the manager to keep or edit. Plain wording when AI is off. */
+  async overview(me: Me, body: unknown) {
+    this.assertStaff(me);
+    if (!has(me, ...LEAD, 'finance', 'account_manager')) throw new ForbiddenException('Only Client Managers, leadership or Finance can do this');
+    const input = parse(quoteOverviewSchema, body);
+    const names = input.lines.map((l) => l.title).filter(Boolean);
+    if (!names.length && !input.title) throw new BadRequestException('Tick a service or add a cost line first');
+    const client = input.clientOrgId ? await this.prisma.clientOrg.findFirst({ where: { id: input.clientOrgId, orgId: me.orgId }, select: { name: true, industry: true } }) : null;
+    const basic = `BMU Marketing will deliver ${names.length ? names.join(', ') : input.title}${client ? ` for ${client.name}` : ''}, planned and reported by one team.`.slice(0, QUOTE_OVERVIEW_MAX);
+    const r = await this.ai.execute({ orgId: me.orgId, userId: me.id, me }, 'quote_overview', {
+      basic: () => ({ text: basic }),
+      ai: async (run) => {
+        const msg = await run({
+          fast: true,
+          system:
+            'You write the "Project overview" on quotations of BMU Marketing, a digital marketing agency in Bengaluru. Write two plain sentences, at most 35 words and 230 characters in all, saying what BMU will do for this client and why it helps them. ' +
+            'Use only the services given; do not invent numbers, prices, dates or promised results. Indian English. Return only the text.',
+          messages: [{ role: 'user', content: `Client: ${client?.name ?? 'not given'}${client?.industry ? ` (${client.industry})` : ''}\nProject: ${input.title || 'not given'}\n\nServices:\n${input.lines.map((l) => `- ${l.title}${l.details ? `: ${l.details}` : ''}`).join('\n')}` }],
+          maxTokens: 200,
+        });
+        return { text: textOf(msg) };
+      },
+    });
+    return { text: (r.text || basic).trim().slice(0, QUOTE_OVERVIEW_MAX), ai: r.mode === 'ai' };
+  }
+
+  /** v49: who signs a quotation for BMU: a Founder or Admin with the company signature, anyone else with their own. */
+  private async signerFor(me: Me): Promise<Signer> {
+    const b = await readInvoiceBranding(this.prisma, me.orgId);
+    if (has(me, 'founder', 'admin')) return { name: b.signatoryName || me.name, role: b.designation || (has(me, 'founder') ? 'Founder' : 'Admin'), signatureFileId: b.signatureFileId, sealFileId: b.sealFileId };
+    const p = await this.prisma.signingProfile.findUnique({ where: { userId: me.id }, select: { signatureFileId: true } });
+    return { name: me.name, role: has(me, 'am_lead', 'account_manager') ? cmDesignation(me) : 'Finance', signatureFileId: p?.signatureFileId ?? null, sealFileId: b.sealFileId };
+  }
+
   private async view(me: Me, q: QuoteDb): Promise<QuoteView> {
     const [gst, tenant, branding, client, details, invoices, creator, engagements] = await Promise.all([
       this.settings.get(q.orgId, 'gst'),
       this.settings.get(q.orgId, 'tenant'),
       readInvoiceBranding(this.prisma, q.orgId),
       this.prisma.clientOrg.findUniqueOrThrow({ where: { id: q.clientOrgId }, select: { id: true, name: true } }),
-      (q.content as { clientDetails?: QuoteClientDetails }).clientDetails ?? this.clientDetails(q.clientOrgId),
+      (q.content as Stamped).clientDetails ?? this.clientDetails(q.clientOrgId),
       this.prisma.invoice.findMany({ where: { id: { in: [q.advanceInvoiceId, q.balanceInvoiceId].filter((x): x is string => !!x) } }, select: { id: true, number: true, status: true, totalPaise: true } }),
       q.createdById ? this.prisma.user.findUnique({ where: { id: q.createdById }, select: { name: true } }) : null,
       q.engagementIds.length ? this.prisma.engagement.findMany({ where: { id: { in: q.engagementIds } }, select: { id: true, service: { select: { name: true } } } }) : [],
@@ -116,6 +172,13 @@ export class QuotesService {
     const payee = gst.bankAccountName?.trim() || gst.legalName || tenant.name;
     const staff = me.type === 'staff';
     const manage = staff && (await this.canManage(me, q.clientOrgId));
+    // v49: a draft shows who would sign it; older sent quotations only have the company's name.
+    const stamped = (q.content as Stamped).signedBy ?? (staff && q.status === 'draft' ? await this.signerFor(me) : null);
+    const notes = notesOf(q);
+    const quoteInvoices = [q.advanceInvoiceId, q.balanceInvoiceId].filter((x): x is string => !!x);
+    const recorded = quoteInvoices.length ? ((await this.prisma.payment.aggregate({ where: { invoiceId: { in: quoteInvoices } }, _sum: { amountPaise: true } }))._sum.amountPaise ?? 0) : 0;
+    const reported = notes.reduce((s, n) => s + n.amountPaise, 0);
+    const openInvoice = invoices.some((i) => ['issued', 'partially_paid', 'overdue'].includes(i.status));
     const advance = invoices.find((i) => i.id === q.advanceInvoiceId);
     const balance = invoices.find((i) => i.id === q.balanceInvoiceId);
     return {
@@ -126,6 +189,16 @@ export class QuotesService {
       validUntil: q.validUntil.toISOString().slice(0, 10),
       seller: { name: gst.legalName || tenant.name, addressLines: address, website: gst.website?.trim() || 'www.bmumarketing.in', gstin: gst.gstin?.trim() || null, signatory },
       client: { id: client.id, name: client.name, preparedFor: q.preparedFor, ...details },
+      signer: stamped
+        ? { name: stamped.name, role: stamped.role, signatureUrl: stamped.signatureFileId ? signingFileUrl(stamped.signatureFileId) : null, sealUrl: stamped.sealFileId ? signingFileUrl(stamped.sealFileId) : null }
+        : { name: signatory, role: '', signatureUrl: null, sealUrl: null },
+      acceptance: {
+        signatureUrl: q.clientSignatureFileId ? signingFileUrl(q.clientSignatureFileId) : null,
+        sealUrl: q.clientSealFileId ? signingFileUrl(q.clientSealFileId) : null,
+        signedCopyUrl: q.signedCopyFileId ? `/api/${staff ? 'quotes' : 'client/quotes'}/${q.id}/signed-copy` : null,
+      },
+      changeRequest: q.changeRequest,
+      paymentNotes: notes,
       engagementIds: q.engagementIds,
       services: q.engagementIds.map((id) => engagements.find((e) => e.id === id)?.service.name).filter((x): x is string => !!x),
       templateId: q.templateId,
@@ -156,8 +229,11 @@ export class QuotesService {
         edit: manage && q.status === 'draft',
         send: manage && (q.status === 'draft' || status === 'sent'),
         cancel: manage && ['draft', 'sent'].includes(q.status),
-        raiseBalance: manage && q.status === 'accepted' && !q.balanceInvoiceId && content.advancePct < 100,
+        raiseAdvance: manage && q.status === 'accepted' && !q.advanceInvoiceId && content.advancePct > 0,
+        raiseBalance: manage && q.status === 'accepted' && !q.balanceInvoiceId && content.advancePct < 100 && (!!q.advanceInvoiceId || content.advancePct === 0),
+        confirmPayment: manage && openInvoice && reported > recorded,
         decide: me.type === 'client' && me.clientOrg?.role === 'client_owner' && status === 'sent',
+        notifyPaid: me.type === 'client' && ['client_owner', 'client_finance'].includes(me.clientOrg?.role ?? '') && q.status === 'accepted',
       },
     };
   }
@@ -277,8 +353,8 @@ export class QuotesService {
     if (!['draft', 'sent'].includes(before.status)) throw new BadRequestException(`This quotation is ${before.status}`);
     if (this.status(before) === 'expired') throw new BadRequestException('It has expired. Make a new quotation with a new valid-until date.');
     // v46: the wording it goes out with is kept on the quotation.
-    const fixedContent = before.status === 'draft' ? { ...(before.content as unknown as QuoteContent), terms: QUOTE_FIXED_TERMS, clientDetails: await this.clientDetails(before.clientOrgId) } : (before.content as unknown as QuoteContent);
-    const q = await this.prisma.quotation.update({ where: { id }, data: { status: 'sent', sentAt: before.sentAt ?? new Date(), sentById: me.id, content: fixedContent as unknown as Prisma.InputJsonValue } });
+    const fixedContent = before.status === 'draft' ? { ...(before.content as unknown as QuoteContent), terms: QUOTE_FIXED_TERMS, clientDetails: await this.clientDetails(before.clientOrgId), signedBy: await this.signerFor(me) } : (before.content as unknown as QuoteContent);
+    const q = await this.prisma.quotation.update({ where: { id }, data: { status: 'sent', sentAt: before.sentAt ?? new Date(), sentById: me.id, changeRequest: null, content: fixedContent as unknown as Prisma.InputJsonValue } });
     const content = q.content as unknown as QuoteContent;
     const total = `₹${Math.round(q.totalPaise / 100).toLocaleString('en-IN')}`;
     await this.notifications.notify(q.orgId, await this.clientUsers(q.clientOrgId), {
@@ -314,24 +390,61 @@ export class QuotesService {
         ? `${content.advancePct === 100 ? 'Full payment' : `Advance ${content.advancePct}%`}: ${content.title} (Quotation ${q.number})`
         : `Balance ${100 - content.advancePct}%: ${content.title} (Quotation ${q.number})`;
     const inv = await this.prisma.$transaction((tx) =>
-      issueInvoiceTx(tx, { orgId: q.orgId, clientOrgId: q.clientOrgId, engagementId: q.engagementId ?? undefined, kind: part === 'advance' ? 'quote_advance' : 'quote_balance', lines: [{ label, title: label, amountPaise: amount } as never], dueInDays: 7 }, { ratePct: q.gstRatePct, invoicePrefix: gst.invoicePrefix }),
+      issueInvoiceTx(tx, { orgId: q.orgId, clientOrgId: q.clientOrgId, engagementId: q.engagementId ?? undefined, kind: part === 'advance' ? 'quote_advance' : 'quote_balance', lines: [{ label, title: label, details: content.lines.map((l) => l.title).join(', ').slice(0, 300), amountPaise: amount } as never], dueInDays: 7 }, { ratePct: q.gstRatePct, invoicePrefix: gst.invoicePrefix }),
     );
     await this.billing.invoiceIssued(inv.id);
     return inv;
   }
 
-  /** The CM raises the balance invoice (e.g. before content goes live). */
-  async raiseBalance(me: Me, id: string, ip?: string) {
+  /** v49: records what the client reported paying (and has not been recorded yet) on an invoice of this quotation. */
+  private async applyReported(q: QuoteDb, invoiceId: string) {
+    const notes = notesOf(q);
+    if (!notes.length) return 0;
+    const ids = [q.advanceInvoiceId, q.balanceInvoiceId, invoiceId].filter((x): x is string => !!x);
+    const recorded = (await this.prisma.payment.aggregate({ where: { invoiceId: { in: ids } }, _sum: { amountPaise: true } }))._sum.amountPaise ?? 0;
+    const inv = await this.prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId }, include: { payments: true } });
+    const due = inv.totalPaise - inv.payments.reduce((s, p) => s + p.amountPaise, 0);
+    const amount = Math.min(notes.reduce((s, n) => s + n.amountPaise, 0) - recorded, due);
+    if (amount <= 0) return 0;
+    await this.payments.recordPayment(invoiceId, amount, 'bank', `${notes.map((n) => n.reference).join(', ').slice(0, 150)} (${inv.number}, ${inv.payments.length + 1})`);
+    return amount;
+  }
+
+  /** v49: the CM or a Founder sends the invoice once the client has accepted (and usually paid). */
+  private async raise(me: Me, id: string, part: 'advance' | 'balance', ip?: string) {
     this.assertStaff(me);
     const q = await this.load(me, id);
     await this.assertManage(me, q.clientOrgId);
     if (q.status !== 'accepted') throw new BadRequestException('The client has not accepted this quotation yet');
-    if (q.balanceInvoiceId) throw new BadRequestException('The balance invoice was already raised');
-    const inv = await this.invoiceFor(q, 'balance');
+    if (part === 'advance' && q.advanceInvoiceId) throw new BadRequestException('The advance invoice was already raised');
+    if (part === 'balance' && q.balanceInvoiceId) throw new BadRequestException('The balance invoice was already raised');
+    if (part === 'balance' && !q.advanceInvoiceId && (q.content as unknown as QuoteContent).advancePct > 0) throw new BadRequestException('Send the advance invoice first');
+    const inv = await this.invoiceFor(q, part);
     if (!inv) throw new BadRequestException('Nothing is left to invoice');
-    const updated = await this.prisma.quotation.update({ where: { id }, data: { balanceInvoiceId: inv.id } });
-    await this.audit.log(me, 'quote.balance_invoiced', 'Quotation', id, null, { invoiceId: inv.id, number: inv.number, totalPaise: inv.totalPaise }, ip);
-    return { ...(await this.view(me, updated)), message: `Balance invoice ${inv.number} raised and sent.` };
+    const updated = await this.prisma.quotation.update({ where: { id }, data: part === 'advance' ? { advanceInvoiceId: inv.id } : { balanceInvoiceId: inv.id } });
+    const paid = await this.applyReported(updated, inv.id);
+    await this.audit.log(me, `quote.${part}_invoiced`, 'Quotation', id, null, { invoiceId: inv.id, number: inv.number, totalPaise: inv.totalPaise, paidPaise: paid }, ip);
+    return { ...(await this.view(me, updated)), message: `${part === 'advance' ? 'Advance' : 'Balance'} invoice ${inv.number} raised and sent.${paid ? ' The payment the client reported is recorded on it.' : ''}` };
+  }
+
+  raiseAdvance(me: Me, id: string, ip?: string) {
+    return this.raise(me, id, 'advance', ip);
+  }
+
+  raiseBalance(me: Me, id: string, ip?: string) {
+    return this.raise(me, id, 'balance', ip);
+  }
+
+  /** v49: the client reported a payment after the invoice went out: the team confirms it arrived. */
+  async confirmPayment(me: Me, id: string, ip?: string) {
+    this.assertStaff(me);
+    const q = await this.load(me, id);
+    await this.assertManage(me, q.clientOrgId);
+    let paid = 0;
+    for (const invoiceId of [q.advanceInvoiceId, q.balanceInvoiceId].filter((x): x is string => !!x)) paid += await this.applyReported(q, invoiceId);
+    if (!paid) throw new BadRequestException('There is no reported payment left to record');
+    await this.audit.log(me, 'quote.payment_confirmed', 'Quotation', id, null, { paidPaise: paid }, ip);
+    return { ...(await this.view(me, q)), message: 'Payment recorded on the invoice.' };
   }
 
   // ------------------------------------------------------------------------------------------------ templates
@@ -387,7 +500,7 @@ export class QuotesService {
     return this.view(me, q);
   }
 
-  /** The client's Owner accepts (typing their name; the advance invoice follows) or declines (with a reason). */
+  /** The client's Owner accepts (name plus signature or signed copy), asks for changes, or declines (with a reason). */
   async decide(me: Me, id: string, body: unknown, ip?: string) {
     const clientOrgId = this.clientOrg(me);
     if (me.clientOrg?.role !== 'client_owner') throw new ForbiddenException('Only the account Owner can accept or decline a quotation');
@@ -400,25 +513,88 @@ export class QuotesService {
     const content = q.content as unknown as QuoteContent;
     const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: clientOrgId }, select: { name: true, amUserId: true } });
     const team = [...new Set([c.amUserId, q.createdById, q.sentById].filter((x): x is string => !!x))];
+    if (input.decision === 'changes') {
+      // Back to the manager as a draft: they edit it and send it again (who signs and the client details are stamped afresh).
+      const { clientDetails: _c, signedBy: _s, ...rest } = q.content as unknown as QuoteContent & Stamped;
+      const updated = await this.prisma.quotation.update({ where: { id }, data: { status: 'draft', changeRequest: input.reason, content: rest as unknown as Prisma.InputJsonValue } });
+      await this.audit.log(me, 'quote.changes_requested', 'Quotation', id, { status: 'sent' }, { status: 'draft', reason: input.reason }, ip);
+      await this.notifications.notify(q.orgId, await this.withFounders(q.orgId, team), { kind: 'quote_changes', title: `${c.name} asked for changes to ${q.number}`, body: input.reason, link: `/team/quotes/${id}`, critical: true });
+      return { ...(await this.view(me, updated)), message: 'Sent to your Client Manager. You will get the updated quotation here.' };
+    }
     if (input.decision === 'decline') {
       const updated = await this.prisma.quotation.update({ where: { id }, data: { status: 'declined', declinedAt: new Date(), declineReason: input.reason || null } });
       await this.audit.log(me, 'quote.declined', 'Quotation', id, { status: 'sent' }, { status: 'declined', reason: input.reason ?? null }, ip);
       await this.notifications.notify(q.orgId, team, { kind: 'quote_declined', title: `${c.name} declined quotation ${q.number}`, body: input.reason || content.title, link: `/team/quotes/${id}` });
       return { ...(await this.view(me, updated)), message: 'Declined. Your Client Manager has been told.' };
     }
-    // Accept: claim it first so a double click never makes two advance invoices.
-    const claimed = await this.prisma.quotation.updateMany({ where: { id, status: 'sent' }, data: { status: 'accepted', acceptedAt: new Date(), acceptedById: me.id, acceptedName: input.name } });
+    // Accept: claim it first so a double click counts once. The invoices follow once the client has paid.
+    const fileIds = [input.signatureFileId, input.sealFileId, input.signedCopyFileId].filter((x): x is string => !!x);
+    const files = await this.prisma.file.count({ where: { id: { in: fileIds }, orgId: me.orgId, clientOrgId } });
+    if (files !== fileIds.length) throw new BadRequestException('Upload your signature again');
+    const claimed = await this.prisma.quotation.updateMany({
+      where: { id, status: 'sent' },
+      data: { status: 'accepted', acceptedAt: new Date(), acceptedById: me.id, acceptedName: input.name, clientSignatureFileId: input.signatureFileId ?? null, clientSealFileId: input.sealFileId ?? null, signedCopyFileId: input.signedCopyFileId ?? null },
+    });
     if (!claimed.count) throw new BadRequestException('This quotation was already answered');
-    const inv = await this.invoiceFor({ ...q, status: 'accepted' }, 'advance');
-    const updated = await this.prisma.quotation.update({ where: { id }, data: { advanceInvoiceId: inv?.id ?? null } });
-    await this.audit.log(me, 'quote.accepted', 'Quotation', id, { status: 'sent' }, { status: 'accepted', name: input.name, advanceInvoice: inv?.number ?? null }, ip);
-    await this.notifications.notify(q.orgId, team, {
+    const updated = await this.prisma.quotation.findUniqueOrThrow({ where: { id } });
+    await this.audit.log(me, 'quote.accepted', 'Quotation', id, { status: 'sent' }, { status: 'accepted', name: input.name, signed: !!input.signatureFileId, signedCopy: !!input.signedCopyFileId }, ip);
+    await this.notifications.notify(q.orgId, await this.withFounders(q.orgId, team), {
       kind: 'quote_accepted',
       title: `${c.name} accepted quotation ${q.number}`,
-      body: `${content.title}. ${inv ? `Advance invoice ${inv.number} was created.` : 'No advance was due.'} Accepted by ${input.name}.`,
+      body: `${content.title}. Accepted by ${input.name}. Send the invoice once they have paid.`,
       link: `/team/quotes/${id}`,
       critical: true,
     });
-    return { ...(await this.view(me, updated)), message: inv ? `Accepted. Your advance invoice ${inv.number} is in Billing.` : 'Accepted. Thank you!' };
+    return { ...(await this.view(me, updated)), message: 'Accepted. Please pay using the details on the quotation, then tell us below.' };
+  }
+
+  private async withFounders(orgId: string, ids: string[]) {
+    const founders = await this.prisma.user.findMany({ where: { orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, select: { id: true } });
+    return [...new Set([...ids, ...founders.map((f) => f.id)])];
+  }
+
+  /** v49: the signature, seal or signed copy the Owner adds before accepting. */
+  async acceptanceFile(me: Me, id: string, kind: string, file: OpsUpload | undefined, ip?: string) {
+    const clientOrgId = this.clientOrg(me);
+    if (me.clientOrg?.role !== 'client_owner') throw new ForbiddenException('Only the account Owner can accept a quotation');
+    if (!QUOTE_ACCEPT_FILE_KINDS.includes(kind as QuoteAcceptFileKind)) throw new NotFoundException('Not found');
+    const q = await this.prisma.quotation.findFirst({ where: { id, orgId: me.orgId, clientOrgId } });
+    if (!q || this.status(q) !== 'sent') throw new BadRequestException('This quotation is not waiting for you');
+    if (!file) throw new BadRequestException('Choose a file');
+    const copy = kind === 'signed_copy';
+    if (copy ? ![...INVOICE_IMAGE_TYPES, 'application/pdf'].includes(file.mimetype) : !INVOICE_IMAGE_TYPES.includes(file.mimetype)) throw new BadRequestException(copy ? 'Upload a PDF or an image' : 'Upload a PNG, JPG or WebP image');
+    if (file.size > (copy ? QUOTE_SIGNED_COPY_MAX_BYTES : INVOICE_IMAGE_MAX_BYTES)) throw new BadRequestException(`The file must be ${copy ? '4' : '2'} MB or smaller`);
+    const f = await this.prisma.file.create({
+      data: { orgId: me.orgId, clientOrgId, path: relPath(file.path), kind: copy ? 'document' : 'image', name: file.originalname.slice(0, 200), mimeType: file.mimetype, sizeBytes: file.size, checksum: await sha256(file.path), folder: 'general', tags: [ACCEPT_TAGS[kind as QuoteAcceptFileKind]], uploadedById: me.id },
+    });
+    await this.audit.log(me, 'quote.acceptance_file', 'Quotation', id, null, { kind, fileId: f.id }, ip);
+    return { fileId: f.id };
+  }
+
+  /** The signed quotation the client uploaded (the team, or the client's own account). */
+  async signedCopy(me: Me, id: string, res: Response) {
+    const q = me.type === 'client' ? await this.prisma.quotation.findFirst({ where: { id, orgId: me.orgId, clientOrgId: this.clientOrg(me) } }) : await this.load(me, id);
+    if (!q) throw new NotFoundException('Quotation not found');
+    if (me.type !== 'client') await this.assertManage(me, q.clientOrgId);
+    const f = q.signedCopyFileId ? await this.prisma.file.findFirst({ where: { id: q.signedCopyFileId, orgId: me.orgId } }) : null;
+    if (!f) throw new NotFoundException('No signed copy');
+    return sendStoredFile(res, f, { disposition: 'attachment', cache: 'private, max-age=3600' });
+  }
+
+  /** v49: the client tells the team they have paid. The CM and Founders are told, and send the invoice. */
+  async notifyPaid(me: Me, id: string, body: unknown, ip?: string) {
+    const clientOrgId = this.clientOrg(me);
+    if (!['client_owner', 'client_finance'].includes(me.clientOrg?.role ?? '')) throw new ForbiddenException('Only the account Owner or Finance can do this');
+    const input = parse(quotePaidSchema, body);
+    const q = await this.prisma.quotation.findFirst({ where: { id, orgId: me.orgId, clientOrgId } });
+    if (!q) throw new NotFoundException('Quotation not found');
+    if (q.status !== 'accepted') throw new BadRequestException('Accept the quotation first');
+    const notes = [...notesOf(q), { amountPaise: input.amountPaise, reference: input.reference, at: new Date().toISOString(), by: me.name }];
+    const updated = await this.prisma.quotation.update({ where: { id }, data: { paymentNotes: notes as unknown as Prisma.InputJsonValue } });
+    await this.audit.log(me, 'quote.payment_reported', 'Quotation', id, null, { amountPaise: input.amountPaise, reference: input.reference }, ip);
+    const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: clientOrgId }, select: { name: true, amUserId: true } });
+    const team = [c.amUserId, q.createdById, q.sentById].filter((x): x is string => !!x);
+    await this.notifications.notify(q.orgId, await this.withFounders(q.orgId, team), { kind: 'quote_paid', title: `${c.name} says they paid ₹${Math.round(input.amountPaise / 100).toLocaleString('en-IN')}`, body: `Quotation ${q.number}, reference ${input.reference}. Check it arrived, then send the invoice.`, link: `/team/quotes/${id}`, critical: true });
+    return { ...(await this.view(me, updated)), message: 'Thank you. Your Client Manager has been told and will send your invoice.' };
   }
 }

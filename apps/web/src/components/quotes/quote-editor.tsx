@@ -5,8 +5,9 @@
 // percentage of the fees) and the advance % invoiced when the client accepts. v46: scope and timeline are optional;
 // the terms are fixed, so they are not edited here (the server adds them to every quotation).
 import { useRef, useState } from "react";
-import { formatINR, quoteTotals, type QuoteContent, type QuoteLine } from "@bmu/shared";
+import { formatINR, QUOTE_OVERVIEW_MAX, quoteTotals, type QuoteContent, type QuoteLine } from "@bmu/shared";
 import { Button, Input, Select } from "@/components/ui";
+import { api } from "@/lib/api";
 
 const h = "text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted";
 const area = "w-full border border-border bg-surface px-3 py-2 text-sm";
@@ -15,6 +16,7 @@ const paise = (v: string) => Math.round((Number(v.replace(/[^\d.]/g, "")) || 0) 
 
 export const emptyContent = (): QuoteContent => ({
   title: "",
+  overview: "",
   projectLines: [],
   stats: [],
   lines: [{ title: "", details: "", kind: "unit", qty: 1, unitPricePaise: 0, pct: 0 }],
@@ -44,16 +46,34 @@ export function QuoteEditor({
   value,
   onChange,
   gstRatePct = 18,
+  clientOrgId,
 }: {
   value: QuoteContent;
   onChange: (v: QuoteContent) => void;
   gstRatePct?: number;
+  clientOrgId?: string;
 }) {
   const v = value;
   const set = <K extends keyof QuoteContent>(k: K, x: QuoteContent[K]) => onChange({ ...v, [k]: x });
   const t = quoteTotals(v.lines, gstRatePct);
   const line = (i: number, patch: Partial<QuoteLine>) => set("lines", v.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const [bulletsDraft, setBulletsDraft] = useState<Record<number, string>>({});
+  const [writing, setWriting] = useState(false);
+  const [aiNote, setAiNote] = useState<string>();
+  // v49: the overview is written from the project and cost lines; the manager can change it.
+  const writeOverview = async () => {
+    setWriting(true);
+    setAiNote(undefined);
+    try {
+      const r = await api.quotes.overview({ clientOrgId: clientOrgId || undefined, title: v.title, lines: v.lines.filter((l) => l.title.trim()).map((l) => ({ title: l.title, details: l.details })) });
+      set("overview", r.text);
+      if (!r.ai) setAiNote("AI is off, so this is plain wording. Edit it as you like.");
+    } catch (e) {
+      setAiNote((e as Error).message);
+    } finally {
+      setWriting(false);
+    }
+  };
   // v46: unticking keeps what was typed, so ticking again brings it back.
   const kept = useRef<{ scope: QuoteContent["scope"]; timeline: QuoteContent["timeline"] }>({ scope: [], timeline: [] });
   const toggleScope = (on: boolean) => {
@@ -70,6 +90,25 @@ export function QuoteEditor({
       <section className="grid gap-3">
         <p className={h}>Project</p>
         <Input value={v.title} onChange={(e) => set("title", e.target.value)} placeholder="Project name, e.g. Bengaluru Influencer Campaign" aria-label="Project name" maxLength={160} />
+        <label className="grid gap-1 text-xs font-medium sm:w-72">
+          Plan (printed under the project name)
+          <Select value={v.planType ?? ""} onChange={(e) => set("planType", e.target.value as QuoteContent["planType"])} aria-label="Plan">
+            <option value="">Not shown</option>
+            <option value="one_time">One-time project</option>
+            <option value="monthly">Monthly project</option>
+            <option value="mixed">Monthly and one-time project</option>
+          </Select>
+        </label>
+        <div className="grid gap-1">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-medium">Project overview (about two lines on page 1)</span>
+            <button type="button" className="text-xs underline disabled:opacity-40" disabled={writing} onClick={writeOverview} data-testid="quote-overview-ai">
+              {writing ? "Writing…" : "Write with AI"}
+            </button>
+          </div>
+          <textarea className={`${area} h-16`} value={v.overview ?? ""} onChange={(e) => set("overview", e.target.value)} placeholder="What BMU will do for this client. Type it, or use Write with AI." aria-label="Project overview" maxLength={QUOTE_OVERVIEW_MAX} />
+          {aiNote && <span className="text-xs text-ink-muted">{aiNote}</span>}
+        </div>
         <Fixed label="Lines under the project name" values={v.projectLines} max={3} onChange={(x) => set("projectLines", x)} placeholder="e.g. 6 micro-influencers" />
       </section>
 
@@ -128,10 +167,9 @@ export function QuoteEditor({
           </span>
         </div>
         <label className="flex items-center gap-2 text-sm">
-          Advance invoiced when the client accepts:
+          Advance to invoice first:
           <Input type="number" min={0} max={100} className="w-20" value={v.advancePct} onChange={(e) => set("advancePct", Math.max(0, Math.min(100, Number(e.target.value) || 0)))} aria-label="Advance percent" />% ({formatINR(Math.round((t.subtotalPaise * v.advancePct) / 100))} + GST)
         </label>
-        {v.advancePct !== 50 && <p className="text-xs text-[#9a6b00]">The fixed terms on the quotation say 50% advance.</p>}
       </section>
 
       <section className="grid gap-3">
@@ -190,7 +228,7 @@ export function QuoteEditor({
 
       <section className="grid gap-3">
         <p className={h}>Last page</p>
-        <p className="text-sm text-ink-muted">The terms &amp; conditions, payment details and signature lines are added to every quotation automatically.</p>
+        <p className="text-sm text-ink-muted">The terms &amp; conditions, payment details and signature lines are added to every quotation automatically. It is signed with your name, role, signature and the company seal when you send it.</p>
         <Input value={v.footerLine} onChange={(e) => set("footerLine", e.target.value)} placeholder="Thank-you line, e.g. Let's put your project in front of Bengaluru's home buyers." aria-label="Thank-you line" maxLength={160} />
       </section>
     </div>

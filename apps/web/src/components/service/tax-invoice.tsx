@@ -6,6 +6,7 @@
 // the screen theme never changes the document; the print copy sits outside the app shell so the PDF is only the invoice.
 // v45: BMU's document design (as on quotations): logo, cream pages with a green edge, a dark amount box, dark table
 // header, green total, and a payment box with the UPI QR. Every GST detail stays as it was.
+import { QuoteInvoice } from "@/components/quotes/quote-invoice";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { createPortal } from "react-dom";
@@ -455,8 +456,13 @@ export function TaxInvoicePages({ t }: { t: ServiceTaxInvoice }) {
   );
 }
 
-/** Printable two-page GST tax invoice. Browser "Save as PDF" gives a clean two-page A4 PDF. */
+/** v49: an invoice raised from a quotation prints in the quotation's design. */
 export function TaxInvoice({ t, actions }: { t: ServiceTaxInvoice; actions?: React.ReactNode }) {
+  return t.quote ? <QuoteInvoice t={t} actions={actions} /> : <ClassicInvoice t={t} actions={actions} />;
+}
+
+/** Printable two-page GST tax invoice. Browser "Save as PDF" gives a clean two-page A4 PDF. */
+function ClassicInvoice({ t, actions }: { t: ServiceTaxInvoice; actions?: React.ReactNode }) {
   // true in the browser, false while rendering on the server (the print copy is added after hydration).
   const mounted = useSyncExternalStore(noop, () => true, () => false);
   return (

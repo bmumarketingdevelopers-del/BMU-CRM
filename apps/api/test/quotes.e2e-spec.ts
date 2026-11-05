@@ -34,6 +34,7 @@ beforeAll(async () => {
   const cm = (await prisma.clientOrg.findUniqueOrThrow({ where: { id: ids.sunrise }, include: { am: true } })).am!;
   tokens.cm = await signIn(cm.email!);
   tokens.producer = await signIn('producer@bmu.demo');
+  tokens.founder = await signIn('founder@bmu.demo');
 });
 
 afterAll(async () => {
@@ -65,7 +66,14 @@ describe('quotations (v45)', () => {
     expect(q).toMatchObject({ status: 'draft', subtotalPaise: 6_900_000, gstPaise: 1_242_000, totalPaise: 8_142_000 });
     expect(q.amounts).toEqual([6_000_000, 900_000]);
     expect(q.services.sort()).toEqual(services.map((s) => s.service.name).sort());
-    expect(q.content.terms.map((t: { title: string }) => t.title)).toEqual(['Payment', 'Validity', 'Travel', 'Approvals', 'Paid boosting', 'Replacements', 'Results', 'Compliance']);
+    expect(q.content.terms.map((t: { title: string }) => t.title)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+    expect(q.content.terms[7].text).toContain("30 days' written notice");
+
+    // v49: the project overview: written for the manager, who can change it.
+    await http().post('/quotes/overview').set(as('producer')).send({ title: 'x' }).expect(403);
+    await http().post('/quotes/overview').set(as('cm')).send({}).expect(400);
+    const written = (await http().post('/quotes/overview').set(as('cm')).send({ clientOrgId: ids.sunrise, title: 'Web & AI', lines: [{ title: 'AI Chatbots' }] }).expect(200)).body;
+    expect(written.text).toContain('AI Chatbots');
     expect(q.number).toMatch(/^BMU\/Q\/\d{4}\/\d{4}$/);
 
     // Drafts aren't visible to the client.
@@ -77,18 +85,56 @@ describe('quotations (v45)', () => {
     const seen = (await http().get(`/client/quotes/${q.id}`).set(as('client')).expect(200)).body;
     expect(seen.can.decide).toBe(true);
     await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'accept' }).expect(400); // name needed
-    const ok = (await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar' }).expect(200)).body;
-    expect(ok.status).toBe('accepted');
-    // The 50% advance invoice: ₹34,500 + 18% GST.
-    expect(ok.advanceInvoice).toMatchObject({ totalPaise: Math.round(3_450_000 * 1.18) });
-    const adv = await prisma.invoice.findUniqueOrThrow({ where: { id: ok.advanceInvoice.id } });
-    expect(adv).toMatchObject({ kind: 'quote_advance', clientOrgId: ids.sunrise, subtotalPaise: 3_450_000 });
-    // Answering twice is refused.
-    await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar' }).expect(400);
+    await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar' }).expect(400); // signature needed
 
-    const bal = (await http().post(`/quotes/${q.id}/balance-invoice`).set(as('cm')).expect(200)).body;
-    expect(bal.balanceInvoice).toMatchObject({ totalPaise: Math.round(3_450_000 * 1.18) });
+    // v49: changes go back to the manager, who edits and sends again.
+    await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'changes' }).expect(400);
+    const back = (await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'changes', reason: 'Please add one more reel' }).expect(200)).body;
+    expect(back).toMatchObject({ status: 'draft', changeRequest: 'Please add one more reel' });
+    expect((await http().post(`/quotes/${q.id}/send`).set(as('cm')).expect(200)).body).toMatchObject({ status: 'sent', changeRequest: null });
+
+    // v49: signed for BMU by the person who sent it.
+    expect(seen.signer.role).toBe('Client Manager');
+
+    // v49: the Owner adds a signature and accepts; no invoice yet.
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+    await http().post(`/client/quotes/${q.id}/files/signature`).set(as('client')).attach('file', Buffer.from('nope'), { filename: 'a.txt', contentType: 'text/plain' }).expect(400);
+    const sig = (await http().post(`/client/quotes/${q.id}/files/signature`).set(as('client')).attach('file', png, { filename: 'sign.png', contentType: 'image/png' }).expect(200)).body;
+    await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar', signatureFileId: 'not-mine' }).expect(400);
+    await http().post(`/quotes/${q.id}/advance-invoice`).set(as('cm')).expect(400); // not accepted yet
+    const ok = (await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar', signatureFileId: sig.fileId }).expect(200)).body;
+    expect(ok.status).toBe('accepted');
+    expect(ok.acceptance.signatureUrl).toContain(sig.fileId);
+    expect(ok.advanceInvoice).toBeNull();
+    // Answering twice is refused.
+    await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar', signatureFileId: sig.fileId }).expect(400);
+
+    // v49: the client says they paid; the CM and Founders are told; the invoice then records it.
+    const advanceTotal = Math.round(3_450_000 * 1.18);
+    await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: advanceTotal }).expect(400);
+    const told = (await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: advanceTotal, reference: 'UTR123456' }).expect(200)).body;
+    expect(told.paymentNotes).toHaveLength(1);
+    expect(await prisma.notification.count({ where: { kind: 'quote_paid', link: `/team/quotes/${q.id}` } })).toBeGreaterThanOrEqual(2);
+    await http().post(`/quotes/${q.id}/balance-invoice`).set(as('cm')).expect(400); // the advance comes first
+    const sentInv = (await http().post(`/quotes/${q.id}/advance-invoice`).set(as('cm')).expect(200)).body;
+    expect(sentInv.advanceInvoice).toMatchObject({ totalPaise: advanceTotal, status: 'paid' });
+    const adv = await prisma.invoice.findUniqueOrThrow({ where: { id: sentInv.advanceInvoice.id } });
+    expect(adv).toMatchObject({ kind: 'quote_advance', clientOrgId: ids.sunrise, subtotalPaise: 3_450_000 });
+    await http().post(`/quotes/${q.id}/advance-invoice`).set(as('cm')).expect(400);
+
+    // The founder can do the same, and the invoice is in the quotation's design.
+    const bal = (await http().post(`/quotes/${q.id}/balance-invoice`).set(as('founder')).expect(200)).body;
+    expect(bal.balanceInvoice).toMatchObject({ totalPaise: advanceTotal, status: 'issued' });
     await http().post(`/quotes/${q.id}/balance-invoice`).set(as('cm')).expect(400);
+    const tax = (await http().get(`/finance/cm/invoices/${bal.balanceInvoice.id}/tax-invoice`).set(as('cm')).expect(200)).body;
+    expect(tax.quote).toMatchObject({ number: q.number, signedBy: { role: 'Client Manager' } });
+
+    // A payment reported after the invoice went out is confirmed from the quotation.
+    await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: advanceTotal, reference: 'UTR999999' }).expect(200);
+    const seenAgain = (await http().get(`/quotes/${q.id}`).set(as('cm')).expect(200)).body;
+    expect(seenAgain.can.confirmPayment).toBe(true);
+    const done = (await http().post(`/quotes/${q.id}/confirm-payment`).set(as('cm')).expect(200)).body;
+    expect(done.balanceInvoice.status).toBe('paid');
   });
 
   it('decline with a reason; an expired quote cannot be accepted', async () => {
@@ -104,6 +150,6 @@ describe('quotations (v45)', () => {
     made.push(b.id);
     await http().post(`/quotes/${b.id}/send`).set(as('cm')).expect(200);
     await prisma.quotation.update({ where: { id: b.id }, data: { validUntil: new Date(`${inDays(-1)}T00:00:00Z`) } });
-    await http().post(`/client/quotes/${b.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar' }).expect(400);
+    await http().post(`/client/quotes/${b.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar', signedCopyFileId: 'x' }).expect(400);
   });
 });
