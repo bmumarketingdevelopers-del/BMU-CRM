@@ -52,8 +52,10 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
         <SideNav sections={nav} />
         <div className="hidden border-t border-border px-5 py-4 text-sm md:block">
           <p className="font-medium">{me.name}</p>
-          {/* The person's job role (e.g. Graphic designer) when they have one, otherwise their system role. */}
-          <p className="text-xs text-ink-muted">{me.clientOrg ? me.clientOrg.name : craftSpecialtyLabel(me.specialty) || me.roles.map(roleLabel).join(" + ")}</p>
+          {/* Their own role name (a custom role such as "SEO Executive"), else their job role (e.g. Graphic designer), else the built-in role. */}
+          <p className="text-xs text-ink-muted">
+            {me.clientOrg ? me.clientOrg.name : me.customRoles?.join(" + ") || craftSpecialtyLabel(me.specialty) || me.roles.map(roleLabel).join(" + ")}
+          </p>
           <div className="flex items-center gap-3">
             <a href="/security" className="mt-2 text-xs text-ink-muted underline hover:text-ink">
               Sign-in security

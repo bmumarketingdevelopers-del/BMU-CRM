@@ -35,6 +35,7 @@ export class MeService {
       phone: user.phone,
       type: user.type,
       roles: user.roles.map((r) => r.role.baseRole),
+      customRoles: user.roles.filter((r) => r.role.isCustom).map((r) => r.role.name),
       permissions,
       specialty: user.specialty,
       clientOrg: user.clientUser

@@ -26,6 +26,8 @@ export type Me = {
   phone: string | null;
   type: "staff" | "client" | "creator";
   roles: string[]; // base role ids, e.g. ["founder"]
+  /** Names of custom roles from Roles & Permissions (e.g. "SEO Executive"); `roles` only has their base role. */
+  customRoles?: string[];
   permissions: PermissionMap;
   clientOrg: { id: string; name: string; role: string } | null;
   /** v10 craft: job function (video_editor, developer, …) that picks the specialist dashboard. */

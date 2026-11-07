@@ -382,6 +382,14 @@ describe('custom roles, import, bulk, tree', () => {
     const f = (await http().post('/people-actions/roles').set(as('founder')).send({ name: `Lead editor ${stamp}`, cloneFromRoleId: prod.id }).expect(201)).body;
     expect(f.outcome).toBe('applied');
     await http().post('/people-actions/roles').set(as('hr')).send({ name: `HR role ${stamp}`, cloneFromRoleId: prod.id }).expect(403);
+    // The person's own role name reaches the app (the sidebar shows it, not just its base role "Producer").
+    const lead = await prisma.role.findFirstOrThrow({ where: { name: `Lead editor ${stamp}` } });
+    const u = await temp('customrole');
+    await prisma.userRole.deleteMany({ where: { userId: u.id } });
+    await prisma.userRole.create({ data: { userId: u.id, roleId: lead.id } });
+    const token = await signIn(mail('customrole'));
+    const me = (await http().get('/auth/me').set({ Authorization: `Bearer ${token}` }).expect(200)).body;
+    expect(me).toMatchObject({ roles: ['producer'], customRoles: [`Lead editor ${stamp}`] });
     await prisma.role.deleteMany({ where: { name: { contains: `${stamp}` } } });
   });
 
