@@ -12,6 +12,7 @@ import { TopBar } from "./actions/top-bar";
 import { LiveProvider } from "@/lib/live";
 import { LiveStatus } from "./live/live-status";
 import { BrowserAlertsPrompt } from "./service/browser-alerts-prompt";
+import { InstallAppButton } from "./service/install-app-button";
 
 /** Client-app branding from Command Centre → Branding & Theme. */
 export type ShellBrand = { name: string; primary: string; accent: string; logoUrl: string };
@@ -50,6 +51,7 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
         {me.type === "staff" && <NewButton />}
         {me.type === "staff" && <GlobalSearch surface={surface === "Command Centre" ? "admin" : "team"} />}
         <SideNav sections={nav} />
+        <InstallAppButton />
         <div className="hidden border-t border-border px-5 py-4 text-sm md:block">
           <p className="font-medium">{me.name}</p>
           {/* Their own role name (a custom role such as "SEO Executive"), else their job role (e.g. Graphic designer), else the built-in role. */}
