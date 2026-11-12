@@ -107,7 +107,6 @@ await rd.getByRole("button", { name: "Archive" }).click();
 await head.getByText(/Archived: Client paused the campaign/).waitFor({ timeout: 15000 });
 check(true, "archived with the reason shown");
 await go(head, "/team/tasks");
-await head.getByText("Filters").click();
 await head.getByLabel("Show").selectOption("archived");
 await head.getByRole("button", { name: "Everything I can see" }).click();
 await head.getByLabel("Search tasks").fill(title);

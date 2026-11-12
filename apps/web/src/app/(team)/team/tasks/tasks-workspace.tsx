@@ -15,6 +15,7 @@ import { ActionDialog, Field, TextArea, inputCls } from "@/components/actions/ac
 import { BlockedDialog } from "@/components/actions/tasks/task-dialogs";
 import { TaskRowMenu } from "@/components/actions/tasks/task-menu";
 import { RecurringList, TemplateWizard } from "@/components/actions/tasks/template-wizard";
+import { FilterPanel } from "@/components/filter-panel";
 
 type Filters = { q: string; scope: "mine" | "team"; show: "open" | "completed" | "drafts" | "archived"; ownerId: string; clientId: string; departmentId: string; status: string; from: string; to: string; tag: string };
 const EMPTY: Filters = { q: "", scope: "mine", show: "open", ownerId: "", clientId: "", departmentId: "", status: "", from: "", to: "", tag: "" };
@@ -182,66 +183,63 @@ export function TasksWorkspace() {
         />
       </div>
 
-      <details className="mb-4 border border-border bg-surface-raised" open={active > 0}>
-        <summary className="cursor-pointer px-3 py-2 text-sm">Filters{active ? ` (${active})` : ""}</summary>
-        <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2 lg:grid-cols-4">
-          <select className={selectCls} value={filters.show} onChange={(e) => set({ show: e.target.value as Filters["show"] })} aria-label="Show">
-            <option value="open">Open and recent</option>
-            <option value="completed">Completed (all time)</option>
-            <option value="drafts">Drafts</option>
-            <option value="archived">Archived</option>
-          </select>
-          <select className={selectCls} value={filters.ownerId} onChange={(e) => set({ ownerId: e.target.value, scope: e.target.value ? "team" : filters.scope })} aria-label="Owner">
-            <option value="">Any owner</option>
-            <option value="none">Unassigned</option>
-            {opts?.people.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <select className={selectCls} value={filters.clientId} onChange={(e) => set({ clientId: e.target.value })} aria-label="Client">
-            <option value="">Any client</option>
-            <option value="internal">Internal</option>
-            {clients.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
-          <select className={selectCls} value={filters.departmentId} onChange={(e) => set({ departmentId: e.target.value })} aria-label="Department">
-            <option value="">Any department</option>
-            {opts?.departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
-          <select className={selectCls} value={filters.status} onChange={(e) => set({ status: e.target.value })} aria-label="Status">
-            <option value="">Any status</option>
-            <option value="overdue">Overdue</option>
-            {TASK_STATUSES.filter((s) => s !== "cancelled").map((s) => (
-              <option key={s} value={s}>
-                {taskStatusLabels[s]}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-xs">
-            Due from
-            <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value })} aria-label="Due from" />
-          </label>
-          <label className="flex items-center gap-2 text-xs">
-            to
-            <input type="date" className={`${selectCls} flex-1`} value={filters.to} onChange={(e) => set({ to: e.target.value })} aria-label="Due to" />
-          </label>
-          <input className={selectCls} value={filters.tag} onChange={(e) => set({ tag: e.target.value.trim() })} placeholder="Tag" aria-label="Tag" />
-          {active > 0 && (
-            <button type="button" className="text-left text-xs underline" onClick={() => setFilters((f) => ({ ...EMPTY, q: f.q, scope: f.scope }))}>
-              Clear filters
-            </button>
-          )}
-        </div>
-      </details>
+      <FilterPanel active={active} className="mb-4" testId="task-filters">
+        <select className={selectCls} value={filters.show} onChange={(e) => set({ show: e.target.value as Filters["show"] })} aria-label="Show">
+          <option value="open">Open and recent</option>
+          <option value="completed">Completed (all time)</option>
+          <option value="drafts">Drafts</option>
+          <option value="archived">Archived</option>
+        </select>
+        <select className={selectCls} value={filters.ownerId} onChange={(e) => set({ ownerId: e.target.value, scope: e.target.value ? "team" : filters.scope })} aria-label="Owner">
+          <option value="">Any owner</option>
+          <option value="none">Unassigned</option>
+          {opts?.people.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <select className={selectCls} value={filters.clientId} onChange={(e) => set({ clientId: e.target.value })} aria-label="Client">
+          <option value="">Any client</option>
+          <option value="internal">Internal</option>
+          {clients.map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select className={selectCls} value={filters.departmentId} onChange={(e) => set({ departmentId: e.target.value })} aria-label="Department">
+          <option value="">Any department</option>
+          {opts?.departments.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+        <select className={selectCls} value={filters.status} onChange={(e) => set({ status: e.target.value })} aria-label="Status">
+          <option value="">Any status</option>
+          <option value="overdue">Overdue</option>
+          {TASK_STATUSES.filter((s) => s !== "cancelled").map((s) => (
+            <option key={s} value={s}>
+              {taskStatusLabels[s]}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-2 text-xs">
+          Due from
+          <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value })} aria-label="Due from" />
+        </label>
+        <label className="flex items-center gap-2 text-xs">
+          to
+          <input type="date" className={`${selectCls} flex-1`} value={filters.to} onChange={(e) => set({ to: e.target.value })} aria-label="Due to" />
+        </label>
+        <input className={selectCls} value={filters.tag} onChange={(e) => set({ tag: e.target.value.trim() })} placeholder="Tag" aria-label="Tag" />
+        {active > 0 && (
+          <button type="button" className="text-left text-xs underline" onClick={() => setFilters((f) => ({ ...EMPTY, q: f.q, scope: f.scope }))}>
+            Clear filters
+          </button>
+        )}
+      </FilterPanel>
 
       {error && (
         <p role="alert" className="mb-3 border border-red bg-red/10 px-4 py-2 text-sm">

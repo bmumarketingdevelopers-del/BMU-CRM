@@ -14,6 +14,7 @@ import { Badge, LoadState } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 import { healthLabel, healthTone } from "@/components/clients-table";
+import { FilterPanel } from "@/components/filter-panel";
 
 type Filters = Required<Pick<ClientsListQuery, "am" | "health" | "industry" | "branch" | "status" | "tag" | "archived" | "service" | "onboardedFrom" | "onboardedTo">>;
 const EMPTY: Filters = { am: "", health: "", industry: "", branch: "", status: "", tag: "", archived: "", service: "", onboardedFrom: "", onboardedTo: "" };
@@ -121,93 +122,90 @@ export function ClientsList() {
         </button>
       </div>
 
-      <details className="border border-border bg-surface-raised" open={active > 0 && !(active === 1 && filters.archived)}>
-        <summary className="cursor-pointer px-3 py-2 text-sm">Filters{active ? ` (${active})` : ""}</summary>
-        <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2 lg:grid-cols-3">
-          <select className={inputCls} value={filters.status} onChange={(e) => set({ status: e.target.value })} aria-label="Status">
-            <option value="">Any status</option>
-            {STATUS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
+      <FilterPanel active={active} grid="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" testId="client-filters">
+        <select className={inputCls} value={filters.status} onChange={(e) => set({ status: e.target.value })} aria-label="Status">
+          <option value="">Any status</option>
+          {STATUS.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <select className={inputCls} value={filters.health} onChange={(e) => set({ health: e.target.value })} aria-label="Health">
+          <option value="">Any health</option>
+          <option value="green">Healthy</option>
+          <option value="amber">Watch</option>
+          <option value="red">At risk</option>
+        </select>
+        <select className={inputCls} value={filters.am} onChange={(e) => set({ am: e.target.value })} aria-label="Client Manager">
+          <option value="">Any Client Manager</option>
+          <option value="none">Unassigned</option>
+          {ams.map(([id, name]) => (
+            <option key={id} value={id}>
+              {name}
+            </option>
+          ))}
+        </select>
+        <select className={inputCls} value={filters.service} onChange={(e) => set({ service: e.target.value })} aria-label="Service">
+          <option value="">Any service</option>
+          {services.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <select className={inputCls} value={filters.industry} onChange={(e) => set({ industry: e.target.value })} aria-label="Industry">
+          <option value="">Any industry</option>
+          {(opts.data?.industries ?? [...new Set((all ?? []).map((c) => c.industry).filter(Boolean) as string[])]).map((i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </select>
+        {opts.data && opts.data.branches.length > 0 && (
+          <select className={inputCls} value={filters.branch} onChange={(e) => set({ branch: e.target.value })} aria-label="Branch">
+            <option value="">Any branch</option>
+            {opts.data.branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
               </option>
             ))}
           </select>
-          <select className={inputCls} value={filters.health} onChange={(e) => set({ health: e.target.value })} aria-label="Health">
-            <option value="">Any health</option>
-            <option value="green">Healthy</option>
-            <option value="amber">Watch</option>
-            <option value="red">At risk</option>
-          </select>
-          <select className={inputCls} value={filters.am} onChange={(e) => set({ am: e.target.value })} aria-label="Client Manager">
-            <option value="">Any Client Manager</option>
-            <option value="none">Unassigned</option>
-            {ams.map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
+        )}
+        {tags.length > 0 && (
+          <select className={inputCls} value={filters.tag} onChange={(e) => set({ tag: e.target.value })} aria-label="Tag">
+            <option value="">Any tag</option>
+            {tags.map((t) => (
+              <option key={t.id} value={t.name}>
+                {t.name}
               </option>
             ))}
           </select>
-          <select className={inputCls} value={filters.service} onChange={(e) => set({ service: e.target.value })} aria-label="Service">
-            <option value="">Any service</option>
-            {services.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+        )}
+        <div className="grid gap-1.5 sm:col-span-2 lg:col-span-3" data-testid="clients-onboarded">
+          <span className="text-xs text-ink-muted">Onboarded between</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="date" className={`${inputCls} w-auto`} value={filters.onboardedFrom} max={filters.onboardedTo || undefined} onChange={(e) => set({ onboardedFrom: e.target.value })} aria-label="Onboarded from" />
+            <span className="text-xs text-ink-muted">to</span>
+            <input type="date" className={`${inputCls} w-auto`} value={filters.onboardedTo} min={filters.onboardedFrom || undefined} onChange={(e) => set({ onboardedTo: e.target.value })} aria-label="Onboarded to" />
+            {ONBOARDED_PICKS.map((p) => (
+              <button key={p.label} type="button" className={toggleCls(filters.onboardedFrom === p.from() && filters.onboardedTo === istDay())} onClick={() => set({ onboardedFrom: p.from(), onboardedTo: istDay() })}>
+                {p.label}
+              </button>
             ))}
-          </select>
-          <select className={inputCls} value={filters.industry} onChange={(e) => set({ industry: e.target.value })} aria-label="Industry">
-            <option value="">Any industry</option>
-            {(opts.data?.industries ?? [...new Set((all ?? []).map((c) => c.industry).filter(Boolean) as string[])]).map((i) => (
-              <option key={i} value={i}>
-                {i}
-              </option>
-            ))}
-          </select>
-          {opts.data && opts.data.branches.length > 0 && (
-            <select className={inputCls} value={filters.branch} onChange={(e) => set({ branch: e.target.value })} aria-label="Branch">
-              <option value="">Any branch</option>
-              {opts.data.branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          )}
-          {tags.length > 0 && (
-            <select className={inputCls} value={filters.tag} onChange={(e) => set({ tag: e.target.value })} aria-label="Tag">
-              <option value="">Any tag</option>
-              {tags.map((t) => (
-                <option key={t.id} value={t.name}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className="grid gap-1.5 sm:col-span-2 lg:col-span-3" data-testid="clients-onboarded">
-            <span className="text-xs text-ink-muted">Onboarded between</span>
-            <div className="flex flex-wrap items-center gap-2">
-              <input type="date" className={`${inputCls} w-auto`} value={filters.onboardedFrom} max={filters.onboardedTo || undefined} onChange={(e) => set({ onboardedFrom: e.target.value })} aria-label="Onboarded from" />
-              <span className="text-xs text-ink-muted">to</span>
-              <input type="date" className={`${inputCls} w-auto`} value={filters.onboardedTo} min={filters.onboardedFrom || undefined} onChange={(e) => set({ onboardedTo: e.target.value })} aria-label="Onboarded to" />
-              {ONBOARDED_PICKS.map((p) => (
-                <button key={p.label} type="button" className={toggleCls(filters.onboardedFrom === p.from() && filters.onboardedTo === istDay())} onClick={() => set({ onboardedFrom: p.from(), onboardedTo: istDay() })}>
-                  {p.label}
-                </button>
-              ))}
-              {(filters.onboardedFrom || filters.onboardedTo) && (
-                <button type="button" className="text-xs text-ink-muted underline" onClick={() => set({ onboardedFrom: "", onboardedTo: "" })}>
-                  Any date
-                </button>
-              )}
-            </div>
+            {(filters.onboardedFrom || filters.onboardedTo) && (
+              <button type="button" className="text-xs text-ink-muted underline" onClick={() => set({ onboardedFrom: "", onboardedTo: "" })}>
+                Any date
+              </button>
+            )}
           </div>
-          {active > 0 && (
-            <button type="button" className="justify-self-start text-xs text-ink-muted underline" onClick={() => setFilters(EMPTY)}>
-              Clear filters
-            </button>
-          )}
         </div>
-      </details>
+        {active > 0 && (
+          <button type="button" className="justify-self-start text-xs text-ink-muted underline" onClick={() => setFilters(EMPTY)}>
+            Clear filters
+          </button>
+        )}
+      </FilterPanel>
 
       {!all ? (
         <LoadState loading={list.loading} error={list.error} />

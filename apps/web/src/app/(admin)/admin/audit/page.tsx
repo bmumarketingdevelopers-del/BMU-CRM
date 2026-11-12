@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { AuditChainView, AuditPage, AuditQuery } from "@bmu/shared";
 import { Button, Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
+import { FilterPanel } from "@/components/filter-panel";
 
 const fmt = new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" });
 const EMPTY: AuditQuery = { q: "", actor: "", area: "", from: "", to: "" };
@@ -93,8 +94,12 @@ export default function AuditPage() {
         </p>
       )}
 
-      {/* Filters */}
-      <div className="mb-4 grid gap-2 border border-border bg-surface-raised p-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto]" data-testid="audit-filters">
+      <FilterPanel
+        active={[filters.actor, filters.area, filters.from, filters.to].filter(Boolean).length}
+        className="mb-4"
+        grid="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto]"
+        testId="audit-filters"
+      >
         <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Search action, record type or id…" aria-label="Search the audit log" />
         <Select value={filters.actor} onChange={(e) => set({ actor: e.target.value })} aria-label="Person">
           <option value="">Everyone</option>
@@ -124,7 +129,7 @@ export default function AuditPage() {
         <button type="button" onClick={clear} disabled={!filtered && !typed} className="justify-self-start text-sm text-ink-muted underline disabled:no-underline disabled:opacity-40">
           Clear
         </button>
-      </div>
+      </FilterPanel>
 
       <LoadState loading={loading && !data} error={error} />
       {data && (
