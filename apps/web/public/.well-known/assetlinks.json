@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "in.bmumarketing.team.twa",
+      "sha256_cert_fingerprints": [
+        "E2:B4:C9:64:24:D6:3D:1D:03:51:11:23:3F:2F:60:A3:A4:B0:D8:93:0C:DF:5F:11:82:9E:BB:F8:BC:9F:9E:F2"
+      ]
+    }
+  }
+]
