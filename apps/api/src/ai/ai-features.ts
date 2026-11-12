@@ -646,9 +646,21 @@ export class AiFeaturesService {
     const w = await get(this.ref, InsightsService).weekly(me);
     const facts = [
       w.money ? `Revenue this month ${formatINR(w.money.revenueThisMonthPaise)} vs last month ${formatINR(w.money.revenueLastMonthPaise)}; collected ${formatINR(w.money.collectedThisMonthPaise)}; outstanding ${formatINR(w.money.outstandingPaise)}.` : 'Money figures not visible to this role.',
-      `Active clients ${w.activeClients}, open leads ${w.openLeads}, overdue tasks ${w.overdueTasks}, reply-time misses this week ${w.slaBreachesThisWeek}, QC pass rate ${w.qcPassRate ?? '—'}% on ${w.qcChecksThisWeek} checks.`,
-      `Pipeline: ${w.pipeline.map((p) => `${p.label} ${p.count}`).join(', ')}.`,
-      `At-risk clients: ${w.attention.atRiskClients.length}; blocked tasks: ${w.attention.blockedTasks.length}; overdue invoices: ${w.attention.overdueInvoices?.length ?? 'n/a'}.`,
+      ...(w.scope === 'department'
+        ? [
+            `Department view (a Department Head; no leads, pipeline or client health; every figure is the department's own): ${w.activeClients} clients the department works on, ${w.openTasks ?? 0} open tasks, ${w.overdueTasks} overdue tasks, reply-time misses this week ${w.slaBreachesThisWeek}, QC pass rate ${w.qcPassRate ?? '—'}% on ${w.qcChecksThisWeek} checks.`,
+            `Blocked tasks: ${w.attention.blockedTasks.length}.`,
+          ]
+        : w.scope === 'organisation'
+          ? [
+              `No sales view (no leads, pipeline or client health): active clients ${w.activeClients}, open tasks ${w.openTasks ?? 0}, overdue tasks ${w.overdueTasks}, reply-time misses this week ${w.slaBreachesThisWeek}, QC pass rate ${w.qcPassRate ?? '—'}% on ${w.qcChecksThisWeek} checks.`,
+              `Blocked tasks: ${w.attention.blockedTasks.length}; overdue invoices: ${w.attention.overdueInvoices?.length ?? 'n/a'}.`,
+            ]
+        : [
+            `Active clients ${w.activeClients}, open leads ${w.openLeads}, overdue tasks ${w.overdueTasks}, reply-time misses this week ${w.slaBreachesThisWeek}, QC pass rate ${w.qcPassRate ?? '—'}% on ${w.qcChecksThisWeek} checks.`,
+            `Pipeline: ${w.pipeline.map((p) => `${p.label} ${p.count}`).join(', ')}.`,
+            `At-risk clients: ${w.attention.atRiskClients.length}; blocked tasks: ${w.attention.blockedTasks.length}; overdue invoices: ${w.attention.overdueInvoices?.length ?? 'n/a'}.`,
+          ]),
     ].join('\n');
     return {
       target: { type: 'Page', id: 'weekly' },

@@ -15,6 +15,8 @@ export const canReadFinance = (me: Me) => isStaff(me) && scope(me, 'invoices_pay
 export const canWriteFinance = (me: Me) => canReadFinance(me) && me.roles.some((r) => FINANCE_WRITERS.includes(r));
 /** Everyone except a department head sees every department. */
 export const seesAllDepartments = (me: Me) => me.roles.some((r) => ['founder', 'admin', 'finance', 'am_lead'].includes(r));
+/** A Department Head without an all-departments role: the Weekly Review shows their department, without leads. */
+export const isDepartmentView = (me: Me) => me.roles.includes('department_head') && !seesAllDepartments(me);
 
 export function assertCommand(me: Me) {
   if (!canReadCommand(me)) throw new ForbiddenException('Command Centre only');

@@ -98,9 +98,18 @@ describe('Command Centre dashboards', () => {
     expect(f.body.money.byMonth).toHaveLength(6);
     expect(f.body.attention.overdueInvoices.some((i: { id: string }) => i.id === overdueId)).toBe(true);
     expect(f.body.pipeline.length).toBeGreaterThan(3);
+    expect(f.body.scope).toBe('full');
+    expect(typeof f.body.openLeads).toBe('number');
     const d = await http().get('/insights/weekly').set(as('design.head')).expect(200);
     expect(d.body.money).toBeNull();
     expect(d.body.attention.overdueInvoices).toBeNull();
+    // A Department Head sees their team's clients and open tasks, never leads, the pipeline or at-risk clients.
+    expect(d.body.scope).toBe('department');
+    expect(d.body.openLeads).toBeNull();
+    expect(d.body.pipeline).toEqual([]);
+    expect(d.body.attention.atRiskClients).toEqual([]);
+    expect(typeof d.body.openTasks).toBe('number');
+    expect(d.body.activeClients).toBeLessThanOrEqual(f.body.activeClients);
   });
 
   it('revenue and collections are for Founder, Branch Manager and Finance only', async () => {

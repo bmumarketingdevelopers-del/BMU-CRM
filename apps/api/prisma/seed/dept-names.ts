@@ -1,6 +1,7 @@
-// The "Account Management" department is now called "Client Management". Databases seeded before the rename still
-// have the old name, so the seed treats the two names as the same department when it looks one up.
-const OLD_NAMES: Record<string, string> = { 'Account Management': 'Client Management' };
+// Renamed departments: "Account Management" is now "Client Management", and "Video / Production" is now
+// "Video Production" (the same name the Mumbai branch uses). Databases seeded before a rename still have the old
+// name, so the seed treats the two names as the same department when it looks one up.
+export const OLD_NAMES: Record<string, string> = { 'Account Management': 'Client Management', 'Video / Production': 'Video Production' };
 
 const current = (name: string) => OLD_NAMES[name] ?? name;
 

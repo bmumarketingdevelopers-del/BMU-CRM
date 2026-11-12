@@ -253,8 +253,12 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
           return {
             data: {
               money: w.money ? { revenueThisMonth: formatINR(w.money.revenueThisMonthPaise), revenueLastMonth: formatINR(w.money.revenueLastMonthPaise), collectedThisMonth: formatINR(w.money.collectedThisMonthPaise), outstanding: formatINR(w.money.outstandingPaise) } : 'not visible to this role',
-              activeClients: w.activeClients,
-              openLeads: w.openLeads,
+              // Leads only in the full view (Founder, Branch Manager, Sales); a Department Head gets their team's clients and tasks.
+              ...(w.scope === 'department'
+                ? { teamClients: w.activeClients, openDepartmentTasks: w.openTasks }
+                : w.scope === 'organisation'
+                  ? { activeClients: w.activeClients, openTasks: w.openTasks }
+                  : { activeClients: w.activeClients, openLeads: w.openLeads }),
               overdueTasks: w.overdueTasks,
               replyTimeBreachesThisWeek: w.slaBreachesThisWeek,
               qcPassRatePct: w.qcPassRate,

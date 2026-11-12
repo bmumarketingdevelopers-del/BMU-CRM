@@ -143,7 +143,7 @@ export async function seedInsights(prisma: PrismaClient, orgId: string) {
   if ((await prisma.qCResult.count({ where: { orgId } })) === 0) {
     const plan: { title: string; type: string; flow: string; dept: string; outcomes: ('pass' | 'fail')[]; rounds: number }[] = [
       { title: 'Festive offer carousel', type: 'post', flow: 'design', dept: 'Creative / Design', outcomes: ['pass'], rounds: 1 },
-      { title: 'Organic farm reel', type: 'reel', flow: 'video', dept: 'Video / Production', outcomes: ['fail', 'pass'], rounds: 2 },
+      { title: 'Organic farm reel', type: 'reel', flow: 'video', dept: 'Video Production', outcomes: ['fail', 'pass'], rounds: 2 },
       { title: 'Recipe blog: millet salad', type: 'blog', flow: 'writing', dept: 'SEO', outcomes: ['pass'], rounds: 0 },
       { title: 'Store launch poster', type: 'post', flow: 'design', dept: 'Creative / Design', outcomes: ['fail', 'fail', 'pass'], rounds: 3 },
     ];

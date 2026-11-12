@@ -47,7 +47,7 @@ const period = (d: Date) => new Date(d.getTime() + IST).toISOString().slice(0, 7
 
 const STAFF = [
   { email: 'divya.menon@ops.demo', name: 'Divya Menon', role: 'producer', dept: 'Creative / Design', load: 30 },
-  { email: 'farhan.qureshi@ops.demo', name: 'Farhan Qureshi', role: 'producer', dept: 'Video / Production', load: 26 },
+  { email: 'farhan.qureshi@ops.demo', name: 'Farhan Qureshi', role: 'producer', dept: 'Video Production', load: 26 },
   { email: 'kavya.nair@ops.demo', name: 'Kavya Nair', role: 'producer', dept: 'Web / AI', load: 24 },
   { email: 'ishaan.kapoor@ops.demo', name: 'Ishaan Kapoor', role: 'producer', dept: 'Performance Ads', load: 22 },
   { email: 'tanvi.desai@ops.demo', name: 'Tanvi Desai', role: 'strategist', dept: 'Strategy', load: 24 },
@@ -69,8 +69,8 @@ const PLANS: Record<string, DelivPlan[]> = {
     { type: 'story', title: 'Weekend sale stories', flow: 'design', dept: 'Creative / Design' },
   ],
   video_editing: [
-    { type: 'reel', title: 'Barista reel', flow: 'video', dept: 'Video / Production' },
-    { type: 'reel', title: 'New menu reel', flow: 'video', dept: 'Video / Production' },
+    { type: 'reel', title: 'Barista reel', flow: 'video', dept: 'Video Production' },
+    { type: 'reel', title: 'New menu reel', flow: 'video', dept: 'Video Production' },
     { type: 'post', title: 'Menu card design', flow: 'design', dept: 'Creative / Design' },
   ],
   website: [
@@ -130,7 +130,7 @@ export async function seedOpsAnalytics(prisma: PrismaClient, orgId: string) {
   const producersFor = (deptName: string) =>
     deptName === 'Creative / Design'
       ? [producer.id, S('divya.menon@ops.demo')]
-      : deptName === 'Video / Production'
+      : deptName === 'Video Production'
         ? [S('farhan.qureshi@ops.demo'), producer.id]
         : deptName === 'Web / AI'
           ? [S('kavya.nair@ops.demo')]
@@ -142,7 +142,7 @@ export async function seedOpsAnalytics(prisma: PrismaClient, orgId: string) {
   // Open work in the current month only goes to the seeded staff (never to the regular demo users).
   const seededLoadOwner: Record<string, string> = {
     'Creative / Design': S('divya.menon@ops.demo'),
-    'Video / Production': S('farhan.qureshi@ops.demo'),
+    'Video Production': S('farhan.qureshi@ops.demo'),
     'Web / AI': S('kavya.nair@ops.demo'),
     'Performance Ads': S('ishaan.kapoor@ops.demo'),
     SEO: S('divya.menon@ops.demo'),

@@ -101,7 +101,7 @@ function creative(palette: string[], seed: number, w = 720, h = 720): Buffer {
 // People
 
 const SPECIALISTS = [
-  { key: 'video', email: 'video@bmu.demo', name: 'Aman Verma', specialty: 'video_editor', role: 'producer', dept: 'Video / Production', manager: 'admin@bmu.demo' },
+  { key: 'video', email: 'video@bmu.demo', name: 'Aman Verma', specialty: 'video_editor', role: 'producer', dept: 'Video Production', manager: 'admin@bmu.demo' },
   { key: 'script', email: 'script@bmu.demo', name: 'Nisha Kulkarni', specialty: 'script_writer', role: 'producer', dept: 'Strategy', manager: 'am.lead@bmu.demo' },
   { key: 'social', email: 'social@bmu.demo', name: 'Tara Fernandes', specialty: 'social_media_manager', role: 'strategist', dept: 'Strategy', manager: 'am.lead@bmu.demo' },
   { key: 'dev', email: 'dev@bmu.demo', name: 'Karthik Iyer', specialty: 'developer', role: 'producer', dept: 'Web / AI', manager: 'admin@bmu.demo' },
@@ -126,7 +126,7 @@ const FLOWS: Record<string, { dept: string; qcKey: string; steps: Step[] }> = {
     steps: [{ key: 'brief', name: 'Brief and references', role: 'strategist', kind: 'work', who: 'social' }, { key: 'design', name: 'Design', role: 'producer', kind: 'work', who: 'design' }, QC, CLIENT],
   },
   video: {
-    dept: 'Video / Production',
+    dept: 'Video Production',
     qcKey: 'video',
     steps: [
       { key: 'script', name: 'Script and shot list', role: 'strategist', kind: 'work', who: 'script' },
@@ -713,7 +713,7 @@ export async function seedCraft(prisma: PrismaClient, orgId: string) {
     if (orphan) await prisma.task.update({ where: { id: orphan.id }, data: { ownerId: null, priority: 'high' } });
     for (const [engKey, title, specialty, dueIn, priority, deptName] of [
       ['peak_web', 'Design the Diwali offer banner for the test-drive page', 'graphic_designer', 2, 'high', 'Creative / Design'],
-      ['peak_video', 'Cut a 15-second teaser from the launch film', 'video_editor', 4, 'normal', 'Video / Production'],
+      ['peak_video', 'Cut a 15-second teaser from the launch film', 'video_editor', 4, 'normal', 'Video Production'],
       ['brightpath_web', 'Write copy for the new scholarships page', 'script_writer', 3, 'normal', 'Strategy'],
       ['brightpath_web', 'Fix enquiry form email routing to admissions@', 'developer', 1, 'urgent', 'Web / AI'],
       ['brightpath_web', 'Wireframe the parent portal login flow', 'ux_ui_designer', 6, 'low', 'Creative / Design'],

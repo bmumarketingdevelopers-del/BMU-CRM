@@ -36,7 +36,7 @@ import { seedTeam } from './seed/team.js';
 import { seedCreative } from './seed/creative.js';
 import { seedComms } from './seed/comms.js';
 import { seedFinance } from './seed/finance.js';
-import { sameDept } from './seed/dept-names.js';
+import { OLD_NAMES, sameDept } from './seed/dept-names.js';
 
 // Demo people, clients and history are added in development, on a database on this computer only. A live database
 // (NODE_ENV=production, SEED_DEMO=0, or any database that is not on localhost, e.g. Supabase) gets only the
@@ -82,11 +82,13 @@ async function main() {
     (await prisma.branch.findFirst({ where: { orgId: org.id, name: 'Bengaluru HQ' } })) ??
     (await prisma.branch.create({ data: { orgId: org.id, name: 'Bengaluru HQ', city: 'Bengaluru' } }));
 
-  // "Account Management" was renamed "Client Management": rename the old row so older databases keep one department.
-  if ((DEPARTMENTS as readonly string[]).includes('Client Management')) {
-    const old = await prisma.department.findFirst({ where: { branchId: branch.id, name: 'Account Management' } });
-    const renamed = await prisma.department.findFirst({ where: { branchId: branch.id, name: 'Client Management' } });
-    if (old && !renamed) await prisma.department.update({ where: { id: old.id }, data: { name: 'Client Management' } });
+  // Renamed departments (e.g. "Video / Production" is now "Video Production"): rename the old row so older databases
+  // keep one department, with its people and templates, instead of gaining a second one under the new name.
+  for (const [oldName, newName] of Object.entries(OLD_NAMES)) {
+    if (!(DEPARTMENTS as readonly string[]).includes(newName)) continue;
+    const old = await prisma.department.findFirst({ where: { branchId: branch.id, name: oldName } });
+    const renamed = await prisma.department.findFirst({ where: { branchId: branch.id, name: newName } });
+    if (old && !renamed) await prisma.department.update({ where: { id: old.id }, data: { name: newName } });
   }
   for (const name of DEPARTMENTS) {
     await prisma.department.upsert({

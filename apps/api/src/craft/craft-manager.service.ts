@@ -770,7 +770,14 @@ export class CraftManagerService {
     if (s.kind === 'department') departmentId = s.departmentId;
     else if (!departmentId && input.specialty) {
       const def = CRAFT_SPECIALTY_OPTIONS.find((o) => o.id === input.specialty);
-      if (def) departmentId = (await this.prisma.department.findFirst({ where: { orgId: me.orgId, name: def.department, deletedAt: null }, select: { id: true } }))?.id ?? null;
+      if (def) {
+        // Branches can share a department name (Video Production is in Bengaluru and Mumbai): prefer the creator's own branch.
+        const [depts, self] = await Promise.all([
+          this.prisma.department.findMany({ where: { orgId: me.orgId, name: def.department, deletedAt: null }, select: { id: true, branchId: true }, orderBy: { id: 'asc' } }),
+          this.prisma.user.findUnique({ where: { id: me.id }, select: { branchId: true } }),
+        ]);
+        departmentId = (depts.find((d) => d.branchId === self?.branchId) ?? depts[0])?.id ?? null;
+      }
     }
     let owner: MemberRow | null = null;
     if (input.ownerId) owner = await this.assignee(me, s, input.ownerId);

@@ -39,11 +39,21 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
         const change = m && m.revenueLastMonthPaise ? ((m.revenueThisMonthPaise - m.revenueLastMonthPaise) / m.revenueLastMonthPaise) * 100 : null;
         const overdue = d.attention.overdueInvoices;
         const atRisk = d.attention.atRiskClients;
+        // Leads, pipeline, forecast and at-risk clients are only for the full view (Founder, Branch Manager, Sales).
+        // A Department Head sees their department's week: their team's clients, and open tasks instead of leads.
+        const full = d.scope === "full";
+        const dept = d.scope === "department";
+        const ours = dept ? " in your department" : "";
+        const clientsTile = dept ? (
+          <StatTile label="Your team's clients" value={d.activeClients} hint="you and your team work on" href="/team/clients" />
+        ) : (
+          <StatTile label="Active clients" value={d.activeClients} hint="with live work" href="/admin/client-health" />
+        );
         const sections: Record<string, ReactNode> = {
           ai_digest: <AiWeeklyDigest />,
           // v20: revenue forecast, churn risk, likely wins, slipping work and capacity, with reasons (on its own page).
-          forecast_risks: <PlaceCard href="/admin/intelligence" title="Forecast & risks" hint="Revenue forecast, churn risk, likely wins, slipping work and capacity, each with its reasons." />,
-          pipeline: (
+          forecast_risks: !full ? null : <PlaceCard href="/admin/intelligence" title="Forecast & risks" hint="Revenue forecast, churn risk, likely wins, slipping work and capacity, each with its reasons." />,
+          pipeline: !full ? null : (
             <PlaceCard
               href="/admin/pipeline"
               title="Pipeline"
@@ -66,7 +76,7 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
               hint={overdue.length ? `Oldest is ${overdue[0].daysOverdue} days late.` : "No overdue invoices."}
             />
           ) : null,
-          at_risk_clients: (
+          at_risk_clients: !full ? null : (
             <PlaceCard
               href="/admin/client-health"
               title="Clients at risk"
@@ -90,16 +100,20 @@ export function WeeklyReviewBody({ layout, wrap }: DashLayoutProps) {
               />
               <StatTile label="Collected this month" value={inr(m.collectedThisMonthPaise)} hint="payments received" href="/admin/finance/payments" />
               <StatTile label="Outstanding" value={inr(m.outstandingPaise)} tone={d.attention.overdueInvoices?.length ? "warn" : "default"} hint={`${d.attention.overdueInvoices?.length ?? 0} overdue`} href="/admin/collections" />
-              <StatTile label="Active clients" value={d.activeClients} hint="with live work" href="/admin/client-health" />
+              {clientsTile}
             </StatRow>
           ) : null,
           ops_tiles: (
             <StatRow cols={m ? 4 : 5}>
-              {!m && <StatTile label="Active clients" value={d.activeClients} hint="with live work" href="/admin/client-health" />}
-              <StatTile label="Open leads" value={d.openLeads} hint="not yet won or lost" href="/admin/pipeline" />
-              <StatTile label="Overdue tasks" value={d.overdueTasks} tone={d.overdueTasks ? "warn" : "default"} hint="past their deadline" href="/admin/capacity" />
-              <StatTile label="Reply times missed" value={d.slaBreachesThisWeek} tone={d.slaBreachesThisWeek ? "bad" : "default"} hint="client requests, this week" />
-              <StatTile label="QC pass rate" value={pctText(d.qcPassRate)} hint={`${d.qcChecksThisWeek} checks this week`} tone={d.qcPassRate !== null && d.qcPassRate < 70 ? "warn" : "default"} href="/admin/quality" />
+              {!m && clientsTile}
+              {full ? (
+                <StatTile label="Open leads" value={d.openLeads ?? 0} hint="not yet won or lost" href="/admin/pipeline" />
+              ) : (
+                <StatTile label="Open tasks" value={d.openTasks ?? 0} hint={dept ? "in your department" : "not yet done"} href="/team/tasks" />
+              )}
+              <StatTile label="Overdue tasks" value={d.overdueTasks} tone={d.overdueTasks ? "warn" : "default"} hint={`past their deadline${ours}`} href={dept ? "/team/tasks" : "/admin/capacity"} />
+              <StatTile label="Reply times missed" value={d.slaBreachesThisWeek} tone={d.slaBreachesThisWeek ? "bad" : "default"} hint={dept ? "your team's clients, this week" : "client requests, this week"} />
+              <StatTile label="QC pass rate" value={pctText(d.qcPassRate)} hint={`${d.qcChecksThisWeek} checks this week${ours}`} tone={d.qcPassRate !== null && d.qcPassRate < 70 ? "warn" : "default"} href="/admin/quality" />
             </StatRow>
           ),
           // v34: social content at a glance.
