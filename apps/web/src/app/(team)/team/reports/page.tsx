@@ -2,17 +2,13 @@
 
 import { use } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { TeamEodPerson } from "@bmu/shared";
 import { Empty, Panel, StatRow, StatTile } from "@/components/dash";
-import { Badge, LoadState, PageTitle } from "@/components/ui";
+import { Badge, Input, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
-const shift = (day: string, days: number) => {
-  const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-};
 const dayLabel = (ymd: string) => new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${ymd}T00:00:00Z`));
 
 /**
@@ -26,6 +22,7 @@ export default function DailyReportsPage({ searchParams }: { searchParams: Promi
 }
 
 function Day({ date }: { date?: string }) {
+  const router = useRouter();
   const loaded = useLoad(() => api.dailyReports.team(date));
   const view = loaded.data;
   if (!view) return <LoadState loading={loaded.loading} error={loaded.error} />;
@@ -35,27 +32,29 @@ function Day({ date }: { date?: string }) {
   const isToday = view.date === view.today;
   return (
     <div>
-      <PageTitle
-        title="Daily reports"
-        subtitle="End-of-day reports from the people who report to you, and from everyone in the departments you head."
-        action={
-          <div className="flex items-center gap-3 text-sm">
-            <Link href={`/team/reports?date=${shift(view.date, -1)}`} className="underline">
-              ← Previous day
-            </Link>
-            {!isToday && (
-              <>
-                <Link href={`/team/reports?date=${shift(view.date, 1)}`} className="underline">
-                  Next day →
-                </Link>
-                <Link href="/team/reports" className="underline">
-                  Today
-                </Link>
-              </>
-            )}
-          </div>
-        }
-      />
+      <PageTitle title="Daily reports" subtitle="End-of-day reports from the people who report to you, and from everyone in the departments you head." />
+      {/* Pick any day up to today; the reports for that day load. */}
+      <div className="mb-6 flex flex-wrap items-end gap-3">
+        <label className="block text-sm">
+          <span className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">Date</span>
+          <Input
+            type="date"
+            className="mt-1.5 block"
+            value={view.date}
+            max={view.today}
+            onChange={(e) => {
+              const d = e.target.value;
+              if (d) router.push(d === view.today ? "/team/reports" : `/team/reports?date=${d}`);
+            }}
+            data-testid="report-date"
+          />
+        </label>
+        {!isToday && (
+          <Link href="/team/reports" className="pb-2 text-sm underline">
+            Back to today
+          </Link>
+        )}
+      </div>
       <p className="mb-4 text-sm font-medium" data-testid="report-day">
         {dayLabel(view.date)}
         {isToday && <span className="font-normal text-ink-muted"> · today, people can still send or update theirs until midnight</span>}
