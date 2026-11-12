@@ -147,11 +147,30 @@ export function MyDayPanel({ layout, wrap, hasLeads }: DashLayoutProps & { hasLe
           )}
         </div>
       ),
-    eod: (
+    // v50: Founders report to no one, so they get their team's reports instead of the form.
+    eod: day.eodExempt ? (
+      <Panel title="Daily reports" subtitle="You don't file an end-of-day report. The people who report to you send theirs to you.">
+        <p className="text-sm">
+          {day.teamReports ? `${day.teamReports.submitted} of ${day.teamReports.total} submitted today. ` : "No one reports to you yet. "}
+          <Link href="/team/reports" className="underline">
+            Open Daily reports
+          </Link>
+        </p>
+      </Panel>
+    ) : (
       <div className="grid gap-3">
         <EodForm key={String(day.eod.submitted)} day={day} onSubmit={(input) => act(() => api.myDay.submitEod(input))} />
         <p className="text-xs text-ink-muted">
           Past reports and your attendance are on <Link href="/team/profile" className="underline">your profile</Link>.
+          {day.teamReports && (
+            <>
+              {" "}
+              Your team today: {day.teamReports.submitted} of {day.teamReports.total} submitted.{" "}
+              <Link href="/team/reports" className="underline">
+                Daily reports
+              </Link>
+            </>
+          )}
         </p>
       </div>
     ),
@@ -208,7 +227,7 @@ function EodForm({ day, onSubmit }: { day: MyDayView; onSubmit: (input: MyDayVie
   return (
     <Panel
       title="End-of-day report"
-      subtitle="Pre-filled from your tasks. Edit, then submit. Your manager sees it in their weekly review."
+      subtitle="Pre-filled from your tasks. Edit, then submit. The person you report to and your Department Head see it under Daily reports."
       action={day.eod.submitted ? <span className="text-xs text-ink-muted">Submitted · you can update it until midnight</span> : undefined}
     >
       <div className="grid gap-4 md:grid-cols-2">

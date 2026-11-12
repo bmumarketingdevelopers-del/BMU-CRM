@@ -127,7 +127,8 @@ export function MyDay({ me }: { me: Me }) {
         ) : null,
       )}
       {!t.overdue.length && !t.today.length && !t.blocked.length && !t.upcoming.length && <Empty>No tasks on your plate.</Empty>}
-      {day0.eod.submitted ? <Muted style={{ marginTop: 16 }}>End-of-day report submitted ✓</Muted> : <Muted style={{ marginTop: 16 }}>Submit your end-of-day report on the website.</Muted>}
+      {/* v50: Founders file no end-of-day report. */}
+      {day0.eodExempt ? null : day0.eod.submitted ? <Muted style={{ marginTop: 16 }}>End-of-day report submitted ✓</Muted> : <Muted style={{ marginTop: 16 }}>Submit your end-of-day report on the website.</Muted>}
     </Screen>
   );
 }

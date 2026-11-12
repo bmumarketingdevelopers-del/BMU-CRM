@@ -3953,3 +3953,29 @@ model QuoteTemplate {
   @@index([orgId])
   @@map("quote_templates")
 }
+
+/// v50 Raise an issue with HR: a concern a team member brings to HR. Confidential: only the person who raised it and
+/// HR see it (not their manager, Department Head or leadership), and it is kept out of the Audit Log.
+model HrIssue {
+  id          String    @id @default(cuid())
+  orgId       String
+  /// Who raised it.
+  userId      String
+  /// workplace | conduct | pay | workload | facilities | other (HR_ISSUE_CATEGORIES)
+  category    String
+  subject     String
+  details     String
+  /// open | in_progress | resolved
+  status      String    @default("open")
+  /// HR's reply to the person.
+  response    String?
+  /// The HR person who last replied or changed the status.
+  handledById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  resolvedAt  DateTime?
+
+  @@index([orgId, status])
+  @@index([userId])
+  @@map("hr_issues")
+}

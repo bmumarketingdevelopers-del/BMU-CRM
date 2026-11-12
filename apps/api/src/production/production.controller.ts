@@ -76,6 +76,12 @@ export class MyDayController {
   eod(@CurrentUser() me: Me, @Body() body: unknown) {
     return this.production.submitEod(me, parse(eodSchema, body));
   }
+
+  /** v50 Daily reports: one day of end-of-day reports from the people I oversee. */
+  @Get('eod/team')
+  teamEod(@CurrentUser() me: Me, @Query('date') date?: string) {
+    return this.production.teamEod(me, date);
+  }
 }
 
 @Controller('deliverables')

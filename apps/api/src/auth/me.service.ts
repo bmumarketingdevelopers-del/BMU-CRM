@@ -13,6 +13,8 @@ export class MeService {
       include: {
         roles: { include: { role: { include: { permissions: true } } } },
         clientUser: { include: { clientOrg: true } },
+        // v50: anyone reporting to them (Daily reports in the menu).
+        _count: { select: { reports: { where: { deletedAt: null, status: 'active' } } } },
       },
     });
     if (!user) return null;
@@ -38,6 +40,7 @@ export class MeService {
       customRoles: user.roles.filter((r) => r.role.isCustom).map((r) => r.role.name),
       permissions,
       specialty: user.specialty,
+      leadsPeople: user.type === 'staff' && (user._count.reports > 0 || user.roles.some((r) => r.role.baseRole === 'department_head')),
       clientOrg: user.clientUser
         ? { id: user.clientUser.clientOrgId, name: user.clientUser.clientOrg.name, role: user.clientUser.clientRole }
         : null,

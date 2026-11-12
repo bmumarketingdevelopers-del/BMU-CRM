@@ -26,6 +26,7 @@ import { QuotesModule } from './quotes/quotes.module.js';
 import { CraftModule } from './craft/craft.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { TeamFlowsModule } from './team-flows/team-flows.module.js';
+import { HrIssuesModule } from './hr-issues/hr-issues.module.js';
 import { ActionsModule } from './actions/actions.module.js';
 import { ClientsActionsModule } from './clients-actions/clients-actions.module.js';
 import { PeopleActionsModule } from './people-actions/people-actions.module.js';
@@ -73,7 +74,7 @@ import { ProjectFlowController } from './deliver/project-flow.controller.js';
 import { ProjectFlowService } from './deliver/project-flow.service.js';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RuntimeModule, StorageModule, AuditModule, AuthModule, OrgModule, ProposalsModule, SettingsModule, InsightsModule, AdminOrgModule, AdminPlatformModule, WorkspaceModule, AutomationsModule, AnalyticsModule, OpsAnalyticsModule, FlowsModule, ServiceModule, CraftModule, AiModule, TeamFlowsModule, ActionsModule, ClientsActionsModule, PeopleActionsModule, OpsActionsModule, DashboardsModule, PlatformModule, CustomiseModule, WorkflowsModule, AgentsModule, CreativeModule, CommsModule, MoneyModule, IntegrationsModule, SecurityModule, IntelligenceModule, DevicesModule, QuotesModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, RuntimeModule, StorageModule, AuditModule, AuthModule, OrgModule, ProposalsModule, SettingsModule, InsightsModule, AdminOrgModule, AdminPlatformModule, WorkspaceModule, AutomationsModule, AnalyticsModule, OpsAnalyticsModule, FlowsModule, ServiceModule, CraftModule, AiModule, TeamFlowsModule, ActionsModule, ClientsActionsModule, PeopleActionsModule, OpsActionsModule, DashboardsModule, PlatformModule, CustomiseModule, WorkflowsModule, AgentsModule, CreativeModule, CommsModule, MoneyModule, IntegrationsModule, SecurityModule, IntelligenceModule, DevicesModule, QuotesModule, HrIssuesModule],
   controllers: [
     HealthController,
     CatalogueController,

@@ -18,6 +18,8 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
       items: [
         { label: isCraftSpecialty(me.specialty) || isCraftManager(me) ? "My workspace" : "My Day", href: "/team" },
         ...(canOpenCraftManager(me) && !isCraftManager(me) ? [{ label: "Manager workspace", href: "/team/manager" }] : []),
+        // v50: end-of-day reports from the people who report to them (and their department, for Department Heads).
+        ...(me.leadsPeople ? [{ label: "Daily reports", href: "/team/reports" }] : []),
         ...(isStudio || dashboards.length ? [{ label: "Dashboards", href: "/team/dashboards" }] : []),
         ...(hasLeads ? [{ label: "Leads", href: "/team/leads" }, { label: "Proposals", href: "/team/proposals" }] : []),
         ...(me.roles.some((r) => ["sales_manager", "admin", "founder"].includes(r)) ? [{ label: "Discount approvals", href: "/team/approvals" }] : []),
@@ -59,6 +61,8 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
         { label: "Agent Inbox", href: "/team/agent-inbox" },
         { label: "My onboarding", href: "/team/onboarding" },
         { label: "Profile, leave & attendance", href: "/team/profile" },
+        // v50: anyone can raise a concern with HR, confidentially; HR answer them on the same page.
+        { label: me.roles.includes("hr_ops") ? "HR issues" : "Raise an issue with HR", href: "/team/hr-issues" },
       ],
     },
     ...(isAdmin ? [{ section: "Admin", items: [{ label: "Command Centre", href: "/admin" }, ...(isStudio ? [{ label: "Dashboard Studio", href: "/admin/dashboards" }] : [])] }] : []),

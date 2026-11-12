@@ -105,6 +105,9 @@ const built: Record<string, string> = {
   Goals: "/admin/intelligence/goals",
   Security: "/admin/security",
   "Privacy (DPDP)": "/admin/privacy",
+  // v50: in the Team app (end-of-day reports from the people who report to you; concerns raised with HR).
+  "Daily Reports": "/team/reports",
+  "HR Issues": "/team/hr-issues",
 };
 
 const spec: [string, string[]][] = [
@@ -115,7 +118,7 @@ const spec: [string, string[]][] = [
   ["Flow", ["Business Flow Map", "Workflows", "Workflow Runs", "Automations", "Automation Log"]],
   ["Agents", ["AI Agents", "Agent Inbox", "Agent Run Log"]],
   ["Customise", ["Custom Fields", "Forms", "Pipeline Settings"]],
-  ["Organisation", ["Hierarchy Tree", "Users", "Roles & Permissions", "Departments & Teams", "Branches", "Attendance & Leave", "Holidays & Working Hours", "Onboarding & Offboarding", "Timesheets"]],
+  ["Organisation", ["Hierarchy Tree", "Users", "Roles & Permissions", "Departments & Teams", "Branches", "Attendance & Leave", "Holidays & Working Hours", "Onboarding & Offboarding", "Timesheets", "Daily Reports", "HR Issues"]],
   ["Clients", ["Clients", "Engagements", "CM Assignment", "Requests & Add-ons", "Offboarding"]],
   ["Catalogue", ["Services & Tiers", "Bundles", "Add-ons", "Discount Limits", "Proposal & Agreement Templates", "Quotations", "Quotation Templates"]],
   ["Operations", ["SOP Library", "Requirement Checklists", "Department Flow Templates", "QC Checklists", "Gate Rules", "SLA Rules", "Error Log"]],
@@ -177,6 +180,8 @@ const restricted: Record<string, string[]> = {
   "Attendance & Leave": PEOPLE,
   "Onboarding & Offboarding": PEOPLE,
   Timesheets: PEOPLE,
+  "Daily Reports": [...FA, "hr_ops", "department_head", "am_lead", "finance"],
+  "HR Issues": ["hr_ops"],
   "CM Assignment": CLIENT_OPS,
   Engagements: CLIENT_OPS,
   Offboarding: CLIENT_OPS,

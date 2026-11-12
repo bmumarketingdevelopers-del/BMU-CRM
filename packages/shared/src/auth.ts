@@ -32,6 +32,8 @@ export type Me = {
   clientOrg: { id: string; name: string; role: string } | null;
   /** v10 craft: job function (video_editor, developer, …) that picks the specialist dashboard. */
   specialty?: string | null;
+  /** v50: someone reports to them, or they head a department: they see Daily reports. */
+  leadsPeople?: boolean;
   /** v20: this sign-in's device session (Security → Where you're signed in). */
   sessionId?: string;
   /** v20: two-factor is required for this person's role and this session has not done it yet. */

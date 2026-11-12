@@ -375,7 +375,25 @@ export type MyDayView = {
   /** v10: overdue / at-risk delivery items this person should act on. */
   deliverSla?: DeliverSlaItem[];
   eod: { completed: string[]; pending: string[]; blocked: string[]; waiting: string[]; submitted: boolean };
+  /** v50: Founders report to no one, so they don't file an end-of-day report. */
+  eodExempt?: boolean;
+  /** v50: today's end-of-day reports from the people this person oversees (null: oversees no one). */
+  teamReports?: { submitted: number; total: number } | null;
 };
+
+/**
+ * v50 Daily reports: one day's end-of-day reports from the people someone oversees, i.e. everyone who reports to them
+ * ("Reports to") plus, for a Department Head, everyone in the departments they head.
+ */
+export type TeamEodPerson = {
+  id: string;
+  name: string;
+  /** Their own role name (custom role, job role, else the built-in role). */
+  role: string;
+  department: string | null;
+  report: { completed: string[]; pending: string[]; blocked: string[]; waiting: string[] } | null;
+};
+export type TeamEodView = { date: string; today: string; people: TeamEodPerson[] };
 
 export const eodSchema = z.object({
   completed: z.array(z.string().trim().min(1)).default([]),

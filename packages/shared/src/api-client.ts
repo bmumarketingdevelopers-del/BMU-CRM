@@ -34,6 +34,7 @@ import { sellFlowsApi } from "./api/sell-flows.js";
 import { serviceFlowsApi } from "./api/service-flows.js";
 import { deliverFlowsApi } from "./api/deliver-flows.js";
 import { quotationsApi } from "./api/quotations.js";
+import { hrIssuesApi } from "./api/hr-issues.js";
 import { craftFlowsApi } from "./api/craft-flows.js";
 import { aiFlowsApi } from "./api/ai-flows.js";
 import { teamFlowsApi } from "./api/team-flows.js";
@@ -232,6 +233,8 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
     ...settingsApi(t),
     // v45 quotations
     ...quotationsApi(t),
+    // v50 Raise an issue with HR; Daily reports
+    ...hrIssuesApi(t),
     ...insightsApi(t),
     ...adminOrgApi(t),
     ...adminPlatformApi(t),

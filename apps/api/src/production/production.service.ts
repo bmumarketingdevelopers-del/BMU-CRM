@@ -4,6 +4,9 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { ModuleRef } from '@nestjs/core';
 import {
   addWorkingDays,
+  craftSpecialtyLabel,
+  roleLabel,
+  type TeamEodView,
   clientDeliverableLabels,
   DEFAULT_QC_CHECKLISTS,
   DELIVER_SOCIAL_TYPES,
@@ -858,6 +861,8 @@ export class ProductionService {
       qcWaiting,
       sendToClientWaiting,
       deliverSla: (await this.sla.view(me, { mine: true })).items.slice(0, 12),
+      eodExempt: eodExempt(me),
+      teamReports: await this.teamReportCount(me, date),
       eod: eod
         ? { completed: eod.completed, pending: eod.pending, blocked: eod.blocked, waiting: eod.waiting, submitted: true }
         : {
@@ -903,6 +908,7 @@ export class ProductionService {
 
   async submitEod(me: Me, input: EodInput) {
     if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
+    if (eodExempt(me)) throw new ForbiddenException("Founders don't file an end-of-day report. Your team's reports are under Daily reports.");
     const date = this.today();
     await this.prisma.eODReport.upsert({
       where: { userId_date: { userId: me.id, date } },
@@ -911,4 +917,67 @@ export class ProductionService {
     });
     return this.myDay(me);
   }
+  // v50 Daily reports
+
+  /**
+   * The people whose end-of-day reports this person sees: everyone who reports to them ("Reports to"), plus everyone in
+   * the departments they head. So the Founder sees the Branch Manager, HR Head, Department Heads and Client Manager
+   * Lead; a Department Head sees their department; and so on down the hierarchy. Founders file no report, so they
+   * are never listed.
+   */
+  private async overseen(me: Me) {
+    const headed = await this.prisma.department.findMany({ where: { orgId: me.orgId, headUserId: me.id, deletedAt: null }, select: { id: true } });
+    return this.prisma.user.findMany({
+      where: {
+        orgId: me.orgId,
+        type: 'staff',
+        status: 'active',
+        deletedAt: null,
+        id: { not: me.id },
+        roles: { none: { role: { baseRole: 'founder' } } },
+        OR: [{ managerId: me.id }, ...(headed.length ? [{ departmentId: { in: headed.map((d) => d.id) } }] : [])],
+      },
+      select: { id: true, name: true, specialty: true, department: { select: { name: true } }, roles: { select: { role: { select: { name: true, baseRole: true, isCustom: true } } } } },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  private async teamReportCount(me: Me, date: Date) {
+    const people = await this.overseen(me);
+    if (!people.length) return null;
+    const submitted = await this.prisma.eODReport.count({ where: { orgId: me.orgId, date, userId: { in: people.map((p) => p.id) } } });
+    return { submitted, total: people.length };
+  }
+
+  /** One day of end-of-day reports from the people this person oversees (see overseen). */
+  async teamEod(me: Me, day?: string): Promise<TeamEodView> {
+    if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
+    const today = istDate(new Date());
+    if (day !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new BadRequestException('Pick a date');
+    const ymd = day && day < today ? day : today;
+    const people = await this.overseen(me);
+    const reports = people.length
+      ? await this.prisma.eODReport.findMany({ where: { orgId: me.orgId, date: new Date(`${ymd}T00:00:00Z`), userId: { in: people.map((p) => p.id) } } })
+      : [];
+    const byUser = new Map(reports.map((r) => [r.userId, r]));
+    return {
+      date: ymd,
+      today,
+      people: people.map((p) => {
+        const r = byUser.get(p.id);
+        const custom = p.roles.filter((x) => x.role.isCustom).map((x) => x.role.name);
+        return {
+          id: p.id,
+          name: p.name,
+          role: custom.join(' + ') || craftSpecialtyLabel(p.specialty) || p.roles.map((x) => roleLabel(x.role.baseRole)).join(' + '),
+          department: p.department?.name ?? null,
+          report: r ? { completed: r.completed, pending: r.pending, blocked: r.blocked, waiting: r.waiting } : null,
+        };
+      }),
+    };
+  }
+
 }
+
+/** v50: Founders report to no one, so they file no end-of-day report. */
+const eodExempt = (me: Me) => me.roles.includes('founder');
