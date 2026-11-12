@@ -137,7 +137,7 @@ export const hierarchyData = {
     "Client Management",
     "Strategy",
     "Creative / Design",
-    "Video / Production",
+    "Video Production",
     "Web / AI",
     "SEO",
     "Performance Ads",

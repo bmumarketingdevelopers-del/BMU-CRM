@@ -17,7 +17,7 @@ export type CraftSpecialtyDef = {
 };
 
 export const CRAFT_SPECIALTIES = [
-  { id: "video_editor", label: "Video editor", department: "Video / Production", baseRole: "producer", description: "Edits reels and videos from rough cut to export.", steps: ["shoot", "edit", "rough_cut", "fine_cut", "colour", "sound", "export"] },
+  { id: "video_editor", label: "Video editor", department: "Video Production", baseRole: "producer", description: "Edits reels and videos from rough cut to export.", steps: ["shoot", "edit", "rough_cut", "fine_cut", "colour", "sound", "export"] },
   { id: "script_writer", label: "Script writer", department: "Strategy", baseRole: "producer", description: "Writes scripts, hooks and copy from client briefs.", steps: ["script", "write", "outline", "copy", "brief"] },
   { id: "social_media_manager", label: "Social media manager", department: "Strategy", baseRole: "strategist", description: "Runs each client's content pipeline, schedule and approvals.", steps: ["brief", "copy", "schedule", "publish", "plan"] },
   { id: "developer", label: "Developer", department: "Web / AI", baseRole: "producer", description: "Builds websites and web projects, fixes client change requests.", steps: ["build", "develop", "launch"] },

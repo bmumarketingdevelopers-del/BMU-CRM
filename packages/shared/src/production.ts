@@ -47,7 +47,7 @@ export const DEFAULT_FLOWS: (FlowTemplateInput & { key: string })[] = [
   {
     key: "video",
     name: "Video / reel",
-    department: "Video / Production",
+    department: "Video Production",
     deliverableTypes: ["reel", "video"],
     steps: [
       { key: "script", name: "Script and shot list", role: "strategist", days: 1, kind: "work" },

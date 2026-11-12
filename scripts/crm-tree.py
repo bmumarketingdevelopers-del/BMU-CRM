@@ -326,7 +326,7 @@ dx = W / 2 + 30
 c.setFont("Helvetica-Bold", 10)
 c.setFillColor(INK)
 c.drawString(dx, 156, "12 departments")
-deps = ["Sales", "Client Management", "Strategy", "Creative / Design", "Video / Production", "Web / AI",
+deps = ["Sales", "Client Management", "Strategy", "Creative / Design", "Video Production", "Web / AI",
         "SEO", "Performance Ads", "Creator / UGC", "QC", "Finance", "HR / Ops"]
 for i, d in enumerate(deps):
     col, rw = i % 3, i // 3

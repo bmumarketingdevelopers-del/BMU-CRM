@@ -135,7 +135,7 @@ Use before anything goes live on a client account.
 - Report any problem in the error log the same day`,
     },
   ],
-  'Video / Production': [
+  'Video Production': [
     {
       title: 'Video edit handover',
       body: `# Video edit handover

@@ -369,7 +369,7 @@ describe('Capacity', () => {
 });
 
 describe('Pass a task (v23)', () => {
-  // Meera (producer@) and Rhea (design@) are both in Creative / Design; Aman (video@) is in Video / Production.
+  // Meera (producer@) and Rhea (design@) are both in Creative / Design; Aman (video@) is in Video Production.
   const passWeek = addDays(mondayOf(today), 35);
   const due = (week: string, plus = 2) => new Date(`${addDays(week, plus)}T12:30:00Z`); // 6 pm IST
   const mine = (title: string, extra: { kind?: string; status?: 'todo' | 'in_progress' | 'in_qc'; deadline?: Date } = {}) =>
