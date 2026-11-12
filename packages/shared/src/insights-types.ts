@@ -18,8 +18,17 @@ export type WeeklyReviewView = {
     outstandingPaise: number;
     byMonth: MonthPoint[];
   } | null;
+  /**
+   * "full": Founder, Branch Manager and the Sales department; everything, including leads, pipeline, forecast and
+   * at-risk clients. "organisation": other Command Centre roles (Finance, CM Lead); the agency's week without those.
+   * "department": any other Department Head; every figure is their department's own (clients, tasks, requests, QC).
+   */
+  scope: "full" | "organisation" | "department";
   activeClients: number;
-  openLeads: number;
+  /** Full view only; null otherwise. */
+  openLeads: number | null;
+  /** Shown instead of open leads outside the full view (the department's own in the department view); null in the full view. */
+  openTasks: number | null;
   overdueTasks: number;
   slaBreachesThisWeek: number;
   qcPassRate: number | null;

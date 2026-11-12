@@ -18,7 +18,7 @@ import {
   type ContentWeekView,
 } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { assertCommand, assertMoney, canSeeMoney, canWriteFinance, seesAllDepartments } from './access.js';
+import { assertCommand, assertMoney, canSeeMoney, canWriteFinance, isDepartmentView, seesAllDepartments } from './access.js';
 import { DAY, daysBetween, dayLabel, monthKey, monthLabel, startOfDay, startOfFy, startOfMonth, startOfQuarter, startOfWeek } from './ist.js';
 import { isBillable, loadLedger, revenueBucket, type LedgerInvoice } from './ledger.js';
 
@@ -147,20 +147,34 @@ export class InsightsService {
     const now = new Date();
     const weekStart = startOfWeek(now);
     const weekEnd = startOfWeek(now, 1);
+    // Who sees what: the full review (leads, pipeline, forecast, at-risk clients) is for the Founder, Branch Managers and
+    // the Sales department. Other Department Heads get their department's week; Finance and CM Leads the agency's week
+    // without the sales information.
+    const scope = await this.weeklyScope(me);
+    const full = scope === 'full';
+    const dept = scope === 'department' ? await this.departmentWork(me) : null;
+    const ours = dept ? dept.ours : {};
 
     const [activeClients, leads, overdueTasks, blocked, requests, qc, health] = await Promise.all([
-      this.prisma.clientOrg.count({ where: { orgId, deletedAt: null, engagements: { some: { deletedAt: null, status: { in: [...ACTIVE_ENGAGEMENT] } } } } }),
-      this.prisma.lead.groupBy({ by: ['stage'], where: { orgId, deletedAt: null }, _count: true }),
-      this.prisma.task.count({ where: { orgId, status: OPEN_TASK, deadline: { lt: now } } }),
-      this.prisma.task.findMany({ where: { orgId, status: 'blocked' }, include: { owner: { select: { name: true } } }, orderBy: { updatedAt: 'asc' }, take: 6 }),
+      this.prisma.clientOrg.count({
+        where: { orgId, deletedAt: null, ...(dept ? { id: { in: dept.clientIds } } : {}), engagements: { some: { deletedAt: null, status: { in: [...ACTIVE_ENGAGEMENT] }, ...(dept ? { id: { in: dept.engagementIds } } : {}) } } },
+      }),
+      full ? this.prisma.lead.groupBy({ by: ['stage'], where: { orgId, deletedAt: null }, _count: true }) : [],
+      this.prisma.task.count({ where: { orgId, status: OPEN_TASK, deadline: { lt: now }, ...ours } }),
+      this.prisma.task.findMany({ where: { orgId, status: 'blocked', ...ours }, include: { owner: { select: { name: true } } }, orderBy: { updatedAt: 'asc' }, take: 6 }),
       this.prisma.request.findMany({
-        where: { orgId, slaDue: { not: null, lt: weekEnd } },
+        where: { orgId, slaDue: { not: null, lt: weekEnd }, ...(dept ? { engagementId: { in: dept.engagementIds } } : {}) },
         include: { engagement: { select: { clientOrg: { select: { name: true } } } } },
         orderBy: { slaDue: 'asc' },
       }),
-      this.prisma.qCResult.findMany({ where: { orgId, createdAt: { gte: weekStart, lt: weekEnd } }, select: { result: true } }),
-      this.health(orgId),
+      this.prisma.qCResult.findMany({
+        where: { orgId, createdAt: { gte: weekStart, lt: weekEnd }, ...(dept ? { version: { deliverable: { departmentId: { in: dept.deptIds } } } } : {}) },
+        select: { result: true },
+      }),
+      full ? this.health(orgId) : [],
     ]);
+    // Open tasks replace open leads for everyone outside the full view (a department's own tasks for a Department Head).
+    const openTasks = full ? null : await this.prisma.task.count({ where: { orgId, status: OPEN_TASK, ...ours } });
 
     const breaches = requests.filter((r) => r.slaDue! >= weekStart && (r.firstReplyAt ? r.firstReplyAt > r.slaDue! : r.slaDue! < now));
     const pastSla = requests.filter((r) => !r.firstReplyAt && r.slaDue! < now && !['done', 'declined'].includes(r.status));
@@ -188,13 +202,15 @@ export class InsightsService {
 
     return {
       money,
+      scope,
       activeClients,
-      openLeads: leads.filter((l) => l.stage !== 'won' && l.stage !== 'lost').reduce((s, l) => s + l._count, 0),
+      openLeads: full ? leads.filter((l) => l.stage !== 'won' && l.stage !== 'lost').reduce((s, l) => s + l._count, 0) : null,
+      openTasks,
       overdueTasks,
       slaBreachesThisWeek: breaches.length,
       qcPassRate: pct(qc.filter((q) => q.result === 'pass').length, qc.length),
       qcChecksThisWeek: qc.length,
-      pipeline: LEAD_STAGES.map((stage) => ({ stage, label: leadStageLabels[stage], count: count(stage) })),
+      pipeline: !full ? [] : LEAD_STAGES.map((stage) => ({ stage, label: leadStageLabels[stage], count: count(stage) })),
       attention: {
         overdueInvoices,
         atRiskClients: health
@@ -205,6 +221,46 @@ export class InsightsService {
         slaRequests: pastSla.slice(0, 6).map((r) => ({ id: r.id, client: r.engagement.clientOrg.name, type: r.type, description: r.description, slaDue: r.slaDue!.toISOString() })),
       },
     };
+  }
+
+  /**
+   * The work a Department Head and their team are on: the departments they head (or their own one), the engagements
+   * and clients with a task or deliverable in those departments or a task owned by one of their people, and `ours`:
+   * the task filter for "this department's work" (its tasks or tasks owned by its people).
+   */
+  private async departmentWork(me: Me) {
+    const orgId = me.orgId;
+    const [headed, self] = await Promise.all([
+      this.prisma.department.findMany({ where: { orgId, headUserId: me.id, deletedAt: null }, select: { id: true } }),
+      this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } }),
+    ]);
+    const deptIds = headed.length ? headed.map((d) => d.id) : self?.departmentId ? [self.departmentId] : [];
+    const people = deptIds.length ? await this.prisma.user.findMany({ where: { orgId, departmentId: { in: deptIds }, deletedAt: null }, select: { id: true } }) : [];
+    const teamIds = [...new Set([me.id, ...people.map((p) => p.id)])];
+    const ours = { OR: [{ ownerId: { in: teamIds } }, ...(deptIds.length ? [{ departmentId: { in: deptIds } }] : [])] };
+    const [taskEngs, delivEngs] = await Promise.all([
+      this.prisma.task.findMany({ where: { orgId, engagementId: { not: null }, ...ours }, select: { engagementId: true }, distinct: ['engagementId'] }),
+      deptIds.length
+        ? this.prisma.engagement.findMany({ where: { orgId, deletedAt: null, cycles: { some: { deliverables: { some: { departmentId: { in: deptIds } } } } } }, select: { id: true } })
+        : [],
+    ]);
+    const engagementIds = [...new Set([...taskEngs.map((t) => t.engagementId!), ...delivEngs.map((e) => e.id)])];
+    const engs = engagementIds.length ? await this.prisma.engagement.findMany({ where: { id: { in: engagementIds } }, select: { clientOrgId: true } }) : [];
+    return { deptIds, ours, engagementIds, clientIds: [...new Set(engs.map((e) => e.clientOrgId))] };
+  }
+
+  /**
+   * "full": Founder, Branch Manager (admin) and the Sales department (Sales Manager, Sales Executive, or anyone in or
+   * heading the Sales department). "department": any other Department Head. "organisation": the other Command Centre
+   * roles (Finance, CM Lead): the agency's week without leads, pipeline, forecast and at-risk clients.
+   */
+  async weeklyScope(me: Me): Promise<WeeklyReviewView['scope']> {
+    if (me.roles.some((r) => ['founder', 'admin', 'sales_manager', 'sales_executive'].includes(r))) return 'full';
+    const inSales = await this.prisma.department.count({
+      where: { orgId: me.orgId, deletedAt: null, name: { equals: 'Sales', mode: 'insensitive' }, OR: [{ headUserId: me.id }, { users: { some: { id: me.id } } }] },
+    });
+    if (inSales) return 'full';
+    return isDepartmentView(me) ? 'department' : 'organisation';
   }
 
   // -------------------------------------------------------------------------

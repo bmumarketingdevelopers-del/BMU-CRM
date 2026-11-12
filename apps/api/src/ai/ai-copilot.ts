@@ -238,9 +238,25 @@ export class AiCopilotService {
     if (/\b(week|summary|how are we|revenue|business|numbers|overview)\b/.test(q)) {
       const out = await this.call(tools, 'business_summary', {}, emit);
       if (notAllowed(out)) return deny('the business summary');
-      const d = out.data as { money: { revenueThisMonth: string; revenueLastMonth: string; outstanding: string } | string; activeClients: number; openLeads: number; overdueTasks: number; replyTimeBreachesThisWeek: number };
+      const d = out.data as {
+        money: { revenueThisMonth: string; revenueLastMonth: string; outstanding: string } | string;
+        activeClients?: number;
+        openLeads?: number;
+        teamClients?: number;
+        openDepartmentTasks?: number;
+        openTasks?: number;
+        overdueTasks: number;
+        replyTimeBreachesThisWeek: number;
+      };
       const money = typeof d.money === 'string' ? '' : `Revenue this month ${d.money.revenueThisMonth} (last month ${d.money.revenueLastMonth}); ${d.money.outstanding} outstanding.\n`;
-      return { text: `${money}${d.activeClients} active clients, ${d.openLeads} open leads, ${d.overdueTasks} overdue tasks, ${d.replyTimeBreachesThisWeek} reply-time misses this week. See the [Weekly Review](/admin).`, citations: out.citations };
+      // A Department Head gets their team's clients and open tasks instead of active clients and leads.
+      const head =
+        d.teamClients !== undefined
+          ? `${d.teamClients} clients your team works on, ${d.openDepartmentTasks ?? 0} open tasks in your department`
+          : d.openLeads !== undefined
+            ? `${d.activeClients} active clients, ${d.openLeads} open leads`
+            : `${d.activeClients} active clients, ${d.openTasks ?? 0} open tasks`;
+      return { text: `${money}${head}, ${d.overdueTasks} overdue tasks, ${d.replyTimeBreachesThisWeek} reply-time misses this week. See the [Weekly Review](/admin).`, citations: out.citations };
     }
     return {
       text: `In basic mode I can answer questions like:\n- Which clients are at risk this month and why?\n- How much is overdue from ${clientList[0]?.name ?? 'Metro Dental'}?\n- What is ${staff[0]?.name.split(' ')[0] ?? 'Meera'} working on?\n- Show open leads / open requests\n- Summary of the week`,

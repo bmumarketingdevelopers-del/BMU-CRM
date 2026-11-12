@@ -29,7 +29,15 @@ Write only the draft itself, no preamble.
 
 ${SAFETY_RULES}`;
 
-export type DigestFacts = { text: string; links: Set<string>; basic: string; citations: AiCitation[] };
+type Audience = 'full' | 'organisation' | 'department';
+export type DigestFacts = { text: string; links: Set<string>; basic: string; citations: AiCitation[]; audience: Audience };
+
+/**
+ * Who a digest was written for, matching the Weekly Review's views: "full" (Founder, Branch Manager, Sales; the
+ * default for digests written before views existed), "organisation" (Finance, CM Lead: no sales information) or
+ * "department" (one Department Head's own department).
+ */
+const audienceOf = (data: unknown): Audience => (data as { audience?: Audience } | null)?.audience ?? 'full';
 
 @Injectable()
 export class AiDigestService implements OnModuleInit, OnModuleDestroy {
@@ -79,7 +87,11 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
 
   async latest(me: Me): Promise<AiDigestView | null> {
     this.assertReader(me);
-    const d = await this.prisma.aiDigest.findFirst({ where: { orgId: me.orgId }, orderBy: { createdAt: 'desc' } });
+    // Each person reads only digests written for their own view, so leads and sales figures never reach someone who
+    // can't see them; a Department Head reads only the digest they wrote for their own department.
+    const scope = await get(this.ref, InsightsService).weeklyScope(me);
+    const rows = await this.prisma.aiDigest.findMany({ where: { orgId: me.orgId, ...(scope === 'department' ? { createdById: me.id } : {}) }, orderBy: { createdAt: 'desc' }, take: 30 });
+    const d = rows.find((r) => audienceOf(r.data) === scope);
     return d ? this.view(d) : null;
   }
 
@@ -95,7 +107,14 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
       },
     });
     const d = await this.prisma.aiDigest.create({
-      data: { orgId: me.orgId, weekStart: startOfWeek(new Date()), text: result.text, mode: result.mode, createdById: me.id, data: { citations: result.citations, notice: result.notice } },
+      data: {
+        orgId: me.orgId,
+        weekStart: startOfWeek(new Date()),
+        text: result.text,
+        mode: result.mode,
+        createdById: me.id,
+        data: { citations: result.citations, notice: result.notice, audience: facts.audience },
+      },
     });
     return this.view(d);
   }
@@ -106,16 +125,19 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
     const weekAgo = new Date(now.getTime() - 7 * DAY);
     const insights = get(this.ref, InsightsService);
     const w = await insights.weekly(me);
+    // Only the full view (Founder, Branch Manager, Sales) gets leads and proposals; Department Heads get their department's week.
+    const dept = w.scope === 'department';
+    const noSales = w.scope !== 'full';
     const [newLeads, won, sent, approved, newRequests, payments] = await Promise.all([
-      this.prisma.lead.count({ where: { orgId: me.orgId, deletedAt: null, createdAt: { gte: weekAgo } } }),
-      this.prisma.lead.count({ where: { orgId: me.orgId, deletedAt: null, stage: 'won', updatedAt: { gte: weekAgo } } }),
-      this.prisma.proposal.count({ where: { orgId: me.orgId, sentAt: { gte: weekAgo } } }),
+      noSales ? 0 : this.prisma.lead.count({ where: { orgId: me.orgId, deletedAt: null, createdAt: { gte: weekAgo } } }),
+      noSales ? 0 : this.prisma.lead.count({ where: { orgId: me.orgId, deletedAt: null, stage: 'won', updatedAt: { gte: weekAgo } } }),
+      noSales ? 0 : this.prisma.proposal.count({ where: { orgId: me.orgId, sentAt: { gte: weekAgo } } }),
       this.prisma.approval.count({ where: { orgId: me.orgId, targetType: 'deliverable', at: { gte: weekAgo } } }),
       this.prisma.request.count({ where: { orgId: me.orgId, createdAt: { gte: weekAgo } } }),
       w.money ? this.prisma.payment.aggregate({ where: { orgId: me.orgId, at: { gte: weekAgo } }, _sum: { amountPaise: true } }) : null,
     ]);
     const unhappy = await this.prisma.aiSignal.count({ where: { orgId: me.orgId, tone: 'negative', createdAt: { gte: weekAgo } } });
-    const links = new Set<string>(['/admin', '/team/leads', '/team/requests', '/admin/client-health', '/admin/collections']);
+    const links = new Set<string>(noSales ? ['/admin', '/team/tasks', '/team/requests', ...(w.money ? ['/admin/collections'] : [])] : ['/admin', '/team/leads', '/team/requests', '/admin/client-health', '/admin/collections']);
     const atRisk = w.attention.atRiskClients.slice(0, 6);
     atRisk.forEach((c) => links.add(`/team/clients/${c.id}`));
     const overdue = (w.attention.overdueInvoices ?? []).slice(0, 6);
@@ -127,10 +149,18 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
     const paid = payments?._sum.amountPaise ?? null;
 
     const text = [
+      ...(dept ? ['This digest is for a Department Head about their own department: leave out leads, sales, money and client health, and give actions they can take themselves.'] : []),
+      ...(w.scope === 'organisation' ? ['This digest is for a reader who does not see sales: leave out leads, proposals, pipeline, forecasts and client health.'] : []),
       `Week ending ${new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(now)}.`,
       w.money ? `Money: revenue this month ${formatINR(w.money.revenueThisMonthPaise)} (last month ${formatINR(w.money.revenueLastMonthPaise)}), collected this month ${formatINR(w.money.collectedThisMonthPaise)}, received in the last 7 days ${formatINR(paid ?? 0)}, outstanding ${formatINR(w.money.outstandingPaise)}.` : 'Money: not visible to this role.',
-      `Last 7 days: ${newLeads} new leads, ${won} won, ${sent} proposals sent, ${approved} deliverables approved by clients, ${newRequests} client requests, ${unhappy} unhappy client messages flagged.`,
-      `Now: ${w.activeClients} active clients, ${w.openLeads} open leads, ${w.overdueTasks} overdue tasks, ${w.slaBreachesThisWeek} reply-time misses this week, QC pass rate ${w.qcPassRate ?? '—'}%.`,
+      noSales
+        ? `Last 7 days: ${approved} deliverables approved by clients, ${newRequests} client requests, ${unhappy} unhappy client messages flagged.`
+        : `Last 7 days: ${newLeads} new leads, ${won} won, ${sent} proposals sent, ${approved} deliverables approved by clients, ${newRequests} client requests, ${unhappy} unhappy client messages flagged.`,
+      dept
+        ? `Now (this department): ${w.activeClients} clients the department works on, ${w.openTasks ?? 0} open tasks, ${w.overdueTasks} overdue tasks, ${w.slaBreachesThisWeek} reply-time misses on its clients this week, QC pass rate ${w.qcPassRate ?? '—'}%.`
+        : noSales
+          ? `Now: ${w.activeClients} active clients, ${w.openTasks ?? 0} open tasks, ${w.overdueTasks} overdue tasks, ${w.slaBreachesThisWeek} reply-time misses this week, QC pass rate ${w.qcPassRate ?? '—'}%.`
+          : `Now: ${w.activeClients} active clients, ${w.openLeads} open leads, ${w.overdueTasks} overdue tasks, ${w.slaBreachesThisWeek} reply-time misses this week, QC pass rate ${w.qcPassRate ?? '—'}%.`,
       `At-risk clients:\n${atRisk.map((c) => `- ${c.name} (health ${c.score}): ${c.reasons.join('; ')} — link /team/clients/${c.id}`).join('\n') || '- none'}`,
       `Overdue invoices:\n${overdue.map((i) => `- ${i.number} ${i.client}: ${formatINR(i.balancePaise)}, ${i.daysOverdue} days — link /admin/finance/invoices/${i.id}`).join('\n') || '- none'}`,
       `Blocked tasks:\n${blocked.map((t) => `- ${t.title} (${t.owner ?? 'unassigned'}): ${redact(t.reason ?? '')}${t.deliverableId ? ` — link /team/deliverables/${t.deliverableId}` : ''}`).join('\n') || '- none'}`,
@@ -142,11 +172,16 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
     if (overdue[0]) actions.push(`Chase [${overdue[0].number} · ${overdue[0].client}](/admin/finance/invoices/${overdue[0].id}) — ${formatINR(overdue[0].balancePaise)}, ${overdue[0].daysOverdue} days overdue (Finance).`);
     if (sla.length) actions.push(`Reply to the ${sla.length} request${sla.length === 1 ? '' : 's'} past reply time on the [requests desk](/team/requests) (CMs).`);
     if (blocked.length) actions.push(`Unblock ${blocked.length} task${blocked.length === 1 ? '' : 's'}${blocked[0].deliverableId ? `, starting with [${blocked[0].title}](/team/deliverables/${blocked[0].deliverableId})` : ''} (department heads).`);
-    if (w.openLeads) actions.push(`Review the ${w.openLeads} open [leads](/team/leads) and make sure each has a follow-up date (Sales).`);
-    actions.push('Look at [Client Health](/admin/client-health) and thank one happy client for a referral (Founder).');
-    actions.push('Check [Collections](/admin/collections) and confirm next week’s expected payments (Finance).');
+    if (noSales) {
+      if (w.openTasks) actions.push(`Go through ${dept ? "your department's" : 'the'} ${w.openTasks} open [tasks](/team/tasks) and check each has an owner and a deadline.`);
+      if (w.money) actions.push('Check [Collections](/admin/collections) and confirm next week’s expected payments (Finance).');
+    } else {
+      if (w.openLeads) actions.push(`Review the ${w.openLeads} open [leads](/team/leads) and make sure each has a follow-up date (Sales).`);
+      actions.push('Look at [Client Health](/admin/client-health) and thank one happy client for a referral (Founder).');
+      actions.push('Check [Collections](/admin/collections) and confirm next week’s expected payments (Finance).');
+    }
     const basic = [
-      `**What changed this week**\n- ${newLeads} new leads, ${won} won, ${sent} proposals sent.\n- ${approved} deliverables approved by clients; ${newRequests} new client requests.${w.money ? `\n- Revenue this month ${formatINR(w.money.revenueThisMonthPaise)} vs ${formatINR(w.money.revenueLastMonthPaise)} last month.` : ''}`,
+      `**What changed this week**\n${noSales ? '' : `- ${newLeads} new leads, ${won} won, ${sent} proposals sent.\n`}- ${approved} deliverables approved by clients; ${newRequests} new client requests.${w.money ? `\n- Revenue this month ${formatINR(w.money.revenueThisMonthPaise)} vs ${formatINR(w.money.revenueLastMonthPaise)} last month.` : ''}`,
       `**Risks**\n${[
         ...atRisk.slice(0, 3).map((c) => `- [${c.name}](/team/clients/${c.id}) — health ${c.score}: ${c.reasons.slice(0, 2).join('; ')}`),
         ...(w.money && w.money.outstandingPaise ? [`- ${formatINR(w.money.outstandingPaise)} outstanding${overdue.length ? `, ${overdue.length} invoice${overdue.length === 1 ? '' : 's'} overdue` : ''}.`] : []),
@@ -157,7 +192,7 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
       `**5 recommended actions**\n${actions.slice(0, 5).map((a, i) => `${i + 1}. ${a}`).join('\n')}`,
     ].join('\n\n');
     const citations = cleanLinks(basic, links).citations;
-    return { text, links, basic, citations };
+    return { text, links, basic, citations, audience: w.scope };
   }
 
   private async mondayDigest(orgId: string) {
@@ -166,7 +201,9 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
     const istHour = new Date(now.getTime() + 330 * 60_000).getUTCHours();
     if (p.dow !== 1 || istHour < 9) return;
     const weekStart = startOfWeek(now);
-    if (await this.prisma.aiDigest.findFirst({ where: { orgId, weekStart } })) return;
+    // Only a full-view digest counts: digests other people wrote for their own view don't stop the Founder's one.
+    const thisWeek = await this.prisma.aiDigest.findMany({ where: { orgId, weekStart }, select: { data: true } });
+    if (thisWeek.some((d) => audienceOf(d.data) === 'full')) return;
     const s = await this.ai.settings(orgId);
     if (!s.enabled || !s.features.management) return;
     const founder = await this.prisma.user.findFirst({ where: { orgId, type: 'staff', deletedAt: null, status: 'active', roles: { some: { role: { baseRole: 'founder' } } } }, orderBy: { createdAt: 'asc' } });
