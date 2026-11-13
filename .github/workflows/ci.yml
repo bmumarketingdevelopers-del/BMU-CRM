@@ -1,0 +1,46 @@
+# Checks every pull request into main (and every push to main): type check, lint and unit tests across the
+# monorepo (shared, api, web, mobile) through Turborepo. No database or secrets are needed: Prisma only generates
+# its client here, and the database (e2e) tests stay a manual step (`pnpm test:e2e` against a local database).
+# In GitHub → Settings → Rules, require the "Type check, lint and test" check before merging into main.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Type check, lint and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test

@@ -50,6 +50,7 @@ export function SignInForm() {
     const pending = hash.get("second");
     if (pending) {
       window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-off read of the Google sign-in result from the URL on load
       setIdentifier(hash.get("email") ?? "your Google account");
       setChallenge({ needsSecondFactor: true, challenge: pending, methods: (hash.get("methods") ?? "totp").split(",") as SecondFactorChallenge["methods"] });
       const n = hash.get("next");

@@ -17,7 +17,8 @@ export default function AuditPage() {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<AuditPage>();
   const [error, setError] = useState<string>();
-  const [loading, setLoading] = useState(true);
+  // The filters and page whose results are on screen; anything else means a search is on its way.
+  const [shownKey, setShownKey] = useState<string>();
   const [chain, setChain] = useState<AuditChainView | { error: string }>();
   const [checking, setChecking] = useState(false);
 
@@ -29,18 +30,19 @@ export default function AuditPage() {
     return () => clearTimeout(t);
   }, [typed]);
 
+  const key = JSON.stringify([filters, page]);
+  const loading = shownKey !== key;
   useEffect(() => {
     let live = true;
-    setLoading(true);
     api.audit
       .search({ ...filters, page })
       .then((d) => live && (setData(d), setError(undefined)))
       .catch((e: Error) => live && setError(e.message))
-      .finally(() => live && setLoading(false));
+      .finally(() => live && setShownKey(key));
     return () => {
       live = false;
     };
-  }, [filters, page]);
+  }, [filters, page, key]);
 
   const set = (p: Partial<AuditQuery>) => {
     setFilters((f) => ({ ...f, ...p }));
