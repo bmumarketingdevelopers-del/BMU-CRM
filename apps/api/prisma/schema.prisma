@@ -3979,3 +3979,37 @@ model HrIssue {
   @@index([userId])
   @@map("hr_issues")
 }
+
+/// v51 Custom charts: an extra org chart built from existing team members, apart from the real hierarchy.
+/// Chart only: it never changes anyone's manager, department, approvals, daily reports, alerts or access.
+model OrgChart {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members OrgChartMember[]
+
+  @@index([orgId])
+  @@map("org_charts")
+}
+
+/// One person in a custom chart, under another person in the same chart (null = at the top).
+model OrgChartMember {
+  id           String   @id @default(cuid())
+  chartId      String
+  userId       String
+  parentUserId String?
+  /// Their part in this chart, e.g. "Campaign lead".
+  label        String?
+  createdAt    DateTime @default(now())
+
+  chart OrgChart @relation(fields: [chartId], references: [id], onDelete: Cascade)
+
+  @@unique([chartId, userId])
+  @@index([userId])
+  @@map("org_chart_members")
+}

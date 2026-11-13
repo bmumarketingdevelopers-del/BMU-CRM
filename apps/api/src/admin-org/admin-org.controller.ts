@@ -9,6 +9,10 @@ import {
   engagementLifecycleSchema,
   moveMemberSchema,
   offboardingTickSchema,
+  orgChartAddSchema,
+  orgChartInputSchema,
+  orgChartMemberUpdateSchema,
+  orgChartUpdateSchema,
   reassignAmSchema,
   teamInputSchema,
   teamUpdateSchema,
@@ -18,6 +22,7 @@ import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
 import { AttendanceService } from './attendance.service.js';
 import { ClientsAdminService } from './clients-admin.service.js';
+import { OrgChartsService } from './org-charts.service.js';
 import { StructureService } from './structure.service.js';
 
 /** Command Centre: Organisation, Clients and Catalogue screens. Each service checks roles itself. */
@@ -27,7 +32,49 @@ export class AdminOrgController {
     private readonly structure: StructureService,
     private readonly attendance: AttendanceService,
     private readonly clients: ClientsAdminService,
+    private readonly charts: OrgChartsService,
   ) {}
+
+  // v51 custom charts (chart only: the real hierarchy is untouched)
+  @Get('charts')
+  listCharts(@CurrentUser() me: Me) {
+    return this.charts.list(me);
+  }
+
+  @Post('charts')
+  createChart(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.charts.create(me, parse(orgChartInputSchema, body), ip);
+  }
+
+  @Get('charts/:id')
+  viewChart(@CurrentUser() me: Me, @Param('id') id: string) {
+    return this.charts.view(me, id);
+  }
+
+  @Patch('charts/:id')
+  updateChart(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.charts.update(me, id, parse(orgChartUpdateSchema, body), ip);
+  }
+
+  @Delete('charts/:id')
+  deleteChart(@CurrentUser() me: Me, @Param('id') id: string, @ClientIp() ip?: string) {
+    return this.charts.remove(me, id, ip);
+  }
+
+  @Post('charts/:id/members')
+  addToChart(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.charts.addMember(me, id, parse(orgChartAddSchema, body), ip);
+  }
+
+  @Patch('charts/:id/members/:userId')
+  updateChartMember(@CurrentUser() me: Me, @Param('id') id: string, @Param('userId') userId: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.charts.updateMember(me, id, userId, parse(orgChartMemberUpdateSchema, body), ip);
+  }
+
+  @Delete('charts/:id/members/:userId')
+  removeFromChart(@CurrentUser() me: Me, @Param('id') id: string, @Param('userId') userId: string, @ClientIp() ip?: string) {
+    return this.charts.removeMember(me, id, userId, ip);
+  }
 
   // Organisation
   @Get('structure')
