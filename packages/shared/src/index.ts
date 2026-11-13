@@ -59,4 +59,5 @@ export * from "./quotations.js";
 export * from "./service-groups.js";
 export * from "./api/quotations.js";
 export * from "./hr-issues.js";
+export * from "./org-charts.js";
 export * from "./api/hr-issues.js";

@@ -23,6 +23,7 @@ import type {
 } from "../admin-org-types.js";
 
 export * from "../admin-org-types.js";
+import type { OrgChartAdd, OrgChartInput, OrgChartList, OrgChartMemberUpdate, OrgChartUpdate, OrgChartView } from "../org-charts.js";
 
 /** Command Centre: organisation, clients and catalogue admin. */
 export const adminOrgApi = (t: Transport) => ({
@@ -37,6 +38,15 @@ export const adminOrgApi = (t: Transport) => ({
     updateTeam: (id: string, input: TeamUpdate) => t.patch<OrgStructureView>(`/admin-org/teams/${id}`, input),
     deleteTeam: (id: string) => t.del<OrgStructureView>(`/admin-org/teams/${id}`),
     moveMember: (input: MoveMember) => t.post<OrgStructureView>("/admin-org/members/move", input),
+    // v51 custom charts: extra org charts from existing team members (chart only, the real hierarchy is untouched).
+    charts: () => t.get<OrgChartList>("/admin-org/charts"),
+    chart: (id: string) => t.get<OrgChartView>(`/admin-org/charts/${id}`),
+    createChart: (input: OrgChartInput) => t.post<OrgChartView>("/admin-org/charts", input),
+    updateChart: (id: string, input: OrgChartUpdate) => t.patch<OrgChartView>(`/admin-org/charts/${id}`, input),
+    deleteChart: (id: string) => t.del<{ ok: true }>(`/admin-org/charts/${id}`),
+    addToChart: (id: string, input: OrgChartAdd) => t.post<OrgChartView>(`/admin-org/charts/${id}/members`, input),
+    updateChartMember: (id: string, userId: string, input: OrgChartMemberUpdate) => t.patch<OrgChartView>(`/admin-org/charts/${id}/members/${userId}`, input),
+    removeFromChart: (id: string, userId: string) => t.del<OrgChartView>(`/admin-org/charts/${id}/members/${userId}`),
 
     attendance: (month?: string) => t.get<AttendanceView>(`/admin-org/attendance${month ? `?month=${month}` : ""}`),
     leave: () => t.get<LeaveRow[]>("/admin-org/leave"),

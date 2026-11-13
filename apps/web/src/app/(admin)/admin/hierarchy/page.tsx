@@ -11,13 +11,14 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type DragEvent, typ
 import type { PeoplePersonRow, PeopleTree } from "@bmu/shared";
 import { useActions } from "@/components/actions/actions-provider";
 import { LoadBar } from "@/components/actions/person-picker";
+import { CustomCharts } from "@/components/people/custom-charts";
 import { Avatar, PersonDrawer } from "@/components/people/person-drawer";
 import { usePersonActions, type PersonLite } from "@/components/people/person-actions";
 import { fmtDay } from "@/components/people/use-people-options";
 import { Badge, Card, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 
-type View = "departments" | "reporting";
+type View = "departments" | "reporting" | "charts";
 type Prefs = { view: View; load: boolean; leave: boolean };
 type Target = { departmentId?: string; teamId?: string | null; managerId?: string | null };
 const PREF = "people.tree.prefs";
@@ -219,19 +220,23 @@ export default function HierarchyPage() {
       />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex border border-border" role="tablist" aria-label="View">
-          {(["departments", "reporting"] as View[]).map((v) => (
+          {(["departments", "reporting", "charts"] as View[]).map((v) => (
             <button key={v} type="button" role="tab" aria-selected={prefs.view === v} onClick={() => savePrefs({ ...prefs, view: v })} className={`px-3 py-1.5 text-sm ${prefs.view === v ? "bg-charcoal text-ivory" : ""}`}>
-              {v === "departments" ? "By department" : "Reporting lines"}
+              {v === "departments" ? "By department" : v === "reporting" ? "Reporting lines" : "Custom charts"}
             </button>
           ))}
         </div>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a person or role" aria-label="Find a person or role" className="min-w-0 flex-1 border border-border bg-surface-raised px-3 py-1.5 text-sm sm:max-w-xs" />
-        <label className="flex items-center gap-1.5 text-sm">
-          <input type="checkbox" checked={prefs.load} onChange={(e) => savePrefs({ ...prefs, load: e.target.checked })} /> Load %
-        </label>
-        <label className="flex items-center gap-1.5 text-sm">
-          <input type="checkbox" checked={prefs.leave} onChange={(e) => savePrefs({ ...prefs, leave: e.target.checked })} /> Leave
-        </label>
+        {prefs.view !== "charts" && (
+          <>
+            <label className="flex items-center gap-1.5 text-sm">
+              <input type="checkbox" checked={prefs.load} onChange={(e) => savePrefs({ ...prefs, load: e.target.checked })} /> Load %
+            </label>
+            <label className="flex items-center gap-1.5 text-sm">
+              <input type="checkbox" checked={prefs.leave} onChange={(e) => savePrefs({ ...prefs, leave: e.target.checked })} /> Leave
+            </label>
+          </>
+        )}
       </div>
 
       {loading && !tree && !error && <p className="text-sm text-ink-muted">Loading the hierarchy…</p>}
@@ -355,7 +360,9 @@ export default function HierarchyPage() {
 
       {tree && prefs.view === "reporting" && tree.people.length > 0 && <Card className="mb-8">{reporting(tree.people)}</Card>}
 
-      {tree && (tree.pods.length > 0 || can?.addPod) && (
+      {tree && prefs.view === "charts" && <CustomCharts people={tree.people} needle={needle} onOpenPerson={setOpenId} />}
+
+      {tree && prefs.view !== "charts" && (tree.pods.length > 0 || can?.addPod) && (
         <section className="mb-8" data-node="pods">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <h2 className="font-semibold">Client pods</h2>
@@ -389,7 +396,7 @@ export default function HierarchyPage() {
         </section>
       )}
 
-      {tree && tree.former.length > 0 && (
+      {tree && prefs.view !== "charts" && tree.former.length > 0 && (
         <details className="mb-8" data-testid="former-list">
           <summary className="cursor-pointer font-semibold">Former ({tree.former.length})</summary>
           <ul className="mt-2 grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
