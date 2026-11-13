@@ -7,7 +7,7 @@
  */
 import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { PEOPLE_EMPLOYMENT_TYPES, peopleEmploymentLabels, type PeopleOptions, type PeoplePersonRow } from "@bmu/shared";
+import { personRoleTitle, PEOPLE_EMPLOYMENT_TYPES, peopleEmploymentLabels, type PeopleOptions, type PeoplePersonRow } from "@bmu/shared";
 import { useActions } from "@/components/actions/actions-provider";
 import { ActionDialog, Field, inputCls } from "@/components/actions/action-drawer";
 import { BulkBar, BulkButton, useSelection } from "@/components/actions/bulk-bar";
@@ -31,7 +31,7 @@ const csvColumns: { header: string; value: (r: PeoplePersonRow) => string | numb
   { header: "Name", value: (r) => r.name },
   { header: "Email", value: (r) => r.email },
   { header: "Mobile", value: (r) => r.phone },
-  { header: "Roles", value: (r) => r.roles.map((x) => x.name).join(" + ") },
+  { header: "Roles", value: (r) => personRoleTitle(r.roles, { specialty: r.specialty, department: r.department?.name }) },
   { header: "Department", value: (r) => r.department?.name ?? "" },
   { header: "Team", value: (r) => r.team?.name ?? "" },
   { header: "Reports to", value: (r) => r.manager?.name ?? "" },
@@ -248,7 +248,7 @@ export default function UsersPage({ searchParams }: { searchParams: Promise<{ u?
                   <Link href={`/admin/users/${r.id}`} className="font-medium hover:underline">
                     {r.name}
                   </Link>
-                  <p className="truncate text-xs text-ink-muted">{r.roles.map((x) => x.name).join(" + ")}</p>
+                  <p className="truncate text-xs text-ink-muted">{personRoleTitle(r.roles, { specialty: r.specialty, department: r.department?.name })}</p>
                   <p className="truncate text-xs text-ink-muted">
                     {r.department?.name ?? "No department"}
                     {r.team ? ` · ${r.team.name}` : ""}
@@ -291,7 +291,7 @@ export default function UsersPage({ searchParams }: { searchParams: Promise<{ u?
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-2">{r.roles.map((x) => x.name).join(" + ") || "—"}</td>
+                    <td className="px-3 py-2">{personRoleTitle(r.roles, { specialty: r.specialty, department: r.department?.name }) || "—"}</td>
                     <td className="px-3 py-2">
                       {r.department?.name ?? "—"}
                       {r.team && <span className="text-ink-muted"> · {r.team.name}</span>}

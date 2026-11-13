@@ -6,6 +6,7 @@
  * manager to move them (opens the Move dialog with the preview). Click a person for the profile drawer with Reassign
  * work, Change role, Move and Offboard. On a phone, use Move in the drawer instead of dragging.
  */
+import { personRoleTitle } from "@bmu/shared";
 import { useEffect, useMemo, useState, useSyncExternalStore, type DragEvent, type ReactNode } from "react";
 import type { PeoplePersonRow, PeopleTree } from "@bmu/shared";
 import { useActions } from "@/components/actions/actions-provider";
@@ -155,7 +156,7 @@ export default function HierarchyPage() {
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">{p.name}</span>
             <span className="block truncate text-xs text-ink-muted">
-              {p.roles.map((r) => r.name).join(" + ") || "No role"}
+              {personRoleTitle(p.roles, { specialty: p.specialty, department: p.department?.name }) || "No role"}
               {note}
             </span>
           </span>

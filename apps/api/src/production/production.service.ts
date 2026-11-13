@@ -3,9 +3,8 @@ import { createReadStream } from 'node:fs';
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
+  personRoleTitle,
   addWorkingDays,
-  craftSpecialtyLabel,
-  roleLabel,
   type TeamEodView,
   clientDeliverableLabels,
   DEFAULT_QC_CHECKLISTS,
@@ -969,7 +968,7 @@ export class ProductionService {
         return {
           id: p.id,
           name: p.name,
-          role: custom.join(' + ') || craftSpecialtyLabel(p.specialty) || p.roles.map((x) => roleLabel(x.role.baseRole)).join(' + '),
+          role: custom.join(' + ') || personRoleTitle(p.roles.map((x) => x.role), { specialty: p.specialty, department: p.department?.name }),
           department: p.department?.name ?? null,
           report: r ? { completed: r.completed, pending: r.pending, blocked: r.blocked, waiting: r.waiting } : null,
         };

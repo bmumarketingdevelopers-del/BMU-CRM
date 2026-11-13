@@ -38,8 +38,16 @@ export const CRAFT_PROJECT_MANAGER: CraftSpecialtyDef = {
   steps: [],
 };
 
+/**
+ * Jobs with no specialist workspace of their own (they keep My Day): a label for the person's role line and a
+ * choice on the invite and users forms.
+ */
+export const CRAFT_OTHER_JOBS: readonly CraftSpecialtyDef[] = [
+  { id: "seo_executive", label: "SEO executive", department: "SEO", baseRole: "producer", description: "Keyword research, on-page SEO, content and links for client websites.", steps: [] },
+];
+
 /** Every specialty a person can be given (the invite and users forms). */
-export const CRAFT_SPECIALTY_OPTIONS: readonly CraftSpecialtyDef[] = [...CRAFT_SPECIALTIES, CRAFT_PROJECT_MANAGER];
+export const CRAFT_SPECIALTY_OPTIONS: readonly CraftSpecialtyDef[] = [...CRAFT_SPECIALTIES, CRAFT_PROJECT_MANAGER, ...CRAFT_OTHER_JOBS];
 
 export type CraftSpecialty = (typeof CRAFT_SPECIALTIES)[number]["id"];
 export const CRAFT_SPECIALTY_IDS = CRAFT_SPECIALTIES.map((s) => s.id) as CraftSpecialty[];
@@ -49,7 +57,7 @@ export const isCraftSpecialty = (v: string | null | undefined): v is CraftSpecia
 /** Human label for any specialty value, including custom ones added later ("motion_designer" → "Motion designer"). */
 export function craftSpecialtyLabel(v: string | null | undefined): string {
   if (!v) return "";
-  const known = CRAFT_SPECIALTIES.find((s) => s.id === v);
+  const known = CRAFT_SPECIALTY_OPTIONS.find((s) => s.id === v);
   if (known) return known.label;
   const words = v.replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);

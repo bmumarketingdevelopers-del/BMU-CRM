@@ -10,6 +10,7 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import {
+  personRoleTitle,
   basicActionItems,
   basicSummary,
   bookingPageSchema,
@@ -387,8 +388,8 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async slotsView(b: BookingRec): Promise<BookingSlots> {
-    const host = await this.prisma.user.findUniqueOrThrow({ where: { id: b.userId }, select: { name: true, roles: { select: { role: { select: { name: true } } }, take: 1 } } });
-    return { host: { name: host.name, title: host.roles[0]?.role.name ?? null }, title: b.title, durationMin: b.durationMin, days: await this.freeSlots(b) };
+    const host = await this.prisma.user.findUniqueOrThrow({ where: { id: b.userId }, select: { name: true, specialty: true, department: { select: { name: true } }, roles: { select: { role: { select: { name: true, baseRole: true } } } } } });
+    return { host: { name: host.name, title: personRoleTitle(host.roles.map((r) => r.role), { specialty: host.specialty, department: host.department?.name }) || null }, title: b.title, durationMin: b.durationMin, days: await this.freeSlots(b) };
   }
 
   private async assertFree(b: BookingRec, startAt: Date) {

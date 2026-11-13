@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Me, OpsDepartmentRow, OpsInsight, OpsPersonRow, OpsTeamView } from '@bmu/shared';
+import { personRoleTitle, type Me, type OpsDepartmentRow, type OpsInsight, type OpsPersonRow, type OpsTeamView } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { calendarFor } from '../production/generate.js';
 import { startOfWeek } from '../insights/ist.js';
@@ -90,7 +90,7 @@ export class OpsTeamService {
       this.prisma.department.findMany({ where: { orgId, deletedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       this.prisma.user.findMany({
         where: { orgId, type: 'staff', status: 'active', deletedAt: null, ...(deptId ? { departmentId: deptId } : {}) },
-        select: { id: true, name: true, departmentId: true, roles: { select: { role: { select: { name: true } } } } },
+        select: { id: true, name: true, departmentId: true, specialty: true, roles: { select: { role: { select: { name: true, baseRole: true } } } } },
         orderBy: { name: 'asc' },
       }),
     ]);
@@ -147,7 +147,7 @@ export class OpsTeamService {
         const ts = byOwner.get(u.id) ?? [];
         const vs = vByOwner.get(u.id) ?? [];
         const { row, p } = rowFor(ts, vs, 1);
-        return { active: ts.length > 0 || vs.length > 0 || p.completed > 0, person: { id: u.id, name: u.name, department: u.departmentId ? (deptName.get(u.departmentId) ?? null) : null, departmentId: u.departmentId, role: u.roles[0]?.role.name.split(' (')[0] ?? null, ...row } };
+        return { active: ts.length > 0 || vs.length > 0 || p.completed > 0, person: { id: u.id, name: u.name, department: u.departmentId ? (deptName.get(u.departmentId) ?? null) : null, departmentId: u.departmentId, role: personRoleTitle(u.roles.map((r) => r.role), { specialty: u.specialty, department: u.departmentId ? deptName.get(u.departmentId) : null }) || null, ...row } };
       })
       .filter((x) => x.active)
       .map((x) => x.person)

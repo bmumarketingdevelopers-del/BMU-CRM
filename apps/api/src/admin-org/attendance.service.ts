@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  personRoleTitle,
   ATTENDANCE_CORRECTION_DAYS,
-  craftSpecialtyLabel,
   istDate,
   type AttendanceCell,
   type AttendanceCorrectionInput,
@@ -329,7 +329,7 @@ export class AttendanceService {
         OR: [{ status: 'active' }, { attendance: { some: { date: { gte: dbDate(from), lte: dbDate(to) } } } }],
       },
       orderBy: { name: 'asc' },
-      select: { id: true, name: true, email: true, createdAt: true, specialty: true, departmentId: true, roles: { select: { role: { select: { name: true } } } } },
+      select: { id: true, name: true, email: true, createdAt: true, specialty: true, departmentId: true, department: { select: { name: true } }, roles: { select: { role: { select: { name: true, baseRole: true } } } } },
     });
     const ids = users.map((u) => u.id);
     const [rows, leaves, firsts] = await Promise.all([
@@ -388,9 +388,8 @@ export class AttendanceService {
         return { ...base, status: 'absent' };
       });
       totals.hours = Math.round(totals.hours * 100) / 100;
-      const roles = [...new Set(u.roles.map((r) => r.role.name))];
-      const spec = craftSpecialtyLabel(u.specialty);
-      const designation = [roles.join(' / '), spec].filter(Boolean).join(' – ') || 'Team member';
+      // Roles with "Producer" shown as the person's job (or department): "Department Head + Developer".
+      const designation = personRoleTitle(u.roles.map((r) => r.role), { specialty: u.specialty, department: u.department?.name }) || 'Team member';
       return { user: { id: u.id, name: u.name, email: u.email ?? '' }, designation, days, totals };
     };
 

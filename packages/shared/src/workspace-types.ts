@@ -115,7 +115,7 @@ export type LeaveRequestView = {
 };
 
 export type MyProfile = {
-  user: { id: string; name: string; email: string | null; phone: string | null; department: string | null; team: string | null; manager: { name: string; email: string | null } | null; roles: string[]; specialty?: string | null; canRename?: boolean };
+  user: { id: string; name: string; email: string | null; phone: string | null; department: string | null; team: string | null; manager: { name: string; email: string | null } | null; roles: string[]; /** Roles with "Producer" shown as their job ("Department Head + Developer"). */ roleTitle?: string; specialty?: string | null; canRename?: boolean };
   attendance: { month: string; days: { date: string; checkIn: string | null; checkOut: string | null; hours: number }[]; totalHours: number; daysPresent: number; workingDaysSoFar: number };
   eod: { date: string; completed: string[]; pending: string[]; blocked: string[]; waiting: string[] }[];
   leave: {
