@@ -2,7 +2,7 @@ import { Body, Controller, ForbiddenException, Get, HttpCode, HttpException, Log
 import { randomBytes } from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
 import type { Request, Response } from 'express';
-import { craftSpecialtyLabel, otpRequestSchema, otpVerifySchema, secondFactorSchema, type Me } from '@bmu/shared';
+import { personRoleTitle, otpRequestSchema, otpVerifySchema, secondFactorSchema, type Me } from '@bmu/shared';
 import { z } from 'zod';
 import { CurrentUser, Public } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
@@ -192,7 +192,7 @@ export class AuthController {
     if (process.env.NODE_ENV === 'production') return [];
     const users = await this.prisma.user.findMany({
       where: { email: { endsWith: '.demo' }, deletedAt: null, status: { not: 'suspended' } },
-      include: { roles: { include: { role: true } } },
+      include: { roles: { include: { role: true } }, department: { select: { name: true } } },
       orderBy: { createdAt: 'asc' },
     });
     // The main role accounts first (the ones the guide talks about), then everyone else by name.
@@ -204,8 +204,8 @@ export class AuthController {
       .map((u) => ({
         name: u.name,
         email: u.email!,
-        // Short label: the craft specialty when there is one, else the role name without its long "(…)" list.
-        role: craftSpecialtyLabel(u.specialty) || (u.roles[0]?.role.name ?? u.type).replace(/\s*\(.*\)\s*$/, ''),
+        // Short label: roles with "Producer" shown as the person's job or department.
+        role: personRoleTitle(u.roles.map((r) => r.role), { specialty: u.specialty, department: u.department?.name }) || u.type,
       }))
       .sort((a, b) => rank(a.email) - rank(b.email) || a.name.localeCompare(b.name));
   }

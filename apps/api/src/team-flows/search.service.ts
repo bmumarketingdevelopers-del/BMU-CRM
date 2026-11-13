@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { formatINR, searchNormalise, type Me, type TeamSearchItem, type TeamSearchKind, type TeamSearchResult } from '@bmu/shared';
+import { personRoleTitle, formatINR, searchNormalise, type Me, type TeamSearchItem, type TeamSearchKind, type TeamSearchResult } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import { isLeadership, visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { FlagsService } from '../platform/flags.service.js';
@@ -233,7 +233,7 @@ export class SearchService {
     const peopleAdmin = hasRole(me, 'founder', 'admin', 'hr_ops', 'department_head') && capable(me, 'users_roles_hierarchy');
     const rows = await this.prisma.user.findMany({
       where: { orgId: me.orgId, type: 'staff', deletedAt: null, ...(peopleAdmin ? {} : { status: 'active' }), OR: this.or<Prisma.UserWhereInput>([{ name: like }, ...(peopleAdmin ? [{ email: like }, { phone: like }] : [])], h) },
-      include: { department: { select: { name: true } }, roles: { include: { role: { select: { name: true } } } } },
+      include: { department: { select: { name: true } }, roles: { include: { role: { select: { name: true, baseRole: true } } } } },
       take: FETCH,
       orderBy: { name: 'asc' },
     });
@@ -241,7 +241,7 @@ export class SearchService {
       kind: 'person',
       id: u.id,
       title: u.name,
-      sub: [u.roles[0]?.role.name, u.department?.name, peopleAdmin ? u.email : null, u.status === 'suspended' ? 'suspended' : null].filter(Boolean).join(' · ') || null,
+      sub: [personRoleTitle(u.roles.map((r) => r.role), { specialty: u.specialty, department: u.department?.name }), u.department?.name, peopleAdmin ? u.email : null, u.status === 'suspended' ? 'suspended' : null].filter(Boolean).join(' · ') || null,
       href: peopleAdmin && (admin || hasRole(me, 'founder', 'admin', 'hr_ops', 'department_head')) ? `/admin/users?u=${u.id}` : '/team/capacity',
     }));
   }

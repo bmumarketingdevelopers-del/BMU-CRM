@@ -1,5 +1,6 @@
 "use client";
 
+import { personRoleTitle } from "@bmu/shared";
 /**
  * Person page: Overview (profile, actions, everything they own right now) and History (every change from the audit
  * log: invited, moved, role changed, offboarded…). `?tab=history` opens History.
@@ -83,7 +84,7 @@ export default function PersonPage({ params, searchParams }: { params: Promise<{
           <div className="flex items-start gap-3">
             <Avatar name={p.name} photoUrl={p.photoUrl} size={48} />
             <div className="min-w-0 flex-1">
-              <PageTitle title={p.name} subtitle={p.roles.map((r) => r.name).join(" + ") || "No role"} action={<RowMenu items={personMenuItems(p, p.can, pa.open, { meId: me.id, reassign: () => openBulkReassign(p.id, reload), profile: false })} label={`Actions for ${p.name}`} />} />
+              <PageTitle title={p.name} subtitle={personRoleTitle(p.roles, { specialty: p.specialty, department: p.department?.name }) || "No role"} action={<RowMenu items={personMenuItems(p, p.can, pa.open, { meId: me.id, reassign: () => openBulkReassign(p.id, reload), profile: false })} label={`Actions for ${p.name}`} />} />
             </div>
           </div>
           <div className="mb-4 flex border-b border-border" role="tablist" aria-label="Sections">

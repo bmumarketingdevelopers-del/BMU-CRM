@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  personRoleTitle,
   peopleEmploymentLabels,
   peopleScopeLabels,
   type PeoplePersonDetail,
@@ -93,7 +94,7 @@ export function PersonDrawer({
       open
       title={p?.name ?? "Person"}
       subtitle={
-        p ? p.roles.map((r) => r.name).join(" + ") || "No role" : undefined
+        p ? personRoleTitle(p.roles, { specialty: p.specialty, department: p.department?.name }) || "No role" : undefined
       }
       onClose={onClose}
       testId="person-drawer"

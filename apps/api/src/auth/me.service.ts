@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { widerScope, type AccessScope, type Me, type PermissionMap } from '@bmu/shared';
+import { personRoleTitle, widerScope, type AccessScope, type Me, type PermissionMap } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
@@ -13,6 +13,7 @@ export class MeService {
       include: {
         roles: { include: { role: { include: { permissions: true } } } },
         clientUser: { include: { clientOrg: true } },
+        department: { select: { name: true } },
         // v50: anyone reporting to them (Daily reports in the menu).
         _count: { select: { reports: { where: { deletedAt: null, status: 'active' } } } },
       },
@@ -40,6 +41,7 @@ export class MeService {
       customRoles: user.roles.filter((r) => r.role.isCustom).map((r) => r.role.name),
       permissions,
       specialty: user.specialty,
+      roleTitle: personRoleTitle(user.roles.map((r) => r.role), { specialty: user.specialty, department: user.department?.name }),
       leadsPeople: user.type === 'staff' && (user._count.reports > 0 || user.roles.some((r) => r.role.baseRole === 'department_head')),
       clientOrg: user.clientUser
         ? { id: user.clientUser.clientOrgId, name: user.clientUser.clientOrg.name, role: user.clientUser.clientRole }

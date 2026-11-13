@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
+  personRoleTitle,
   istDate,
   normaliseIdentifier,
   type Me,
@@ -268,7 +269,7 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
     const ids = [...new Set(rows.flatMap((r) => [r.userId, r.startedById, r.buddyId].filter(Boolean) as string[]))];
     const users = await this.prisma.user.findMany({
       where: { id: { in: ids } },
-      select: { id: true, name: true, email: true, status: true, department: { select: { name: true } }, roles: { select: { role: { select: { name: true } } } } },
+      select: { id: true, name: true, email: true, status: true, specialty: true, department: { select: { name: true } }, roles: { select: { role: { select: { name: true, baseRole: true } } } } },
     });
     const byId = new Map(users.map((u) => [u.id, u]));
     return Promise.all(
@@ -281,7 +282,7 @@ export class PeopleService implements OnModuleInit, OnModuleDestroy {
           id: r.id,
           kind: r.kind as TeamPeopleProcess['kind'],
           status: r.status as TeamPeopleProcess['status'],
-          user: { id: r.userId, name: u?.name ?? 'Former member', email: u?.email ?? null, department: u?.department?.name ?? null, role: u?.roles[0]?.role.name ?? null, status: u?.status ?? 'suspended' },
+          user: { id: r.userId, name: u?.name ?? 'Former member', email: u?.email ?? null, department: u?.department?.name ?? null, role: u ? personRoleTitle(u.roles.map((x) => x.role), { specialty: u.specialty, department: u.department?.name }) || null : null, status: u?.status ?? 'suspended' },
           startedBy: byId.get(r.startedById)?.name ?? null,
           buddy: buddy ? { id: buddy.id, name: buddy.name } : null,
           startDate: r.startDate ? dayStr(r.startDate) : null,

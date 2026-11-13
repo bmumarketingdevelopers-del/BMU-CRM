@@ -2,6 +2,7 @@ export * from "./tokens.js";
 export * from "./money.js";
 export * from "./catalogue.js";
 export * from "./roles.js";
+export * from "./person-title.js";
 export * from "./permissions.js";
 export * from "./workflow.js";
 export * from "./schemas.js";

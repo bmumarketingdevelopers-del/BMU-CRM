@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
+  personRoleTitle,
   DELIVER_SOCIAL_TYPES,
   deliverChannelLabels,
   type DeliverChannel,
@@ -483,6 +484,7 @@ export class TeamWorkspaceService {
         team: user.team?.name ?? null,
         manager: user.manager,
         roles: user.roles.map((r) => r.role.name),
+        roleTitle: personRoleTitle(user.roles.map((r) => r.role), { specialty: user.specialty, department: user.department?.name }),
         canRename: me.type !== 'staff' || me.roles.some((r) => ['founder', 'admin', 'hr_ops'].includes(r)),
         specialty: user.specialty,
       },
