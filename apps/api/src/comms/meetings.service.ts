@@ -1335,7 +1335,7 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
           ? dup
           : await createInboundLead(
               { prisma: this.prisma, audit: this.audit, notifications: this.notifications },
-              { orgId: b.orgId, source: 'booking', name: input.name, email: input.email.toLowerCase(), phone: input.phone || null, company: input.company || null, need: input.agenda || 'Booked a call from the booking link', budgetPaise: null, serviceIds: [], via: `Booking link (${host.name})` },
+              { orgId: b.orgId, source: 'booking', name: input.name, email: input.email.toLowerCase(), phone: input.phone || null, company: input.company || null, need: input.agenda || 'Booked a call from the booking link', budgetPaise: null, serviceIds: [], via: `Booking link (${host.name})`, ownerId: b.userId },
             );
       leadId = lead.id;
       if (!lead.ownerId) await this.prisma.lead.update({ where: { id: lead.id }, data: { ownerId: b.userId } });

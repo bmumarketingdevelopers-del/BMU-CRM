@@ -25,7 +25,31 @@ export type InboundLead = {
   via?: string;
   /** v20 DPDP: what the person agreed to on the form, and from where. */
   consent?: { marketing?: boolean; whatsapp?: boolean; source?: string; ip?: string | null };
+  /** Who the lead goes to straight away (a booking link's host). Leads with nobody on them alert the sales leaders. */
+  ownerId?: string | null;
 };
+
+const dueFmt = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+
+/**
+ * Who hears about a new outside lead that nobody owns yet: the Founder, Branch Managers (admin), Sales Managers and
+ * the head of the Sales department, but only those whose roles can open leads (Roles & Permissions, leads_pipeline).
+ */
+export async function leadAlertRecipients(prisma: PrismaService, orgId: string): Promise<string[]> {
+  const salesDepts = await prisma.department.findMany({ where: { orgId, deletedAt: null, headUserId: { not: null }, name: { contains: 'sales', mode: 'insensitive' } }, select: { headUserId: true } });
+  const heads = salesDepts.map((d) => d.headUserId!);
+  const users = await prisma.user.findMany({
+    where: {
+      orgId,
+      type: 'staff',
+      status: 'active',
+      deletedAt: null,
+      OR: [{ roles: { some: { role: { baseRole: { in: ['founder', 'admin', 'sales_manager'] } } } } }, ...(heads.length ? [{ id: { in: heads } }] : [])],
+    },
+    select: { id: true, roles: { select: { role: { select: { permissions: { where: { capability: 'leads_pipeline' }, select: { scope: true } } } } } } },
+  });
+  return users.filter((u) => u.roles.some((r) => r.role.permissions.some((p) => p.scope !== 'none'))).map((u) => u.id);
+}
 
 /** Same email or phone as an earlier lead: prefer an open one, then the newest. */
 export async function findDuplicateLead(prisma: PrismaService, orgId: string, email?: string | null, phone?: string | null) {
@@ -54,7 +78,7 @@ export async function createInboundLead(deps: { prisma: PrismaService; audit: Au
       score: sellLeadScore(input.budgetPaise, input.serviceIds.length, !!input.company).score,
       duplicateOfId: original?.id ?? null,
       // A repeat enquiry stays with the person who already knows this contact.
-      ownerId: original && OPEN_STAGES.includes(original.stage) ? original.ownerId : null,
+      ownerId: input.ownerId ?? (original && OPEN_STAGES.includes(original.stage) ? original.ownerId : null),
       // v11 ops: the first-reply timer starts (working hours, 120 minutes).
       firstReplyDueAt: addWorkingMinutes(new Date(), OPS_LEAD_FIRST_REPLY_MINUTES, await calendarFor(prisma, input.orgId)),
       customFields: JSON.parse(JSON.stringify(input.customFields ?? {})),
@@ -76,6 +100,17 @@ export async function createInboundLead(deps: { prisma: PrismaService; audit: Au
       kind: 'lead_duplicate',
       title: `${input.company || input.name} enquired again`,
       body: `Same email or phone as ${when}. Merge or keep separate.`,
+      link: `/team/leads/${lead.id}`,
+    });
+  }
+  // Nobody has this lead yet: tell the sales leaders straight away so someone picks it up within the reply time.
+  if (!lead.ownerId) {
+    const who = input.company || input.name || input.email || input.phone || 'Someone';
+    const from = input.via ?? (input.source === 'website' ? 'Website enquiry' : 'New enquiry');
+    await notifications.notify(input.orgId, await leadAlertRecipients(prisma, input.orgId), {
+      kind: 'lead_new',
+      title: `New lead: ${who}`,
+      body: `${from} · reply by ${dueFmt.format(lead.firstReplyDueAt!)}. ${input.need.slice(0, 100)}`,
       link: `/team/leads/${lead.id}`,
     });
   }

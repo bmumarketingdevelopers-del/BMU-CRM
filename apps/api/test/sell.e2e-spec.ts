@@ -52,6 +52,20 @@ afterAll(async () => {
   await app.close();
 });
 
+describe('new website enquiry alert', () => {
+  it('the Founder, Branch Manager and Sales Manager hear about it at once; people without lead access do not', async () => {
+    const link = `/team/leads/${leadId}`;
+    for (const who of ['founder', 'admin', 'sales.manager']) expect((await notices(ids[who], 'lead_new')).some((n) => n.link === link)).toBe(true);
+    for (const who of ['sales', 'am']) expect((await notices(ids[who], 'lead_new')).some((n) => n.link === link)).toBe(false);
+  });
+
+  it('a repeat enquiry that already has an owner does not alert everyone again', async () => {
+    const before = (await notices(ids['sales.manager'], 'lead_new')).length;
+    await http().post('/leads/enquiry').send({ name: 'Meera R', email, phone, need: 'Following up on my enquiry', serviceIds: [] }).expect(201);
+    expect((await notices(ids['sales.manager'], 'lead_new')).length).toBe(before);
+  });
+});
+
 describe('lead detail, activity and follow-ups', () => {
   it('the new owner was notified and the lead detail explains the score', async () => {
     expect((await notices(ids.sales, 'lead_assigned')).some((n) => n.link === `/team/leads/${leadId}`)).toBe(true);
