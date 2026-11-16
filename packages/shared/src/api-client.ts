@@ -52,7 +52,7 @@ import { commsApi } from "./api/comms.js";
 import { finance2Api } from "./api/finance2.js";
 import { integrationsApi } from "./api/integrations.js";
 import { v20Api, type SignInResult } from "./api/v20.js";
-import type { ClientFile, CreateRequest, DecideRequest, FinalDeliveryView, NotificationView, RequestView, ThreadSummary, ThreadView } from "./requests.js";
+import type { ClientChatList, ClientFile, CreateRequest, DecideRequest, FinalDeliveryView, NotificationView, RequestView, ThreadSummary, ThreadView } from "./requests.js";
 
 export type QcTemplateView = { id: string; key: string; name: string; version: number; items: string[] };
 
@@ -361,6 +361,10 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
       files: () => request<ClientFile[]>("/client/files"),
       thread: () => request<ThreadView>("/client/thread"),
       sendMessage: (body: string, attachmentIds: string[] = []) => post<ThreadView>("/client/thread/messages", { body, attachmentIds }),
+      // Chat list and the BMU Owner (Founder) chat
+      chats: () => request<ClientChatList>("/client/chats"),
+      ownerThread: () => request<ThreadView>("/client/owner-thread"),
+      sendOwnerMessage: (body: string, attachmentIds: string[] = []) => post<ThreadView>("/client/owner-thread/messages", { body, attachmentIds }),
       checkout: (invoiceId: string) => post<Checkout>(`/client/invoices/${invoiceId}/checkout`),
       verifyPayment: (invoiceId: string, body: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
         post<{ ok: true }>(`/client/invoices/${invoiceId}/verify`, body),
@@ -378,6 +382,8 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
       list: () => request<ThreadSummary[]>("/threads"),
       get: (id: string) => request<ThreadView>(`/threads/${id}`),
       send: (id: string, body: string, internal = false, attachmentIds: string[] = []) => post<ThreadView>(`/threads/${id}/messages`, { body, internal, attachmentIds }),
+      /** Founder only: open (or start) the BMU Owner chat with a client. */
+      ownerChat: (clientOrgId: string) => post<ThreadView>(`/threads/owner/${clientOrgId}`),
     },
 
     notifications: {

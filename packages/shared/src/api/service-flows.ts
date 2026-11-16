@@ -42,6 +42,12 @@ export const serviceFlowsApi = (t: Transport) => ({
       fd.append("file", file);
       return t.request<ThreadAttachment>(threadId ? `/threads/${threadId}/attachments` : "/client/thread/attachments", { method: "POST", body: fd });
     },
+    // Client: attachment for the BMU Owner chat
+    uploadOwnerAttachment: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return t.request<ThreadAttachment>("/client/owner-thread/attachments", { method: "POST", body: fd });
+    },
     // Client billing
     clientBilling: () => t.get<ServiceClientBilling>("/service/client/billing"),
     clientTaxInvoice: (id: string) => t.get<ServiceTaxInvoice>(`/service/client/invoices/${id}/tax-invoice`),

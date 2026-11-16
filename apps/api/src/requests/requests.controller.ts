@@ -147,6 +147,30 @@ export class ClientDeskController {
     return this.messages.upload(me, null, file, storageRoot());
   }
 
+  /** WhatsApp-style chat list: BMU Owner (after their first message) and the Client Manager. */
+  @Get('chats')
+  chats(@CurrentUser() me: Me) {
+    return this.messages.clientChats(me);
+  }
+
+  /** The client's chat with BMU Owner (Founder). 404 until the Founder has written. */
+  @Get('owner-thread')
+  ownerThread(@CurrentUser() me: Me) {
+    return this.messages.forClientOwner(me);
+  }
+
+  @Post('owner-thread/messages')
+  sendToOwner(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    const m = parse(sendMessageSchema, body);
+    return this.messages.send(me, null, m.body, false, ip, m.attachmentIds, true);
+  }
+
+  @Post('owner-thread/attachments')
+  @UseInterceptors(attachmentUpload)
+  attachToOwner(@CurrentUser() me: Me, @UploadedFile() file: UploadedAttachment | undefined) {
+    return this.messages.upload(me, null, file, storageRoot(), true);
+  }
+
   @Post('invoices/:id/checkout')
   @HttpCode(200)
   checkout(@CurrentUser() me: Me, @Param('id') id: string) {
@@ -173,6 +197,13 @@ export class ThreadsController {
   @Get()
   list(@CurrentUser() me: Me) {
     return this.messages.list(me);
+  }
+
+  /** Founder only: open (or start) the BMU Owner chat with a client. */
+  @Post('owner/:clientOrgId')
+  @HttpCode(200)
+  ownerChat(@CurrentUser() me: Me, @Param('clientOrgId') clientOrgId: string) {
+    return this.messages.ownerThreadFor(me, clientOrgId);
   }
 
   @Get(':id')

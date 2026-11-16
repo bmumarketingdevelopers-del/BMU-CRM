@@ -116,14 +116,31 @@ export type ThreadView = {
   awaitingReply: { since: string; due: string; overdue: boolean } | null;
   /** v10: messages from the other side this person has not read yet (before this view marked them read). */
   unread?: number;
+  /** Which chat: with the Client Manager (`client_am`) or with BMU Owner, the Founder (`client_owner`). */
+  kind?: ClientThreadKind;
 };
+
+export type ClientThreadKind = "client_am" | "client_owner";
 
 export type ThreadSummary = {
   id: string;
+  kind?: ClientThreadKind;
   client: { id: string; name: string };
   lastMessage: { body: string; author: string; at: string; isClient: boolean } | null;
   awaitingReply: { since: string; due: string; overdue: boolean } | null;
   unread?: number;
+};
+
+/** A row in the client's chat list (WhatsApp style). */
+export type ClientChatSummary = {
+  lastMessage: { body: string; author: string; at: string; mine: boolean } | null;
+  unread: number;
+};
+
+/** The client's chats: BMU Owner (null until the Founder writes) and their Client Manager (name null if none assigned). */
+export type ClientChatList = {
+  owner: ClientChatSummary | null;
+  am: ClientChatSummary & { name: string | null };
 };
 
 export const sendMessageSchema = z

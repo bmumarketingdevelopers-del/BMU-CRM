@@ -34,6 +34,11 @@ export default function TeamMessagesPage() {
             <div className="min-w-0">
               <p className={t.unread ? "font-semibold" : "font-medium"}>
                 {t.client.name}
+                {t.kind === "client_owner" && (
+                  <span className="ml-2 align-middle" data-testid="owner-chat-badge">
+                    <Badge tone="dark">BMU Owner chat</Badge>
+                  </span>
+                )}
                 {!!t.unread && (
                   <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center bg-green px-1.5 text-[11px] font-bold text-charcoal" aria-label={`${t.unread} unread`}>
                     {t.unread}
