@@ -27,6 +27,7 @@ import {
   type CraftTodayItem,
   type DeliverableStatus,
   type Me,
+  craftSameWork,
 } from '@bmu/shared';
 import type { EngagementStatus, Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -248,7 +249,7 @@ export class CraftManagerService {
       if (!c || c.onLeaveToday) return false;
       if (t.kind === 'qc') return m.roles.some((r) => QC_ROLES.includes(r)) && t.deliverable?.versions[0]?.uploadedById !== m.id;
       if (t.kind === 'client_review') return m.roles.some((r) => REVIEW_ROLES.includes(r));
-      if (want) return m.specialty === want;
+      if (want) return craftSameWork(m.specialty, want);
       return !!m.specialty && craftFitsStep(m.specialty, t.flowStep) && m.roles.some((r) => ['producer', 'strategist', 'intern'].includes(r));
     });
     const best = eligible.sort((a, b) => cards.get(a.id)!.loadPct - cards.get(b.id)!.loadPct || cards.get(a.id)!.open - cards.get(b.id)!.open)[0];

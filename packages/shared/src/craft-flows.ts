@@ -14,6 +14,8 @@ export type CraftSpecialtyDef = {
   description: string;
   /** Flow step keys this person is a good fit for. Steps not listed anywhere fit everyone. */
   steps: string[];
+  /** The specialist workspace this job role opens when it isn't a workspace itself (Backend Developer → developer). */
+  workspace?: CraftSpecialty;
 };
 
 export const CRAFT_SPECIALTIES = [
@@ -46,13 +48,39 @@ export const CRAFT_OTHER_JOBS: readonly CraftSpecialtyDef[] = [
   { id: "seo_executive", label: "SEO executive", department: "SEO", baseRole: "producer", description: "Keyword research, on-page SEO, content and links for client websites.", steps: [] },
 ];
 
-/** Every specialty a person can be given (the invite and users forms). */
-export const CRAFT_SPECIALTY_OPTIONS: readonly CraftSpecialtyDef[] = [...CRAFT_SPECIALTIES, CRAFT_PROJECT_MANAGER, ...CRAFT_OTHER_JOBS];
+/**
+ * The developer job roles. "developer" itself is no longer offered as a job role: it is only the Developer
+ * workspace these three open (and the job of anyone set before the split).
+ */
+const DEV_STEPS = ["build", "develop", "launch"];
+export const CRAFT_DEVELOPER_JOBS: readonly CraftSpecialtyDef[] = [
+  { id: "frontend_developer", label: "Frontend Developer", department: "SDE", baseRole: "producer", description: "Builds the screens and interactions of websites and web apps.", steps: DEV_STEPS, workspace: "developer" },
+  { id: "backend_developer", label: "Backend Developer", department: "SDE", baseRole: "producer", description: "Builds servers, APIs, databases and integrations.", steps: DEV_STEPS, workspace: "developer" },
+  { id: "full_stack_developer", label: "Full-stack Developer", department: "SDE", baseRole: "producer", description: "Builds both the front end and the back end of web projects.", steps: DEV_STEPS, workspace: "developer" },
+];
+
+/** Every job role a person can be given (the invite and users forms). */
+export const CRAFT_SPECIALTY_OPTIONS: readonly CraftSpecialtyDef[] = [
+  ...CRAFT_SPECIALTIES.filter((s) => s.id !== "developer"),
+  ...CRAFT_DEVELOPER_JOBS,
+  CRAFT_PROJECT_MANAGER,
+  ...CRAFT_OTHER_JOBS,
+];
 
 export type CraftSpecialty = (typeof CRAFT_SPECIALTIES)[number]["id"];
 export const CRAFT_SPECIALTY_IDS = CRAFT_SPECIALTIES.map((s) => s.id) as CraftSpecialty[];
 
+/** Whether this value is itself a specialist workspace id. To ask "which workspace does this job open", use craftWorkspace. */
 export const isCraftSpecialty = (v: string | null | undefined): v is CraftSpecialty => !!v && (CRAFT_SPECIALTY_IDS as string[]).includes(v);
+
+/** The specialist workspace a job role opens: itself for the workspace jobs, "developer" for the three developer roles, else null. */
+export function craftWorkspace(v: string | null | undefined): CraftSpecialty | null {
+  if (isCraftSpecialty(v)) return v;
+  return CRAFT_DEVELOPER_JOBS.find((j) => j.id === v)?.workspace ?? null;
+}
+
+/** Whether two job roles do the same kind of work (e.g. a Backend Developer fits a "developer" request). */
+export const craftSameWork = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && (a === b || (!!craftWorkspace(a) && craftWorkspace(a) === craftWorkspace(b)));
 
 /** Human label for any specialty value, including custom ones added later ("motion_designer" → "Motion designer"). */
 export function craftSpecialtyLabel(v: string | null | undefined): string {
@@ -79,7 +107,7 @@ const ALL_STEP_KEYS = new Set<string>(CRAFT_SPECIALTIES.flatMap((s) => s.steps))
  */
 export function craftFitsStep(specialty: string | null | undefined, stepKey: string | null | undefined): boolean {
   if (!specialty || !stepKey) return true;
-  const def = CRAFT_SPECIALTIES.find((s) => s.id === specialty);
+  const def = CRAFT_SPECIALTIES.find((s) => s.id === craftWorkspace(specialty));
   if (!def) return true;
   if (!ALL_STEP_KEYS.has(stepKey)) return true;
   return (def.steps as readonly string[]).includes(stepKey);
@@ -428,7 +456,7 @@ export const CRAFT_MANAGER_ACCESS_ROLES = [...CRAFT_MANAGER_ROLES, "founder", "a
 
 /** Whether this person's /team home is the Manager workspace. A maker specialty wins over the manager role. */
 export function isCraftManager(me: { roles: string[]; specialty?: string | null }): boolean {
-  if (isCraftSpecialty(me.specialty)) return false;
+  if (craftWorkspace(me.specialty)) return false;
   if (me.specialty === CRAFT_PROJECT_MANAGER.id) return true;
   return me.roles.some((r) => (CRAFT_MANAGER_ROLES as readonly string[]).includes(r));
 }

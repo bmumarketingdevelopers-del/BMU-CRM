@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import {
   DASHBOARD_BUILTINS,
   DASHBOARD_SIZES,
-  isCraftSpecialty,
+  craftWorkspace,
   type DashboardAudience,
   type DashboardBuiltinKey,
   type DashboardPlacement,
@@ -90,7 +90,7 @@ export function DashboardEditor({ id }: { id: string }) {
   if (!view || !draft || !studio) return <LoadState loading={!loadError} error={loadError} />;
   const host = view.builtin;
   const def = host ? DASHBOARD_BUILTINS[host] : null;
-  const specialistPreview = studio.people.find((p) => isCraftSpecialty(p.specialty));
+  const specialistPreview = studio.people.find((p) => craftWorkspace(p.specialty));
   const outlineOnly = host === "client_home" || (host === "specialist" && !specialistPreview);
   const layout = draft.layout;
   const setLayout = (next: DashboardWidget[]) => setDraft({ ...draft, layout: next });

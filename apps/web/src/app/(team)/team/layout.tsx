@@ -1,4 +1,4 @@
-import { canOpenCraftManager, isCraftManager, isCraftSpecialty } from "@bmu/shared";
+import { canOpenCraftManager, craftWorkspace, isCraftManager } from "@bmu/shared";
 import { AppShell } from "@/components/app-shell";
 import type { NavSection } from "@/components/side-nav";
 import { requireMe, serverApi } from "@/lib/session";
@@ -16,7 +16,7 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
     {
       section: "Work",
       items: [
-        { label: isCraftSpecialty(me.specialty) || isCraftManager(me) ? "My workspace" : "My Day", href: "/team" },
+        { label: craftWorkspace(me.specialty) || isCraftManager(me) ? "My workspace" : "My Day", href: "/team" },
         ...(canOpenCraftManager(me) && !isCraftManager(me) ? [{ label: "Manager workspace", href: "/team/manager" }] : []),
         // v50: end-of-day reports from the people who report to them (and their department, for Department Heads).
         ...(me.leadsPeople ? [{ label: "Daily reports", href: "/team/reports" }] : []),

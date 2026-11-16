@@ -21,6 +21,14 @@ export function producerJob(who: { specialty?: string | null; department?: strin
 export function personRoleTitle(roles: readonly RoleLike[], who: { specialty?: string | null; department?: string | null } = {}): string {
   const rows = roles.map((r) => (typeof r === "string" ? { name: roleLabel(r), baseRole: r } : r));
   const sorted = [...rows].sort((a, b) => (RANK.get(a.baseRole) ?? 99) - (RANK.get(b.baseRole) ?? 99));
-  const names = sorted.map((r) => (r.baseRole === "producer" && /^Producer\b/.test(r.name) ? producerJob(who) : r.name.replace(/\s*\(.*\)\s*$/, "")));
+  const job = craftSpecialtyLabel(who.specialty);
+  const names = sorted.map((r) =>
+    r.baseRole === "producer" && /^Producer\b/.test(r.name)
+      ? producerJob(who)
+      : // An intern with a job role: "Full-stack Developer Intern".
+        r.baseRole === "intern" && /^Intern\b/.test(r.name) && job
+        ? `${job} Intern`
+        : r.name.replace(/\s*\(.*\)\s*$/, ""),
+  );
   return [...new Set(names)].join(" + ");
 }

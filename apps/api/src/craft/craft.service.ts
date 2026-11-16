@@ -10,7 +10,7 @@ import {
   craftSocialStage,
   craftSpecialtyLabel,
   deliverableStatusLabels,
-  isCraftSpecialty,
+  craftWorkspace,
   istDate,
   reviewAnchorSchema,
   type CraftBrandKitInput,
@@ -218,7 +218,7 @@ export class CraftService {
       workload: this.workload(ctx),
     };
     const common = this.commonKpis(ctx);
-    const spec = isCraftSpecialty(target.specialty) ? target.specialty : null;
+    const spec = craftWorkspace(target.specialty);
     switch (spec) {
       case 'video_editor': {
         const panels = this.videoPanels(ctx);
