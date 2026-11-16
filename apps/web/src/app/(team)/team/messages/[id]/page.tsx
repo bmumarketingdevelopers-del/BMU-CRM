@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import type { ThreadView } from "@bmu/shared";
 import { Chat } from "@/components/chat";
@@ -22,28 +23,58 @@ export default function TeamThreadPage({ params }: { params: Promise<{ id: strin
   const actions = useActionsMaybe();
   const [toRequest, setToRequest] = useState<{ id: string; body: string }>();
   const canRequest = !!actions?.me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager"].includes(r));
+  const isFounder = !!actions?.me.roles.includes("founder");
+  const router = useRouter();
+  const [openingOwner, setOpeningOwner] = useState(false);
+  const [ownerError, setOwnerError] = useState<string>();
   const t = fresh ?? loaded.data;
   if (!t) return <LoadState loading={loaded.loading} error={loaded.error} />;
+  const isOwnerChat = t.kind === "client_owner";
+
+  /** Founder: open (or start) this client's private BMU Owner chat. */
+  async function openOwnerChat(clientId: string) {
+    setOpeningOwner(true);
+    setOwnerError(undefined);
+    try {
+      const owner = await api.threads.ownerChat(clientId);
+      router.push(`/team/messages/${owner.id}`);
+    } catch (err) {
+      setOwnerError((err as Error).message);
+      setOpeningOwner(false);
+    }
+  }
+
+  const status = t.awaitingReply ? `Waiting for a reply since ${when.format(new Date(t.awaitingReply.since))}. Reply by ${when.format(new Date(t.awaitingReply.due))} (same working day).` : null;
   return (
     <>
       <Link href="/team/messages" className="text-sm underline">
         ← Messages
       </Link>
       <PageTitle
-        title={t.client.name}
-        subtitle={t.awaitingReply ? `Waiting for a reply since ${when.format(new Date(t.awaitingReply.since))}. Reply by ${when.format(new Date(t.awaitingReply.due))} (same working day).` : `Client Manager: ${t.am ?? "not assigned"}. All caught up.`}
+        title={isOwnerChat ? `${t.client.name} · BMU Owner chat` : t.client.name}
+        subtitle={
+          isOwnerChat
+            ? `${status ?? "All caught up."} Private chat between you (BMU Owner) and the client. Their Client Manager does not see it. The client sees it once you send the first message.`
+            : (status ?? `Client Manager: ${t.am ?? "not assigned"}. All caught up.`)
+        }
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {t.awaitingReply && <Badge tone={t.awaitingReply.overdue ? "red" : "amber"}>{t.awaitingReply.overdue ? "Reply overdue" : "Awaiting reply"}</Badge>}
+            {isFounder && !isOwnerChat && (
+              <button type="button" onClick={() => openOwnerChat(t.client.id)} disabled={openingOwner} className="bg-charcoal px-3 py-1.5 text-sm font-medium text-ivory disabled:opacity-60" data-testid="open-owner-chat">
+                {openingOwner ? "Opening…" : "Message as BMU Owner"}
+              </button>
+            )}
             <Link href={`/team/clients/${t.client.id}`} className="text-sm underline">
               Client 360
             </Link>
           </div>
         }
       />
+      {ownerError && <p className="mb-3 text-sm text-red">{ownerError}</p>}
       <Chat
         thread={t}
-        allowInternal
+        allowInternal={!isOwnerChat}
         onSend={async (body, internal, files) => setFresh(await api.threads.send(id, body, internal, files))}
         onRefresh={async () => setFresh(await api.threads.get(id))}
         onUpload={(f) => api.service.uploadAttachment(f, id)}

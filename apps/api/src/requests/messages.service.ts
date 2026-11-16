@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { endOfWorkingDay, type Me, type ThreadAttachment, type ThreadMessage, type ThreadSummary, type ThreadView } from '@bmu/shared';
+import { endOfWorkingDay, type ClientChatList, type Me, type ThreadAttachment, type ThreadMessage, type ThreadSummary, type ThreadView } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { isLeadership } from '../engagements/engagement-access.js';
@@ -14,11 +14,18 @@ type Row = Prisma.ThreadGetPayload<{ include: typeof include }>;
 export type UploadedAttachment = { path: string; originalname: string; mimetype: string; size: number };
 export const ATTACHMENT_KIND = 'message_attachment';
 
-/** Staff who see client threads: their own clients for CMs, every client for leadership. */
+/** Client ↔ Client Manager chat (one per client, always there). */
+export const CM_THREAD = 'client_am';
+/** Client ↔ BMU Owner (Founder) chat: only the Founder starts it; the client sees it after the first message. */
+export const OWNER_THREAD = 'client_owner';
+const isFounder = (me: Me) => me.type === 'staff' && me.roles.includes('founder');
+
+/** Staff who see client threads: their own clients for CMs, every client for leadership. Owner chats: Founder only. */
 export async function threadScope(me: Me): Promise<Prisma.ThreadWhereInput> {
   if (me.type !== 'staff') throw new ForbiddenException();
-  if (isLeadership(me)) return { orgId: me.orgId };
-  if (me.roles.includes('account_manager')) return { orgId: me.orgId, clientOrg: { amUserId: me.id } };
+  if (isFounder(me)) return { orgId: me.orgId };
+  if (isLeadership(me)) return { orgId: me.orgId, type: { not: OWNER_THREAD } };
+  if (me.roles.includes('account_manager')) return { orgId: me.orgId, type: { not: OWNER_THREAD }, clientOrg: { amUserId: me.id } };
   throw new ForbiddenException('Client threads are for Client Managers and leadership');
 }
 
@@ -50,9 +57,10 @@ export async function unreadByThread(prisma: PrismaService, me: Me, threadIds: s
 /** Total unread for the menu badge (clients: their thread; CMs: their clients; leadership: every client thread). */
 export async function unreadMessages(prisma: PrismaService, me: Me) {
   let where: Prisma.ThreadWhereInput;
-  if (me.type === 'client' && me.clientOrg) where = { clientOrgId: me.clientOrg.id, type: 'client_am' };
-  else if (me.type === 'staff' && me.roles.includes('account_manager') && !isLeadership(me)) where = { orgId: me.orgId, type: 'client_am', clientOrg: { amUserId: me.id } };
-  else if (me.type === 'staff' && isLeadership(me)) where = { orgId: me.orgId, type: 'client_am' };
+  if (me.type === 'client' && me.clientOrg) where = { clientOrgId: me.clientOrg.id, type: { in: [CM_THREAD, OWNER_THREAD] } };
+  else if (me.type === 'staff' && me.roles.includes('account_manager') && !isLeadership(me)) where = { orgId: me.orgId, type: CM_THREAD, clientOrg: { amUserId: me.id } };
+  else if (isFounder(me)) where = { orgId: me.orgId, type: { in: [CM_THREAD, OWNER_THREAD] } };
+  else if (me.type === 'staff' && isLeadership(me)) where = { orgId: me.orgId, type: CM_THREAD };
   else return 0;
   const threads = await prisma.thread.findMany({ where, select: { id: true } });
   const map = await unreadByThread(
@@ -118,22 +126,72 @@ export class MessagesService {
       create: { threadId: t.id, userId: me.id, orgId: t.orgId, lastReadAt: new Date() },
       update: { lastReadAt: new Date() },
     });
-    return { id: t.id, client: { id: t.clientOrg.id, name: t.clientOrg.name }, am: t.clientOrg.am?.name ?? null, messages: msgs, awaitingReply: me.type === 'staff' ? await this.awaiting(t, authors) : null, unread };
+    return { id: t.id, kind: t.type === OWNER_THREAD ? OWNER_THREAD : CM_THREAD, client: { id: t.clientOrg.id, name: t.clientOrg.name }, am: t.clientOrg.am?.name ?? null, messages: msgs, awaitingReply: me.type === 'staff' ? await this.awaiting(t, authors) : null, unread };
   }
 
   private async clientThread(me: Me) {
     if (!me.clientOrg) throw new ForbiddenException('Client accounts only');
-    const existing = await this.prisma.thread.findFirst({ where: { clientOrgId: me.clientOrg.id, type: 'client_am' }, include, orderBy: { id: 'asc' } });
+    const existing = await this.prisma.thread.findFirst({ where: { clientOrgId: me.clientOrg.id, type: CM_THREAD }, include, orderBy: { id: 'asc' } });
     if (existing) return existing;
-    return this.prisma.thread.create({ data: { orgId: me.orgId, clientOrgId: me.clientOrg.id, type: 'client_am' }, include });
+    return this.prisma.thread.create({ data: { orgId: me.orgId, clientOrgId: me.clientOrg.id, type: CM_THREAD }, include });
+  }
+
+  /** The client's Owner chat, or null until the Founder has sent the first message. Clients never create it. */
+  private async clientOwnerThread(me: Me) {
+    if (!me.clientOrg) throw new ForbiddenException('Client accounts only');
+    return this.prisma.thread.findFirst({ where: { clientOrgId: me.clientOrg.id, type: OWNER_THREAD, messages: { some: {} } }, include, orderBy: { id: 'asc' } });
   }
 
   async forClient(me: Me) {
     return this.view(me, await this.clientThread(me));
   }
 
+  async forClientOwner(me: Me) {
+    const t = await this.clientOwnerThread(me);
+    if (!t) throw new NotFoundException('BMU Owner has not messaged you yet');
+    return this.view(me, t);
+  }
+
+  /** The client's chat list (WhatsApp style): BMU Owner (once they have written) and their Client Manager. Does not mark anything read. */
+  async clientChats(me: Me): Promise<ClientChatList> {
+    const cm = await this.clientThread(me);
+    const owner = await this.clientOwnerThread(me);
+    const rows = owner ? [owner, cm] : [cm];
+    const unread = await unreadByThread(
+      this.prisma,
+      me,
+      rows.map((t) => t.id),
+    );
+    const summary = async (t: Row) => {
+      const authors = await this.authors(t.messages);
+      const last = t.messages.filter((m) => !m.isInternal).at(-1);
+      const a = last && authors.find((x) => x.id === last.authorId);
+      return {
+        lastMessage: last ? { body: (last.body || (last.attachments.length ? 'Sent an attachment' : '')).slice(0, 140), author: a?.name ?? '', at: last.createdAt.toISOString(), mine: last.authorId === me.id } : null,
+        unread: unread.get(t.id) ?? 0,
+      };
+    };
+    return {
+      owner: owner ? await summary(owner) : null,
+      am: { name: cm.clientOrg.am?.name ?? null, ...(await summary(cm)) },
+    };
+  }
+
+  /** Founder only: opens (or starts) the Owner chat with a client. */
+  async ownerThreadFor(me: Me, clientOrgId: string) {
+    if (!isFounder(me)) throw new ForbiddenException('Only the Founder has an Owner chat with clients');
+    const client = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId }, select: { id: true } });
+    if (!client) throw new NotFoundException('Client not found');
+    const t =
+      (await this.prisma.thread.findFirst({ where: { clientOrgId, type: OWNER_THREAD }, include, orderBy: { id: 'asc' } })) ??
+      (await this.prisma.thread.create({ data: { orgId: me.orgId, clientOrgId, type: OWNER_THREAD }, include }));
+    return this.view(me, t);
+  }
+
   async list(me: Me): Promise<ThreadSummary[]> {
-    const rows = await this.prisma.thread.findMany({ where: { ...(await threadScope(me)), type: 'client_am' }, include });
+    // The Founder also sees their Owner chats that have messages (an opened but empty one stays out of the list).
+    const types = isFounder(me) ? { OR: [{ type: CM_THREAD }, { type: OWNER_THREAD, messages: { some: {} } }] } : { type: CM_THREAD };
+    const rows = await this.prisma.thread.findMany({ where: { AND: [await threadScope(me), types] }, include });
     const unread = await unreadByThread(
       this.prisma,
       me,
@@ -146,6 +204,7 @@ export class MessagesService {
       const a = last && authors.find((x) => x.id === last.authorId);
       out.push({
         id: t.id,
+        kind: t.type === OWNER_THREAD ? OWNER_THREAD : CM_THREAD,
         client: { id: t.clientOrg.id, name: t.clientOrg.name },
         lastMessage: last ? { body: (last.body || (last.attachments.length ? 'Sent an attachment' : '')).slice(0, 140), author: a?.name ?? '', at: last.createdAt.toISOString(), isClient: a?.type === 'client' } : null,
         awaitingReply: await this.awaiting(t, authors),
@@ -161,16 +220,21 @@ export class MessagesService {
     return this.view(me, t);
   }
 
-  private async threadFor(me: Me, threadId: string | null) {
-    const t = threadId ? await this.prisma.thread.findFirst({ where: { AND: [{ id: threadId }, await threadScope(me)] }, include }) : await this.clientThread(me);
+  /** Staff: the thread by id (within their scope). Client: their Client Manager chat, or their Owner chat with `owner`. */
+  private async threadFor(me: Me, threadId: string | null, owner = false) {
+    const t = threadId
+      ? await this.prisma.thread.findFirst({ where: { AND: [{ id: threadId }, await threadScope(me)] }, include })
+      : owner
+        ? await this.clientOwnerThread(me)
+        : await this.clientThread(me);
     if (!t) throw new NotFoundException('Thread not found');
     return t;
   }
 
   /** Stores an uploaded file for a thread; it is attached when the message is sent. */
-  async upload(me: Me, threadId: string | null, file: UploadedAttachment | undefined, storageRoot: string) {
+  async upload(me: Me, threadId: string | null, file: UploadedAttachment | undefined, storageRoot: string, owner = false) {
     if (!file) throw new BadRequestException('Choose a file to attach');
-    const t = await this.threadFor(me, threadId);
+    const t = await this.threadFor(me, threadId, owner);
     const rel = file.path.startsWith(storageRoot) ? file.path.slice(storageRoot.length).replace(/^[/\\]+/, '') : file.path;
     const row = await this.prisma.file.create({
       data: { orgId: t.orgId, clientOrgId: t.clientOrgId, path: rel, kind: ATTACHMENT_KIND, name: file.originalname.slice(0, 200), mimeType: file.mimetype, sizeBytes: file.size, released: true },
@@ -189,7 +253,8 @@ export class MessagesService {
     } else {
       // v36: people who may see the file in Files (it was sent in the client conversation) can open it too.
       const msg = await this.prisma.message.findFirst({ where: { attachments: { has: fileId } }, select: { thread: { select: { type: true } } } });
-      if (msg?.thread.type === 'client_am' && canSeeFile(me, await fileScope(this.prisma, me), file)) return file;
+      if (msg?.thread.type === OWNER_THREAD && !isFounder(me)) throw new NotFoundException('File not found');
+      if (msg?.thread.type === CM_THREAD && canSeeFile(me, await fileScope(this.prisma, me), file)) return file;
       const scope = await threadScope(me).catch(() => null);
       const ok = scope && (await this.prisma.thread.findFirst({ where: { AND: [{ clientOrgId: file.clientOrgId ?? '' }, scope] }, select: { id: true } }));
       if (!ok) throw new NotFoundException('File not found');
@@ -197,8 +262,9 @@ export class MessagesService {
     return file;
   }
 
-  async send(me: Me, threadId: string | null, body: string, internal: boolean, ip?: string, attachmentIds: string[] = []) {
-    const t = await this.threadFor(me, threadId);
+  async send(me: Me, threadId: string | null, body: string, internal: boolean, ip?: string, attachmentIds: string[] = [], owner = false) {
+    const t = await this.threadFor(me, threadId, owner);
+    const isOwnerChat = t.type === OWNER_THREAD;
     const isInternal = me.type === 'staff' && internal;
     const ids = [...new Set(attachmentIds)];
     if (ids.length) {
@@ -209,10 +275,14 @@ export class MessagesService {
     await this.audit.log(me, 'message.sent', 'Thread', t.id, undefined, { internal: isInternal, attachments: ids.length }, ip);
     const preview = (body || `Sent ${ids.length} attachment${ids.length === 1 ? '' : 's'}`).slice(0, 140);
     if (me.type === 'client') {
-      await this.notifications.notify(t.orgId, [t.clientOrg.am?.id], { kind: 'message', title: `Message from ${me.name} (${t.clientOrg.name})`, body: preview, link: `/team/messages/${t.id}` });
+      // Owner chat → the Founder(s); Client Manager chat → the client's CM.
+      const to = isOwnerChat
+        ? (await this.prisma.user.findMany({ where: { orgId: t.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, select: { id: true } })).map((u) => u.id)
+        : [t.clientOrg.am?.id];
+      await this.notifications.notify(t.orgId, to, { kind: 'message', title: `Message from ${me.name} (${t.clientOrg.name})`, body: preview, link: `/team/messages/${t.id}` });
     } else if (!isInternal) {
       const clientUsers = await this.prisma.clientUser.findMany({ where: { clientOrgId: t.clientOrgId }, select: { userId: true } });
-      await this.notifications.notify(t.orgId, clientUsers.map((c) => c.userId), { kind: 'message', title: `New message from ${me.name}`, body: preview, link: '/client/messages' });
+      await this.notifications.notify(t.orgId, clientUsers.map((c) => c.userId), { kind: 'message', title: `New message from ${me.name}`, body: preview, link: isOwnerChat ? '/client/messages?chat=owner' : '/client/messages' });
     }
     const fresh = await this.prisma.thread.findUniqueOrThrow({ where: { id: t.id }, include });
     return this.view(me, fresh);
