@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { craftSpecialtyLabel, isCraftManager, isCraftSpecialty } from "@bmu/shared";
+import { craftSpecialtyLabel, craftWorkspace, isCraftManager } from "@bmu/shared";
 import { CraftDashboard } from "@/components/craft/craft-dashboard";
 import { ManagerDashboard } from "@/components/craft/manager-dashboard";
 import { CustomiseLink } from "@/components/dashboards/customise-link";
@@ -25,7 +25,7 @@ export default async function MyDay() {
   if (dash && !dash.builtin) return <CustomDashboard view={dash} />;
   const layout = dash?.layout;
   // v10 craft: specialists get their own workspace (My Day essentials stay as a strip on top).
-  if (isCraftSpecialty(me.specialty)) {
+  if (craftWorkspace(me.specialty)) {
     return (
       <>
         <PageTitle

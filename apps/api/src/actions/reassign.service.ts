@@ -19,6 +19,7 @@ import {
   type CoreReassignPreviewInput,
   type CoreReassignResult,
   type Me,
+  craftSameWork,
 } from '@bmu/shared';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -115,7 +116,7 @@ export class ReassignService implements OnModuleInit {
         suggested: false,
         current: owners.size === 1 && owners.has(p.id),
         blockedReason,
-        _fit: (elig.specialty && p.specialty === elig.specialty ? 0 : 1) + (elig.departmentId && p.departmentId === elig.departmentId ? 0 : 1),
+        _fit: (craftSameWork(p.specialty, elig.specialty) ? 0 : 1) + (elig.departmentId && p.departmentId === elig.departmentId ? 0 : 1),
       };
     });
     rows.sort((a, b) => Number(!!a.blockedReason) - Number(!!b.blockedReason) || Number(a.onLeave) - Number(b.onLeave) || a._fit - b._fit || a.loadPct - b.loadPct || a.name.localeCompare(b.name));
