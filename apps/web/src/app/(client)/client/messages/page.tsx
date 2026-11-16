@@ -52,9 +52,9 @@ export default function ClientMessagesPage() {
     return () => {
       stale = true;
     };
-    // Only when the chosen chat changes or the Owner chat first appears.
+    // When the list first arrives, the chosen chat changes, or the Owner chat first appears.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, !!chats?.owner, loadThread, refreshList]);
+  }, [!!chats, selected, !!chats?.owner, loadThread, refreshList]);
 
   // The list refreshes every 15 seconds (new chats, unread counts), like the open chat does.
   useEffect(() => {
