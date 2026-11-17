@@ -78,9 +78,14 @@ export class OpsCommsService {
     const ids = [...new Set(rows.flatMap((t) => [...t.participantIds, ...t.messages.map((m) => m.authorId), t.createdById ?? '']))].filter(Boolean);
     const users = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
     const name = (id: string | null) => users.find((u) => u.id === id)?.name ?? 'Team';
+    // Unread: messages from other people since this person last opened the discussion (all of them if never opened).
+    const reads = rows.length ? await this.prisma.threadRead.findMany({ where: { userId: me.id, threadId: { in: rows.map((t) => t.id) } }, select: { threadId: true, lastReadAt: true } }) : [];
     return rows.map((t) => {
       const last = t.messages.at(-1);
+      const since = reads.find((r) => r.threadId === t.id)?.lastReadAt;
+      const unread = t.messages.filter((m) => m.authorId !== me.id && (!since || m.createdAt > since)).length;
       return {
+        unread,
         id: t.id,
         kind: t.type,
         title: t.title ?? 'Discussion',
@@ -129,6 +134,12 @@ export class OpsCommsService {
   async thread(me: Me, id: string): Promise<OpsThreadView> {
     const t = await this.load(me, id);
     const [s] = await this.summaries(me, [t]);
+    // Opening a discussion marks it read for this person (the list's unread count goes back to 0).
+    await this.prisma.threadRead.upsert({
+      where: { threadId_userId: { threadId: t.id, userId: me.id } },
+      create: { threadId: t.id, userId: me.id, orgId: t.orgId, lastReadAt: new Date() },
+      update: { lastReadAt: new Date() },
+    });
     const fileIds = t.messages.flatMap((m) => m.attachments);
     const [users, files] = await Promise.all([
       this.prisma.user.findMany({ where: { id: { in: t.messages.map((m) => m.authorId) } }, select: { id: true, name: true } }),
@@ -138,6 +149,12 @@ export class OpsCommsService {
       const f = files.find((x) => x.id === id);
       return f ? { id: f.id, name: f.name ?? 'file', url: f.kind === 'link' ? f.path : `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes, kind: f.kind } : null;
     };
+    // Ticks on my messages (like WhatsApp): "seen" once everyone else in the discussion has opened it after the message.
+    // The people in it: who started it, who was added, the client's CM on project threads, and anyone who has written.
+    const members = new Set([t.createdById, ...t.participantIds, t.type === 'project' ? t.clientOrg.amUserId : null, ...t.messages.map((m) => m.authorId)].filter((x): x is string => !!x));
+    members.delete(me.id);
+    const reads = members.size ? await this.prisma.threadRead.findMany({ where: { threadId: t.id, userId: { in: [...members] } }, select: { userId: true, lastReadAt: true } }) : [];
+    const seenByAll = (at: Date) => members.size > 0 && [...members].every((u) => (reads.find((r) => r.userId === u)?.lastReadAt ?? new Date(0)) >= at);
     return {
       ...s,
       messages: t.messages.map((m) => ({
@@ -147,6 +164,7 @@ export class OpsCommsService {
         mine: m.authorId === me.id,
         at: m.createdAt.toISOString(),
         attachments: m.attachments.map(sent).filter((x): x is SentFile => !!x),
+        ...(m.authorId === me.id ? { seen: seenByAll(m.createdAt) } : {}),
       })),
       canPost: true,
     };

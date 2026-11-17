@@ -348,7 +348,7 @@ export const opsThreadCreateSchema = z.object({
   message: z.string().trim().max(4000).default(""),
 });
 export type OpsThreadCreate = z.input<typeof opsThreadCreateSchema>;
-export type OpsThreadSummary = { id: string; kind: string; title: string; client: { id: string; name: string }; engagement: string | null; participants: string[]; lastMessage: { body: string; author: string; at: string } | null; createdAt: string };
+export type OpsThreadSummary = { id: string; /** Messages from other people since you last opened it. */ unread?: number; kind: string; title: string; client: { id: string; name: string }; engagement: string | null; participants: string[]; lastMessage: { body: string; author: string; at: string } | null; createdAt: string };
 /** v38: a file sent in a discussion or on a task. */
 export type SentFile = { id: string; name: string; url: string; mimeType: string | null; sizeBytes: number | null; by?: string; at?: string; /** "link": a Drive (or other) link instead of an upload. */ kind?: string };
 /** v39: a Drive (or any) link sent instead of a file, e.g. when the file is over the upload limit. */
@@ -370,7 +370,19 @@ export const sentLinkName = (url: string) => {
   if (/wetransfer\.com$|we\.tl$/.test(host)) return "WeTransfer link";
   return `${host} link`;
 };
-export type OpsThreadView = OpsThreadSummary & { messages: { id: string; body: string; author: string; mine: boolean; at: string; attachments?: SentFile[] }[]; canPost: boolean };
+export type OpsThreadView = OpsThreadSummary & {
+  messages: {
+    id: string;
+    body: string;
+    author: string;
+    mine: boolean;
+    at: string;
+    attachments?: SentFile[];
+    /** My messages only: true once everyone else in the discussion has read it (blue ticks). */
+    seen?: boolean;
+  }[];
+  canPost: boolean;
+};
 export const opsThreadPostSchema = z
   .object({ body: z.string().trim().max(4000).default(""), attachmentIds: z.array(z.string()).max(5).default([]) })
   .refine((m) => m.body.length > 0 || m.attachmentIds.length > 0, { message: "Write a message or attach a file", path: ["body"] });
