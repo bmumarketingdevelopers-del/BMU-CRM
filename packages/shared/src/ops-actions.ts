@@ -344,7 +344,8 @@ export const opsThreadCreateSchema = z.object({
   engagementId: z.string().optional(),
   title: z.string().trim().min(3, "Give the discussion a title").max(160),
   participantIds: z.array(z.string()).max(30).default([]),
-  message: z.string().trim().min(1, "Write the first message").max(4000),
+  /** Optional: the website starts an empty discussion and people write inside it. */
+  message: z.string().trim().max(4000).default(""),
 });
 export type OpsThreadCreate = z.input<typeof opsThreadCreateSchema>;
 export type OpsThreadSummary = { id: string; kind: string; title: string; client: { id: string; name: string }; engagement: string | null; participants: string[]; lastMessage: { body: string; author: string; at: string } | null; createdAt: string };

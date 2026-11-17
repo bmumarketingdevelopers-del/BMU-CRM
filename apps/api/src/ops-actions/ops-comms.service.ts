@@ -210,7 +210,8 @@ export class OpsCommsService {
         title: input.title,
         createdById: me.id,
         participantIds: people.map((p) => p.id),
-        messages: { create: { orgId: me.orgId, authorId: me.id, body: input.message, isInternal: true } },
+        // A first message only when one was given; otherwise the discussion starts empty.
+        ...(input.message ? { messages: { create: { orgId: me.orgId, authorId: me.id, body: input.message, isInternal: true } } } : {}),
       },
     });
     await this.audit.log(me, 'thread.started', 'ClientOrg', client.id, undefined, { threadId: t.id, kind: input.kind, title: input.title, participants: people.length }, ip);
@@ -219,7 +220,7 @@ export class OpsCommsService {
     await this.notifications.notify(
       me.orgId,
       notifyIds.filter((x) => x !== me.id),
-      { kind: 'thread_started', title: `${me.name} started "${input.title}"`, body: `${client.name}: ${input.message.slice(0, 120)}`, link: `/team/discussions/${t.id}`, noEmail: true },
+      { kind: 'thread_started', title: `${me.name} started "${input.title}"`, body: input.message ? `${client.name}: ${input.message.slice(0, 120)}` : client.name, link: `/team/discussions/${t.id}`, noEmail: true },
     );
     return { id: t.id, message: input.kind === 'project' ? 'Project thread started' : 'Internal discussion started' };
   }
