@@ -413,6 +413,19 @@ export class ClientsManageService implements OnModuleInit {
     return { ...(await this.detail(me, c.id)), message };
   }
 
+  /** Client 360 → Users → Resend invite: emails the invitation again to a client user who has not signed in yet. */
+  async resendInvite(me: Me, clientOrgId: string, userId: string, ip?: string) {
+    const { client: c } = await loadClient(this.prisma, me, clientOrgId, { write: true });
+    if (!runsClient(me, c)) throw new ForbiddenException("Only the client's Client Manager or a Branch Manager can send invites");
+    const u = await this.prisma.user.findFirst({ where: { id: userId, orgId: me.orgId, type: 'client', deletedAt: null, clientUser: { clientOrgId: c.id } }, select: { id: true, name: true, email: true, status: true } });
+    if (!u) throw new NotFoundException('That person is not a user of this client');
+    if (u.status !== 'invited') throw new BadRequestException(`${u.name} has already signed in`);
+    if (!u.email) throw new BadRequestException(`${u.name} has no email. They sign in with their mobile number`);
+    await this.creator.sendInvites(me, c.id, [u.id]);
+    await this.audit.log(me, 'client_user.invite_resent', 'User', u.id, null, { clientOrgId: c.id, email: u.email }, ip);
+    return { ...(await this.detail(me, c.id)), message: `Invitation sent again to ${u.email}` };
+  }
+
   /** Approved Owner invite (by a Branch Manager in "Needs you", or by the client's Owner in the app). */
   async addConfirmedOwner(by: Me, clientOrgId: string, invite: ClientsInvite) {
     const c = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: by.orgId } });

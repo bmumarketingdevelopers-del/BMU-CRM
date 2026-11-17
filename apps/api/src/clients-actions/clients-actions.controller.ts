@@ -188,6 +188,12 @@ export class ClientsActionsController {
     return this.manage.invite(me, id, body, ip);
   }
 
+  @Post(':id/users/:userId/invite')
+  @HttpCode(200)
+  resendInvite(@CurrentUser() me: Me, @Param('id') id: string, @Param('userId') userId: string, @ClientIp() ip?: string) {
+    return this.manage.resendInvite(me, id, userId, ip);
+  }
+
   @Post(':id/health')
   @HttpCode(200)
   health(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {

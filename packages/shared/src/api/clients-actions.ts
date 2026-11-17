@@ -47,6 +47,7 @@ export const clientsActionsApi = (t: Transport) => ({
     addBrand: (id: string, input: ClientsBrandInput) => t.post<ClientsDetail>(`/clients-actions/${id}/brands`, input),
     removeBrand: (id: string, brandId: string) => t.del<ClientsDetail>(`/clients-actions/${id}/brands/${brandId}`),
     invite: (id: string, input: ClientsInvite) => t.post<ClientsDetail & { message: string }>(`/clients-actions/${id}/users`, input),
+    resendInvite: (id: string, userId: string) => t.post<ClientsDetail & { message: string }>(`/clients-actions/${id}/users/${userId}/invite`, {}),
     health: (id: string, input: { status: string; reason: string }) => t.post<ClientsDetail>(`/clients-actions/${id}/health`, input),
     quote: (id: string, input: ClientsQuoteInput) => t.post<ClientsDetail & { message: string }>(`/clients-actions/${id}/quotes`, input),
     /** v43: add one or more services straight away (no quote, nothing sent to the client). */
