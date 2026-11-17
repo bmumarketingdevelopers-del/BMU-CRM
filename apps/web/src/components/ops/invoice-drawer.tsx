@@ -41,6 +41,20 @@ export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
   const valid = lines.filter((l) => l.label.trim() && toPaise(l.amount) > 0);
   const totals = opsInvoiceTotals(valid.map((l) => ({ kind: l.kind, amountPaise: toPaise(l.amount) })), o?.gstRatePct ?? 18);
 
+  /** A service on a Starter / Growth / Premium plan fills the first empty service line with today's plan price. */
+  function pickService(id: string) {
+    setEngagement(id);
+    const eng = client?.engagements.find((x) => x.id === id);
+    if (!eng?.planPricePaise) return;
+    const label = `${eng.name} (${eng.tier.charAt(0).toUpperCase()}${eng.tier.slice(1)} plan)`;
+    const amount = String(eng.planPricePaise / 100);
+    setLines((ls) => {
+      const i = ls.findIndex((l) => l.kind === "service" && !l.label.trim() && !l.amount.trim());
+      const filled: Line = { label, kind: "service", amount, title: eng.planNote ? label : "", details: eng.planNote ?? "" };
+      return i < 0 ? [...ls, filled] : ls.map((l, j) => (j === i ? filled : l));
+    });
+  }
+
   /** v27: the wording printed on the invoice for every line with a short description. */
   async function writeWording() {
     const todo = lines.map((l, i) => ({ l, i })).filter((x) => x.l.label.trim().length >= 2);
@@ -133,7 +147,7 @@ export function InvoiceDrawer({ open, onClose, prefill, onSaved }: NewDrawerProp
       </Field>
       {client && client.engagements.length > 0 && (
         <Field label="Service (optional)">
-          <select className={inputCls} value={engagementId} onChange={(e) => setEngagement(e.target.value)} aria-label="Service">
+          <select className={inputCls} value={engagementId} onChange={(e) => pickService(e.target.value)} aria-label="Service">
             <option value="">Not for one service</option>
             {client.engagements.map((x) => (
               <option key={x.id} value={x.id}>

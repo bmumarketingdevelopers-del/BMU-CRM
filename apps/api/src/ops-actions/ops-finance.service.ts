@@ -27,6 +27,7 @@ import { ApprovalsService } from '../actions/approvals.service.js';
 import { ActionsRegistry } from '../actions/registry.js';
 import { UndoService } from '../actions/undo.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { activePlanPrices } from '../catalogue/catalogue.service.js';
 import { parse } from '../common/zod.js';
 import { FinanceService } from '../insights/finance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -156,15 +157,27 @@ export class OpsFinanceService implements OnModuleInit {
     // v29: a Client Manager picks from their own clients (the CM Lead from every client).
     const cm = opsCanFinance(me) ? null : cmClientWhere(me);
     if (!opsCanFinance(me) && !cm) this.assertFinance(me);
-    const [clients, gst] = await Promise.all([
+    const [clients, gst, plan] = await Promise.all([
       this.prisma.clientOrg.findMany({
         where: { orgId: me.orgId, deletedAt: null, archivedAt: null, ...(cm ?? {}) },
-        select: { id: true, name: true, gstin: true, engagements: { where: { deletedAt: null }, select: { id: true, service: { select: { name: true } } } } },
+        select: { id: true, name: true, gstin: true, engagements: { where: { deletedAt: null }, select: { id: true, tier: true, service: { select: { name: true, key: true } } } } },
         orderBy: { name: 'asc' },
       }),
       this.settings.get(me.orgId, 'gst'),
+      activePlanPrices(this.prisma, me.orgId),
     ]);
-    return { clients: clients.map((c) => ({ id: c.id, name: c.name, gstin: c.gstin, engagements: c.engagements.map((e) => ({ id: e.id, name: e.service.name })) })), gstRatePct: gst.ratePct };
+    return {
+      clients: clients.map((c) => ({
+        id: c.id,
+        name: c.name,
+        gstin: c.gstin,
+        engagements: c.engagements.map((e) => {
+          const p = plan(e.service.key, e.tier);
+          return { id: e.id, name: e.service.name, tier: e.tier, planPricePaise: p?.pricePaise ?? null, planNote: p?.note ?? null };
+        }),
+      })),
+      gstRatePct: gst.ratePct,
+    };
   }
 
   private async nextNumber(tx: Pick<PrismaService, 'invoice'>, orgId: string) {

@@ -48,7 +48,8 @@ const qs = (params: Record<string, string | undefined>) => {
 type Msg = { message: string };
 
 export type OpsLeadOptions = { team: { id: string; name: string; manager: boolean }[]; canPickOwner: boolean; referralOnly: boolean; nextOwner: string | null; firstReplyMinutes: number };
-export type OpsFinanceOptions = { clients: { id: string; name: string; gstin: string | null; engagements: { id: string; name: string }[] }[]; gstRatePct: number };
+/** An engagement with a price-book plan carries today's plan price and catalogue note, so the invoice line can start from them. */
+export type OpsFinanceOptions = { clients: { id: string; name: string; gstin: string | null; engagements: { id: string; name: string; tier: string; planPricePaise: number | null; planNote: string | null }[] }[]; gstRatePct: number };
 export type OpsDraftInvoice = { id: string; number: string; client: string; clientId: string | null; totalPaise: number; dueDate: string; createdAt: string };
 export type OpsThreadOptions = { clients: { id: string; name: string; engagements: { id: string; name: string }[] }[]; people: { id: string; name: string }[] };
 export type OpsClientFiles = {

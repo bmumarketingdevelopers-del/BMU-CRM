@@ -36,6 +36,7 @@ import { RecordsService } from '../actions/records.service.js';
 import { ActionsRegistry } from '../actions/registry.js';
 import { UndoService } from '../actions/undo.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { activePlanPrices } from '../catalogue/catalogue.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assertStaff, contactOf, hasHandoverAccess, isAdmin, isClientLead, loadClient, runsClient, seesAllClients } from './clients-access.js';
@@ -225,6 +226,7 @@ export class ClientsManageService implements OnModuleInit {
     const trail = await this.prisma.assignment.findMany({ where: { orgId: me.orgId, targetType: 'client_am', targetId: c.id }, orderBy: { at: 'desc' }, take: 20 });
     const names = await this.people.names(trail.flatMap((a) => [a.fromUserId, a.toUserId, a.byId]).filter((x): x is string => !!x));
     const subs = await this.prisma.subService.findMany({ where: { id: { in: engagements.flatMap((e) => e.subServiceIds) } }, select: { id: true, name: true, covers: true } });
+    const plan = await activePlanPrices(this.prisma, me.orgId);
     const amHistory = trail.map((a) => ({ id: a.id, at: a.at.toISOString(), from: a.fromUserId ? (names.get(a.fromUserId) ?? null) : null, to: a.toUserId ? (names.get(a.toUserId) ?? null) : null, by: names.get(a.byId) ?? 'Someone', reason: a.reason, note: a.note, handoverNote: a.handoverNote }));
     return {
       id: c.id,
@@ -242,7 +244,7 @@ export class ClientsManageService implements OnModuleInit {
       brands: brands.map((b) => ({ id: b.id, name: b.name, address: b.location })),
       users: users.map((u) => ({ id: u.userId, name: u.user.name, email: u.user.email, phone: u.user.phone, role: ((CLIENT_TEAM_ROLES as readonly string[]).includes(u.clientRole) ? u.clientRole : 'client_viewer') as ClientTeamRole, status: u.user.status, brandScope: u.brandScope })),
       pendingInvites: invites,
-      services: engagements.map((e) => ({ id: e.id, serviceName: e.service.name, serviceId: e.serviceId, tier: e.tier, grouped: e.service.key.startsWith(SERVICE_GROUP_KEY_PREFIX), subServices: e.subServiceIds.flatMap((id) => subs.filter((s) => s.id === id)), monthlyFeePaise: e.monthlyFeePaise, billingType: e.billingType, status: e.status, currentGate: e.currentGate, migrated: e.migrated, paymentPending: e.paymentPending, pausedUntil: e.pausedUntil?.toISOString() ?? null, pauseReason: e.pauseReason, startMonth: e.startMonth })),
+      services: engagements.map((e) => ({ id: e.id, serviceName: e.service.name, serviceId: e.serviceId, tier: e.tier, grouped: e.service.key.startsWith(SERVICE_GROUP_KEY_PREFIX), subServices: e.subServiceIds.flatMap((id) => subs.filter((s) => s.id === id)), monthlyFeePaise: e.monthlyFeePaise, planPricePaise: plan(e.service.key, e.tier)?.pricePaise ?? null, planNote: plan(e.service.key, e.tier)?.note ?? null, billingType: e.billingType, status: e.status, currentGate: e.currentGate, migrated: e.migrated, paymentPending: e.paymentPending, pausedUntil: e.pausedUntil?.toISOString() ?? null, pauseReason: e.pauseReason, startMonth: e.startMonth })),
       quotes: await this.quoteViews(quotes),
       pendingApprovals: pendingApprovals.map((a) => ({ id: a.id, action: a.action, summary: a.summary, status: a.status, createdAt: a.createdAt.toISOString() })),
       offboarding: off,
