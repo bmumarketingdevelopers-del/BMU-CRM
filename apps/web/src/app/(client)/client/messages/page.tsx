@@ -4,16 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import type { ClientChatList, ThreadView } from "@bmu/shared";
 import { Chat } from "@/components/chat";
 import { LoadState, PageTitle } from "@/components/ui";
+// WhatsApp-style list time (today "6:14 pm", "Yesterday", day name, then "08/11/2026"), same as Discussions.
+import { listTime as timeOf } from "@/components/ops/discussion-chat";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
 type ChatKey = "owner" | "am";
-
-const timeOf = (iso: string) => {
-  const d = new Date(iso);
-  const today = new Date().toDateString() === d.toDateString();
-  return new Intl.DateTimeFormat("en-IN", today ? { timeStyle: "short", timeZone: "Asia/Kolkata" } : { day: "numeric", month: "short", timeZone: "Asia/Kolkata" }).format(d);
-};
 
 /**
  * Client messages, WhatsApp style: a chat list (BMU Owner once the Founder has written, then the Client Manager)
