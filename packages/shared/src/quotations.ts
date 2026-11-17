@@ -25,7 +25,7 @@ export const quoteLineSchema = z.object({
   unitPricePaise: z.number().int().min(0).max(10_000_000_000).default(0),
   /** Percentage of the unit lines (percent lines). */
   pct: z.number().min(0).max(100).default(0),
-  /** v47: the sub-service this line came from, so unticking its service takes it away again. */
+  /** v47: the sub-service this line came from, so unticking its service takes it away again. A plan line uses `plan:<service id>`. */
   subServiceId: z.string().optional(),
 });
 export type QuoteLine = z.infer<typeof quoteLineSchema>;
@@ -219,19 +219,28 @@ export const DEFAULT_QUOTE_TEMPLATE: QuoteTemplateInput = {
 
 export type QuoteClientDetails = { company: string; owner: string | null; email: string | null; address: string | null };
 
-/** v47: a service ticked on a quotation, with its sub-services. */
-export type QuoteServicePick = { name: string; billingType?: string; subServices: { id: string; name: string; covers: string }[] };
+/**
+ * v47: a service ticked on a quotation, with its sub-services. A price-book service (Starter / Growth / Premium) also
+ * carries its plan: today's price from the active price book and the catalogue note.
+ */
+export type QuoteServicePick = { id?: string; name: string; billingType?: string; subServices: { id: string; name: string; covers: string }[]; plan?: { tier: string; pricePaise: number; note: string | null } };
 export const quoteServicesTitle = (picks: QuoteServicePick[]) => picks.map((p) => p.name).join(", ").slice(0, 160);
+
+const planLineKey = (id: string) => `plan:${id}`;
+const tierName = (tier: string) => tier.charAt(0).toUpperCase() + tier.slice(1);
 
 /**
  * v47: the project name becomes the ticked service names (unless the manager typed their own), and the cost lines start
  * with the ticked sub-services and what they cover, ready to edit and price. Lines already there keep their edits.
+ * A ticked plan service starts one line at its plan price.
  */
 export function applyQuoteServices<C extends { title: string; lines: QuoteLine[]; planType?: QuotePlan }>(c: C, picks: QuoteServicePick[], autoTitles: string[] = []): C {
   const subs = picks.flatMap((p) => p.subServices);
-  const ids = new Set(subs.map((s) => s.id));
+  const plans = picks.flatMap((p) => (p.plan && p.id && !p.subServices.length ? [{ key: planLineKey(p.id), name: p.name, ...p.plan }] : []));
+  const ids = new Set([...subs.map((s) => s.id), ...plans.map((p) => p.key)]);
   const kept = c.lines.filter((l) => !l.subServiceId || ids.has(l.subServiceId));
-  const fromSubs = subs.map((s) => kept.find((l) => l.subServiceId === s.id) ?? { title: s.name.slice(0, 160), details: s.covers.slice(0, 600), kind: "unit" as const, qty: 1, unitPricePaise: 0, pct: 0, subServiceId: s.id });
+  const fromPlans = plans.map((p) => kept.find((l) => l.subServiceId === p.key) ?? { title: `${p.name} (${tierName(p.tier)} plan)`.slice(0, 160), details: (p.note ?? "").slice(0, 600), kind: "unit" as const, qty: 1, unitPricePaise: p.pricePaise, pct: 0, subServiceId: p.key });
+  const fromSubs = [...fromPlans, ...subs.map((s) => kept.find((l) => l.subServiceId === s.id) ?? { title: s.name.slice(0, 160), details: s.covers.slice(0, 600), kind: "unit" as const, qty: 1, unitPricePaise: 0, pct: 0, subServiceId: s.id })];
   const others = kept.filter((l) => !l.subServiceId && (l.title.trim() || l.details.trim() || l.unitPricePaise || l.pct));
   const lines = [...fromSubs, ...others].slice(0, 30);
   const title = !c.title.trim() || autoTitles.includes(c.title) ? quoteServicesTitle(picks) : c.title;

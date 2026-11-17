@@ -411,7 +411,7 @@ export type ClientsDetail = {
   brands: { id: string; name: string; address: string | null }[];
   users: ClientsUserRow[];
   pendingInvites: ClientsPendingInvite[];
-  services: { id: string; serviceName: string; serviceId: string; tier: Tier; grouped: boolean; subServices: { id: string; name: string; covers: string }[]; monthlyFeePaise: number | null; billingType: string; status: string; currentGate: string; migrated: boolean; paymentPending: boolean; pausedUntil: string | null; pauseReason: string | null; startMonth: string | null }[];
+  services: { id: string; serviceName: string; serviceId: string; tier: Tier; grouped: boolean; subServices: { id: string; name: string; covers: string }[]; monthlyFeePaise: number | null; /** Today's price for this plan in the active price book (null for service groups). */ planPricePaise: number | null; /** The catalogue note under the service, e.g. "Ad spend excluded". */ planNote: string | null; billingType: string; status: string; currentGate: string; migrated: boolean; paymentPending: boolean; pausedUntil: string | null; pauseReason: string | null; startMonth: string | null }[];
   quotes: ClientsQuote[];
   pendingApprovals: { id: string; action: string; summary: string; status: string; createdAt: string }[];
   offboarding: ClientsOffboarding | null;

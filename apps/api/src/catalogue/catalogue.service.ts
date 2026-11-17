@@ -8,6 +8,23 @@ const bookInclude = {
   addOns: { orderBy: { name: 'asc' as const } },
 };
 
+/**
+ * Today's price of a price-book plan (service key + Starter / Growth / Premium) and the note shown under the service on
+ * Admin → Catalogue, for starting quotation and invoice lines. Service groups are not in the active book, so they get null.
+ */
+export async function activePlanPrices(prisma: PrismaService, orgId: string) {
+  const book = await prisma.priceBook.findFirst({
+    where: { orgId, status: 'active' },
+    orderBy: { effectiveFrom: 'desc' },
+    select: { services: { select: { key: true, excludedNote: true, tiers: { select: { tier: true, pricePaise: true } } } } },
+  });
+  return (serviceKey: string, tier: string): { pricePaise: number; note: string | null } | null => {
+    const service = book?.services.find((s) => s.key === serviceKey);
+    const price = service?.tiers.find((t) => t.tier === tier)?.pricePaise ?? 0;
+    return service && price > 0 ? { pricePaise: price, note: service.excludedNote } : null;
+  };
+}
+
 @Injectable()
 export class CatalogueService {
   constructor(private readonly prisma: PrismaService) {}
