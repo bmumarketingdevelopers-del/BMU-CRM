@@ -264,6 +264,12 @@ export class OpsCommsController {
     return this.comms.thread(me, id);
   }
 
+  /** Discussion info: change the title, add or remove people. */
+  @Patch('threads/:id')
+  updateThread(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.comms.update(me, id, body, ip);
+  }
+
   @Post('threads/:id/messages')
   post(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.comms.post(me, id, body, ip);

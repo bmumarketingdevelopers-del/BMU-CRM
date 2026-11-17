@@ -348,6 +348,13 @@ export const opsThreadCreateSchema = z.object({
   message: z.string().trim().max(4000).default(""),
 });
 export type OpsThreadCreate = z.input<typeof opsThreadCreateSchema>;
+/** Discussion info: change the title, add people, remove people (the person who started it, Founder or Admin). */
+export const opsThreadUpdateSchema = z.object({
+  title: z.string().trim().min(3, "Give the discussion a title").max(160).optional(),
+  addIds: z.array(z.string()).max(30).default([]),
+  removeIds: z.array(z.string()).max(30).default([]),
+});
+export type OpsThreadUpdate = z.input<typeof opsThreadUpdateSchema>;
 export type OpsThreadSummary = { id: string; /** Messages from other people since you last opened it. */ unread?: number; kind: string; title: string; client: { id: string; name: string }; engagement: string | null; participants: string[]; lastMessage: { body: string; author: string; at: string } | null; createdAt: string };
 /** v38: a file sent in a discussion or on a task. */
 export type SentFile = { id: string; name: string; url: string; mimeType: string | null; sizeBytes: number | null; by?: string; at?: string; /** "link": a Drive (or other) link instead of an upload. */ kind?: string };
@@ -382,6 +389,10 @@ export type OpsThreadView = OpsThreadSummary & {
     seen?: boolean;
   }[];
   canPost: boolean;
+  /** Discussion info: who started it, the people in it (with ids), and whether you may edit the title / people. */
+  startedBy?: { id: string; name: string } | null;
+  people?: { id: string; name: string }[];
+  canManage?: boolean;
 };
 export const opsThreadPostSchema = z
   .object({ body: z.string().trim().max(4000).default(""), attachmentIds: z.array(z.string()).max(5).default([]) })

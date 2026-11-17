@@ -441,6 +441,231 @@ function FileCard({ f, mine }: { f: SentFile; mine: boolean }) {
   );
 }
 
+const IconClose = () => (
+  <svg className={svg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+);
+const IconPencil = () => (
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d="M4 20h4L19 9l-4-4L4 16v4ZM13.5 6.5l4 4" />
+  </svg>
+);
+
+/**
+ * Discussion info (like WhatsApp's group info): name, type and client, who started it, the files, links and documents
+ * sent in it, and the people. The person who started it, the Founder and Admins can edit the title and add or remove
+ * people; everyone else sees it read-only.
+ */
+function DiscussionInfo({ t, meId, onClose, onChanged }: { t: OpsThreadView; meId: string; onClose: () => void; onChanged: (v: OpsThreadView) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState(t.title);
+  const [adding, setAdding] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [confirmRemove, setConfirmRemove] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const options = useLoad(() => api.ops.threads.options(), { live: false });
+  const people = t.people ?? [];
+  const canManage = !!t.canManage;
+  const files = t.messages.flatMap((m) => m.attachments ?? []);
+  const media = files.slice(-6).reverse();
+  const addable = (options.data?.people ?? []).filter((p) => !people.some((x) => x.id === p.id));
+
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose]);
+
+  async function save(body: { title?: string; addIds?: string[]; removeIds?: string[] }, after?: () => void) {
+    setBusy(true);
+    setError(undefined);
+    try {
+      onChanged(await api.ops.threads.update(t.id, body));
+      after?.();
+    } catch (err) {
+      setError(errMsg(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <aside className="absolute inset-0 z-10 flex flex-col overflow-hidden bg-paper" aria-label="Discussion info" data-testid="discussion-info">
+      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <button type="button" onClick={onClose} className="rounded-full p-1.5 text-charcoal hover:bg-canvas" aria-label="Close discussion info" data-testid="discussion-info-close">
+          <IconClose />
+        </button>
+        <span className="font-semibold text-charcoal">Discussion info</span>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Name */}
+        <div className="flex flex-col items-center gap-2 border-b border-border px-6 py-6 text-center">
+          <span aria-hidden className="flex h-24 w-24 items-center justify-center rounded-full bg-green/30 text-3xl font-semibold text-charcoal">
+            {initials(t.title)}
+          </span>
+          {editing ? (
+            <form
+              className="flex w-full max-w-sm items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                save({ title: title.trim() }, () => setEditing(false));
+              }}
+            >
+              <input autoFocus className="min-w-0 flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={160} aria-label="Discussion title" />
+              <button type="submit" disabled={busy || title.trim().length < 3} className="rounded-md bg-green px-3 py-2 text-sm font-medium text-charcoal hover:opacity-90 disabled:opacity-50" data-testid="discussion-title-save">
+                Save
+              </button>
+              <button type="button" onClick={() => (setEditing(false), setTitle(t.title))} className="px-1 text-sm text-ink-muted hover:text-ink">
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <h3 className="flex items-center gap-2 text-xl font-semibold text-charcoal">
+              {t.title}
+              {canManage && (
+                <button type="button" onClick={() => setEditing(true)} className="rounded-full p-1.5 text-ink-muted hover:bg-canvas hover:text-ink" aria-label="Edit title" data-testid="discussion-title-edit">
+                  <IconPencil />
+                </button>
+              )}
+            </h3>
+          )}
+          <p className="text-sm text-ink-muted">
+            {t.kind === "internal" ? "Internal discussion" : "Project discussion"} · {t.client.name}
+            {t.engagement ? ` · ${t.engagement}` : ""}
+          </p>
+          {t.startedBy && (
+            <p className="text-xs text-ink-muted">
+              Started by {t.startedBy.id === meId ? "you" : t.startedBy.name} · {new Date(t.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}
+            </p>
+          )}
+        </div>
+
+        {/* Media, links and docs */}
+        <div className="border-b border-border px-4 py-4">
+          <div className="mb-3 flex items-center justify-between text-sm">
+            <span className="font-medium text-charcoal">Media, links and docs</span>
+            <span className="text-ink-muted">{files.length}</span>
+          </div>
+          {media.length ? (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6" data-testid="discussion-info-media">
+              {media.map((f) => (
+                <a
+                  key={f.id}
+                  href={f.kind === "link" || f.mimeType?.startsWith("image/") ? f.url : `${f.url}?download=1`}
+                  target={f.kind === "link" || f.mimeType?.startsWith("image/") ? "_blank" : undefined}
+                  rel="noreferrer noopener"
+                  title={f.name}
+                  className="flex aspect-square flex-col items-center justify-center gap-1 overflow-hidden rounded-lg border border-border bg-canvas p-1 text-center hover:opacity-90"
+                >
+                  {f.mimeType?.startsWith("image/") && f.kind !== "link" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={f.url} alt={f.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <>
+                      <span className={f.kind === "link" ? "text-[#02a698]" : "text-[#7f66ff]"}>{f.kind === "link" ? <MenuIconLink /> : <MenuIconDocument />}</span>
+                      <span className="line-clamp-2 w-full break-all text-[10px] text-ink-muted">{f.name}</span>
+                    </>
+                  )}
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-ink-muted">No files, links or documents yet.</p>
+          )}
+        </div>
+
+        {/* People */}
+        <div className="px-4 py-4">
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span className="font-medium text-charcoal">
+              {people.length} {people.length === 1 ? "person" : "people"}
+            </span>
+            {canManage && !adding && (
+              <button type="button" onClick={() => (setAdding(true), setPicked([]))} className="flex items-center gap-1.5 rounded-md bg-green px-3 py-1.5 text-sm font-medium text-charcoal hover:opacity-90" data-testid="discussion-add-people">
+                <IconPlus /> Add people
+              </button>
+            )}
+          </div>
+          {t.kind === "project" && <p className="mb-2 text-xs text-ink-muted">Everyone on {t.client.name}&apos;s team can also read this discussion.</p>}
+
+          {adding && (
+            <div className="mb-3 rounded-lg border border-border bg-canvas/50 p-3" data-testid="discussion-add-panel">
+              <p className="mb-2 text-sm font-medium text-charcoal">Pick people to add</p>
+              {!options.data ? (
+                <LoadState loading={options.loading} error={options.error} />
+              ) : addable.length ? (
+                <ul className="max-h-56 overflow-y-auto">
+                  {addable.map((p) => (
+                    <li key={p.id}>
+                      <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-canvas">
+                        <input type="checkbox" checked={picked.includes(p.id)} onChange={(e) => setPicked((x) => (e.target.checked ? [...x, p.id] : x.filter((y) => y !== p.id)))} />
+                        <Avatar name={p.name} size="h-7 w-7" />
+                        <span className="text-sm text-charcoal">{p.name}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-muted">Everyone on the team is already in this discussion.</p>
+              )}
+              <div className="mt-3 flex items-center gap-2">
+                <button type="button" disabled={busy || !picked.length} onClick={() => save({ addIds: picked }, () => setAdding(false))} className="rounded-md bg-green px-3 py-1.5 text-sm font-medium text-charcoal hover:opacity-90 disabled:opacity-50" data-testid="discussion-add-confirm">
+                  {busy ? "Adding…" : `Add${picked.length ? ` ${picked.length}` : ""}`}
+                </button>
+                <button type="button" onClick={() => setAdding(false)} className="px-2 text-sm text-ink-muted hover:text-ink">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          <ul data-testid="discussion-people">
+            {people.map((p) => {
+              const starter = t.startedBy?.id === p.id;
+              return (
+                <li key={p.id} className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-canvas" data-person={p.name}>
+                  <Avatar name={p.name} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-charcoal">
+                      {p.name}
+                      {p.id === meId ? " (You)" : ""}
+                    </span>
+                    {starter && <span className="block text-xs text-ink-muted">Started this discussion</span>}
+                  </span>
+                  {canManage && !starter && (
+                    <>
+                      {confirmRemove === p.id ? (
+                        <span className="flex items-center gap-2 text-xs">
+                          <span className="text-ink-muted">Remove?</span>
+                          <button type="button" disabled={busy} onClick={() => save({ removeIds: [p.id] }, () => setConfirmRemove(undefined))} className="rounded-md bg-red/20 px-2 py-1 font-medium text-charcoal hover:bg-red/30" data-testid="discussion-remove-yes">
+                            Yes, remove
+                          </button>
+                          <button type="button" onClick={() => setConfirmRemove(undefined)} className="text-ink-muted hover:text-ink">
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <button type="button" onClick={() => setConfirmRemove(p.id)} className="rounded-md px-2 py-1 text-xs text-red hover:bg-red/10" aria-label={`Remove ${p.name}`} data-testid="discussion-remove">
+                          Remove
+                        </button>
+                      )}
+                    </>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {error && <p className="mt-2 text-sm text-red">{error}</p>}
+          {!canManage && <p className="mt-3 text-xs text-ink-muted">Only the person who started this discussion, the Founder or an Admin can change the title or the people.</p>}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 /** One discussion: header (← on phone/tablet, search, ⋮), messages as bubbles, and the WhatsApp-style reply bar. */
 function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBack: () => void; onPosted: () => void; onOpened: () => void }) {
   const loaded = useLoad(() => api.ops.threads.get(id));
@@ -453,6 +678,7 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
   const [attachOpen, setAttachOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [find, setFind] = useState("");
+  const [infoOpen, setInfoOpen] = useState(false);
   const [toRequest, setToRequest] = useState<{ id: string; body: string }>();
   const { me, canNew, openNew, notify } = useActions();
   const canRequest = me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager"].includes(r));
@@ -512,14 +738,14 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
   const shown = find.trim() ? t.messages.filter((m) => m.body.toLowerCase().includes(find.trim().toLowerCase()) || m.author.toLowerCase().includes(find.trim().toLowerCase())) : t.messages;
 
   return (
-    <div className="flex flex-col lg:h-full">
-      {/* Header */}
+    <div className="relative flex flex-col lg:h-full">
+      {/* Header: tap the name to open Discussion info (like WhatsApp's group info) */}
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
         {back}
-        <span className="min-w-0 flex-1">
+        <button type="button" onClick={() => setInfoOpen(true)} className="min-w-0 flex-1 text-left" aria-label={`Discussion info: ${t.title}`} data-testid="discussion-info-open">
           <span className="block truncate text-base font-semibold text-charcoal">{t.title}</span>
           <span className="block truncate text-xs text-ink-muted">{subtitle}</span>
-        </span>
+        </button>
         <button
           type="button"
           onClick={() => (setSearchOpen((x) => !x), setFind(""))}
@@ -629,6 +855,17 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
         <p className="border-t border-border p-4 text-sm text-ink-muted">You can read this discussion but not post in it.</p>
       )}
       {toRequest && <MessageToRequestDrawer message={toRequest} clientId={t.client.id} onClose={() => setToRequest(undefined)} onDone={(m) => (notify(m), loaded.reload(), setFresh(undefined))} />}
+      {infoOpen && (
+        <DiscussionInfo
+          t={t}
+          meId={me.id}
+          onClose={() => setInfoOpen(false)}
+          onChanged={(v) => {
+            setFresh(v);
+            onPosted();
+          }}
+        />
+      )}
     </div>
   );
 }
