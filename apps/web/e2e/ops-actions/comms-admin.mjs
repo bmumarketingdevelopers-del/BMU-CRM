@@ -16,9 +16,11 @@ const opts = (await apiCall(am, "GET", "/ops/threads/options")).body;
 const client = opts.clients.find((c) => c.name.startsWith("Sunrise")) ?? opts.clients[0];
 await dd.getByLabel("Client").selectOption(client.id);
 await dd.getByLabel("Title").fill(`Diwali shoot plan ${stamp}`);
-await dd.getByLabel("First message").fill("Please share the store photos and the offer details by Friday.");
 await dd.getByRole("button", { name: "Start discussion" }).click();
 await am.waitForURL(/\/team\/discussions\/.+/, { timeout: 15000 });
+// The discussion starts empty; the first message is written inside it.
+await am.getByLabel("Message", { exact: true }).fill("Please share the store photos and the offer details by Friday.");
+await am.getByRole("button", { name: "Send", exact: true }).click();
 await am.getByText("Please share the store photos").first().waitFor({ timeout: 15000 });
 check(true, "discussion opens with the first message");
 await am.getByRole("button", { name: "Message actions" }).first().click();

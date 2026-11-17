@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
-import { ActionDrawer, Field, inputCls, TextArea } from "@/components/actions/action-drawer";
+import { ActionDrawer, Field, inputCls } from "@/components/actions/action-drawer";
 import { Chips, errMsg } from "./kit";
 
 export function DiscussionDrawer({ open, onClose, onSaved, prefill }: { open: boolean; onClose: () => void; onSaved: (id: string, message: string) => void; prefill?: { clientId?: string; engagementId?: string } }) {
@@ -14,7 +14,6 @@ export function DiscussionDrawer({ open, onClose, onSaved, prefill }: { open: bo
   const [engagementId, setEngagement] = useState(prefill?.engagementId ?? "");
   const [title, setTitle] = useState("");
   const [people, setPeople] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
@@ -25,16 +24,14 @@ export function DiscussionDrawer({ open, onClose, onSaved, prefill }: { open: bo
     if (!clientOrgId) e.client = "Pick the client";
     if (title.trim().length < 3) e.title = "Give the discussion a title";
     if (kind === "internal" && !people.length) e.people = "Add at least one person";
-    if (!message.trim()) e.message = "Write the first message";
     setErrors(e);
     if (Object.keys(e).length) return;
     setSaving(true);
     setError(undefined);
     try {
-      const r = await api.ops.threads.create({ kind, clientOrgId, engagementId: engagementId || undefined, title: title.trim(), participantIds: people, message: message.trim() });
+      const r = await api.ops.threads.create({ kind, clientOrgId, engagementId: engagementId || undefined, title: title.trim(), participantIds: people });
       onSaved(r.id, r.message);
       setTitle("");
-      setMessage("");
       setPeople([]);
       onClose();
     } catch (err) {
@@ -85,9 +82,6 @@ export function DiscussionDrawer({ open, onClose, onSaved, prefill }: { open: bo
           <Chips label="People" options={(opts.data?.people ?? []).map((p) => ({ id: p.id, label: p.name }))} value={people} onChange={setPeople} />
         </Field>
       )}
-      <Field label="First message" required error={errors.message}>
-        <TextArea value={message} onChange={(e) => setMessage(e.target.value)} aria-label="First message" rows={4} maxLength={4000} />
-      </Field>
     </ActionDrawer>
   );
 }
