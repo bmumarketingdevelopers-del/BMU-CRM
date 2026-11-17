@@ -396,7 +396,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
                           type="button"
                           className="mr-2 text-xs underline"
                           data-testid="resend-client-invite"
-                          onClick={() => api.clientsActions.resendInvite(c.id, u.id).then((r) => done(r.message), fail)}
+                          onClick={() => api.clientsActions.resendInvite(id, u.id).then((r) => done(r.message), fail)}
                         >
                           Resend invite
                         </button>
