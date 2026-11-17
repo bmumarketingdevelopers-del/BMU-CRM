@@ -9,7 +9,7 @@ import { RowMenu } from "@/components/actions/row-menu";
 import { EmptyAdd, errMsg } from "@/components/ops/kit";
 import { DiscussionDrawer } from "@/components/ops/discussion-drawer";
 import { MessageToRequestDrawer } from "@/components/ops/message-to-request";
-import { PendingFiles, SendFileControls } from "@/components/sent-files";
+import { PendingFiles, SENT_FILE_MAX } from "@/components/sent-files";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
@@ -98,6 +98,168 @@ const IconLink = () => (
   </svg>
 );
 
+// Solid icons for the + menu (coloured like WhatsApp's attach menu by the parent's text colour).
+const MenuIconDocument = () => (
+  <svg className={svg} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7l-5-5Zm-5 11h6v1.6H9V13Zm0 3.4h6V18H9v-1.6ZM13.5 8V3.5L18 8h-4.5Z" />
+  </svg>
+);
+const MenuIconMedia = () => (
+  <svg className={svg} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm4 4.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM5 18h14l-4.5-6-3.5 4.5-2.5-3L5 18Z" />
+  </svg>
+);
+const MenuIconLink = () => (
+  <svg className={svg} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.6} strokeLinecap="round" aria-hidden>
+    <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+  </svg>
+);
+
+/**
+ * The + menu (like WhatsApp's attach menu): Document, Photos & videos and Link.
+ * Uploads go through the same discussion upload as before; files over 200 MB are refused with a hint to send a link.
+ */
+function AttachMenu({
+  limit,
+  upload,
+  addLink,
+  onAdded,
+  onError,
+  onClose,
+}: {
+  limit: number;
+  upload: (f: File) => Promise<SentFile | void>;
+  addLink: (url: string) => Promise<SentFile | void>;
+  onAdded: (f: SentFile) => void;
+  onError: (message: string | undefined) => void;
+  onClose: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [url, setUrl] = useState("");
+  const documentPicker = useRef<HTMLInputElement>(null);
+  const mediaPicker = useRef<HTMLInputElement>(null);
+
+  // Click outside or Esc closes the menu (not while a file is uploading).
+  useEffect(() => {
+    // The + button sits next to the menu (same parent): it toggles the menu itself, so it is not "outside".
+    const away = (e: MouseEvent) => !busy && box.current && !(box.current.parentElement ?? box.current).contains(e.target as Node) && onClose();
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && !busy && onClose();
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [busy, onClose]);
+
+  async function pick(list: FileList | null) {
+    if (!list?.length) return;
+    setBusy(true);
+    onError(undefined);
+    try {
+      for (const f of Array.from(list).slice(0, limit)) {
+        if (f.size > SENT_FILE_MAX) throw new Error(`${f.name} is larger than 200 MB. Upload it to Google Drive and send the link instead.`);
+        const r = await upload(f);
+        if (r) onAdded(r);
+      }
+      onClose();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendLink() {
+    if (!url.trim()) return onError("Paste the link");
+    setBusy(true);
+    onError(undefined);
+    try {
+      const r = await addLink(url.trim());
+      if (r) onAdded(r);
+      onClose();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const full = limit <= 0;
+  const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-charcoal hover:bg-canvas disabled:opacity-50";
+  return (
+    <div ref={box} role="menu" aria-label="Attach" className="absolute bottom-full left-0 z-20 mb-2 w-64 rounded-xl border border-border bg-paper p-1.5 shadow-lg" data-testid="discussion-attach-menu">
+      {busy ? (
+        <p className="px-3 py-2.5 text-sm text-ink-muted">Uploading…</p>
+      ) : linking ? (
+        <div className="grid gap-2 p-2">
+          <input
+            autoFocus
+            type="url"
+            className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm"
+            placeholder="https://drive.google.com/…"
+            aria-label="Link to send"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                sendLink();
+              }
+            }}
+          />
+          <div className="flex gap-2">
+            <button type="button" onClick={sendLink} className="rounded-md bg-green px-3 py-1.5 text-sm font-medium text-charcoal hover:opacity-90">
+              Add link
+            </button>
+            <button type="button" onClick={() => setLinking(false)} className="px-2 text-sm text-ink-muted hover:text-ink">
+              Back
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <button type="button" role="menuitem" className={item} disabled={full} onClick={() => documentPicker.current?.click()}>
+            <span className="text-[#7f66ff]">
+              <MenuIconDocument />
+            </span>
+            Document
+          </button>
+          <button type="button" role="menuitem" className={item} disabled={full} onClick={() => mediaPicker.current?.click()}>
+            <span className="text-[#007bfc]">
+              <MenuIconMedia />
+            </span>
+            Photos &amp; videos
+          </button>
+          <button type="button" role="menuitem" className={item} disabled={full} onClick={() => setLinking(true)}>
+            <span className="text-[#02a698]">
+              <MenuIconLink />
+            </span>
+            Link <span className="ml-auto text-[11px] text-ink-muted">Drive, over 200 MB</span>
+          </button>
+          {full && <p className="px-3 pb-1 text-[11px] text-ink-muted">Up to 5 files per message.</p>}
+        </>
+      )}
+      <input ref={documentPicker} type="file" multiple className="sr-only" onChange={(e) => pick(e.target.files)} aria-label="Attach documents" tabIndex={-1} />
+      <input ref={mediaPicker} type="file" multiple accept="image/*,video/*" className="sr-only" onChange={(e) => pick(e.target.files)} aria-label="Attach photos and videos" tabIndex={-1} />
+    </div>
+  );
+}
+
+/** WhatsApp-style ticks on my messages: grey ✓✓ sent, blue ✓✓ once everyone in the discussion has read it. */
+function Ticks({ seen }: { seen: boolean }) {
+  return (
+    <span className={seen ? "text-[#1d9bf0]" : "text-ink-muted"} title={seen ? "Read by everyone" : "Sent"} aria-label={seen ? "Read by everyone" : "Sent"} data-testid={seen ? "ticks-seen" : "ticks-sent"}>
+      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="m2 13 4 4 8-9" />
+        <path d="m10 16 1 1 10-11" />
+      </svg>
+    </span>
+  );
+}
+
 function Avatar({ name, size = "h-9 w-9" }: { name: string; size?: string }) {
   return (
     <span aria-hidden className={`flex ${size} shrink-0 items-center justify-center rounded-full text-xs font-semibold text-charcoal ${avatarTone(name)}`}>
@@ -147,7 +309,7 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
           }
         />
       ) : (
-        <div className="grid overflow-hidden rounded-xl border border-border bg-surface-raised lg:h-[min(78vh,780px)] lg:grid-cols-[340px_1fr]" data-testid="discussions-layout">
+        <div className="mb-20 grid overflow-hidden rounded-xl border border-border bg-surface-raised lg:mb-0 lg:h-[min(calc(100vh-260px),780px)] lg:min-h-[420px] lg:grid-cols-[340px_1fr]" data-testid="discussions-layout">
           {/* Discussion list */}
           <div className={`min-w-0 border-border lg:flex lg:min-h-0 lg:flex-col lg:border-r ${selectedId ? "hidden" : "flex flex-col"}`} data-testid="discussions-list">
             <div className="grid gap-2 border-b border-border p-3">
@@ -180,7 +342,7 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
           {/* Open discussion */}
           <section className={`min-w-0 lg:block lg:h-full lg:min-h-0 ${selectedId ? "block" : "hidden"}`} data-testid="discussion-panel">
             {selectedId ? (
-              <DiscussionPanel key={selectedId} id={selectedId} onBack={() => open(undefined)} onPosted={() => list.reload()} />
+              <DiscussionPanel key={selectedId} id={selectedId} onBack={() => open(undefined)} onPosted={() => list.reload()} onOpened={() => list.reload()} />
             ) : (
               <div className="flex h-full min-h-80 flex-col items-center justify-center gap-2 bg-ivory p-6 text-center text-sm text-ink-muted">
                 <span className="text-ink-muted">
@@ -207,6 +369,8 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
 
 function DiscussionRow({ t, active, onOpen }: { t: OpsThreadSummary; active: boolean; onOpen: () => void }) {
   const last = t.lastMessage ? `${t.lastMessage.author}: ${t.lastMessage.body || "Sent a file"}` : "No messages yet";
+  // The open discussion is being read, so it never shows a count.
+  const unread = active ? 0 : (t.unread ?? 0);
   return (
     <button
       type="button"
@@ -221,9 +385,16 @@ function DiscussionRow({ t, active, onOpen }: { t: OpsThreadSummary; active: boo
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="truncate font-semibold text-charcoal">{t.title}</span>
-          <span className="shrink-0 text-[11px] text-ink-muted">{listTime(t.lastMessage?.at ?? t.createdAt)}</span>
+          <span className={`shrink-0 text-[11px] ${unread ? "font-semibold text-charcoal" : "text-ink-muted"}`}>{listTime(t.lastMessage?.at ?? t.createdAt)}</span>
         </span>
-        <span className="block truncate text-sm text-ink-muted">{last}</span>
+        <span className="flex items-center justify-between gap-2">
+          <span className={`truncate text-sm ${unread ? "font-medium text-charcoal" : "text-ink-muted"}`}>{last}</span>
+          {unread > 0 && (
+            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-green px-1.5 text-[11px] font-bold text-charcoal" aria-label={`${unread} unread`} data-testid="discussion-unread">
+              {unread}
+            </span>
+          )}
+        </span>
         <span className="block truncate text-[11px] text-ink-muted">
           {t.client.name}
           {t.engagement ? ` · ${t.engagement}` : ""} · {t.kind === "internal" ? "Internal" : "Project"}
@@ -271,7 +442,7 @@ function FileCard({ f, mine }: { f: SentFile; mine: boolean }) {
 }
 
 /** One discussion: header (← on phone/tablet, search, ⋮), messages as bubbles, and the WhatsApp-style reply bar. */
-function DiscussionPanel({ id, onBack, onPosted }: { id: string; onBack: () => void; onPosted: () => void }) {
+function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBack: () => void; onPosted: () => void; onOpened: () => void }) {
   const loaded = useLoad(() => api.ops.threads.get(id));
   const [fresh, setFresh] = useState<OpsThreadView>();
   const [body, setBody] = useState("");
@@ -291,6 +462,16 @@ function DiscussionPanel({ id, onBack, onPosted }: { id: string; onBack: () => v
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest" });
   }, [t?.messages.length]);
+
+  // Opening it marked it read on the server: refresh the list once so its unread count clears.
+  const opened = !!loaded.data;
+  const onOpenedRef = useRef(onOpened);
+  useEffect(() => {
+    onOpenedRef.current = onOpened;
+  }, [onOpened]);
+  useEffect(() => {
+    if (opened) onOpenedRef.current();
+  }, [opened]);
 
   async function send(e?: React.FormEvent) {
     e?.preventDefault();
@@ -374,6 +555,7 @@ function DiscussionPanel({ id, onBack, onPosted }: { id: string; onBack: () => v
               {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
               <div className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-ink-muted">
                 <span>{bubbleTime(m.at)}</span>
+                {m.mine && <Ticks seen={!!m.seen} />}
                 <RowMenu
                   label="Message actions"
                   className="align-middle"
@@ -395,24 +577,32 @@ function DiscussionPanel({ id, onBack, onPosted }: { id: string; onBack: () => v
       {/* Reply bar */}
       {t.canPost ? (
         <form onSubmit={send} className="grid gap-2 border-t border-border bg-paper p-3">
-          {attachOpen && (
-            <div className="grid gap-1 rounded-lg border border-border bg-canvas/50 p-3" data-testid="discussion-attach-panel">
-              <SendFileControls limit={5 - files.length} upload={(f) => api.ops.threads.attach(id, f)} addLink={(url) => api.ops.threads.link(id, { url })} onAdded={(f) => setFiles((x) => [...x, f])} />
-              <span className="text-xs text-ink-muted">{t.kind === "internal" ? "Only the people in this discussion see the files (also in their Files)." : "Everyone on this client's team sees the files (also in their Files)."}</span>
-            </div>
-          )}
           <PendingFiles files={files} onRemove={(fid) => setFiles((x) => x.filter((y) => y.id !== fid))} />
+          {files.length > 0 && <span className="text-xs text-ink-muted">{t.kind === "internal" ? "Only the people in this discussion see the files (also in their Files)." : "Everyone on this client's team sees the files (also in their Files)."}</span>}
           <div className="flex items-end gap-2">
-            <button
-              type="button"
-              onClick={() => setAttachOpen((x) => !x)}
-              className={`mb-1 rounded-full p-2 text-charcoal hover:bg-canvas ${attachOpen ? "bg-canvas" : ""}`}
-              aria-label="Attach files or add a link"
-              aria-expanded={attachOpen}
-              data-testid="discussion-attach-toggle"
-            >
-              <IconPlus />
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAttachOpen((x) => !x)}
+                className={`mb-1 rounded-full p-2 text-charcoal hover:bg-canvas ${attachOpen ? "bg-canvas" : ""}`}
+                aria-label="Attach files or add a link"
+                aria-haspopup="menu"
+                aria-expanded={attachOpen}
+                data-testid="discussion-attach-toggle"
+              >
+                <IconPlus />
+              </button>
+              {attachOpen && (
+                <AttachMenu
+                  limit={5 - files.length}
+                  upload={(f) => api.ops.threads.attach(id, f)}
+                  addLink={(url) => api.ops.threads.link(id, { url })}
+                  onAdded={(f) => setFiles((x) => [...x, f])}
+                  onError={setError}
+                  onClose={() => setAttachOpen(false)}
+                />
+              )}
+            </div>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
