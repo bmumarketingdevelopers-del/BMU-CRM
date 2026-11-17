@@ -9,6 +9,7 @@ import {
   opsMessageToRequestSchema,
   opsThreadCreateSchema,
   opsThreadPostSchema,
+  opsThreadUpdateSchema,
   sentLinkName,
   sentLinkSchema,
   SLA_FIRST_REPLY_MIN,
@@ -167,7 +168,48 @@ export class OpsCommsService {
         ...(m.authorId === me.id ? { seen: seenByAll(m.createdAt) } : {}),
       })),
       canPost: true,
+      ...(await this.info(me, t)),
     };
+  }
+
+  /** The person who started it, Founder and Admin may change the title and the people (like WhatsApp group admins). */
+  private canManage(me: Me, t: { createdById: string | null }) {
+    return t.createdById === me.id || hasRole(me, 'founder', 'admin');
+  }
+
+  /** Discussion info for the panel: who started it and the people in it (with ids). */
+  private async info(me: Me, t: { createdById: string | null; participantIds: string[] }) {
+    const ids = [...new Set([t.createdById, ...t.participantIds].filter((x): x is string => !!x))];
+    const users = ids.length ? await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+    const byId = (id: string) => users.find((u) => u.id === id);
+    const starter = t.createdById ? byId(t.createdById) : undefined;
+    return {
+      startedBy: starter ? { id: starter.id, name: starter.name } : null,
+      people: ids.map(byId).filter((u): u is { id: string; name: string } => !!u),
+      canManage: this.canManage(me, t),
+    };
+  }
+
+  /** Discussion info: change the title, add people, remove people. The person who started it can't be removed. */
+  async update(me: Me, id: string, body: unknown, ip?: string): Promise<OpsThreadView> {
+    const t = await this.load(me, id);
+    if (!this.canManage(me, t)) throw new ForbiddenException('Only the person who started this discussion, the Founder or an Admin can change it');
+    const input = parse(opsThreadUpdateSchema, body);
+    if (t.createdById && input.removeIds.includes(t.createdById)) throw new BadRequestException("The person who started the discussion can't be removed");
+    const adding = input.addIds.filter((x) => !t.participantIds.includes(x) && x !== t.createdById);
+    if (adding.length) {
+      const ok = await this.prisma.user.count({ where: { id: { in: adding }, orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null } });
+      if (ok !== new Set(adding).size) throw new BadRequestException('Some people you picked are not on the team');
+    }
+    const participants = [...new Set([...t.participantIds.filter((x) => !input.removeIds.includes(x)), ...adding])];
+    if (participants.length > 30) throw new BadRequestException('A discussion can have up to 30 people');
+    if (t.type === 'internal' && !participants.length) throw new BadRequestException('An internal discussion needs at least one person besides you');
+    const removed = t.participantIds.filter((x) => input.removeIds.includes(x));
+    await this.prisma.thread.update({ where: { id: t.id }, data: { ...(input.title ? { title: input.title } : {}), participantIds: participants } });
+    await this.audit.log(me, 'thread.updated', 'Thread', t.id, undefined, { title: input.title ?? null, added: adding.length, removed: removed.length }, ip);
+    if (adding.length)
+      await this.notifications.notify(me.orgId, adding, { kind: 'thread_started', title: `${me.name} added you to "${input.title ?? t.title ?? 'Discussion'}"`, body: t.clientOrg.name, link: `/team/discussions/${t.id}`, noEmail: true });
+    return this.thread(me, t.id);
   }
 
   /**
