@@ -3,6 +3,8 @@ import { CLIENT_TEAM_ROLES, type ClientReport, type ClientTeamRole, type ClientT
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { sendClientInvites } from '../clients-actions/client-invite.js';
+import { EmailService } from '../service/email.service.js';
 import { trackFor } from './team.service.js';
 import { canSeeBilling, isUniqueError, monthRange } from './util.js';
 import { clientVisibleInvoiceWhere, readInvoiceBranding } from '../service/invoice-branding.service.js';
@@ -17,6 +19,7 @@ export class ClientWorkspaceService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly notifications: NotificationsService,
+    private readonly email: EmailService,
   ) {}
 
   private clientOrgId(me: Me) {
@@ -156,6 +159,7 @@ export class ClientWorkspaceService {
       const org = await this.prisma.clientOrg.findUnique({ where: { id: clientOrgId }, select: { name: true, amUserId: true } });
       const thread = await this.prisma.thread.findFirst({ where: { clientOrgId, type: 'client_am' } });
       if (thread && org?.amUserId) await this.prisma.message.create({ data: { orgId: me.orgId, threadId: thread.id, authorId: org.amUserId, body: `Welcome to BMU, ${input.name.split(' ')[0]}! ${me.name} added you to the account. Sign in with ${input.email} to follow the work and message us here.` } });
+      await sendClientInvites(this.prisma, this.email, me, clientOrgId, [user.id]);
       await this.notifications.notify(me.orgId, [user.id], { kind: 'welcome', title: 'Welcome to BMU! Your account is ready', body: `${me.name} added you to ${org?.name ?? 'the account'}.`, link: '/client' });
       await this.notifications.notify(me.orgId, [org?.amUserId], { kind: 'client_updated', title: `${org?.name ?? 'A client'} added ${input.name} (${input.role.replace('client_', '')})`, link: `/team/clients/${clientOrgId}?tab=users` });
     } catch (e) {

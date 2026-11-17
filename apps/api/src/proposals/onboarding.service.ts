@@ -5,6 +5,8 @@ import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { logLeadActivity } from './lead-activity.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { sendClientInvites } from '../clients-actions/client-invite.js';
+import { EmailService } from '../service/email.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { defaultRequirements } from './requirements.js';
 
@@ -21,6 +23,7 @@ export class OnboardingService {
     private readonly audit: AuditService,
     private readonly settings: SettingsService,
     private readonly notifications: NotificationsService,
+    private readonly email: EmailService,
   ) {}
 
   async recordFirstPayment(invoiceId: string, amountPaise: number, method: string, ref: string | null) {
@@ -178,6 +181,8 @@ export class OnboardingService {
         link: `/team/clients/${r.clientOrgId}`,
       });
       await this.notifications.notify(r.orgId, [r.leadOwnerId], { kind: 'deal_won', title: `${r.clientName} paid. Deal won!`, link: `/team/leads/${r.leadId}` });
+      // The new Owner gets the portal invitation (only if they have not signed in before).
+      if (!r.renewal && r.ownerId) await sendClientInvites(this.prisma, this.email, { orgId: r.orgId, name: r.amName ?? 'BMU' }, r.clientOrgId, [r.ownerId]);
       // Welcome email/WhatsApp with the agreement copy goes out here once messaging is connected.
       this.log.log(`Client account ${result.clientOrgId} ${r.renewal ? 'renewed' : 'created'}; welcome sent to ${result.ownerEmail ?? 'client'}`);
     }

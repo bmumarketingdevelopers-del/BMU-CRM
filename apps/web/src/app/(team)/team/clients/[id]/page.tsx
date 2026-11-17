@@ -133,7 +133,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
             {d?.paymentStatus === "pending" && <Badge tone="amber">Payment pending</Badge>}
             {d?.startMode === "migration" && <Badge>Migrated</Badge>}
             {d?.archivedAt && <Badge>Archived</Badge>}
-            <span className="inline-flex items-center border border-charcoal bg-charcoal pl-3 text-sm font-medium text-ivory [&_button]:!text-ivory">
+            <span className="inline-flex items-center border border-charcoal bg-charcoal pl-3 text-sm font-medium text-ivory [&>div>button]:!text-ivory">
               + Add
               <RowMenu items={addMenu} label="Add to this client" />
             </span>
@@ -390,7 +390,17 @@ export default function Client360Page({ params, searchParams }: { params: Promis
                       <p className="truncate font-medium">{u.name}</p>
                       <p className="truncate text-xs text-ink-muted">{u.email}</p>
                     </div>
-                    <div className="flex shrink-0 gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
+                      {u.status === "invited" && can?.inviteUser && u.email && (
+                        <button
+                          type="button"
+                          className="mr-2 text-xs underline"
+                          data-testid="resend-client-invite"
+                          onClick={() => api.clientsActions.resendInvite(id, u.id).then((r) => done(r.message), fail)}
+                        >
+                          Resend invite
+                        </button>
+                      )}
                       {u.status === "suspended" && <Badge tone="red">Deactivated</Badge>}
                       {u.status === "invited" && <Badge tone="amber">Invited</Badge>}
                       <Badge tone="dark">{roleName(u.role)}</Badge>

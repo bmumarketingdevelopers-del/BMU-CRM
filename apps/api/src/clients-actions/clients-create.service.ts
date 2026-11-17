@@ -35,7 +35,9 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { PrismaService } from '../prisma/prisma.service.js';
 import { BillingService } from '../requests/billing.service.js';
 import { InvoiceEvents } from '../service/invoice-events.js';
+import { EmailService } from '../service/email.service.js';
 import { ServiceBillingService } from '../service/service-billing.service.js';
+import { sendClientInvites } from './client-invite.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { AM_BASE_ROLES, assertStaff, contactOf, isAdmin, loadClient } from './clients-access.js';
 import { createEngagementTx, requirementsFor } from './clients-engagements.js';
@@ -59,6 +61,7 @@ export class ClientsCreateService implements OnModuleInit {
     private readonly billing: BillingService,
     private readonly events: InvoiceEvents,
     private readonly serviceBilling: ServiceBillingService,
+    private readonly email: EmailService,
   ) {}
 
   onModuleInit() {
@@ -486,8 +489,14 @@ export class ClientsCreateService implements OnModuleInit {
     return { id: u.id, name: u.name, role: i.role };
   }
 
-  /** Welcome message in the client thread (from the CM) and a bell notification for each new user. */
+  /** Emails the invitation (portal link and how to sign in) to client logins that have not signed in yet. */
+  sendInvites(me: Me, clientOrgId: string, userIds: string[]) {
+    return sendClientInvites(this.prisma, this.email, me, clientOrgId, userIds);
+  }
+
+  /** Invitation email, welcome message in the client thread (from the CM) and a bell notification for each new user. */
   async welcome(me: Me, clientOrgId: string, users: { id: string; name: string }[], amId: string | null) {
+    await this.sendInvites(me, clientOrgId, users.map((u) => u.id));
     const am = amId ? await this.prisma.user.findUnique({ where: { id: amId }, select: { id: true, name: true } }) : null;
     const names = users.map((u) => u.name.split(' ')[0]).join(', ');
     await this.threadNote(am ? { ...me, id: am.id, name: am.name } : me, clientOrgId, `Welcome to BMU, ${names}! I'm ${am?.name ?? me.name}${am ? ', your client manager' : ''}. Sign in with your email or mobile number to see your services, share onboarding items and message us here any time.`, false);
