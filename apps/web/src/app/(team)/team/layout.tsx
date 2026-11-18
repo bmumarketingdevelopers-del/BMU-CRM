@@ -7,6 +7,8 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
   const me = await requireMe(["staff"]);
   const hasLeads = (me.permissions.leads_pipeline?.scope ?? "none") !== "none";
   const isClientTeam = me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager", "finance"].includes(r));
+  // Client chats (Messages) are for the people the server lets in: Founder, Branch Manager, CM Lead, Client Managers.
+  const canClientChat = me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager"].includes(r));
   const canQc = (me.permissions.qc_pass_fail?.scope ?? "none") !== "none";
   const isAdmin = me.roles.some((r) => ["founder", "admin", "department_head", "finance", "hr_ops", "am_lead"].includes(r));
   // v12: Dashboards shows when the Studio has shared one with this person (Founder and Branch Manager always see it).
@@ -34,7 +36,7 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
         // v37: Client Managers send new project work to Department Heads, who pick their team here.
         // v41: Work hand-off is hidden; Department Heads give tasks on each project page ("Departments & progress").
         ...(isClientTeam ? [{ label: "Requests inbox", href: "/team/requests" }] : []),
-        ...(isClientTeam && !me.roles.every((r) => r === "finance") ? [{ label: "Messages", href: "/team/messages" }] : []),
+        ...(canClientChat ? [{ label: "Messages", href: "/team/messages" }] : []),
         ...(me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager", "sales_manager", "sales_executive"].includes(r)) ? [{ label: "Inbox", href: "/team/inbox" }] : []),
         { label: "Meetings", href: "/team/meetings" },
         // v29: Client Managers create and sign invoices for their own clients.
