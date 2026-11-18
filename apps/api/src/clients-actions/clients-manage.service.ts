@@ -17,6 +17,10 @@ import {
   normaliseIdentifier,
   type ClientsBrandInput,
   type ClientsBulk,
+  type ClientServiceAdd,
+  type ClientServiceEdit,
+  type ClientServicesInput,
+  type ClientStatus,
   type ClientsDetail,
   type ClientsEdit,
   type ClientsInvite,
@@ -37,6 +41,8 @@ import { ActionsRegistry } from '../actions/registry.js';
 import { UndoService } from '../actions/undo.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { activePlanPrices } from '../catalogue/catalogue.service.js';
+import { priceList } from '../catalogue/service-groups.js';
+import { clientForServices, clientServiceRows, loadClientServiceRow, setClientServicesTx } from './client-services.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { assertStaff, contactOf, hasHandoverAccess, isAdmin, isClientLead, loadClient, runsClient, seesAllClients } from './clients-access.js';
@@ -112,6 +118,12 @@ export class ClientsManageService implements OnModuleInit {
     if (q.industry) where = { ...where, industry: q.industry };
     if (q.branch) where = { ...where, branchId: q.branch };
     if (q.service) where = { AND: [where, { engagements: { some: { deletedAt: null, service: { name: q.service } } } }] };
+    // v52: client status, and a sub-service (bought on its own, or inside a bundle the client has).
+    if (q.clientStatus) where = { AND: [where, { clientStatus: q.clientStatus }] };
+    if (q.subService) {
+      const inBundles = (await this.prisma.serviceBundle.findMany({ where: { orgId: me.orgId, subServiceIds: { has: q.subService } }, select: { id: true } })).map((b) => b.id);
+      where = { AND: [where, { clientServices: { some: { status: { not: 'ended' }, OR: [{ subServiceId: q.subService }, { bundleId: { in: inBundles } }] } } }] };
+    }
     if (q.q?.trim()) {
       const s = q.q.trim();
       where = { AND: [where, { OR: [{ name: { contains: s, mode: 'insensitive' } }, { industry: { contains: s, mode: 'insensitive' } }, { gstin: { contains: s.toUpperCase() } }, { am: { name: { contains: s, mode: 'insensitive' } } }] }] };
@@ -133,6 +145,7 @@ export class ClientsManageService implements OnModuleInit {
       return {
         id: c.id,
         name: c.name,
+        clientStatus: c.clientStatus as ClientStatus,
         industry: c.industry,
         health: c.health,
         am: c.am,
@@ -203,6 +216,69 @@ export class ClientsManageService implements OnModuleInit {
     return [...new Set(out)];
   }
 
+  // ------------------------------------------------------------------------------------------------ v52 client services
+
+  /** set_client_services: the steps' whole choice, in one transaction (ended rows are kept as history). */
+  async setClientServices(me: Me, id: string, input: ClientServicesInput, ip?: string) {
+    const c = await clientForServices(this.prisma, me, id);
+    const list = await priceList(this.prisma, me.orgId, { all: true });
+    const before = await clientServiceRows(this.prisma, me.orgId, c.id, list);
+    const diff = await this.prisma.$transaction((tx) => setClientServicesTx(tx, me, c.id, input, list));
+    await this.audit.log(me, 'client.services_set', 'ClientOrg', c.id, { services: before.filter((r) => r.status !== 'ended').map((r) => `${r.name} (${r.plan ?? 'no plan'})`) }, diff, ip);
+    return { ok: true as const, message: `Services saved for ${c.name}` };
+  }
+
+  /** Adds one sub-service or bundle with its plan, status and start date. */
+  async addClientService(me: Me, id: string, input: ClientServiceAdd, ip?: string) {
+    const c = await clientForServices(this.prisma, me, id);
+    const list = await priceList(this.prisma, me.orgId, { all: true });
+    const sub = input.subServiceId ? list.groups.flatMap((g) => g.subServices).find((s) => s.id === input.subServiceId) : undefined;
+    const bundle = input.bundleId ? list.bundles.find((b) => b.id === input.bundleId) : undefined;
+    if (!sub && !bundle) throw new BadRequestException('Pick a sub service or bundle from the price list');
+    const item = (sub ?? bundle)!;
+    const plan = input.plan || null;
+    if (plan && item.prices[plan] == null) throw new BadRequestException(`${item.name} has no ${plan} plan`);
+    if (await this.prisma.clientService.count({ where: { orgId: me.orgId, clientOrgId: c.id, status: { not: 'ended' }, ...(sub ? { subServiceId: sub.id } : { bundleId: bundle!.id }) } })) throw new BadRequestException(`${item.name} is already on this client`);
+    const row = await this.prisma.clientService.create({ data: { orgId: me.orgId, clientOrgId: c.id, subServiceId: sub?.id ?? null, bundleId: bundle?.id ?? null, plan, status: input.status ?? 'active', startDate: input.startDate ? new Date(`${input.startDate}T00:00:00Z`) : new Date(), name: item.name, createdById: me.id } });
+    await this.audit.log(me, 'client.service_added', 'ClientService', row.id, null, { client: c.name, name: item.name, plan, status: row.status }, ip);
+    return { ok: true as const, message: `${item.name} added` };
+  }
+
+  async editClientService(me: Me, id: string, rowId: string, input: ClientServiceEdit, ip?: string) {
+    const c = await clientForServices(this.prisma, me, id);
+    const before = await loadClientServiceRow(this.prisma, me.orgId, c.id, rowId);
+    const list = await priceList(this.prisma, me.orgId, { all: true });
+    const item = before.subServiceId ? list.groups.flatMap((g) => g.subServices).find((s) => s.id === before.subServiceId) : list.bundles.find((b) => b.id === before.bundleId);
+    if (input.plan && item && item.prices[input.plan] == null) throw new BadRequestException(`${before.name} has no ${input.plan} plan`);
+    if (input.status && input.status !== 'ended' && before.status === 'ended' && (await this.prisma.clientService.count({ where: { orgId: me.orgId, clientOrgId: c.id, status: { not: 'ended' }, id: { not: rowId }, subServiceId: before.subServiceId, bundleId: before.bundleId } }))) throw new BadRequestException(`${before.name} is already on this client`);
+    const data = {
+      ...(input.plan !== undefined ? { plan: input.plan || null } : {}),
+      ...(input.status ? { status: input.status, endedAt: input.status === 'ended' ? (before.endedAt ?? new Date()) : null } : {}),
+      ...(input.startDate !== undefined ? { startDate: input.startDate ? new Date(`${input.startDate}T00:00:00Z`) : null } : {}),
+    };
+    if (input.status === 'ended') await this.keepOne(me, c.id, rowId);
+    const rows = await this.prisma.clientService.updateManyAndReturn({ where: { id: rowId, orgId: me.orgId, clientOrgId: c.id }, data });
+    if (!rows.length) throw new ForbiddenException('You cannot change this service');
+    await this.audit.log(me, 'client.service_changed', 'ClientService', rowId, { plan: before.plan, status: before.status, startDate: before.startDate }, data, ip);
+    return { ok: true as const, message: `${before.name} saved` };
+  }
+
+  /** Removes a service from the client (it stays in the history as ended). A client keeps at least one service. */
+  async removeClientService(me: Me, id: string, rowId: string, ip?: string) {
+    const c = await clientForServices(this.prisma, me, id);
+    const before = await loadClientServiceRow(this.prisma, me.orgId, c.id, rowId);
+    await this.keepOne(me, c.id, rowId);
+    const rows = await this.prisma.clientService.updateManyAndReturn({ where: { id: rowId, orgId: me.orgId, clientOrgId: c.id }, data: { status: 'ended', endedAt: new Date() } });
+    if (!rows.length) throw new ForbiddenException('You cannot change this service');
+    await this.audit.log(me, 'client.service_removed', 'ClientService', rowId, { name: before.name, plan: before.plan, status: before.status }, { status: 'ended' }, ip);
+    return { ok: true as const, message: `${before.name} removed` };
+  }
+
+  private async keepOne(me: Me, clientOrgId: string, rowId: string) {
+    const others = await this.prisma.clientService.count({ where: { orgId: me.orgId, clientOrgId, status: { not: 'ended' }, id: { not: rowId } } });
+    if (!others) throw new BadRequestException('A client must keep at least one service. Add another one first.');
+  }
+
   async detail(me: Me, id: string): Promise<ClientsDetail> {
     const { client: c, readOnly } = await loadClient(this.prisma, me, id);
     const [am, branch, brands, users, engagements, quotes, pendingApprovals, invites, tags] = await Promise.all([
@@ -227,6 +303,15 @@ export class ClientsManageService implements OnModuleInit {
     const names = await this.people.names(trail.flatMap((a) => [a.fromUserId, a.toUserId, a.byId]).filter((x): x is string => !!x));
     const subs = await this.prisma.subService.findMany({ where: { id: { in: engagements.flatMap((e) => e.subServiceIds) } }, select: { id: true, name: true, covers: true } });
     const plan = await activePlanPrices(this.prisma, me.orgId);
+    // v52: what the client has bought, and what it owes (open invoices less payments; overdue = past the due date).
+    const [clientServices, open, dept] = await Promise.all([
+      clientServiceRows(this.prisma, me.orgId, c.id),
+      this.prisma.invoice.findMany({ where: { orgId: me.orgId, clientOrgId: c.id, status: { in: ['issued', 'partially_paid', 'overdue'] } }, select: { totalPaise: true, dueDate: true, payments: { select: { amountPaise: true } } } }),
+      c.departmentId ? this.prisma.department.findFirst({ where: { id: c.departmentId, orgId: me.orgId }, select: { id: true, name: true } }) : null,
+    ]);
+    const today = istDate(new Date());
+    const owedOf = (i: (typeof open)[number]) => Math.max(0, i.totalPaise - i.payments.reduce((s, p) => s + p.amountPaise, 0));
+    const money = { owedPaise: open.reduce((s, i) => s + owedOf(i), 0), overduePaise: open.filter((i) => i.dueDate.toISOString().slice(0, 10) < today).reduce((s, i) => s + owedOf(i), 0), openInvoices: open.length };
     const amHistory = trail.map((a) => ({ id: a.id, at: a.at.toISOString(), from: a.fromUserId ? (names.get(a.fromUserId) ?? null) : null, to: a.toUserId ? (names.get(a.toUserId) ?? null) : null, by: names.get(a.byId) ?? 'Someone', reason: a.reason, note: a.note, handoverNote: a.handoverNote }));
     return {
       id: c.id,
@@ -246,6 +331,9 @@ export class ClientsManageService implements OnModuleInit {
       pendingInvites: invites,
       services: engagements.map((e) => ({ id: e.id, serviceName: e.service.name, serviceId: e.serviceId, tier: e.tier, grouped: e.service.key.startsWith(SERVICE_GROUP_KEY_PREFIX), subServices: e.subServiceIds.flatMap((id) => subs.filter((s) => s.id === id)), monthlyFeePaise: e.monthlyFeePaise, planPricePaise: plan(e.service.key, e.tier)?.pricePaise ?? null, planNote: plan(e.service.key, e.tier)?.note ?? null, billingType: e.billingType, status: e.status, currentGate: e.currentGate, migrated: e.migrated, paymentPending: e.paymentPending, pausedUntil: e.pausedUntil?.toISOString() ?? null, pauseReason: e.pauseReason, startMonth: e.startMonth })),
       quotes: await this.quoteViews(quotes),
+      profile: { clientStatus: c.clientStatus as ClientStatus, website: c.website, department: dept, onboardingDate: c.onboardingDate?.toISOString().slice(0, 10) ?? null, nextFollowUpAt: c.nextFollowUpAt?.toISOString().slice(0, 10) ?? null, importantNotes: c.importantNotes },
+      clientServices,
+      money,
       pendingApprovals: pendingApprovals.map((a) => ({ id: a.id, action: a.action, summary: a.summary, status: a.status, createdAt: a.createdAt.toISOString() })),
       offboarding: off,
       tags: (tags.get(c.id) ?? []).map((t) => ({ id: t.id, name: t.name, color: t.color })),

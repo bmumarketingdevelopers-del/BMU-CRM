@@ -3,7 +3,7 @@
 // request actions (raise on behalf, reassign, add-on quote limit, convert to tasks, internal approval).
 import { z } from "zod";
 import { TIERS, type Tier } from "./catalogue.js";
-import type { ServiceGroupView } from "./service-groups.js";
+import { PLANS, planLabels, type Plan, type PriceList, type ServiceGroupView } from "./service-groups.js";
 import { REQUEST_TYPES } from "./requests.js";
 import { SERVICE_GSTIN_RE } from "./service-flows.js";
 import { CLIENT_TEAM_ROLES, type ClientTeamRole } from "./workspace-types.js";
@@ -53,6 +53,108 @@ const gstin = z
   .transform((v) => v.toUpperCase())
   .refine((v) => v === "" || SERVICE_GSTIN_RE.test(v), { message: "GSTIN should look like 29ABCDE1234F1Z5 (15 characters)" });
 const month = z.string().regex(/^\d{4}-\d{2}$/, "Pick a month");
+
+// ---------------------------------------------------------------------------------------------------------------- v52 clients
+export const CLIENT_STATUSES = ["lead", "onboarding", "active", "on_hold", "inactive"] as const;
+export type ClientStatus = (typeof CLIENT_STATUSES)[number];
+export const clientStatusLabels: Record<ClientStatus, string> = { lead: "Lead", onboarding: "Onboarding", active: "Active", on_hold: "On hold", inactive: "Inactive" };
+
+/** A website: "https://" is added when missing; only http(s) addresses are allowed. Empty stays empty. */
+export function normaliseWebsite(v: string): string | null {
+  const t = v.trim();
+  if (!t) return "";
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(t) ? t : `https://${t}`;
+  try {
+    const u = new URL(withScheme);
+    return (u.protocol === "http:" || u.protocol === "https:") && u.hostname.includes(".") ? withScheme : null;
+  } catch {
+    return null;
+  }
+}
+const website = z
+  .string()
+  .trim()
+  .max(300)
+  .transform((v, ctx) => {
+    const w = normaliseWebsite(v);
+    if (w === null) {
+      ctx.addIssue({ code: "custom", message: "Enter a website like example.com (http or https only)" });
+      return z.NEVER;
+    }
+    return w;
+  });
+const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date");
+
+/** The client's services, as chosen in the steps: groups → sub-services, bundles, then a plan for each. */
+export const clientServicesInputSchema = z.object({
+  groupIds: z.array(z.string().min(1)).max(50).default([]),
+  subServiceIds: z.array(z.string().min(1)).max(200).default([]),
+  bundleIds: z.array(z.string().min(1)).max(50).default([]),
+  /** Plan by sub-service or bundle id; "" or missing = not chosen. */
+  plans: z.record(z.string(), z.enum(["", ...PLANS])).default({}),
+});
+export type ClientServicesInput = z.input<typeof clientServicesInputSchema>;
+
+/**
+ * The one check the browser and the server both run on the services steps: at least one sub-service or bundle; every
+ * chosen group has a sub-service; sub-services belong to a chosen group; plans are ones that item offers. Every id must
+ * be in the price list (the server passes the full list, hidden ones included, for records that already use them).
+ */
+export function clientServicesProblems(v: ClientServicesInput, list: PriceList): string[] {
+  const groupIds = v.groupIds ?? [];
+  const subIds = v.subServiceIds ?? [];
+  const bundleIds = v.bundleIds ?? [];
+  const plans = v.plans ?? {};
+  const out: string[] = [];
+  const groups = new Map(list.groups.map((g) => [g.id, g]));
+  const subs = new Map(list.groups.flatMap((g) => g.subServices.map((s) => [s.id, { ...s, groupId: g.id }] as const)));
+  const bundles = new Map(list.bundles.map((b) => [b.id, b]));
+  if (groupIds.some((id) => !groups.has(id)) || subIds.some((id) => !subs.has(id)) || bundleIds.some((id) => !bundles.has(id))) out.push("Some of the chosen services are no longer in the price list. Choose them again.");
+  if (!subIds.length && !bundleIds.length) out.push("Choose at least one sub service or bundle.");
+  for (const id of groupIds) {
+    const g = groups.get(id);
+    if (g && !subIds.some((s) => subs.get(s)?.groupId === id)) out.push(`Choose at least one sub service for ${g.name}.`);
+  }
+  if (subIds.some((s) => subs.has(s) && !groupIds.includes(subs.get(s)!.groupId))) out.push("A sub service is chosen without its service. Choose the service first.");
+  for (const [id, plan] of Object.entries(plans)) {
+    if (!plan) continue;
+    const item = subs.get(id) ?? bundles.get(id);
+    if (item && item.prices[plan as Plan] == null) out.push(`${item.name} has no ${planLabels[plan as Plan]} plan.`);
+  }
+  return [...new Set(out)];
+}
+
+/** A client's service or bundle as shown on the client page and used to start quotation and invoice items. */
+export type ClientServiceRow = {
+  id: string;
+  kind: "sub" | "bundle";
+  itemId: string;
+  /** Group name, or "Bundle" */
+  service: string;
+  name: string;
+  plan: Plan | null;
+  status: "active" | "paused" | "ended";
+  startDate: string | null;
+  billing: "monthly" | "one_time" | "per_unit";
+  /** The plan's price today (or the lowest plan's, when none is chosen); null when nothing is priced. */
+  pricePaise: number | null;
+  /** The plan the price is for */
+  pricedPlan: Plan | null;
+  description: string;
+};
+export const clientServiceAddSchema = z
+  .object({
+    subServiceId: z.string().optional(),
+    bundleId: z.string().optional(),
+    plan: z.enum(["", ...PLANS]).default(""),
+    status: z.enum(["active", "paused", "ended"]).default("active"),
+    startDate: ymd.optional().or(z.literal("")),
+  })
+  .refine((v) => !!v.subServiceId !== !!v.bundleId, "Pick a sub service or a bundle");
+export type ClientServiceAdd = z.input<typeof clientServiceAddSchema>;
+export const clientServiceEditSchema = z.object({ plan: z.enum(["", ...PLANS]).optional(), status: z.enum(["active", "paused", "ended"]).optional(), startDate: ymd.optional().or(z.literal("")) });
+export type ClientServiceEdit = z.input<typeof clientServiceEditSchema>;
+
 export const CLIENTS_GATES = ["G1", "G2", "G3", "G4", "G5"] as const;
 export type ClientsGate = (typeof CLIENTS_GATES)[number];
 export const clientsGateLabels: Record<ClientsGate, string> = {
@@ -129,6 +231,17 @@ export const clientsCreateSchema = z
     mergeIntoId: z.string().optional().nullable(),
     /** Continue even though possible duplicates were found. */
     confirmDuplicate: z.boolean().default(false),
+    /** v52 */
+    clientStatus: z.enum(CLIENT_STATUSES).default("lead"),
+    website: website.optional().default(""),
+    departmentId: z.string().optional().nullable(),
+    onboardingDate: ymd.optional().or(z.literal("")),
+    nextFollowUpAt: ymd.optional().or(z.literal("")),
+    importantNotes: z.string().trim().max(2000).optional().default(""),
+    /** Billing state (GST state code): same state as BMU → CGST + SGST, else IGST. */
+    placeOfSupply: z.string().trim().max(2).optional().default(""),
+    /** The client's services and bundles with plans (the form always sends them; imports and lead conversion do not). */
+    services: clientServicesInputSchema.optional(),
   })
   .refine((v) => v.startMode === "onboarding" || (v.migrationReason ?? "").length >= 3, { message: "Say why this client is being migrated (e.g. existing client from the old system)", path: ["migrationReason"] })
   .refine((v) => v.startMode === "onboarding" || v.engagements.every((e) => !!e.currentGate && (e.gateReason ?? "").trim().length >= 3), { message: "For a migrated client, set each service's current gate with a reason", path: ["engagements"] })
@@ -355,12 +468,20 @@ export type ClientsFormOptions = {
   canMigrate: boolean;
   /** v33: a Client Manager adding a client: it is always their own. */
   ownOnly?: boolean;
+  /** v52: the price list (services, sub-services, bundles with plan prices), industries and departments. */
+  priceList: PriceList;
+  industryList: string[];
+  departments: { id: string; name: string }[];
+  /** BMU's own GST state, for the billing-state hint (same state → CGST + SGST). */
+  sellerStateCode: string;
 };
 export type ClientsAmSuggestion = { id: string; name: string; role: string; clients: number; activeEngagements: number; industryMatch: number; loadPct: number; suggested: boolean; onLeaveToday: boolean };
 
 export type ClientsListRow = {
   id: string;
   name: string;
+  /** v52 */
+  clientStatus: ClientStatus;
   industry: string | null;
   health: string;
   am: { id: string; name: string } | null;
@@ -379,7 +500,7 @@ export type ClientsListRow = {
   onboardedAt: string;
 };
 /** service: a service name; onboardedFrom / onboardedTo: IST dates (YYYY-MM-DD), both inclusive. */
-export type ClientsListQuery = { q?: string; am?: string; health?: string; industry?: string; branch?: string; status?: string; tag?: string; archived?: string; service?: string; onboardedFrom?: string; onboardedTo?: string };
+export type ClientsListQuery = { q?: string; am?: string; health?: string; industry?: string; branch?: string; status?: string; tag?: string; archived?: string; service?: string; onboardedFrom?: string; onboardedTo?: string; /** v52 */ clientStatus?: string; subService?: string };
 
 export type ClientsCreateResult = {
   client: { id: string; name: string };
@@ -413,6 +534,10 @@ export type ClientsDetail = {
   pendingInvites: ClientsPendingInvite[];
   services: { id: string; serviceName: string; serviceId: string; tier: Tier; grouped: boolean; subServices: { id: string; name: string; covers: string }[]; monthlyFeePaise: number | null; /** Today's price for this plan in the active price book (null for service groups). */ planPricePaise: number | null; /** The catalogue note under the service, e.g. "Ad spend excluded". */ planNote: string | null; billingType: string; status: string; currentGate: string; migrated: boolean; paymentPending: boolean; pausedUntil: string | null; pauseReason: string | null; startMonth: string | null }[];
   quotes: ClientsQuote[];
+  /** v52: status and profile, what the client has bought (sub-services and bundles with plans), and money owed. */
+  profile: { clientStatus: ClientStatus; website: string | null; department: { id: string; name: string } | null; onboardingDate: string | null; nextFollowUpAt: string | null; importantNotes: string | null };
+  clientServices: ClientServiceRow[];
+  money: { owedPaise: number; overduePaise: number; openInvoices: number };
   pendingApprovals: { id: string; action: string; summary: string; status: string; createdAt: string }[];
   offboarding: ClientsOffboarding | null;
   tags: { id: string; name: string; color: string }[];

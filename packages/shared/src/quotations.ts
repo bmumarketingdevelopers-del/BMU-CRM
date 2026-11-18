@@ -27,10 +27,18 @@ export const quoteLineSchema = z.object({
   pct: z.number().min(0).max(100).default(0),
   /** v47: the sub-service this line came from, so unticking its service takes it away again. A plan line uses `plan:<service id>`. */
   subServiceId: z.string().optional(),
+  /** v52 shared form: the item's service (group, or "Bundle") and billing; the GST rate it was saved with. */
+  service: text(120).optional(),
+  billing: z.enum(["", "monthly", "one_time", "per_unit"]).optional(),
+  gstRatePct: z.number().int().min(0).max(28).optional(),
 });
+/** v52: one GST rate for the whole document; 0 = no GST. */
+export const QUOTE_GST_RATES = [5, 12, 18, 28] as const;
+export const docGstRateSchema = z.union([z.literal(0), z.literal(5), z.literal(12), z.literal(18), z.literal(28)]);
+export const itemBillingLabels: Record<string, string> = { "": "Not stated", monthly: "Monthly", one_time: "One-time project", per_unit: "Per unit" };
 export type QuoteLine = z.infer<typeof quoteLineSchema>;
 
-export const QUOTE_OVERVIEW_MAX = 250;
+export const QUOTE_OVERVIEW_MAX = 400;
 const ymd = /^\d{4}-\d{2}-\d{2}$/;
 /** "Bill to" on one quotation: filled from the client's billing details, changed here for this document only. */
 export const quoteBillToSchema = z.object({
@@ -50,7 +58,7 @@ export const quoteContentSchema = z.object({
   projectLines: z.array(text(120)).max(3).default([]),
   /** Up to three highlights beside the total, e.g. { value: "4 wks", label: "Campaign" }. */
   stats: z.array(z.object({ value: text(24).min(1), label: text(40).min(1) })).max(3).default([]),
-  lines: z.array(quoteLineSchema).min(1, "Add at least one cost line").max(30),
+  lines: z.array(quoteLineSchema).min(1, "Add at least one cost line").max(100, "Up to 100 items"),
   scope: z.array(z.object({ title: text(80).min(1), bullets: z.array(text(240)).max(10).default([]) })).max(6).default([]),
   timeline: z.array(z.object({ label: text(24).min(1), title: text(60).min(1), text: text(240).default("") })).max(8).default([]),
   terms: z.array(z.object({ title: text(60).min(1), text: text(600).min(1) })).max(12).default([]),
@@ -70,6 +78,8 @@ export const quoteContentSchema = z.object({
   seal: z.boolean().optional().default(true),
   /** Printed on the document above the terms. */
   notes: text(1000).optional().default(""),
+  /** v52: one GST rate for every item (0 = no GST); missing = the GST setting. */
+  gstRatePct: docGstRateSchema.optional(),
 });
 export type QuoteContent = z.infer<typeof quoteContentSchema>;
 export type QuoteContentInput = z.input<typeof quoteContentSchema>;
@@ -137,8 +147,44 @@ export function quoteLineAmounts(lines: Pick<QuoteLine, "kind" | "qty" | "unitPr
 export function quoteTotals(lines: Pick<QuoteLine, "kind" | "qty" | "unitPricePaise" | "pct">[], gstRatePct: number) {
   const amounts = quoteLineAmounts(lines);
   const subtotalPaise = amounts.reduce((s, a) => s + a, 0);
-  const gstPaise = Math.round((subtotalPaise * gstRatePct) / 100);
+  // v52: tax per item, round(taxable × rate / 100), then added up.
+  const gstPaise = amounts.reduce((s, a) => s + Math.round((a * gstRatePct) / 100), 0);
   return { amounts, subtotalPaise, gstPaise, totalPaise: subtotalPaise + gstPaise };
+}
+
+/** v52: the terms line that follows the "Valid until" field, e.g. "This quotation is valid until 17 December 2026." */
+export const quoteValidUntilText = (ymdDate: string) => `This quotation is valid until ${new Date(`${ymdDate}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })}.`;
+export const QUOTE_VALID_UNTIL_RE = /^This quotation is valid until .+\.$/;
+/** BMU's standard terms with the valid-until line for this date. */
+export const quoteDefaultTerms = (validUntil: string) => [...QUOTE_FIXED_TERMS, { title: String(QUOTE_FIXED_TERMS.length + 1), text: quoteValidUntilText(validUntil) }];
+/** Moves the automatic valid-until line to a new date (a line the manager rewrote by hand is left alone). */
+export function quoteTermsWithValidUntil(terms: { title: string; text: string }[], validUntil: string) {
+  return terms.map((t) => (QUOTE_VALID_UNTIL_RE.test(t.text.trim()) ? { ...t, text: quoteValidUntilText(validUntil) } : t));
+}
+
+/**
+ * v52: the project overview, written by rules (not AI) from the client and items, e.g. "BMU Marketing is pleased to submit
+ * this quotation for the monthly marketing of Akhil Productions. We propose two Growth packages, built for steady,
+ * consistent growth across the channel: SEO and Social Media Management. Akhil Productions may take either package, or
+ * both together for a complete online presence." At most 400 characters.
+ */
+export function quoteOverviewText(input: { company: string; client: string; kind: "quotation" | "invoice"; lines: Pick<QuoteLine, "title" | "billing">[] }): string {
+  const items = input.lines.filter((l) => l.title.trim());
+  if (!items.length || !input.client.trim()) return "";
+  const plans = [...new Set(items.map((l) => /\((Starter|Growth|Premium) plan\)/.exec(l.title)?.[1]).filter(Boolean))] as string[];
+  const names = [...new Set(items.map((l) => l.title.replace(/\s*\((Starter|Growth|Premium) plan\)\s*$/, "").trim()))];
+  const monthly = items.every((l) => l.billing === "monthly");
+  const words = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+  const count = names.length <= 10 ? words[names.length] : String(names.length);
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  const what = monthly ? "the monthly marketing" : "the project work";
+  const pkg = plans.length === 1 ? `${plans[0]} package${names.length > 1 ? "s" : ""}` : `package${names.length > 1 ? "s" : ""}`;
+  const verb = input.kind === "invoice" ? "This invoice covers" : `${input.company} is pleased to submit this quotation for`;
+  const lead = `${verb} ${what} of ${input.client}.`;
+  const body = names.length === 1 ? `We propose one ${pkg}: ${list}.` : `We propose ${count} ${pkg}, built for steady, consistent growth across the channel: ${list}.`;
+  const close = input.kind === "quotation" && names.length > 1 ? ` ${input.client} may take either package, or both together for a complete online presence.` : "";
+  const text = `${lead} ${body}${close}`;
+  return text.length <= QUOTE_OVERVIEW_MAX ? text : `${lead} ${body}`.slice(0, QUOTE_OVERVIEW_MAX);
 }
 
 /**
@@ -223,11 +269,13 @@ export const QUOTE_FIXED_TERMS: { title: string; text: string }[] = [
   { title: "5", text: "The client will provide brand assets, product details, product samples and timely approvals, and will give BMU Marketing access to the social media accounts and the Google Business Profile. Delays may affect the posting schedule." },
   { title: "6", text: "Local SEO and engagement activities improve visibility, but specific rankings, reach or sales results are not guaranteed." },
   { title: "7", text: "Paid advertising budgets, ad spends and third-party tool costs are not included and are borne by the client." },
-  { title: "8", text: "Either party may end this engagement with 30 days' written notice. This quotation is valid for 15 days from the date of issue." },
+  { title: "8", text: "Either party may end this engagement with 30 days' written notice." },
 ];
 
 export type QuoteTerm = { title: string; text: string };
-const sameText = (a?: string, b?: string) => (a ?? "").replace(/\s+/g, " ").trim().toLowerCase() === (b ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+/** Same wording, ignoring spaces and case; two automatic valid-until lines count as the same whatever their dates. */
+const sameText = (a?: string, b?: string) =>
+  (QUOTE_VALID_UNTIL_RE.test((a ?? "").trim()) && QUOTE_VALID_UNTIL_RE.test((b ?? "").trim())) || (a ?? "").replace(/\s+/g, " ").trim().toLowerCase() === (b ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 
 /** One term per line, numbered 1, 2, 3… ("1. " at the start of a line is dropped). At most 12, as the schema allows. */
 export const quoteTermsFromText = (text: string): QuoteTerm[] =>
@@ -240,7 +288,7 @@ export const quoteTermsFromText = (text: string): QuoteTerm[] =>
 export const quoteTermsToText = (terms: QuoteTerm[]) => terms.map((t, i) => `${i + 1}. ${t.text}`).join("\n");
 
 /** Which terms differ from BMU's standard terms, by number: changed, added (past the end) and removed. */
-export function quoteTermsChanges(terms: QuoteTerm[], standard: QuoteTerm[] = QUOTE_FIXED_TERMS) {
+export function quoteTermsChanges(terms: QuoteTerm[], standard: QuoteTerm[] = quoteDefaultTerms("2000-01-01")) {
   const changed: number[] = [];
   terms.forEach((t, i) => i < standard.length && !sameText(t.text, standard[i].text) && changed.push(i + 1));
   const added = terms.slice(standard.length).map((_, i) => standard.length + i + 1);
@@ -312,3 +360,52 @@ export function applyQuoteServices<C extends { title: string; lines: QuoteLine[]
   const planType: QuotePlan | undefined = !kinds.size ? c.planType : kinds.size > 1 ? "mixed" : kinds.has("monthly") ? "monthly" : "one_time";
   return { ...c, title, planType, lines: lines.length ? lines : [{ title: "", details: "", kind: "unit", qty: 1, unitPricePaise: 0, pct: 0 }] };
 }
+
+// ---------------------------------------------------------------------------------------------------------------- v52 invoices
+/** Left empty, the due date is this many days after the invoice date. */
+export const INVOICE_DEFAULT_DUE_DAYS = 15;
+/** The invoice side of the shared quotation / invoice form (save_invoice). */
+export const invoiceDocSaveSchema = z.object({
+  clientOrgId: z.string().min(1, "Pick the client"),
+  /** The client's project (optional). */
+  engagementId: z.string().optional().nullable(),
+  invoiceDate: z.string().regex(ymd, "Pick the invoice date"),
+  dueDate: z.union([z.literal(""), z.string().regex(ymd, "Pick the due date")]).optional().default(""),
+  overview: text(QUOTE_OVERVIEW_MAX).optional().default(""),
+  billTo: quoteBillToSchema.optional(),
+  lines: z.array(quoteLineSchema).min(1, "Add at least one item").max(100, "Up to 100 items"),
+  gstRatePct: docGstRateSchema.default(18),
+  signWith: z.enum(["mine", "blank"]).default("mine"),
+  seal: z.boolean().default(true),
+  notes: text(1000).optional().default(""),
+  terms: z.array(z.object({ title: text(60).min(1), text: text(600).min(1) })).max(12).default([]),
+});
+export type InvoiceDocSaveInput = z.input<typeof invoiceDocSaveSchema>;
+export type InvoiceDocView = {
+  id: string;
+  number: string;
+  status: string;
+  client: { id: string; name: string } | null;
+  engagementId: string | null;
+  invoiceDate: string;
+  dueDate: string;
+  overview: string;
+  billTo: QuoteBillTo;
+  lines: QuoteLine[];
+  gstRatePct: number;
+  /** Older items had different GST rates; saving applies this one to all of them. */
+  mixedRates: boolean;
+  signWith: "mine" | "blank";
+  seal: boolean;
+  notes: string;
+  terms: { title: string; text: string }[];
+  amounts: number[];
+  subtotalPaise: number;
+  gstPaise: number;
+  totalPaise: number;
+  tax: { placeOfSupplyName: string | null; interState: boolean; cgstPaise: number; sgstPaise: number; igstPaise: number };
+  paidPaise: number;
+  balancePaise: number;
+  /** Drafts only: an issued invoice is locked. */
+  canEdit: boolean;
+};

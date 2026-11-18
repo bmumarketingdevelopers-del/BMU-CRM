@@ -3,7 +3,7 @@
 // v45: the parts of a quotation around the document: the client, the services it is for (v46: several), "prepared for" lines and
 // the valid-until date; plus a template picker that loads a template's content into the editor.
 import { useEffect, useRef, useState } from "react";
-import { applyQuoteServices, QUOTE_DEFAULT_VALID_DAYS, quoteServicesTitle, quoteTemplateContent, type ClientsListRow, type QuoteContent, type QuoteServicePick, type QuoteTemplateRow } from "@bmu/shared";
+import { applyQuoteServices, QUOTE_DEFAULT_VALID_DAYS, quoteServicesTitle, quoteTemplateContent, type ClientsDetail, type ClientsListRow, type QuoteContent, type QuoteServicePick, type QuoteTemplateRow } from "@bmu/shared";
 import { Input, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 
@@ -19,6 +19,7 @@ export function QuoteMetaForm({
   fixedClient,
   quoteDate,
   onQuoteDate,
+  onClientLoaded,
 }: {
   meta: QuoteMeta;
   onChange: (m: QuoteMeta) => void;
@@ -27,6 +28,8 @@ export function QuoteMetaForm({
   fixedClient?: boolean;
   quoteDate: string;
   onQuoteDate: (date: string) => void;
+  /** v52: the client's record once loaded (its name for the overview, its services to start the items). */
+  onClientLoaded?: (d: ClientsDetail) => void;
 }) {
   const [clients, setClients] = useState<ClientsListRow[]>();
   const [templates, setTemplates] = useState<QuoteTemplateRow[]>();
@@ -45,6 +48,7 @@ export function QuoteMetaForm({
         const gstin = d.billing.gstin ?? "";
         const fromRecord = { name: d.billing.billingName || d.name, gstin, placeOfSupply: d.billing.placeOfSupply || (/^\d{2}/.test(gstin) ? gstin.slice(0, 2) : ""), address: d.billing.billingAddress ?? "" };
         onServices((c) => (c.billTo ? c : { ...c, billTo: fromRecord }));
+        onClientLoaded?.(d);
         // A price-book service brings its plan (today's price and catalogue note), so its cost line starts priced.
         setServices(d.services.filter((s) => s.status !== "closed").map((s) => ({ id: s.id, name: s.serviceName, label: s.grouped ? s.serviceName : `${s.serviceName} (${s.tier})`, billingType: s.billingType, subServices: s.subServices, plan: !s.grouped && s.planPricePaise ? { tier: s.tier, pricePaise: s.planPricePaise, note: s.planNote } : undefined })));
       })

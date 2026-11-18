@@ -3,10 +3,11 @@
 // v45: one quotation: the document, and (for the client's CM, leadership and Finance) edit while a draft, send /
 // send again, cancel, and raise the balance invoice once the client has accepted.
 import Link from "next/link";
-import { use, useState } from "react";
-import { formatINR, quoteStatusLabels, type QuoteContent, type QuoteView } from "@bmu/shared";
+import { useSearchParams } from "next/navigation";
+import { use, useEffect, useRef, useState } from "react";
+import { formatINR, quoteDefaultValidUntil, quoteStatusLabels, type QuoteContent, type QuoteView } from "@bmu/shared";
 import { QuotationDocument } from "@/components/quotes/quotation-document";
-import { cleanContent, QuoteEditor, SaveBar } from "@/components/quotes/quote-editor";
+import { cleanContent, QuoteEditor, quoteProblem, SaveBar, useDocAutosave } from "@/components/quotes/quote-editor";
 import { QuoteMetaForm, type QuoteMeta } from "@/components/quotes/quote-meta";
 import { Badge, Button, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -48,6 +49,26 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string }>();
   const q = fresh ?? loaded.data;
+  // v52: autosave while editing a draft (about 4 seconds after a change, and when the tab is hidden).
+  const auto = useDocAutosave({
+    enabled: !!editing,
+    value: editing,
+    problem: editing ? quoteProblem(editing.meta, editing.content) : null,
+    save: async () => {
+      if (!editing || !q) return;
+      setFresh(await api.quotes.update(q.id, { ...cleanContent(editing.content), ...editing.meta, templateId: editing.meta.templateId || null }));
+    },
+  });
+  // /team/quotes/<id>?edit=1 (where the first autosave of a new quotation lands) opens the editor straight away.
+  const wantsEdit = useSearchParams()?.get("edit") === "1";
+  const opened = useRef(false);
+  useEffect(() => {
+    if (wantsEdit && q?.can.edit && !opened.current) {
+      opened.current = true;
+      startEdit();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsEdit, q?.id, q?.can.edit]);
   if (!q) return <LoadState loading={loaded.loading} error={loaded.error} />;
   const run = async (fn: () => Promise<QuoteView & { message?: string }>, ok?: string) => {
     setBusy(true);
@@ -64,9 +85,11 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
       setBusy(false);
     }
   };
-  const startEdit = () =>
-    // Older drafts have no quotation date: start from the date they show.
-    setEditing({ meta: { clientOrgId: q.client.id, engagementIds: q.engagementIds, templateId: q.templateId ?? "", preparedFor: q.client.preparedFor, validUntil: q.validUntil }, content: { ...q.content, quoteDate: q.content.quoteDate ?? q.date.slice(0, 10) } });
+  function startEdit() {
+    if (!q) return;
+    // Older drafts have no quotation date or GST rate of their own: start from what they show.
+    setEditing({ meta: { clientOrgId: q.client.id, engagementIds: q.engagementIds, templateId: q.templateId ?? "", preparedFor: q.client.preparedFor, validUntil: q.validUntil }, content: { ...q.content, quoteDate: q.content.quoteDate ?? q.date.slice(0, 10), gstRatePct: (q.content.gstRatePct ?? q.gstRatePct) as QuoteContent["gstRatePct"] } });
+  }
   const status = quoteStatusLabels[q.status].team;
   return (
     <>
@@ -123,6 +146,9 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
             onChange={(content) => setEditing((e) => e && { ...e, content })}
             gstRatePct={q.gstRatePct}
             clientOrgId={q.client.id}
+            clientName={q.client.name}
+            validUntil={editing.meta.validUntil || quoteDefaultValidUntil(editing.content.quoteDate || q.date.slice(0, 10))}
+            onItemsEdited={() => undefined}
             details={
               <QuoteMetaForm
                 meta={editing.meta}
@@ -144,6 +170,9 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
             >
               Save changes
             </Button>
+            <span className="text-xs text-ink-muted" data-testid="quote-autosave">
+              {auto.status}
+            </span>
             <Button variant="secondary" onClick={() => setEditing(undefined)}>
               Cancel
             </Button>

@@ -1,10 +1,13 @@
 "use client";
 
 // v45: a new quotation: pick the client and a template, edit, then save it as a draft (send it from the next page).
+// v52: choosing the client fills Bill to and starts the items from the client's services (until the items are edited
+// by hand); the overview is written from them; autosave about 4 seconds after a change (and when the tab is hidden),
+// the first one turning this page into the saved draft's page so a reload continues the same draft.
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useState } from "react";
-import type { QuoteContent } from "@bmu/shared";
-import { cleanContent, emptyContent, QuoteEditor, SaveBar } from "@/components/quotes/quote-editor";
+import { Suspense, useRef, useState } from "react";
+import { quoteDefaultValidUntil, type QuoteContent } from "@bmu/shared";
+import { cleanContent, emptyContent, linesFromClientServices, QuoteEditor, quoteProblem, SaveBar, useDocAutosave } from "@/components/quotes/quote-editor";
 import { inDays, QuoteMetaForm, type QuoteMeta } from "@/components/quotes/quote-meta";
 import { Button, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -16,45 +19,70 @@ function NewQuote() {
   // Valid until starts empty: the server makes it 30 days after the quotation date.
   const [meta, setMeta] = useState<QuoteMeta>({ clientOrgId: preset, engagementIds: [], templateId: "", preparedFor: [], validUntil: "" });
   const [content, setContent] = useState<QuoteContent>({ ...emptyContent(), quoteDate: inDays(0) });
+  const [clientName, setClientName] = useState("");
+  const itemsEdited = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const body = () => ({ ...cleanContent(content), ...meta, templateId: meta.templateId || null });
+  const auto = useDocAutosave({
+    value: { meta, content },
+    problem: quoteProblem(meta, content),
+    save: async () => {
+      const q = await api.quotes.create(body());
+      router.replace(`/team/quotes/${q.id}?edit=1`);
+    },
+  });
   async function save() {
     setBusy(true);
     setError(undefined);
     try {
-      const q = await api.quotes.create({ ...cleanContent(content), ...meta, templateId: meta.templateId || null });
+      const q = await api.quotes.create(body());
+      auto.markSaved();
       router.push(`/team/quotes/${q.id}`);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
     }
   }
+  const validUntil = meta.validUntil || quoteDefaultValidUntil(content.quoteDate || inDays(0));
   return (
     <>
-      <PageTitle title="New quotation" subtitle="Pick the client and a template, edit it for this client, then save. You'll see the document and can send it next." />
+      <PageTitle title="New quotation" subtitle="Pick the client: their services, Bill to and the overview are filled in for you. Check them, then save." />
       <div className="grid max-w-4xl gap-6">
         <QuoteEditor
           key={meta.templateId}
           value={content}
           onChange={setContent}
           clientOrgId={meta.clientOrgId}
+          clientName={clientName}
+          validUntil={validUntil}
+          onItemsEdited={() => (itemsEdited.current = true)}
           details={
             <QuoteMetaForm
               meta={meta}
               onChange={setMeta}
               // A template brings the document; this quotation's date, Bill to, signature, notes and terms stay.
-              onTemplate={(c) => setContent((cur) => ({ ...c, quoteDate: cur.quoteDate, billTo: cur.billTo, signWith: cur.signWith, seal: cur.seal, notes: cur.notes, terms: cur.terms }))}
+              onTemplate={(c) => setContent((cur) => ({ ...c, quoteDate: cur.quoteDate, billTo: cur.billTo, signWith: cur.signWith, seal: cur.seal, notes: cur.notes, terms: cur.terms, gstRatePct: cur.gstRatePct }))}
               onServices={setContent}
               fixedClient={!!preset}
               quoteDate={content.quoteDate ?? ""}
               onQuoteDate={(quoteDate) => setContent((cur) => ({ ...cur, quoteDate }))}
+              onClientLoaded={(d) => {
+                setClientName(d.name);
+                if (itemsEdited.current) return;
+                const lines = linesFromClientServices(d.clientServices);
+                if (lines.length) setContent((cur) => ({ ...cur, lines, title: cur.title.trim() ? cur.title : [...new Set(lines.map((l) => l.title.replace(/\s*\((Starter|Growth|Premium) plan\)$/, "")))].join(", ").slice(0, 160) }));
+              }}
             />
           }
         />
         <SaveBar busy={busy} error={error}>
           <Button onClick={save} disabled={busy} data-testid="quote-save">
-            Save and preview
+            Save quotation as draft
           </Button>
+          <span className="text-xs text-ink-muted" data-testid="quote-autosave">
+            {auto.status}
+          </span>
         </SaveBar>
       </div>
     </>

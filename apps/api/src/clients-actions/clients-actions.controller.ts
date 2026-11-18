@@ -1,6 +1,9 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { z } from 'zod';
 import {
+  clientServiceAddSchema,
+  clientServiceEditSchema,
+  clientServicesInputSchema,
   CLIENT_TEAM_ROLES,
   clientsBrandSchema,
   clientsBulkSchema,
@@ -129,6 +132,27 @@ export class ClientsActionsController {
   @Post('engagements/:id/remove')
   requestRemoval(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.lifecycle.requestRemoval(me, id, parse(clientsRemoveServiceSchema, body).reason, ip);
+  }
+
+  /** v52: what the client has bought (sub-services and bundles with plans): set all at once, add, change or remove one. */
+  @Put(':id/client-services')
+  setClientServices(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.manage.setClientServices(me, id, parse(clientServicesInputSchema, body), ip);
+  }
+
+  @Post(':id/client-services')
+  addClientService(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.manage.addClientService(me, id, parse(clientServiceAddSchema, body), ip);
+  }
+
+  @Patch(':id/client-services/:rowId')
+  editClientService(@CurrentUser() me: Me, @Param('id') id: string, @Param('rowId') rowId: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.manage.editClientService(me, id, rowId, parse(clientServiceEditSchema, body), ip);
+  }
+
+  @Delete(':id/client-services/:rowId')
+  removeClientService(@CurrentUser() me: Me, @Param('id') id: string, @Param('rowId') rowId: string, @ClientIp() ip?: string) {
+    return this.manage.removeClientService(me, id, rowId, ip);
   }
 
   /** v47: which sub-services a running service has, and its monthly fee. */

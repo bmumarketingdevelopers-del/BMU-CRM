@@ -18,7 +18,8 @@ import {
   quotePaidSchema,
   type QuoteAcceptFileKind,
   type QuotePaymentNote,
-  QUOTE_FIXED_TERMS,
+  quoteDefaultTerms,
+  quoteTermsWithValidUntil,
   QUOTE_OVERVIEW_MAX,
   quoteOverviewSchema,
   type QuoteClientDetails,
@@ -135,7 +136,8 @@ export class QuotesService {
   async formSettings(me: Me) {
     this.assertStaff(me);
     const gst = await this.settings.get(me.orgId, 'gst');
-    return { gstRatePct: gst.ratePct ?? 18, sellerStateCode: gst.stateCode || '29', sellerState: gst.state || serviceGstStateName(gst.stateCode) || 'Karnataka' };
+    const tenant = await this.settings.get(me.orgId, 'tenant');
+    return { gstRatePct: gst.ratePct ?? 18, sellerStateCode: gst.stateCode || '29', sellerState: gst.state || serviceGstStateName(gst.stateCode) || 'Karnataka', company: gst.legalName || tenant.name || 'BMU Marketing' };
   }
 
   /** v49: two lines on what BMU will do for the client, for the manager to keep or edit. Plain wording when AI is off. */
@@ -186,7 +188,7 @@ export class QuotesService {
     const stored = q.content as unknown as QuoteContent;
     // v46: the fixed terms (a quotation keeps the wording it was sent with).
     // The terms the manager set (BMU's standard terms when none); a sent quotation keeps the wording it went out with.
-    const content = { ...stored, terms: stored.terms?.length ? stored.terms : QUOTE_FIXED_TERMS };
+    const content = { ...stored, terms: stored.terms?.length ? stored.terms : quoteDefaultTerms(q.validUntil.toISOString().slice(0, 10)) };
     const t = quoteTotals(content.lines, q.gstRatePct);
     const billedTo = this.billed(details, stored.billTo);
     const split = quoteGstSplit(q.gstPaise, gst.stateCode || '29', billedTo.placeOfSupply, billedTo.gstin);
@@ -334,8 +336,11 @@ export class QuotesService {
     const { clientOrgId, engagementIds: _services, templateId, preparedFor, validUntil: _validUntil, ...rest } = input;
     // The manager may change the terms for this quotation (Admins and Founders are told when it is sent); none means BMU's standard terms.
     const parsed = parse(quoteContentSchema, rest) as QuoteContent;
-    const content = { ...parsed, terms: parsed.terms.length ? parsed.terms.map((t, i) => ({ title: String(i + 1), text: t.text })) : QUOTE_FIXED_TERMS };
-    const t = quoteTotals(content.lines, gst.ratePct ?? 18);
+    // v52: one GST rate for every item (0 = no GST); the valid-until line follows the date while it is the automatic one.
+    const rate = input.gstRatePct ?? gst.ratePct ?? 18;
+    const terms = parsed.terms.length ? quoteTermsWithValidUntil(parsed.terms, validUntil).map((t, i) => ({ title: String(i + 1), text: t.text })) : quoteDefaultTerms(validUntil);
+    const content = { ...parsed, terms, lines: parsed.lines.map((l) => ({ ...l, gstRatePct: rate })) };
+    const t = quoteTotals(content.lines, rate);
     if (t.subtotalPaise <= 0) throw new BadRequestException('The total is zero; add the rates');
     return {
       clientOrgId,
@@ -348,7 +353,7 @@ export class QuotesService {
       subtotalPaise: t.subtotalPaise,
       gstPaise: t.gstPaise,
       totalPaise: t.totalPaise,
-      gstRatePct: gst.ratePct ?? 18,
+      gstRatePct: rate,
     };
   }
 
@@ -385,7 +390,7 @@ export class QuotesService {
     if (this.status(before) === 'expired') throw new BadRequestException('It has expired. Make a new quotation with a new valid-until date.');
     // v46: the wording it goes out with is kept on the quotation.
     const draft = before.content as unknown as QuoteContent;
-    const terms = draft.terms?.length ? draft.terms : QUOTE_FIXED_TERMS;
+    const terms = draft.terms?.length ? draft.terms : quoteDefaultTerms(before.validUntil.toISOString().slice(0, 10));
     const fixedContent = before.status === 'draft' ? { ...draft, terms, clientDetails: await this.clientDetails(before.clientOrgId), signedBy: this.signChoice(await this.signerFor(me), before.content as unknown as QuoteContent) } : (before.content as unknown as QuoteContent);
     const q = await this.prisma.quotation.update({ where: { id }, data: { status: 'sent', sentAt: before.sentAt ?? new Date(), sentById: me.id, changeRequest: null, content: fixedContent as unknown as Prisma.InputJsonValue } });
     const content = q.content as unknown as QuoteContent;
@@ -597,7 +602,7 @@ export class QuotesService {
       admins.map((a) => a.id).filter((id) => id !== me.id),
       { kind: 'quote_terms_changed', title: `${me.name} changed the terms on ${q.number}`, body: `Sent to ${client?.name ?? 'the client'} with terms ${parts.join('; ')} (compared with BMU's standard terms).`, link: `/team/quotes/${q.id}` },
     );
-    await this.audit.log(me, 'quote.terms_changed', 'Quotation', q.id, { terms: QUOTE_FIXED_TERMS }, { terms, ...diff }, ip);
+    await this.audit.log(me, 'quote.terms_changed', 'Quotation', q.id, { terms: quoteDefaultTerms(q.validUntil.toISOString().slice(0, 10)) }, { terms, ...diff }, ip);
   }
 
   private async withFounders(orgId: string, ids: string[]) {

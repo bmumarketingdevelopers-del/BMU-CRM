@@ -1,6 +1,9 @@
 import type { Transport } from "./transport.js";
 import type { CoreUndo } from "../core-actions.js";
 import type {
+  ClientServiceAdd,
+  ClientServiceEdit,
+  ClientServicesInput,
   ClientsAccount,
   ClientsAmSuggestion,
   ClientsBrandInput,
@@ -54,6 +57,11 @@ export const clientsActionsApi = (t: Transport) => ({
     addServices: (id: string, input: ClientsAddServicesInput) => t.post<ClientsDetail & { message: string }>(`/clients-actions/${id}/services`, input),
     requestRemoval: (engagementId: string, reason: string) => t.post<Done>(`/clients-actions/engagements/${engagementId}/remove`, { reason }),
     setSubServices: (engagementId: string, input: ClientsSubServicesInput) => t.post<Done>(`/clients-actions/engagements/${engagementId}/sub-services`, input),
+    /** v52: what the client has bought (sub-services and bundles with plans). */
+    setClientServices: (clientId: string, input: ClientServicesInput) => t.put<Done>(`/clients-actions/${clientId}/client-services`, input),
+    addClientService: (clientId: string, input: ClientServiceAdd) => t.post<Done>(`/clients-actions/${clientId}/client-services`, input),
+    editClientService: (clientId: string, rowId: string, input: ClientServiceEdit) => t.patch<Done>(`/clients-actions/${clientId}/client-services/${rowId}`, input),
+    removeClientService: (clientId: string, rowId: string) => t.del<Done>(`/clients-actions/${clientId}/client-services/${rowId}`),
     sendQuote: (quoteId: string) => t.post<ClientsDetail>(`/clients-actions/quotes/${quoteId}/send`),
     cancelQuote: (quoteId: string) => t.post<ClientsDetail>(`/clients-actions/quotes/${quoteId}/cancel`),
     pause: (engagementId: string, input: { reason: string; until: string }) => t.post<Done>(`/clients-actions/engagements/${engagementId}/pause`, input),

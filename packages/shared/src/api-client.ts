@@ -2,7 +2,7 @@ import type { EnquiryInput, Health } from "./schemas.js";
 import type { Me } from "./auth.js";
 import type { LeadRow, LeadUpdate } from "./crm.js";
 import type { InviteUser, OrgTree, OrgUser, RoleWithPermissions, UpdateUser } from "./admin.js";
-import type { ServiceGroupInput, ServiceGroupView, SubServiceInput } from "./service-groups.js";
+import type { BundleInput, BundleView, IndustryInput, IndustryView, PriceList, ServiceGroupInput, ServiceGroupView, SubServiceInput } from "./service-groups.js";
 import type { CreateProposal, PricedAddOn, PricedBundle, PricedService, ProposalView } from "./proposals.js";
 import type { ClientInvoice, ClientOverview, ClientRow } from "./client.js";
 import type { ClientOnboarding, ClientPlanView, EngagementDetail, EngagementRow, PlanContent } from "./delivery.js";
@@ -304,6 +304,14 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
       saveGroup: (id: string, input: ServiceGroupInput) => patch<ServiceGroupView[]>(`/catalogue/groups/${id}`, input),
       addSubService: (groupId: string, input: SubServiceInput) => post<ServiceGroupView[]>(`/catalogue/groups/${groupId}/sub-services`, input),
       saveSubService: (id: string, input: SubServiceInput) => patch<ServiceGroupView[]>(`/catalogue/sub-services/${id}`, input),
+      /** v52: the price list for forms, bundles and industries. */
+      priceList: () => request<PriceList>("/catalogue/price-list"),
+      bundles: () => request<BundleView[]>("/catalogue/service-bundles"),
+      addBundle: (input: BundleInput) => post<BundleView[]>("/catalogue/service-bundles", input),
+      saveBundle: (id: string, input: BundleInput) => patch<BundleView[]>(`/catalogue/service-bundles/${id}`, input),
+      industries: () => request<IndustryView[]>("/catalogue/industries"),
+      addIndustry: (input: IndustryInput) => post<IndustryView[]>("/catalogue/industries", input),
+      saveIndustry: (id: string, input: IndustryInput) => patch<IndustryView[]>(`/catalogue/industries/${id}`, input),
     },
 
     leads: {

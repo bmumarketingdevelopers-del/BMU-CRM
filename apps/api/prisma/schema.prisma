@@ -375,6 +375,16 @@ model ClientOrg {
   readOnlyUntil        DateTime?
   /// v16 creative: posts need the client's approval before they can be scheduled and published (default on)
   publishNeedsApproval Boolean   @default(true)
+  /// v52: lead | onboarding | active | on_hold | inactive (clients made before v52 are active)
+  clientStatus   String    @default("active")
+  website        String?
+  departmentId   String?
+  onboardingDate DateTime?
+  nextFollowUpAt DateTime?
+  importantNotes String?
+  /// v52: who added the client (may set its first services even when someone else is its Client Manager)
+  createdById    String?
+  clientServices ClientService[]
 
   org         Organisation  @relation(fields: [orgId], references: [id])
   am          User?         @relation(fields: [amUserId], references: [id])
@@ -996,6 +1006,10 @@ model Invoice {
   sealFileId           String?
   signatoryName        String?
   signatoryDesignation String?
+  /// v52 shared quotation / invoice form: the GST rate for every item (0 = no GST) and the document parts
+  /// (invoice date, Bill to, overview, signature choice, seal, terms). Null on invoices made before v52.
+  gstRatePct           Int?
+  doc                  Json?
 
   clientOrg ClientOrg? @relation(fields: [clientOrgId], references: [id])
   proposal  Proposal?  @relation(fields: [proposalId], references: [id])
@@ -3883,11 +3897,76 @@ model SubService {
   sortOrder  Int       @default(0)
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
+  /// v52 price list: monthly | one_time | per_unit, and each plan's price before GST (empty = plan not offered)
+  billing      String @default("monthly")
+  starterPaise Int?
+  growthPaise  Int?
+  premiumPaise Int?
 
-  group ServiceGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group          ServiceGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  clientServices ClientService[]
 
   @@unique([groupId, name])
   @@map("sub_services")
+}
+
+/// v52: a bundle of 2–20 sub-services sold together, always monthly. Its plan price is worked out (members' prices for
+/// that plan, minus the saving), never stored. Hidden bundles stay on clients and documents that already use them.
+model ServiceBundle {
+  id            String    @id @default(cuid())
+  orgId         String
+  name          String
+  /// In order, each once, all from the price list (checked when saved)
+  subServiceIds String[]
+  savingPct     Int       @default(10)
+  /// "Can be chosen" for new clients and documents
+  selectable    Boolean   @default(true)
+  sortOrder     Int       @default(0)
+  createdAt     DateTime  @default(now())
+
+  clientServices ClientService[]
+
+  @@index([orgId])
+  @@map("service_bundles")
+}
+
+/// v52: industries a client can be in (Settings → Services and industries).
+model Industry {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  sortOrder  Int       @default(0)
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([orgId])
+  @@map("industries")
+}
+
+/// v52: what a client has bought, one row per sub-service OR bundle, with its plan. The name is copied from the price
+/// list so history stays readable after renames; ended rows are kept as history.
+model ClientService {
+  id           String    @id @default(cuid())
+  orgId        String
+  clientOrgId  String
+  subServiceId String?
+  bundleId     String?
+  /// starter | growth | premium, or empty (not chosen)
+  plan         String?
+  /// active | paused | ended
+  status       String    @default("active")
+  startDate    DateTime?
+  name         String
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  endedAt      DateTime?
+
+  clientOrg  ClientOrg      @relation(fields: [clientOrgId], references: [id], onDelete: Cascade)
+  subService SubService?    @relation(fields: [subServiceId], references: [id], onDelete: Restrict)
+  bundle     ServiceBundle? @relation(fields: [bundleId], references: [id], onDelete: Restrict)
+
+  @@index([clientOrgId, status])
+  @@map("client_services")
 }
 
 /// v45 quotations: the Client Manager makes one for a client (from a template, edited), sends it, and the client

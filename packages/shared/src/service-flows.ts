@@ -213,7 +213,12 @@ export type ServiceTaxInvoice = {
   dueDate: string;
   status: string;
   kind: string;
-  title: "Tax Invoice";
+  /** v52: "Tax Invoice" when GST is added, "Invoice" when it is not. */
+  title: "Tax Invoice" | "Invoice";
+  /** v52: false when the invoice was saved with no GST (rate 0). */
+  gstAdded?: boolean;
+  /** v52: the project overview written on the invoice form. */
+  overview?: string | null;
   /** v27: the design: title stamp and what page 2 shows. */
   variant: ServiceInvoiceVariant;
   /** v27: the invoice's note to the client, if any. */
@@ -231,7 +236,7 @@ export type ServiceTaxInvoice = {
   buyer: { name: string; legalName: string; gstin: string | null; address: string | null; placeOfSupply: string; placeOfSupplyName: string; email: string | null };
   sacCode: string;
   /** title: the service as printed (AI-written for manual invoices); details: one or two sentences, or null. */
-  lines: { label: string; title: string; details: string | null; sac: string; taxablePaise: number; passThrough: boolean }[];
+  lines: { label: string; title: string; details: string | null; sac: string; taxablePaise: number; passThrough: boolean; /** v52 */ qty?: number; unitPricePaise?: number; service?: string; billing?: string }[];
   taxablePaise: number;
   ratePct: number;
   interState: boolean;

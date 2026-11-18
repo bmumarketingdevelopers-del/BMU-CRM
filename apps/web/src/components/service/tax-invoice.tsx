@@ -10,7 +10,7 @@ import { QuoteInvoice } from "@/components/quotes/quote-invoice";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { createPortal } from "react-dom";
-import { formatINR, paymentMethodLabels, serviceInvoiceVariantInfo, type ServiceInvoiceVariant, type ServiceTaxInvoice } from "@bmu/shared";
+import { formatINR, itemBillingLabels, paymentMethodLabels, serviceInvoiceVariantInfo, type ServiceInvoiceVariant, type ServiceTaxInvoice } from "@bmu/shared";
 import { Button } from "@/components/ui";
 
 const day = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
@@ -171,7 +171,8 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
   const services = t.taxablePaise - passThrough;
   return (
     <section className="inv-sheet" data-testid="invoice-page-1">
-      <Letterhead t={t} title="TAX INVOICE" />
+      {/* v52: TAX INVOICE when GST is added, INVOICE without it; a draft carries a Draft stamp. */}
+      <Letterhead t={t} title={`${t.gstAdded === false ? "INVOICE" : "TAX INVOICE"}${t.status === "draft" ? " · DRAFT" : ""}`} />
       <div className="grid grid-cols-[1fr_auto] gap-6 border-b border-[#e5e7eb] py-4 text-[12px]">
         <div className="min-w-0">
           <Label>Billed to</Label>
@@ -180,6 +181,7 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
           {t.buyer.address && <p className="whitespace-pre-line leading-snug text-[#4b5563]">{t.buyer.address}</p>}
           <p className="text-[#4b5563]">GSTIN: {t.buyer.gstin ?? "Unregistered"}</p>
           {t.buyer.email && <p className="text-[#4b5563]">{t.buyer.email}</p>}
+          {t.overview && <p className="mt-2 leading-snug text-[#374151]" data-testid="invoice-overview">{t.overview}</p>}
         </div>
         <dl className="grid grid-cols-[auto_auto] gap-x-5 gap-y-[3px] self-start text-right">
           <dt className="text-left text-[#6b7280]">Invoice no.</dt>
@@ -205,7 +207,7 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
           <p className="num text-[30px] font-extrabold leading-tight" style={{ color: GREEN }}>
             {formatINR(t.balancePaise > 0 ? t.balancePaise : t.totalPaise)}
           </p>
-          <p className="text-[11px] text-white/75">Inclusive of {t.ratePct}% GST{t.balancePaise > 0 ? ` · due by ${d(t.dueDate)}` : ""}</p>
+          <p className="text-[11px] text-white/75">{t.gstAdded === false ? "No GST added" : `Inclusive of ${t.ratePct}% GST`}{t.balancePaise > 0 ? ` · due by ${d(t.dueDate)}` : ""}</p>
         </div>
         <div className="border-l border-white/15 pl-6 text-center">
           <p className="text-[15px] font-bold leading-tight">{t.number}</p>
@@ -231,7 +233,8 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
             <tr key={i} className="border-b border-[#e7e5df] align-top">
               <td className="px-2 py-2.5 text-[#6b7280]">{i + 1}</td>
               <td className="px-2 py-2.5">
-                <p className="font-medium text-[#1c2430]">{l.title}</p>
+                <p className="font-semibold text-[#1c2430]">{l.title}</p>
+                {(l.service || l.billing) && <p className="text-[11px] text-[#4b5563]">{[l.service, l.billing ? itemBillingLabels[l.billing] : null].filter(Boolean).join(" · ")}{l.qty && l.qty !== 1 && l.unitPricePaise ? ` · ${l.qty} × ${formatINR(l.unitPricePaise)}` : ""}</p>}
                 {l.details && <p className="mt-0.5 text-[11px] leading-snug text-[#6b7280]">{l.details}</p>}
               </td>
               <td className="px-2 py-2.5 text-[#4b5563]">{l.passThrough ? "—" : l.sac}</td>
@@ -253,8 +256,10 @@ function PageOne({ t }: { t: ServiceTaxInvoice }) {
           )}
         </div>
         <div>
-          <Row k={passThrough ? "Taxable value (services)" : "Taxable value"} v={formatINR(services)} />
-          {t.interState ? (
+          <Row k={t.gstAdded === false ? "Subtotal" : passThrough ? "Taxable value (services)" : "Taxable value"} v={formatINR(services)} />
+          {t.gstAdded === false ? (
+            <Row k="GST" v="Not added" muted />
+          ) : t.interState ? (
             <Row k={`IGST @ ${t.ratePct}%`} v={formatINR(t.igstPaise)} />
           ) : (
             <>
