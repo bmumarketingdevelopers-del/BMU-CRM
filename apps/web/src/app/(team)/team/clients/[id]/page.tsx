@@ -11,7 +11,9 @@ import {
   formatINR,
   requestStatusLabels,
   requestTypeLabels,
+  clientStatusLabels,
   type Client360,
+  type PriceList,
   type ClientsDetail,
   type ClientTeamRole,
   type DeliverableStatus,
@@ -33,6 +35,7 @@ import { ago, fmtDate, fmtDay, human } from "@/components/workspace/format";
 import { Badge, LoadState, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
 import { ClientQuotations } from "@/components/quotes/client-quotations";
+import { ClientServicesPanel } from "@/components/clients/client-services-picker";
 import { UploadFilesButton } from "@/components/ops/upload-files-button";
 import { CustomFieldsPanel } from "@/components/custom-fields-panel";
 import { AdResults } from "@/components/integrations/ad-results";
@@ -66,6 +69,11 @@ export default function Client360Page({ params, searchParams }: { params: Promis
   const [d, setD] = useState<ClientsDetail | null>();
   const [error, setError] = useState<string>();
   const [modal, setModal] = useState<Modal>(null);
+  // v52: the price list for the Services and plans panel (sub-services and bundles with plan prices).
+  const [priceList, setPriceList] = useState<PriceList>();
+  useEffect(() => {
+    api.catalogue.priceList().then(setPriceList, () => undefined);
+  }, [version]);
 
   const load = useCallback(() => {
     api.workspace.client360(id).then(setC, (e: Error) => setError(e.message));
@@ -173,7 +181,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
             <StatTile label="Active services" value={stats.activeServices} />
             <StatTile label="Open requests" value={stats.openRequests} tone={stats.openRequests ? "warn" : "default"} />
             <StatTile label="Drafts with client" value={stats.draftsWaiting} hint="Waiting for their review" />
-            <StatTile label="Outstanding" value={stats.outstandingPaise === null ? "—" : formatINR(stats.outstandingPaise)} tone={stats.outstandingPaise ? "warn" : "default"} hint={stats.outstandingPaise === null ? "Billing is not part of your access" : undefined} />
+            <StatTile label="Owed to us" value={d ? formatINR(d.money.owedPaise) : stats.outstandingPaise === null ? "—" : formatINR(stats.outstandingPaise)} tone={(d?.money.overduePaise ?? 0) > 0 ? "warn" : "default"} hint={d ? (d.money.overduePaise ? `${formatINR(d.money.overduePaise)} overdue` : "Nothing overdue") : stats.outstandingPaise === null ? "Billing is not part of your access" : undefined} />
             <StatTile label="Last contact" value={stats.lastContactAt ? ago(stats.lastContactAt) : "—"} hint={stats.lastContactAt ? fmtDate.format(new Date(stats.lastContactAt)) : "No messages yet"} />
           </StatRow>
           {d && d.pendingApprovals.length > 0 && (
@@ -203,6 +211,22 @@ export default function Client360Page({ params, searchParams }: { params: Promis
                 <dd className="break-all">{d?.contact.email ?? "—"}</dd>
                 <dt className="text-ink-muted">Branch</dt>
                 <dd>{d?.branch?.name ?? "—"}</dd>
+                <dt className="text-ink-muted">Status</dt>
+                <dd data-testid="client-status">{d ? clientStatusLabels[d.profile.clientStatus] : "—"}</dd>
+                <dt className="text-ink-muted">Website</dt>
+                <dd className="break-all">{d?.profile.website ? <a href={d.profile.website} target="_blank" rel="noreferrer" className="underline">{d.profile.website.replace(/^https?:\/\//, "")}</a> : "—"}</dd>
+                <dt className="text-ink-muted">Department</dt>
+                <dd>{d?.profile.department?.name ?? "—"}</dd>
+                <dt className="text-ink-muted">Onboarding</dt>
+                <dd>{d?.profile.onboardingDate ? fmtDay.format(new Date(d.profile.onboardingDate)) : "—"}</dd>
+                <dt className="text-ink-muted">Next follow-up</dt>
+                <dd>{d?.profile.nextFollowUpAt ? fmtDay.format(new Date(d.profile.nextFollowUpAt)) : "—"}</dd>
+                {d?.profile.importantNotes && (
+                  <>
+                    <dt className="text-ink-muted">Notes</dt>
+                    <dd className="whitespace-pre-line">{d.profile.importantNotes}</dd>
+                  </>
+                )}
                 <dt className="text-ink-muted">Added</dt>
                 <dd>{d ? ({ proposal: "From a paid proposal", lead: "From a won lead", import: "Imported" } as Record<string, string>)[d.source] ?? "By hand" : "—"}</dd>
               </dl>
@@ -214,6 +238,11 @@ export default function Client360Page({ params, searchParams }: { params: Promis
 
       {tab === "services" && (
         <div className="grid gap-6">
+          {d && (
+            <Panel title="Services and plans" subtitle="What the client has bought, with the plan used to price quotations and invoices" flush>
+              <ClientServicesPanel clientId={id} rows={d.clientServices} list={priceList} canEdit={!!(can?.edit || can?.addService)} onDone={(m) => done(m)} onError={(m) => notify(m, null, "error")} />
+            </Panel>
+          )}
           <Panel title="Services" subtitle="Milestones G1 → G5 for each service" action={can?.addService ? <button type="button" className={addCls} onClick={() => openNew("engagement", { clientId: id }, changed)}>+ Add services</button> : undefined} flush>
             {c.services.length ? (
               <ul className="divide-y divide-border">
@@ -525,7 +554,7 @@ export default function Client360Page({ params, searchParams }: { params: Promis
             </Panel>
           )}
           {c.invoices ? (
-            <Panel title="Invoices" subtitle={`${formatINR(c.invoices.paidPaise)} received in total`} flush>
+            <Panel title="Invoices" subtitle={`${formatINR(c.invoices.paidPaise)} received in total`} action={<Link href={`/team/invoices/new?clientId=${id}`} className="text-sm underline" data-testid="client-invoice-new">+ New invoice</Link>} flush>
               <DataTable
                 rows={c.invoices.recent}
                 rowKey={(i) => i.id}

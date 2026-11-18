@@ -6,10 +6,10 @@
 // document; the print copy sits directly under <body> so "Save as PDF" gives only the quotation.
 // v48: pages follow the content: long cost breakdowns continue on their own sheets (layoutQuote), the last page's blocks
 // share the sheet so no gap is left under the thank-you card, and it joins the last cost sheet when there is room.
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
-import { formatINR, quotePlanLabels, type QuoteView } from "@bmu/shared";
+import { formatINR, itemBillingLabels, quotePlanLabels, type QuoteView } from "@bmu/shared";
 
 export const INK = "#121619";
 export const GREEN = "#8cb63c";
@@ -28,6 +28,11 @@ export const QD_CSS = `
 .qd-card { background: #fff; border-radius: 6px; border: 1px solid #e7e5df; }
 .qd-bar { background: #fff; border-left: 3px solid ${GREEN}; border-radius: 0 4px 4px 0; }
 @media screen { .qd-print-root { display: none; } }
+.qd[data-compact] .qd-sheet { padding-top: 9mm; }
+.qd[data-compact] .qd-flow td { padding-top: 5px; padding-bottom: 5px; }
+.qd[data-compact] [data-testid="quote-closing"] { gap: 8px; padding-top: 8px; }
+.qd[data-compact] img[alt="UPI QR code"] { width: 15mm !important; height: 15mm !important; }
+.qd[data-compact] .qd-sign { height: 16mm !important; }
 @media screen and (max-width: 820px) { .qd-sheet { min-height: 0; padding: 20px 20px 28px; } }
 @media print {
   @page { size: A4; margin: 0; }
@@ -129,7 +134,9 @@ const taxRows = (q: QuoteView): [string, number][] =>
       ];
 
 /** Sizes in mm on the A4 sheet, measured from printed quotations and rounded up. */
-const MM = { bottom: 275, firstTop: 66, lineOfText: 3.7, nextTop: 34, totals: 34, closing: 164 };
+/** v52: page 1 holds up to this many items. */
+const PAGE_ONE_ITEMS = 4;
+const MM = { bottom: 275, firstTop: 66, lineOfText: 3.7, nextTop: 34, totals: 34, closing: 164, closingCompact: 132 };
 const rowsOf = (text: string, perRow: number) => text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perRow)), 0);
 const rowMm = (l: QuoteView["content"]["lines"][number]) => 9.5 + (rowsOf(l.title, 80) - 1) * 4 + (l.details ? rowsOf(l.details, 92) * 3.5 : 0);
 
@@ -142,7 +149,9 @@ export function layoutQuote(q: QuoteView) {
   const sheets: number[][] = [[]];
   c.lines.forEach((l, i) => {
     const h = rowMm(l);
-    if (h > room && sheets[sheets.length - 1].length) {
+    // v52: page 1 holds up to 4 items; from the 5th, items continue on page 2.
+    const firstFull = sheets.length === 1 && sheets[0].length >= PAGE_ONE_ITEMS;
+    if ((h > room || firstFull) && sheets[sheets.length - 1].length) {
       sheets.push([]);
       room = MM.bottom - MM.nextTop;
     }
@@ -160,7 +169,34 @@ export function layoutQuote(q: QuoteView) {
   // The totals grow by a row for CGST + SGST and one for the place of supply; notes add their lines to the last page.
   const totals = MM.totals + 2 * MM.lineOfText;
   const notes = c.notes ? 6 + rowsOf(c.notes, 120) * 3.4 : 0;
-  return { sheets, closingOnLast: !extra && room - totals >= MM.closing + notes };
+  // v52: with 3–4 items on a one-page breakdown, the payment block moves to page 2 (1–2 items keep it when it fits).
+  const crowdedFirst = sheets.length === 1 && c.lines.length >= 3;
+  // From page 2 on, the closing block may sit under the items in its compact size (the fit check tightens the spacing).
+  const fits = room - totals >= MM.closing + notes || (sheets.length >= 2 && room - totals >= MM.closingCompact + notes);
+  return { sheets, closingOnLast: !extra && !crowdedFirst && fits };
+}
+
+/**
+ * v52: measures each sheet at the real paper scale (its width is 210 mm) and, if one would run past 297 mm, adds the
+ * "compact" attribute that tightens spacing (smaller QR, signature and padding) so the document stays on its pages.
+ * Runs on load, after the fonts load and on "beforeprint"; not while printing (it would measure at the wrong width).
+ */
+export function useCompactFit(root: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const fit = () => {
+      const el = root.current;
+      if (!el || window.matchMedia("print").matches) return;
+      el.removeAttribute("data-compact");
+      const over = [...el.querySelectorAll<HTMLElement>(".qd-sheet")].some((sh) => sh.scrollHeight > (sh.getBoundingClientRect().width * 297) / 210 + 2);
+      if (over) el.setAttribute("data-compact", "");
+      // The print copy follows the screen copy.
+      document.querySelectorAll(".qd-print-root .qd").forEach((p) => (over ? p.setAttribute("data-compact", "") : p.removeAttribute("data-compact")));
+    };
+    fit();
+    void document.fonts?.ready.then(fit);
+    window.addEventListener("beforeprint", fit);
+    return () => window.removeEventListener("beforeprint", fit);
+  }, [root]);
 }
 
 function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows: number[]; page: number; first: boolean; last: boolean; closing: boolean }) {
@@ -242,6 +278,7 @@ function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows:
               <td className="num px-3 py-2">{String(i + 1).padStart(2, "0")}</td>
               <td className="px-3 py-2">
                 <p className="font-semibold">{l.title}</p>
+                {(l.service || l.billing) && <p className="text-[9px] text-[#4b5563]">{[l.service, l.billing ? itemBillingLabels[l.billing] : null].filter(Boolean).join(" · ")}</p>}
                 {l.details && <p className="mt-0.5 text-[9.5px] leading-snug text-[#4b5563]">{l.details}</p>}
               </td>
               <td className="num px-3 py-2">{l.kind === "percent" ? `${l.pct}%` : l.qty}</td>
@@ -256,11 +293,18 @@ function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows:
         <>
       <div className="mt-3 ml-auto w-[72mm] text-[10px]">
         <div className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-1.5">
-          <span>Subtotal</span>
+          <span>{q.gstRatePct > 0 ? "Taxable value" : "Subtotal"}</span>
           <span className="num">{money(q.subtotalPaise)}</span>
         </div>
         {/* Same rule as tax invoices: CGST + SGST inside BMU's state, IGST anywhere else. */}
-        {taxRows(q).map(([label, amount]) => (
+        {/* v52: no GST on this quotation: the GST line reads "Not added". */}
+        {q.gstRatePct === 0 && (
+          <div className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-1.5" data-testid="quote-tax-row">
+            <span>GST</span>
+            <span>Not added</span>
+          </div>
+        )}
+        {q.gstRatePct > 0 && taxRows(q).map(([label, amount]) => (
           <div key={label} className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-1.5" data-testid="quote-tax-row">
             <span>{label}</span>
             <span className="num">{money(amount)}</span>
@@ -411,10 +455,12 @@ function Closing({ q, compact }: { q: QuoteView; compact?: boolean }) {
 /** The pages alone (the print copy, and for checks). */
 export function QuotationPages({ q }: { q: QuoteView }) {
   const { sheets, closingOnLast } = layoutQuote(q);
+  const ref = useRef<HTMLDivElement>(null);
+  useCompactFit(ref);
   const scope = q.content.scope.length > 0 || q.content.timeline.length > 0;
   const next = sheets.length + 1;
   return (
-    <div className="qd">
+    <div className="qd" ref={ref} data-testid="quote-pages">
       {sheets.map((rows, i) => (
         <CostPage key={i} q={q} rows={rows} page={i + 1} first={i === 0} last={i === sheets.length - 1} closing={closingOnLast && i === sheets.length - 1} />
       ))}

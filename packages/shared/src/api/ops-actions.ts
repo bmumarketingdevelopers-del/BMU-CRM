@@ -1,3 +1,4 @@
+import type { InvoiceDocSaveInput, InvoiceDocView } from "../quotations.js";
 import type { Transport } from "./transport.js";
 import type { LeadRow } from "../crm.js";
 import type { CoreUndo } from "../core-actions.js";
@@ -76,6 +77,9 @@ export const opsActionsApi = (t: Transport) => ({
     finance: {
       options: () => t.get<OpsFinanceOptions>("/ops/finance/options"),
       createInvoice: (body: OpsInvoiceCreate) => t.post<Msg & { id: string; number: string; status: string; totalPaise: number }>("/ops/finance/invoices", body),
+      /** v52: the invoice side of the shared quotation / invoice form (drafts only). */
+      invoiceDoc: (id: string) => t.get<InvoiceDocView>(`/ops/finance/invoice-docs/${id}`),
+      saveInvoiceDoc: (body: InvoiceDocSaveInput, id?: string) => (id ? t.patch<{ id: string; number: string; status: string; totalPaise: number; message: string }>(`/ops/finance/invoice-docs/${id}`, body) : t.post<{ id: string; number: string; status: string; totalPaise: number; message: string }>("/ops/finance/invoice-docs", body)),
       /** v27: invoice wording (AI when on) for short line descriptions, to review before creating the invoice. */
       describe: (body: OpsInvoiceDescribe) => t.post<OpsInvoiceDescribeResult>("/ops/finance/invoices/describe", body),
       drafts: () => t.get<OpsDraftInvoice[]>("/ops/finance/drafts"),

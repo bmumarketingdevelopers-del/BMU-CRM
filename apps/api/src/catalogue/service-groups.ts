@@ -1,6 +1,6 @@
 // v47: service groups and sub-services. The first read for an organisation creates BMU's list from the website. Each group
 // also gets a Service row in a hidden price book, because a project needs one; nothing that reads the live price book sees it.
-import { SERVICE_GROUP_KEY_PREFIX, SERVICE_GROUPS_BOOK, SERVICE_GROUPS_SEED, type ServiceGroupView } from '@bmu/shared';
+import { bundlePrices, CLIENTS_INDUSTRIES, SERVICE_GROUP_KEY_PREFIX, SERVICE_GROUPS_BOOK, SERVICE_GROUPS_SEED, type BundleView, type IndustryView, type PriceList, type ServiceGroupView, type SubServiceBilling } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 
@@ -46,6 +46,31 @@ export async function listServiceGroups(prisma: PrismaService, orgId: string, op
     name: g.name,
     serviceId: g.serviceId,
     archived: !!g.archivedAt,
-    subServices: g.subServices.map((s) => ({ id: s.id, name: s.name, covers: s.covers, archived: !!s.archivedAt })),
+    subServices: g.subServices.map((s) => ({ id: s.id, name: s.name, covers: s.covers, archived: !!s.archivedAt, billing: s.billing as SubServiceBilling, prices: { starter: s.starterPaise, growth: s.growthPaise, premium: s.premiumPaise } })),
   }));
+}
+
+/** v52: bundles with their plan prices worked out from today's sub-service prices (`all` also returns hidden ones). */
+export async function listBundles(prisma: PrismaService, orgId: string, groups: ServiceGroupView[], opts: { all?: boolean } = {}): Promise<BundleView[]> {
+  const subs = new Map(groups.flatMap((g) => g.subServices.map((s) => [s.id, s] as const)));
+  const rows = await prisma.serviceBundle.findMany({ where: { orgId, ...(opts.all ? {} : { selectable: true }) }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  return rows.map((b) => ({ id: b.id, name: b.name, subServiceIds: b.subServiceIds, savingPct: b.savingPct, selectable: b.selectable, prices: bundlePrices(b.subServiceIds, subs, b.savingPct) }));
+}
+
+/** v52: the price list for forms: live services, sub-services and bundles (`all`: hidden ones too, for records that use them). */
+export async function priceList(prisma: PrismaService, orgId: string, opts: { all?: boolean } = {}): Promise<PriceList> {
+  const all = await listServiceGroups(prisma, orgId, { all: true });
+  const bundles = await listBundles(prisma, orgId, all, opts);
+  return { groups: opts.all ? all : all.filter((g) => !g.archived).map((g) => ({ ...g, subServices: g.subServices.filter((s) => !s.archived) })), bundles };
+}
+
+/** v52: industries for the client form; the first read starts the list from the built-in one. */
+export async function listIndustries(prisma: PrismaService, orgId: string, opts: { all?: boolean } = {}): Promise<IndustryView[]> {
+  if (!(await prisma.industry.count({ where: { orgId } }))) {
+    const used = await prisma.clientOrg.findMany({ where: { orgId, industry: { not: null } }, select: { industry: true }, distinct: ['industry'] });
+    const names = [...new Map([...CLIENTS_INDUSTRIES, ...used.map((u) => u.industry!)].filter(Boolean).map((n) => [n.toLowerCase(), n.trim()])).values()];
+    await prisma.industry.createMany({ data: names.map((n, i) => ({ orgId, name: n, sortOrder: i })), skipDuplicates: true }).catch(() => undefined);
+  }
+  const rows = await prisma.industry.findMany({ where: { orgId, ...(opts.all ? {} : { archivedAt: null }) }, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  return rows.map((r) => ({ id: r.id, name: r.name, archived: !!r.archivedAt }));
 }

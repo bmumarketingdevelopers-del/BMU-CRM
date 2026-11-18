@@ -81,6 +81,22 @@ export class OpsFinanceController {
     return this.finance.createInvoice(me, body, ip);
   }
 
+  /** v52: the invoice side of the shared quotation / invoice form (save_invoice). Drafts only; issued invoices are locked. */
+  @Post('invoice-docs')
+  saveNewInvoiceDoc(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.finance.saveInvoiceDoc(me, null, body, ip);
+  }
+
+  @Get('invoice-docs/:id')
+  invoiceDoc(@CurrentUser() me: Me, @Param('id') id: string) {
+    return this.finance.invoiceDoc(me, id);
+  }
+
+  @Patch('invoice-docs/:id')
+  saveInvoiceDoc(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.finance.saveInvoiceDoc(me, id, body, ip);
+  }
+
   /** v27: invoice wording (AI when on) for the Founder's short descriptions, before the invoice is made. */
   @Post('invoices/describe')
   @HttpCode(200)

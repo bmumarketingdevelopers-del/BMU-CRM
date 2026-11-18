@@ -6,6 +6,7 @@ import {
   CLIENTS_INDUSTRIES,
   clientsAddsOwnOnly,
   clientsCanAdd,
+  clientServicesProblems,
   clientsCreateSchema,
   clientsDueNowPaise,
   clientsNormName,
@@ -41,7 +42,8 @@ import { sendClientInvites } from './client-invite.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { AM_BASE_ROLES, assertStaff, contactOf, isAdmin, loadClient } from './clients-access.js';
 import { createEngagementTx, requirementsFor } from './clients-engagements.js';
-import { listServiceGroups } from '../catalogue/service-groups.js';
+import { listIndustries, listServiceGroups, priceList } from '../catalogue/service-groups.js';
+import { setClientServicesTx } from './client-services.js';
 
 type Tx = Prisma.TransactionClient;
 type Parsed = ReturnType<typeof clientsCreateSchema.parse>;
@@ -134,12 +136,16 @@ export class ClientsCreateService implements OnModuleInit {
 
   async formOptions(me: Me): Promise<ClientsFormOptions> {
     assertStaff(me);
-    const [branches, book, used, ams, groups] = await Promise.all([
+    const [branches, book, used, ams, groups, list, industryList, departments, gst] = await Promise.all([
       this.prisma.branch.findMany({ where: { orgId: me.orgId, deletedAt: null }, orderBy: { name: 'asc' } }),
       this.activeBook(me.orgId),
       this.prisma.clientOrg.findMany({ where: { orgId: me.orgId, deletedAt: null, industry: { not: null } }, select: { industry: true }, distinct: ['industry'] }),
       this.amSuggest(me),
       listServiceGroups(this.prisma, me.orgId),
+      priceList(this.prisma, me.orgId),
+      listIndustries(this.prisma, me.orgId),
+      this.prisma.department.findMany({ where: { orgId: me.orgId }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      this.settings.get(me.orgId, 'gst'),
     ]);
     // v33: a Client Manager's new clients are their own, so they are the only choice.
     const own = clientsAddsOwnOnly(me);
@@ -153,6 +159,10 @@ export class ClientsCreateService implements OnModuleInit {
       roles: CLIENT_TEAM_ROLES.map((r) => ({ key: r, label: clientRoleLabels[r].name })),
       canMigrate: clientsCanAdd(me),
       ownOnly: own,
+      priceList: list,
+      industryList: industryList.map((i) => i.name),
+      departments,
+      sellerStateCode: gst.stateCode || '29',
     };
   }
 
@@ -271,6 +281,14 @@ export class ClientsCreateService implements OnModuleInit {
       const dups = await this.duplicates(me, { businessName: input.businessName, phone: input.contactPhone, email: input.contactEmail, gstin: input.gstin || undefined });
       if (dups.length) throw new ConflictException(`Possible duplicate: ${dups.map((d) => `${d.name} (${d.why.join(', ').toLowerCase()})`).join('; ')}. Merge into it, or continue to add a new client.`);
     }
+    // v52: company names are unique (any case); the chosen services pass the same check as in the browser.
+    if (!merged && (await this.prisma.clientOrg.count({ where: { orgId: me.orgId, deletedAt: null, name: { equals: input.businessName, mode: 'insensitive' } } }))) throw new ConflictException(`A client called ${input.businessName} already exists. Open it, or merge into it.`);
+    const list = input.services ? await priceList(this.prisma, me.orgId, { all: true }) : null;
+    if (input.services && list) {
+      const problems = clientServicesProblems(input.services, list);
+      if (problems.length) throw new BadRequestException(problems[0]);
+    }
+    if (input.departmentId && !(await this.prisma.department.count({ where: { id: input.departmentId, orgId: me.orgId } }))) throw new BadRequestException('Pick a department from the list');
     await this.checkInvites(me.orgId, input.inviteNow ? input.invites : []);
     for (const p of input.pastInvoices) if (await this.prisma.invoice.findFirst({ where: { orgId: me.orgId, number: p.number } })) throw new BadRequestException(`Invoice number ${p.number} already exists`);
 
@@ -310,7 +328,7 @@ export class ClientsCreateService implements OnModuleInit {
             billingAddress: input.billingAddress,
             legalName: input.billingName,
             billingEmail: input.billingEmail || null,
-            placeOfSupply: gst ? gst.slice(0, 2) : null,
+            placeOfSupply: input.placeOfSupply || (gst ? gst.slice(0, 2) : null),
             primaryContact: contact,
             branchId: branch.id,
             amUserId: amId,
@@ -318,10 +336,20 @@ export class ClientsCreateService implements OnModuleInit {
             source: opts.source ?? 'manual',
             startMode: input.startMode,
             paymentStatus: needsPayment ? 'pending' : 'confirmed',
+            // v52
+            clientStatus: input.clientStatus ?? 'lead',
+            website: input.website || null,
+            departmentId: input.departmentId || null,
+            onboardingDate: input.onboardingDate ? new Date(`${input.onboardingDate}T00:00:00Z`) : null,
+            nextFollowUpAt: input.nextFollowUpAt ? new Date(`${input.nextFollowUpAt}T00:00:00Z`) : null,
+            importantNotes: input.importantNotes || null,
+            createdById: me.id,
           },
         });
         clientId = c.id;
       }
+      // v52: the client's services and bundles with plans, saved with the client (set_client_services).
+      if (input.services && list && !merged) await setClientServicesTx(tx, me, clientId, input.services, list);
       if (!(await tx.thread.findFirst({ where: { clientOrgId: clientId, type: 'client_am' } }))) await tx.thread.create({ data: { orgId: me.orgId, clientOrgId: clientId, type: 'client_am' } });
       if (input.brands.length) await tx.clientBrand.createMany({ data: input.brands.map((b) => ({ orgId: me.orgId, clientOrgId: clientId, name: b.name, location: b.address })) });
 

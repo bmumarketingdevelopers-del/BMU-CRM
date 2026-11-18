@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { clientsCanAdd, clientsCanImport, clientsCanReassignAm, clientsOffboardStatusLabels, type ClientsListQuery, type ClientsListRow } from "@bmu/shared";
+import { CLIENT_STATUSES, clientStatusLabels, clientsCanAdd, clientsCanImport, clientsCanReassignAm, clientsOffboardStatusLabels, type ClientsListQuery, type ClientsListRow } from "@bmu/shared";
 import { useActions } from "@/components/actions/actions-provider";
 import { ActionDialog, Field, inputCls } from "@/components/actions/action-drawer";
 import { BulkBar, BulkButton, useSelection } from "@/components/actions/bulk-bar";
@@ -16,8 +16,8 @@ import { useLoad } from "@/lib/use-load";
 import { healthLabel, healthTone } from "@/components/clients-table";
 import { FilterPanel } from "@/components/filter-panel";
 
-type Filters = Required<Pick<ClientsListQuery, "am" | "health" | "industry" | "branch" | "status" | "tag" | "archived" | "service" | "onboardedFrom" | "onboardedTo">>;
-const EMPTY: Filters = { am: "", health: "", industry: "", branch: "", status: "", tag: "", archived: "", service: "", onboardedFrom: "", onboardedTo: "" };
+type Filters = Required<Pick<ClientsListQuery, "am" | "health" | "industry" | "branch" | "status" | "tag" | "archived" | "service" | "onboardedFrom" | "onboardedTo" | "clientStatus" | "subService">>;
+const EMPTY: Filters = { am: "", health: "", industry: "", branch: "", status: "", tag: "", archived: "", service: "", onboardedFrom: "", onboardedTo: "", clientStatus: "", subService: "" };
 const STATUS: { value: string; label: string }[] = [
   { value: "active", label: "Active services" },
   { value: "onboarding", label: "Onboarding" },
@@ -130,6 +130,23 @@ export function ClientsList() {
               {s.label}
             </option>
           ))}
+        </select>
+        {/* v52: the client status set on the client, and a sub service (also found inside a bundle the client has). */}
+        <select className={inputCls} value={filters.clientStatus} onChange={(e) => set({ clientStatus: e.target.value })} aria-label="Client status">
+          <option value="">Any client status</option>
+          {CLIENT_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {clientStatusLabels[s]}
+            </option>
+          ))}
+        </select>
+        <select className={inputCls} value={filters.subService} onChange={(e) => set({ subService: e.target.value })} aria-label="Sub service">
+          <option value="">Any sub service</option>
+          {(opts.data?.priceList.groups ?? []).flatMap((g) => g.subServices.map((s) => (
+            <option key={s.id} value={s.id}>
+              {g.name} › {s.name}
+            </option>
+          )))}
         </select>
         <select className={inputCls} value={filters.health} onChange={(e) => set({ health: e.target.value })} aria-label="Health">
           <option value="">Any health</option>

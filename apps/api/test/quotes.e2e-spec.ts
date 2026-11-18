@@ -66,8 +66,10 @@ describe('quotations (v45)', () => {
     expect(q).toMatchObject({ status: 'draft', subtotalPaise: 6_900_000, gstPaise: 1_242_000, totalPaise: 8_142_000 });
     expect(q.amounts).toEqual([6_000_000, 900_000]);
     expect(q.services.sort()).toEqual(services.map((s) => s.service.name).sort());
-    expect(q.content.terms.map((t: { title: string }) => t.title)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+    // v52: the 8 standard terms, then the valid-until line that follows the Valid until date.
+    expect(q.content.terms.map((t: { title: string }) => t.title)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9']);
     expect(q.content.terms[7].text).toContain("30 days' written notice");
+    expect(q.content.terms[8].text).toMatch(/^This quotation is valid until /);
 
     // The manager may change the terms for one quotation: they are kept as sent, numbered 1, 2, 3…
     const own = await http().post('/quotes').set(as('cm')).send({ ...body, terms: [{ title: 'Changed', text: 'Shoot days are billed separately' }, { title: 'x', text: 'Valid until the date at the top' }] });

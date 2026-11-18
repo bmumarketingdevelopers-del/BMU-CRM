@@ -7,7 +7,8 @@
  * later, and the payment (online in the app, offline confirmed by Finance, or none for a migrated client).
  */
 import { useEffect, useMemo, useState } from "react";
-import { clientsGateLabels, CLIENTS_GATES, formatINR, rupeesToPaise, SERVICE_GSTIN_RE, type ClientsCreate, type ClientsDuplicate, type ClientsFormOptions, type ClientTeamRole } from "@bmu/shared";
+import { CLIENT_STATUSES, clientServicesProblems, clientStatusLabels, clientsGateLabels, CLIENTS_GATES, formatINR, normaliseWebsite, rupeesToPaise, SERVICE_GST_STATES, SERVICE_GSTIN_RE, type ClientsCreate, type ClientsDuplicate, type ClientsFormOptions, type ClientStatus, type ClientTeamRole } from "@bmu/shared";
+import { ClientServicesPicker, emptyServices, toServicesInput, type ServicesValue } from "./client-services-picker";
 import { api } from "@/lib/api";
 import { ActionDrawer, Field, inputCls, TextArea, useDraftAutosave } from "@/components/actions/action-drawer";
 import type { NewDrawerProps } from "@/components/actions/new-registry";
@@ -39,6 +40,15 @@ type Values = {
   paymentReference: string;
   paymentAmount: string;
   pastInvoices: Past[];
+  /** v52 */
+  clientStatus: ClientStatus;
+  website: string;
+  departmentId: string;
+  onboardingDate: string;
+  nextFollowUpAt: string;
+  importantNotes: string;
+  placeOfSupply: string;
+  services: ServicesValue;
 };
 
 const thisMonth = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 7);
@@ -65,6 +75,14 @@ const EMPTY: Values = {
   paymentReference: "",
   paymentAmount: "",
   pastInvoices: [],
+  clientStatus: "lead",
+  website: "",
+  departmentId: "",
+  onboardingDate: "",
+  nextFollowUpAt: "",
+  importantNotes: "",
+  placeOfSupply: "",
+  services: emptyServices(),
 };
 const small = "text-xs text-ink-muted hover:text-ink underline";
 const seg = (on: boolean) => `flex-1 border px-3 py-2 text-left text-sm ${on ? "border-charcoal bg-charcoal text-ivory" : "border-border bg-surface-raised hover:border-ink"}`;
@@ -78,7 +96,7 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
   const [dupChoice, setDupChoice] = useState<{ mode: "merge" | "continue"; id?: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
-  const draft = useDraftAutosave({ entity: "client", key: "new", values: v, enabled: open, onRestore: setV });
+  const draft = useDraftAutosave({ entity: "client", key: "new", values: v, enabled: open, onRestore: (d) => setV({ ...EMPTY, ...d, services: { ...emptyServices(), ...(d as Partial<Values>).services } }) });
 
   useEffect(() => {
     if (!open) return;
@@ -146,6 +164,12 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
       });
     }
     if (dups.length && !dupChoice) e.dup = "Possible duplicate: choose Merge or Continue";
+    // v52: the same services check as on the server; website http(s) only.
+    if (!migration && opts) {
+      const problems = clientServicesProblems(toServicesInput(v.services), opts.priceList);
+      if (problems.length) e.services = problems[0];
+    }
+    if (v.website.trim() && normaliseWebsite(v.website) === null) e.website = "Enter a website like example.com (http or https only)";
     return e;
   }
 
@@ -182,6 +206,14 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
       paymentAmountPaise: v.paymentAmount ? rupeesToPaise(Number(v.paymentAmount)) : undefined,
       mergeIntoId: dupChoice?.mode === "merge" ? dupChoice.id : null,
       confirmDuplicate: dupChoice?.mode === "continue",
+      clientStatus: v.clientStatus,
+      website: v.website.trim(),
+      departmentId: v.departmentId || null,
+      onboardingDate: v.onboardingDate,
+      nextFollowUpAt: v.nextFollowUpAt,
+      importantNotes: v.importantNotes.trim(),
+      placeOfSupply: v.placeOfSupply,
+      services: migration ? undefined : toServicesInput(v.services),
     };
     setSaving(true);
     try {
@@ -236,7 +268,7 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
           <Field label="Industry" required error={errors.industry} htmlFor="ac-industry">
             <input id="ac-industry" className={inputCls} list="ac-industries" value={v.industry} onChange={(e) => set({ industry: e.target.value })} placeholder="Pick or type" />
             <datalist id="ac-industries">
-              {(opts?.industries ?? []).map((i) => (
+              {(opts?.industryList ?? opts?.industries ?? []).map((i) => (
                 <option key={i} value={i} />
               ))}
             </datalist>
@@ -252,6 +284,39 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
             </select>
           </Field>
         </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Status" htmlFor="ac-status">
+            <select id="ac-status" className={inputCls} value={v.clientStatus} onChange={(e) => set({ clientStatus: e.target.value as ClientStatus })}>
+              {CLIENT_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {clientStatusLabels[s]}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Website" error={errors.website} htmlFor="ac-website">
+            <input id="ac-website" className={inputCls} value={v.website} onChange={(e) => set({ website: e.target.value })} onBlur={() => v.website.trim() && normaliseWebsite(v.website) && set({ website: normaliseWebsite(v.website)! })} placeholder="example.com" inputMode="url" />
+          </Field>
+          <Field label="Assigned department" htmlFor="ac-dept">
+            <select id="ac-dept" className={inputCls} value={v.departmentId} onChange={(e) => set({ departmentId: e.target.value })}>
+              <option value="">None</option>
+              {(opts?.departments ?? []).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Onboarding date" htmlFor="ac-onboard">
+            <input id="ac-onboard" type="date" className={inputCls} value={v.onboardingDate} onChange={(e) => set({ onboardingDate: e.target.value })} />
+          </Field>
+          <Field label="Next follow-up" htmlFor="ac-follow">
+            <input id="ac-follow" type="date" className={inputCls} value={v.nextFollowUpAt} onChange={(e) => set({ nextFollowUpAt: e.target.value })} />
+          </Field>
+        </div>
+        <Field label="Important notes" htmlFor="ac-notes">
+          <TextArea id="ac-notes" className="min-h-16" value={v.importantNotes} onChange={(e) => set({ importantNotes: e.target.value })} maxLength={2000} />
+        </Field>
       </Section>
 
       <Section title="Primary contact">
@@ -274,9 +339,19 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
             <input id="ac-bname" className={inputCls} value={v.billingName} onChange={(e) => set({ billingName: e.target.value })} />
           </Field>
           <Field label="GSTIN (optional)" error={errors.gstin} htmlFor="ac-gstin" hint="15 characters, e.g. 29ABCDE1234F1Z5">
-            <input id="ac-gstin" className={`${inputCls} uppercase`} value={v.gstin} maxLength={15} onChange={(e) => set({ gstin: e.target.value.toUpperCase() })} onBlur={checkDuplicates} />
+            <input id="ac-gstin" className={`${inputCls} uppercase`} value={v.gstin} maxLength={15} onChange={(e) => set({ gstin: e.target.value.toUpperCase(), placeOfSupply: v.placeOfSupply || (/^\d{2}/.test(e.target.value) ? e.target.value.slice(0, 2) : "") })} onBlur={checkDuplicates} />
           </Field>
         </div>
+        <Field label="Billing state" htmlFor="ac-state" hint={`Same state as BMU (${SERVICE_GST_STATES.find((s) => s.code === (opts?.sellerStateCode ?? "29"))?.name ?? "Karnataka"}) is charged CGST + SGST; any other state IGST.`}>
+          <select id="ac-state" className={inputCls} value={v.placeOfSupply} onChange={(e) => set({ placeOfSupply: e.target.value })}>
+            <option value="">Not set</option>
+            {SERVICE_GST_STATES.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="Billing address" required error={errors.billingAddress} htmlFor="ac-addr">
           <TextArea id="ac-addr" className="min-h-16" value={v.billingAddress} onChange={(e) => set({ billingAddress: e.target.value })} />
         </Field>
@@ -311,7 +386,10 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
         </div>
       )}
 
-      <Section title="Services" hint={migration ? "Set the gate each service is at today, with a reason." : "After saving, add the services and sub-services from Client 360 → Services."}>
+      <Section title="Services" hint={migration ? "Set the gate each service is at today, with a reason." : "Choose the services, then the sub services and bundles, then a plan for each."}>
+        {!migration && opts && (
+          <ClientServicesPicker list={opts.priceList} value={v.services} onChange={(services) => set({ services })} problems={errors.services ? clientServicesProblems(toServicesInput(v.services), opts.priceList) : undefined} />
+        )}
         {v.engagements.map((l, i) => {
           const s = services.get(l.serviceId);
           return (

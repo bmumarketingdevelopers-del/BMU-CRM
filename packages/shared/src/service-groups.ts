@@ -7,15 +7,118 @@ export const SERVICE_GROUP_KEY_PREFIX = "group_";
 /** The hidden price book that holds those rows, so proposals, the website feed and the price list never see them. */
 export const SERVICE_GROUPS_BOOK = "service-groups";
 
-export type SubServiceView = { id: string; name: string; covers: string; archived: boolean };
+// ---------------------------------------------------------------------------------------------------------------- v52 price list
+/** The three plans; a sub-service may offer any of them (a plan with no price is not offered). */
+export const PLANS = ["starter", "growth", "premium"] as const;
+export type Plan = (typeof PLANS)[number];
+export const planLabels: Record<Plan, string> = { starter: "Starter", growth: "Growth", premium: "Premium" };
+export const SUB_SERVICE_BILLING = ["monthly", "one_time", "per_unit"] as const;
+export type SubServiceBilling = (typeof SUB_SERVICE_BILLING)[number];
+export const billingLabels: Record<SubServiceBilling, string> = { monthly: "Monthly", one_time: "One-time project", per_unit: "Per unit" };
+/** After a price: "₹25,000 per month". */
+export const billingPer: Record<SubServiceBilling, string> = { monthly: "per month", one_time: "one time", per_unit: "per unit" };
+export type PlanPrices = Record<Plan, number | null>;
+
+export type SubServiceView = { id: string; name: string; covers: string; archived: boolean; billing: SubServiceBilling; prices: PlanPrices };
 export type ServiceGroupView = { id: string; name: string; serviceId: string; archived: boolean; subServices: SubServiceView[] };
 
 const name = z.string().trim().min(2, "Enter a name").max(120);
 const covers = z.string().trim().max(600);
+const price = z.number().int().min(0).max(10_000_000_000).nullable().optional();
 export const serviceGroupInputSchema = z.object({ name, archived: z.boolean().optional() });
-export const subServiceInputSchema = z.object({ name, covers: covers.default(""), archived: z.boolean().optional() });
+export const subServiceInputSchema = z.object({
+  name,
+  covers: covers.default(""),
+  archived: z.boolean().optional(),
+  billing: z.enum(SUB_SERVICE_BILLING).optional(),
+  starterPaise: price,
+  growthPaise: price,
+  premiumPaise: price,
+});
 export type ServiceGroupInput = z.input<typeof serviceGroupInputSchema>;
 export type SubServiceInput = z.input<typeof subServiceInputSchema>;
+
+/** A bundle's plan price is worked out, never stored: its sub-services' prices for that plan minus the saving, in paise. */
+export function bundlePlanPricePaise(memberPrices: (number | null | undefined)[], savingPct: number): number | null {
+  if (!memberPrices.length || memberPrices.some((p) => p == null)) return null;
+  const sum = memberPrices.reduce<number>((s, p) => s + (p ?? 0), 0);
+  return Math.round((sum * (100 - savingPct)) / 100);
+}
+
+export type BundleView = { id: string; name: string; subServiceIds: string[]; savingPct: number; selectable: boolean; prices: PlanPrices };
+export const bundleInputSchema = z.object({
+  name: z.string().trim().min(2, "Name the bundle").max(120),
+  subServiceIds: z
+    .array(z.string().min(1))
+    .min(2, "A bundle needs at least 2 sub services")
+    .max(20, "A bundle holds up to 20 sub services")
+    .refine((ids) => new Set(ids).size === ids.length, "Each sub service can be in a bundle once"),
+  savingPct: z.number().int().min(0, "Saving is 0–90%").max(90, "Saving is 0–90%").default(10),
+  selectable: z.boolean().default(true),
+});
+export type BundleInput = z.input<typeof bundleInputSchema>;
+
+/** Works out every plan's price for a bundle from the current sub-service prices. */
+export function bundlePrices(subServiceIds: string[], subs: Map<string, { prices: PlanPrices }>, savingPct: number): PlanPrices {
+  return Object.fromEntries(PLANS.map((p) => [p, bundlePlanPricePaise(subServiceIds.map((id) => subs.get(id)?.prices[p]), savingPct)])) as PlanPrices;
+}
+
+export type IndustryView = { id: string; name: string; archived: boolean };
+export const industryInputSchema = z.object({ name: z.string().trim().min(2, "Enter an industry").max(80), archived: z.boolean().optional() });
+export type IndustryInput = z.input<typeof industryInputSchema>;
+
+/** Everything a form needs to pick from: services with their sub-services, and the bundles. */
+export type PriceList = { groups: ServiceGroupView[]; bundles: BundleView[] };
+
+/** One choice in the "Add item" picker: a sub-service or bundle at one plan. */
+export type PriceListEntry = {
+  key: string;
+  kind: "sub" | "bundle";
+  id: string;
+  /** The group's name, or "Bundle" */
+  service: string;
+  name: string;
+  plan: Plan;
+  pricePaise: number;
+  billing: SubServiceBilling;
+  description: string;
+  label: string;
+};
+
+/** The lowest priced plan a sub-service or bundle offers (used when a client's service has no plan chosen). */
+export function lowestPlan(prices: PlanPrices): Plan | null {
+  const offered = PLANS.filter((p) => prices[p] != null);
+  return offered.length ? offered.reduce((a, b) => ((prices[b] as number) < (prices[a] as number) ? b : a)) : null;
+}
+
+const inr = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+
+/** The picker's choices, e.g. "Marketing & Visibility › SEO — Growth · ₹25,000 per month" and "Bundle › Brand Launch — Starter · ₹67,500 per month". */
+export function priceListEntries(list: PriceList, opts: { includeHidden?: boolean } = {}): PriceListEntry[] {
+  const subs = new Map(list.groups.flatMap((g) => g.subServices.map((s) => [s.id, { ...s, group: g.name }] as const)));
+  const out: PriceListEntry[] = [];
+  for (const g of list.groups) {
+    if (g.archived && !opts.includeHidden) continue;
+    for (const s of g.subServices) {
+      if (s.archived && !opts.includeHidden) continue;
+      for (const plan of PLANS) {
+        const p = s.prices[plan];
+        if (p == null) continue;
+        out.push({ key: `sub:${s.id}:${plan}`, kind: "sub", id: s.id, service: g.name, name: s.name, plan, pricePaise: p, billing: s.billing, description: s.covers, label: `${g.name} › ${s.name} — ${planLabels[plan]} · ${inr(p)} ${billingPer[s.billing]}` });
+      }
+    }
+  }
+  for (const b of list.bundles) {
+    if (!b.selectable && !opts.includeHidden) continue;
+    for (const plan of PLANS) {
+      const p = b.prices[plan];
+      if (p == null) continue;
+      const description = b.subServiceIds.map((id) => subs.get(id)?.name).filter(Boolean).join(" + ");
+      out.push({ key: `bundle:${b.id}:${plan}`, kind: "bundle", id: b.id, service: "Bundle", name: b.name, plan, pricePaise: p, billing: "monthly", description, label: `Bundle › ${b.name} — ${planLabels[plan]} · ${inr(p)} per month` });
+    }
+  }
+  return out;
+}
 
 export const SERVICE_GROUPS_SEED: { name: string; subServices: { name: string; covers: string }[] }[] = [
   {

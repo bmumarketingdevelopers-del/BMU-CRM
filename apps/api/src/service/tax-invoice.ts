@@ -39,8 +39,12 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
     readInvoiceBranding(prisma, orgId),
   ]);
   const c = inv.clientOrg;
+  // v52: an invoice made in the shared form keeps its own date, Bill to, GST rate, overview, terms and signature choice.
+  const doc = (inv.doc ?? null) as { invoiceDate?: string; overview?: string; billTo?: { name?: string; gstin?: string; placeOfSupply?: string; address?: string }; signWith?: string; seal?: boolean; terms?: { text: string }[] } | null;
+  const bill = doc?.billTo ?? {};
+  const buyerGstin = bill.gstin || c?.gstin || null;
   // Place of supply: the client's chosen state, else the state in their GSTIN, else the seller's own state.
-  const pos = c?.placeOfSupply || (c?.gstin && /^\d{2}/.test(c.gstin) ? c.gstin.slice(0, 2) : null) || gst.stateCode || '29';
+  const pos = bill.placeOfSupply || c?.placeOfSupply || (buyerGstin && /^\d{2}/.test(buyerGstin) ? buyerGstin.slice(0, 2) : null) || gst.stateCode || '29';
   const interState = !!gst.stateCode && pos !== gst.stateCode;
   const lines = ((inv.lines as InvoiceLine[] | null) ?? []).filter((l) => l && typeof l.amountPaise === 'number' && !/^GST\b/i.test(l.label));
   const taxable = inv.subtotalPaise;
@@ -48,6 +52,7 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   const cgst = interState ? 0 : Math.floor(gstPaise / 2);
   const sgst = interState ? 0 : gstPaise - cgst;
   const igst = interState ? gstPaise : 0;
+  const gstAdded = inv.gstRatePct === null ? gstPaise > 0 || !taxable : inv.gstRatePct > 0;
   const paid = inv.payments.reduce((s, p) => s + p.amountPaise, 0);
   const credited = notes.reduce((s, n) => s + n.totalPaise, 0);
   const open = ['issued', 'partially_paid', 'overdue'].includes(inv.status);
@@ -70,11 +75,13 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   return {
     id: inv.id,
     number: inv.number,
-    date: inv.createdAt.toISOString(),
+    date: doc?.invoiceDate ? `${doc.invoiceDate}T00:00:00.000Z` : inv.createdAt.toISOString(),
     dueDate: inv.dueDate.toISOString(),
     status: inv.status,
     kind: inv.kind,
-    title: 'Tax Invoice',
+    title: gstAdded ? 'Tax Invoice' : 'Invoice',
+    gstAdded,
+    overview: doc?.overview?.trim() || null,
     variant,
     notes: inv.notes?.trim() || null,
     // v29: a signed invoice prints what it was signed with (Founder or Client Manager); older ones the current branding.
@@ -82,17 +89,17 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
       ? {
           name: inv.signatoryName ?? '',
           designation: inv.signatoryDesignation ?? (inv.signedRole === 'client_manager' ? 'Client Manager' : 'Founder'),
-          signatureUrl: inv.signatureFileId ? signingFileUrl(inv.signatureFileId) : null,
-          sealUrl: inv.sealFileId ? signingFileUrl(inv.sealFileId) : null,
+          signatureUrl: inv.signatureFileId && doc?.signWith !== 'blank' ? signingFileUrl(inv.signatureFileId) : null,
+          sealUrl: inv.sealFileId && doc?.seal !== false ? signingFileUrl(inv.sealFileId) : null,
         }
       : {
           name: branding.signatoryName || (founder?.name && !/^bmu owner$/i.test(founder.name) ? founder.name : ''),
           designation: branding.designation || 'Founder',
-          signatureUrl: signed && branding.signatureFileId ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
-          sealUrl: signed && branding.sealFileId ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
+          signatureUrl: signed && branding.signatureFileId && doc?.signWith !== 'blank' ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
+          sealUrl: signed && branding.sealFileId && doc?.seal !== false ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
         },
     signing: { signed, signedAt: inv.signedAt?.toISOString() ?? null, signedBy: signer?.name ?? null, held: invoiceHeld(branding, inv), canSign: false },
-    terms: invoiceTerms({ number: inv.number, dueDate: inv.dueDate, email, phone, legalName: payee, settled: ['paid', 'credited', 'cancelled'].includes(variant) }),
+    terms: doc?.terms?.length ? doc.terms.map((t) => t.text) : invoiceTerms({ number: inv.number, dueDate: inv.dueDate, email, phone, legalName: payee, settled: ['paid', 'credited', 'cancelled'].includes(variant) }),
     seller: {
       legalName: payee,
       gstin: gst.gstin,
@@ -104,18 +111,21 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
       website: tenant.website,
     },
     buyer: {
-      name: c?.name ?? 'Customer',
-      legalName: c?.legalName?.trim() || c?.name || 'Customer',
-      gstin: c?.gstin ?? null,
-      address: c?.billingAddress ?? null,
+      name: bill.name || c?.name || 'Customer',
+      legalName: bill.name || c?.legalName?.trim() || c?.name || 'Customer',
+      gstin: buyerGstin,
+      address: bill.address || c?.billingAddress || null,
       placeOfSupply: pos,
       placeOfSupplyName: serviceGstStateName(pos) ?? pos,
       email: c?.billingEmail ?? firstOwner?.user.email ?? null,
     },
     sacCode: gst.sacCode,
-    lines: lines.map((l) => ({ label: l.label, title: l.title?.trim() || l.label, details: l.details?.trim() || null, sac: gst.sacCode, taxablePaise: l.amountPaise, passThrough: !!l.passThrough })),
+    lines: lines.map((l) => {
+      const x = l as InvoiceLine & { qty?: number; unitPricePaise?: number; service?: string; billing?: string };
+      return { label: l.label, title: l.title?.trim() || l.label, details: l.details?.trim() || null, sac: gst.sacCode, taxablePaise: l.amountPaise, passThrough: !!l.passThrough, qty: x.qty, unitPricePaise: x.unitPricePaise, service: x.service || undefined, billing: x.billing || undefined };
+    }),
     taxablePaise: taxable,
-    ratePct: taxable ? Math.round((gstPaise / taxable) * 1000) / 10 : gst.ratePct,
+    ratePct: inv.gstRatePct ?? (taxable ? Math.round((gstPaise / taxable) * 1000) / 10 : gst.ratePct),
     interState,
     cgstPaise: cgst,
     sgstPaise: sgst,

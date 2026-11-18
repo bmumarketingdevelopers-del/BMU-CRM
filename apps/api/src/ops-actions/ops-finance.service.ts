@@ -17,6 +17,14 @@ import {
   opsIsPassThrough,
   opsOfflinePaymentSchema,
   opsPayoutProposeSchema,
+  INVOICE_DEFAULT_DUE_DAYS,
+  invoiceDocSaveSchema,
+  quoteGstSplit,
+  quoteTotals,
+  serviceGstStateName,
+  type InvoiceDocView,
+  type QuoteBillTo,
+  type QuoteLine,
   type Me,
   type OpsInvoiceDescribeResult,
   type OpsInvoiceLineText,
@@ -29,6 +37,7 @@ import { UndoService } from '../actions/undo.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { activePlanPrices } from '../catalogue/catalogue.service.js';
 import { parse } from '../common/zod.js';
+import type { Prisma } from '../generated/prisma/client.js';
 import { FinanceService } from '../insights/finance.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -40,6 +49,9 @@ import { cmClientWhere, cmOwnsClient } from '../service/cm-signing.service.js';
 
 const TDS_RATE = 0.1;
 const DAY = 86_400_000;
+/** v52: what the shared form keeps on an invoice besides its items. */
+type InvoiceDocStored = { invoiceDate: string; overview: string; billTo?: QuoteBillTo; signWith: 'mine' | 'blank'; seal: boolean; terms: { title: string; text: string }[] };
+const istDayString = (d: Date) => new Date(d.getTime() + 330 * 60_000).toISOString().slice(0, 10);
 const OPEN = ['draft', 'issued', 'partially_paid', 'overdue'];
 
 @Injectable()
@@ -219,8 +231,10 @@ export class OpsFinanceService implements OnModuleInit {
       const details = l.title?.trim() ? l.details?.trim() || null : (auto?.details ?? null);
       return { label, name: label, title: pass && !/\bat cost\b/i.test(title) ? `${title} (at cost, no GST)` : title, details, amountPaise: l.amountPaise, kind: l.kind, passThrough: pass };
     });
-    const inv = await this.prisma.$transaction(async (tx) =>
-      tx.invoice.create({
+    // v52: numbers are taken under a lock, so two invoices saved at the same moment never share one.
+    const inv = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`invoice-number:${me.orgId}`}))`;
+      return tx.invoice.create({
         data: {
           orgId: me.orgId,
           clientOrgId: client.id,
@@ -236,8 +250,8 @@ export class OpsFinanceService implements OnModuleInit {
           createdById: me.id,
           notes: input.notes || null,
         },
-      }),
-    );
+      });
+    });
     await this.audit.log(me, input.issue ? 'invoice.issued' : 'invoice.drafted', 'Invoice', inv.id, undefined, { number: inv.number, clientOrgId: client.id, totalPaise: inv.totalPaise, passThroughPaise: totals.passThroughPaise, gstPaise: totals.gstPaise, dueDate: input.dueDate, manual: true }, ip);
     if (input.issue) await this.billing.invoiceIssued(inv.id);
     return { id: inv.id, number: inv.number, status: inv.status, totalPaise: inv.totalPaise, message: input.issue ? `Invoice ${inv.number} issued for ${formatINR(inv.totalPaise)}. The client has been told.` : `Draft invoice ${inv.number} saved. Issue it when ready.` };
@@ -261,6 +275,109 @@ export class OpsFinanceService implements OnModuleInit {
     await this.audit.log(me, 'invoice.issued', 'Invoice', id, { status: 'draft' }, { status: 'issued', dueDate: due }, ip);
     await this.billing.invoiceIssued(id);
     return { id, message: `Invoice ${inv.number} issued` };
+  }
+
+  // -------------------------------------------------------------------------
+  // v52: the invoice side of the shared quotation / invoice form (save_invoice)
+
+  /** Finance and leadership: any client; a Client Manager: their own clients only (as for manual invoices). */
+  private async invoiceClient(me: Me, clientOrgId: string | null) {
+    if (!opsCanFinance(me) && !cmClientWhere(me)) this.assertFinance(me);
+    const client = clientOrgId ? await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId, deletedAt: null } }) : null;
+    if (!client) throw new BadRequestException('Pick a client');
+    if (!opsCanFinance(me) && !(await cmOwnsClient(this.prisma, me, client.id))) throw new ForbiddenException(`${client.name} is not one of your clients`);
+    return client;
+  }
+
+  /** The form's view of an invoice (older invoices are read from their lines). */
+  async invoiceDoc(me: Me, id: string): Promise<InvoiceDocView> {
+    const inv = await this.prisma.invoice.findFirst({ where: { id, orgId: me.orgId }, include: { payments: { select: { amountPaise: true } }, clientOrg: { select: { id: true, name: true } } } });
+    if (!inv) throw new NotFoundException('Invoice not found');
+    await this.invoiceClient(me, inv.clientOrgId);
+    const doc = (inv.doc ?? {}) as Partial<InvoiceDocStored>;
+    const gst = await this.settings.get(me.orgId, 'gst');
+    const stored = ((inv.lines as Record<string, unknown>[] | null) ?? []).filter((l) => typeof l.amountPaise === 'number' && !/^GST\b/i.test(String(l.label ?? '')));
+    const lines: QuoteLine[] = stored.map((l) => ({
+      title: String(l.title ?? l.label ?? ''),
+      details: String(l.details ?? ''),
+      kind: 'unit',
+      qty: typeof l.qty === 'number' ? l.qty : 1,
+      unitPricePaise: typeof l.unitPricePaise === 'number' ? l.unitPricePaise : Number(l.amountPaise),
+      pct: 0,
+      service: String(l.service ?? ''),
+      billing: (['monthly', 'one_time', 'per_unit'].includes(String(l.billing)) ? l.billing : '') as QuoteLine['billing'],
+      gstRatePct: typeof l.gstRatePct === 'number' ? l.gstRatePct : undefined,
+    }));
+    const rates = [...new Set(lines.map((l) => l.gstRatePct).filter((r): r is number => typeof r === 'number'))];
+    const rate = inv.gstRatePct ?? (inv.subtotalPaise ? Math.round((inv.gstPaise / inv.subtotalPaise) * 100) : gst.ratePct);
+    const t = quoteTotals(lines, rate);
+    const billTo = { name: '', gstin: '', placeOfSupply: '', address: '', ...(doc.billTo ?? {}) };
+    const c = await this.prisma.clientOrg.findFirst({ where: { id: inv.clientOrgId ?? '' }, select: { placeOfSupply: true, gstin: true } });
+    const split = quoteGstSplit(inv.gstPaise, gst.stateCode || '29', billTo.placeOfSupply || c?.placeOfSupply, billTo.gstin || c?.gstin);
+    const paid = inv.payments.reduce((s, p) => s + p.amountPaise, 0);
+    return {
+      id: inv.id,
+      number: inv.number,
+      status: inv.status,
+      client: inv.clientOrg,
+      engagementId: inv.engagementId,
+      invoiceDate: doc.invoiceDate ?? istDayString(inv.createdAt),
+      dueDate: istDayString(inv.dueDate),
+      overview: doc.overview ?? '',
+      billTo,
+      lines,
+      gstRatePct: rate,
+      mixedRates: rates.length > 1,
+      signWith: doc.signWith ?? 'mine',
+      seal: doc.seal ?? true,
+      notes: inv.notes ?? '',
+      terms: doc.terms ?? [],
+      amounts: t.amounts,
+      subtotalPaise: inv.subtotalPaise,
+      gstPaise: inv.gstPaise,
+      totalPaise: inv.totalPaise,
+      tax: { placeOfSupplyName: serviceGstStateName(split.placeOfSupply) ?? split.placeOfSupply, interState: split.interState, cgstPaise: split.cgstPaise, sgstPaise: split.sgstPaise, igstPaise: split.igstPaise },
+      paidPaise: paid,
+      balancePaise: Math.max(0, inv.totalPaise - paid),
+      canEdit: inv.status === 'draft',
+    };
+  }
+
+  /**
+   * save_invoice: one transaction. Checks the client, refuses issued invoices (locked: cancel and issue a new one),
+   * validates, replaces the items, recalculates every total here (never the browser's), numbers a new invoice under a
+   * lock so two saves at once never share a number, and writes the audit row. Returns the id.
+   */
+  async saveInvoiceDoc(me: Me, id: string | null, body: unknown, ip?: string) {
+    const input = parse(invoiceDocSaveSchema, body);
+    const client = await this.invoiceClient(me, input.clientOrgId);
+    const before = id ? await this.prisma.invoice.findFirst({ where: { id, orgId: me.orgId } }) : null;
+    if (id && !before) throw new NotFoundException('Invoice not found');
+    if (before && before.status !== 'draft') throw new BadRequestException(`Invoice ${before.number} is ${before.status}: its items and amounts are locked. Cancel it and issue a new one to correct it.`);
+    if (before && before.clientOrgId !== client.id) throw new BadRequestException('An invoice stays with its client');
+    if (client.archivedAt) throw new BadRequestException(`${client.name} is archived. Restore the client first.`);
+    if (input.engagementId && !(await this.prisma.engagement.count({ where: { id: input.engagementId, clientOrgId: client.id, deletedAt: null } }))) throw new BadRequestException('That project does not belong to this client');
+    const today = todayIst();
+    if (input.invoiceDate > today) throw new BadRequestException("The invoice date can't be in the future");
+    const due = input.dueDate || new Date(Date.parse(`${input.invoiceDate}T00:00:00Z`) + INVOICE_DEFAULT_DUE_DAYS * DAY).toISOString().slice(0, 10);
+    if (due < input.invoiceDate) throw new BadRequestException('The due date is before the invoice date');
+    const rate = input.gstRatePct ?? 18;
+    const t = quoteTotals(input.lines, rate);
+    if (t.subtotalPaise <= 0) throw new BadRequestException('The total is zero; add the rates');
+    const lines = input.lines.map((l, i) => ({ label: l.title, name: l.title, title: l.title, details: l.details || null, amountPaise: t.amounts[i], kind: 'service', passThrough: false, qty: l.qty, unitPricePaise: l.unitPricePaise, gstRatePct: rate, service: l.service ?? '', billing: l.billing ?? '' }));
+    const doc: InvoiceDocStored = { invoiceDate: input.invoiceDate, overview: input.overview ?? '', billTo: input.billTo, signWith: input.signWith ?? 'mine', seal: input.seal ?? true, terms: (input.terms ?? []).map((x, i) => ({ title: String(i + 1), text: x.text })) };
+    const data = { clientOrgId: client.id, engagementId: input.engagementId || null, lines, subtotalPaise: t.subtotalPaise, gstPaise: t.gstPaise, totalPaise: t.totalPaise, dueDate: istDay(due), notes: input.notes || null, gstRatePct: rate, doc: doc as unknown as Prisma.InputJsonValue };
+    const inv = await this.prisma.$transaction(async (tx) => {
+      if (before) {
+        const rows = await tx.invoice.updateManyAndReturn({ where: { id: before.id, orgId: me.orgId, status: 'draft' }, data });
+        if (!rows.length) throw new ForbiddenException('This invoice can no longer be changed');
+        return rows[0];
+      }
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`invoice-number:${me.orgId}`}))`;
+      return tx.invoice.create({ data: { ...data, orgId: me.orgId, number: await this.nextNumber(tx, me.orgId), status: 'draft', kind: 'standard', createdById: me.id } });
+    });
+    await this.audit.log(me, before ? 'invoice.updated' : 'invoice.drafted', 'Invoice', inv.id, before ? { totalPaise: before.totalPaise, gstPaise: before.gstPaise } : null, { number: inv.number, clientOrgId: client.id, totalPaise: inv.totalPaise, gstPaise: inv.gstPaise, gstRatePct: rate, items: lines.length }, ip);
+    return { id: inv.id, number: inv.number, status: inv.status, totalPaise: inv.totalPaise, message: `Draft invoice ${inv.number} saved` };
   }
 
   // -------------------------------------------------------------------------
