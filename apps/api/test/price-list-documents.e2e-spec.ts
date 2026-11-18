@@ -163,6 +163,34 @@ describe('quotation and invoice save', () => {
     expect(res.body).toMatchObject({ gstPaise: 0, gstRatePct: 0, totalPaise: res.body.subtotalPaise });
   });
 
+  it('invoice: pass-through items (ad spend, creator fees) are billed at cost with no GST', async () => {
+    const body = {
+      clientOrgId: ids.sunrise,
+      invoiceDate: today(),
+      dueDate: '',
+      overview: '',
+      gstRatePct: 18,
+      signWith: 'mine',
+      seal: true,
+      notes: '',
+      terms: [],
+      lines: [
+        { title: 'SEO (Growth plan)', details: '', kind: 'unit', qty: 1, unitPricePaise: 100_000, pct: 0, service: 'Marketing', billing: 'monthly', costKind: 'service' },
+        { title: 'Meta ad budget', details: 'Paid to Meta on your behalf', kind: 'unit', qty: 1, unitPricePaise: 50_000, pct: 0, service: '', billing: '', costKind: 'ad_spend' },
+      ],
+    };
+    const saved = await http().post('/ops/finance/invoice-docs').set(as('founder')).send(body);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(201);
+    madeInvoices.push(saved.body.id);
+    const inv = await prisma.invoice.findUniqueOrThrow({ where: { id: saved.body.id } });
+    // GST only on the service: 18% of ₹1,000 = ₹180; the ₹500 ad budget is at cost.
+    expect(inv).toMatchObject({ subtotalPaise: 150_000, gstPaise: 18_000, totalPaise: 168_000 });
+    expect((inv.lines as { kind: string; passThrough: boolean; gstRatePct: number }[])[1]).toMatchObject({ kind: 'ad_spend', passThrough: true, gstRatePct: 0 });
+    const doc = (await http().get(`/ops/finance/invoice-docs/${saved.body.id}`).set(as('founder')).expect(200)).body;
+    expect(doc.lines.map((l: { costKind: string }) => l.costKind)).toEqual(['service', 'ad_spend']);
+    expect(doc.mixedRates).toBe(false);
+  });
+
   it('invoice: totals on the server, no future date, locked once issued; payments lower what is owed', async () => {
     const body = { clientOrgId: ids.sunrise, invoiceDate: today(), dueDate: '', overview: '', lines: lines(), gstRatePct: 18, signWith: 'mine', seal: true, notes: '', terms: [] };
     const future = new Date(Date.now() + 330 * 60_000 + 3 * 86_400_000).toISOString().slice(0, 10);

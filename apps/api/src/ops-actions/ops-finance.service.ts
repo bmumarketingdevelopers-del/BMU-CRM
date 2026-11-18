@@ -19,6 +19,7 @@ import {
   opsPayoutProposeSchema,
   INVOICE_DEFAULT_DUE_DAYS,
   invoiceDocSaveSchema,
+  isPassThroughLine,
   quoteGstSplit,
   quoteTotals,
   serviceGstStateName,
@@ -307,8 +308,9 @@ export class OpsFinanceService implements OnModuleInit {
       service: String(l.service ?? ''),
       billing: (['monthly', 'one_time', 'per_unit'].includes(String(l.billing)) ? l.billing : '') as QuoteLine['billing'],
       gstRatePct: typeof l.gstRatePct === 'number' ? l.gstRatePct : undefined,
+      costKind: (['ad_spend', 'creator_fee', 'other_pass_through'].includes(String(l.kind)) ? l.kind : 'service') as QuoteLine['costKind'],
     }));
-    const rates = [...new Set(lines.map((l) => l.gstRatePct).filter((r): r is number => typeof r === 'number'))];
+    const rates = [...new Set(lines.filter((l) => !isPassThroughLine(l)).map((l) => l.gstRatePct).filter((r): r is number => typeof r === 'number'))];
     const rate = inv.gstRatePct ?? (inv.subtotalPaise ? Math.round((inv.gstPaise / inv.subtotalPaise) * 100) : gst.ratePct);
     const t = quoteTotals(lines, rate);
     const billTo = { name: '', gstin: '', placeOfSupply: '', address: '', ...(doc.billTo ?? {}) };
@@ -364,7 +366,11 @@ export class OpsFinanceService implements OnModuleInit {
     const rate = input.gstRatePct ?? 18;
     const t = quoteTotals(input.lines, rate);
     if (t.subtotalPaise <= 0) throw new BadRequestException('The total is zero; add the rates');
-    const lines = input.lines.map((l, i) => ({ label: l.title, name: l.title, title: l.title, details: l.details || null, amountPaise: t.amounts[i], kind: 'service', passThrough: false, qty: l.qty, unitPricePaise: l.unitPricePaise, gstRatePct: rate, service: l.service ?? '', billing: l.billing ?? '' }));
+    // Pass-through items (ad spend, creator fees…) are billed at cost: their own kind, no GST.
+    const lines = input.lines.map((l, i) => {
+      const pass = isPassThroughLine(l);
+      return { label: l.title, name: l.title, title: l.title, details: l.details || null, amountPaise: t.amounts[i], kind: pass ? l.costKind! : 'service', passThrough: pass, qty: l.qty, unitPricePaise: l.unitPricePaise, gstRatePct: pass ? 0 : rate, service: l.service ?? '', billing: l.billing ?? '' };
+    });
     const doc: InvoiceDocStored = { invoiceDate: input.invoiceDate, overview: input.overview ?? '', billTo: input.billTo, signWith: input.signWith ?? 'mine', seal: input.seal ?? true, terms: (input.terms ?? []).map((x, i) => ({ title: String(i + 1), text: x.text })) };
     const data = { clientOrgId: client.id, engagementId: input.engagementId || null, lines, subtotalPaise: t.subtotalPaise, gstPaise: t.gstPaise, totalPaise: t.totalPaise, dueDate: istDay(due), notes: input.notes || null, gstRatePct: rate, doc: doc as unknown as Prisma.InputJsonValue };
     const inv = await this.prisma.$transaction(async (tx) => {
