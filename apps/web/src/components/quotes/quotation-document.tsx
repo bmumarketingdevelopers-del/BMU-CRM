@@ -109,6 +109,25 @@ export function Qr({ uri }: { uri: string | null }) {
   );
 }
 
+/** The seller's address parts joined into a few short lines (about 34 characters), so the From column is not much taller than the others. */
+export function packAddress(parts: string[], perLine = 34): string[] {
+  return parts.reduce<string[]>((lines, part) => {
+    const last = lines[lines.length - 1];
+    if (last && `${last}, ${part}`.length <= perLine) lines[lines.length - 1] = `${last}, ${part}`;
+    else lines.push(part);
+    return lines;
+  }, []);
+}
+
+/** The tax rows under the subtotal: IGST across states, else CGST and SGST (half each). */
+const taxRows = (q: QuoteView): [string, number][] =>
+  q.tax.interState
+    ? [[`IGST @ ${q.gstRatePct}%`, q.tax.igstPaise]]
+    : [
+        [`CGST @ ${q.gstRatePct / 2}%`, q.tax.cgstPaise],
+        [`SGST @ ${q.gstRatePct / 2}%`, q.tax.sgstPaise],
+      ];
+
 /** Sizes in mm on the A4 sheet, measured from printed quotations and rounded up. */
 const MM = { bottom: 275, firstTop: 66, lineOfText: 3.7, nextTop: 34, totals: 34, closing: 164 };
 const rowsOf = (text: string, perRow: number) => text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / perRow)), 0);
@@ -117,9 +136,9 @@ const rowMm = (l: QuoteView["content"]["lines"][number]) => 9.5 + (rowsOf(l.titl
 /** Which cost lines go on which sheet, and whether the last page fits under them. */
 export function layoutQuote(q: QuoteView) {
   const { client: p, content: c, seller } = q;
-  const party = 1 + (p.owner ? 1 : 0) + (p.email ? rowsOf(p.email, 30) : 0) + (p.address ? rowsOf(p.address, 32) : 0) + p.preparedFor.reduce((n, l) => n + rowsOf(l, 32), 0);
+  const party = 1 + (p.owner ? 1 : 0) + (p.email ? rowsOf(p.email, 30) : 0) + (p.address ? rowsOf(p.address, 32) : 0) + (p.gstin ? 1 : 0) + p.preparedFor.reduce((n, l) => n + rowsOf(l, 32), 0);
   const project = rowsOf(c.title, 30) + (c.planType ? 1 : 0) + c.projectLines.reduce((n, l) => n + rowsOf(l, 32), 0);
-  let room = MM.bottom - MM.firstTop - Math.max(party, project, seller.addressLines.length + 3) * MM.lineOfText - (c.overview ? 8 + rowsOf(c.overview, 110) * MM.lineOfText : 0);
+  let room = MM.bottom - MM.firstTop - Math.max(party, project, packAddress(seller.addressLines).length + 3) * MM.lineOfText - (c.overview ? 8 + rowsOf(c.overview, 110) * MM.lineOfText : 0);
   const sheets: number[][] = [[]];
   c.lines.forEach((l, i) => {
     const h = rowMm(l);
@@ -138,7 +157,10 @@ export function layoutQuote(q: QuoteView) {
     room = MM.bottom - MM.nextTop - rowMm(c.lines[moved]);
   }
   const extra = c.scope.length > 0 || c.timeline.length > 0;
-  return { sheets, closingOnLast: !extra && room - MM.totals >= MM.closing };
+  // The totals grow by a row for CGST + SGST and one for the place of supply; notes add their lines to the last page.
+  const totals = MM.totals + 2 * MM.lineOfText;
+  const notes = c.notes ? 6 + rowsOf(c.notes, 120) * 3.4 : 0;
+  return { sheets, closingOnLast: !extra && room - totals >= MM.closing + notes };
 }
 
 function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows: number[]; page: number; first: boolean; last: boolean; closing: boolean }) {
@@ -166,7 +188,7 @@ function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows:
         <div>
           <p className="qd-label mb-1.5">From</p>
           <p className="font-semibold">{q.seller.name}</p>
-          {q.seller.addressLines.map((l) => (
+          {packAddress(q.seller.addressLines).map((l) => (
             <p key={l}>{l}</p>
           ))}
           <p>{q.seller.website}</p>
@@ -178,6 +200,7 @@ function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows:
           {q.client.owner && <p>{q.client.owner}</p>}
           {q.client.email && <p className="break-words">{q.client.email}</p>}
           {q.client.address && <p className="whitespace-pre-line">{q.client.address}</p>}
+          {q.client.gstin && <p className="mt-1 text-[#6b7280]">GSTIN {q.client.gstin}</p>}
           {q.client.preparedFor.map((l) => (
             <p key={l}>{l}</p>
           ))}
@@ -236,16 +259,20 @@ function CostPage({ q, rows, page, first, last, closing }: { q: QuoteView; rows:
           <span>Subtotal</span>
           <span className="num">{money(q.subtotalPaise)}</span>
         </div>
-        <div className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-1.5">
-          <span>GST @ {q.gstRatePct}%</span>
-          <span className="num">{money(q.gstPaise)}</span>
-        </div>
+        {/* Same rule as tax invoices: CGST + SGST inside BMU's state, IGST anywhere else. */}
+        {taxRows(q).map(([label, amount]) => (
+          <div key={label} className="flex justify-between border-b border-[#e7e5df] bg-white px-3 py-1.5" data-testid="quote-tax-row">
+            <span>{label}</span>
+            <span className="num">{money(amount)}</span>
+          </div>
+        ))}
         <div className="mt-1 flex justify-between rounded-[4px] px-3 py-1.5 text-[11.5px] font-bold" style={{ background: GREEN }}>
           <span>Grand total</span>
           <span className="num">{money(q.totalPaise)}</span>
         </div>
       </div>
       <p className="mt-2 text-right text-[9px] text-[#4b5563]">Amount in words: {q.amountInWords}.</p>
+      {q.tax.placeOfSupplyName && <p className="mt-0.5 text-right text-[9px] text-[#4b5563]">Place of supply: {q.tax.placeOfSupplyName}</p>}
         </>
       )}
       {closing && <Closing q={q} compact />}
@@ -327,6 +354,12 @@ function Closing({ q, compact }: { q: QuoteView; compact?: boolean }) {
               </dl>
             </div>
             <Qr uri={pay.upiUri} />
+          </div>
+        )}
+        {c.notes && (
+          <div data-testid="quote-notes">
+            <p className="qd-label">Notes</p>
+            <p className={`mt-1 whitespace-pre-line text-[#374151] ${compact ? "text-[9px] leading-snug" : "text-[10.5px] leading-normal"}`}>{c.notes}</p>
           </div>
         )}
         <div>

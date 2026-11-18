@@ -52,10 +52,10 @@ describe('quotations (v45)', () => {
     expect(tpl.lines).toHaveLength(2);
 
     const { id: _id, name: _n, serviceKey: _s, updatedAt: _u, ...content } = tpl as unknown as Record<string, unknown>;
-    // v46: several of the client's services; the terms are fixed whatever is sent.
+    // v46: several of the client's services. No terms sent: the quotation gets BMU's standard terms.
     const services = await prisma.engagement.findMany({ where: { clientOrgId: ids.sunrise, deletedAt: null }, select: { id: true, service: { select: { name: true } } }, take: 2 });
     expect(services.length).toBe(2);
-    const body = { ...content, terms: [{ title: 'Changed', text: 'Someone tried to change the terms' }], clientOrgId: ids.sunrise, engagementIds: services.map((s) => s.id), templateId: tpl.id, preparedFor: ['Real Estate Developer', 'Bengaluru, Karnataka'], validUntil: inDays(15) };
+    const body = { ...content, terms: [], clientOrgId: ids.sunrise, engagementIds: services.map((s) => s.id), templateId: tpl.id, preparedFor: ['Real Estate Developer', 'Bengaluru, Karnataka'], validUntil: inDays(15) };
     await http().post('/quotes').set(as('cm')).send({ ...body, engagementIds: ['not-this-client'] }).expect(400);
     await http().post('/quotes').set(as('producer')).send(body).expect(403);
     const res = await http().post('/quotes').set(as('cm')).send(body);
@@ -68,6 +68,12 @@ describe('quotations (v45)', () => {
     expect(q.services.sort()).toEqual(services.map((s) => s.service.name).sort());
     expect(q.content.terms.map((t: { title: string }) => t.title)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
     expect(q.content.terms[7].text).toContain("30 days' written notice");
+
+    // The manager may change the terms for one quotation: they are kept as sent, numbered 1, 2, 3…
+    const own = await http().post('/quotes').set(as('cm')).send({ ...body, terms: [{ title: 'Changed', text: 'Shoot days are billed separately' }, { title: 'x', text: 'Valid until the date at the top' }] });
+    expect(own.status, JSON.stringify(own.body)).toBe(201);
+    made.push(own.body.id);
+    expect(own.body.content.terms).toEqual([{ title: '1', text: 'Shoot days are billed separately' }, { title: '2', text: 'Valid until the date at the top' }]);
 
     // v49: the project overview: written for the manager, who can change it.
     await http().post('/quotes/overview').set(as('producer')).send({ title: 'x' }).expect(403);

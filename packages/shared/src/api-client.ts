@@ -79,6 +79,8 @@ export type ServiceSummary = {
   track: string;
   billingType: string;
   tiers: { tier: string; pricePaise: number }[];
+  /** The note under the service on Admin → Catalogue, e.g. "Ad spend excluded". */
+  excludedNote?: string | null;
 };
 
 export type AuditRow = {

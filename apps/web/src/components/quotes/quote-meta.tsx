@@ -3,7 +3,7 @@
 // v45: the parts of a quotation around the document: the client, the services it is for (v46: several), "prepared for" lines and
 // the valid-until date; plus a template picker that loads a template's content into the editor.
 import { useEffect, useRef, useState } from "react";
-import { applyQuoteServices, quoteServicesTitle, quoteTemplateContent, type ClientsListRow, type QuoteContent, type QuoteServicePick, type QuoteTemplateRow } from "@bmu/shared";
+import { applyQuoteServices, QUOTE_DEFAULT_VALID_DAYS, quoteServicesTitle, quoteTemplateContent, type ClientsListRow, type QuoteContent, type QuoteServicePick, type QuoteTemplateRow } from "@bmu/shared";
 import { Input, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 
@@ -11,12 +11,27 @@ export type QuoteMeta = { clientOrgId: string; engagementIds: string[]; template
 
 export const inDays = (n: number) => new Date(Date.now() + 330 * 60_000 + n * 86_400_000).toISOString().slice(0, 10);
 
-export function QuoteMetaForm({ meta, onChange, onTemplate, onServices, fixedClient }: { meta: QuoteMeta; onChange: (m: QuoteMeta) => void; onTemplate?: (c: QuoteContent, id: string) => void; onServices: (update: (c: QuoteContent) => QuoteContent) => void; fixedClient?: boolean }) {
+export function QuoteMetaForm({
+  meta,
+  onChange,
+  onTemplate,
+  onServices,
+  fixedClient,
+  quoteDate,
+  onQuoteDate,
+}: {
+  meta: QuoteMeta;
+  onChange: (m: QuoteMeta) => void;
+  onTemplate?: (c: QuoteContent, id: string) => void;
+  onServices: (update: (c: QuoteContent) => QuoteContent) => void;
+  fixedClient?: boolean;
+  quoteDate: string;
+  onQuoteDate: (date: string) => void;
+}) {
   const [clients, setClients] = useState<ClientsListRow[]>();
   const [templates, setTemplates] = useState<QuoteTemplateRow[]>();
   const [services, setServices] = useState<(QuoteServicePick & { id: string; label: string })[]>([]);
   const templateTitle = useRef("");
-  const [who, setWho] = useState<{ printed: string[]; missing: string[] }>();
   useEffect(() => {
     api.clientsActions.list({}).then(setClients, () => setClients([]));
     if (onTemplate) api.quotes.templates().then(setTemplates, () => setTemplates([]));
@@ -26,8 +41,10 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, onServices, fixedCli
     api.clientsActions
       .get(meta.clientOrgId)
       .then((d) => {
-        const fields: [string, string | null][] = [["owner name", d.contact.name], ["email", d.contact.email ?? d.billing.billingEmail], ["address", d.billing.billingAddress]];
-        setWho({ printed: [d.billing.billingName || d.name, ...fields.flatMap(([, v]) => (v ? [v] : []))], missing: fields.filter(([, v]) => !v).map(([k]) => k) });
+        // "Bill to" starts from the client's billing details in the database; a draft that already has its own keeps it.
+        const gstin = d.billing.gstin ?? "";
+        const fromRecord = { name: d.billing.billingName || d.name, gstin, placeOfSupply: d.billing.placeOfSupply || (/^\d{2}/.test(gstin) ? gstin.slice(0, 2) : ""), address: d.billing.billingAddress ?? "" };
+        onServices((c) => (c.billTo ? c : { ...c, billTo: fromRecord }));
         // A price-book service brings its plan (today's price and catalogue note), so its cost line starts priced.
         setServices(d.services.filter((s) => s.status !== "closed").map((s) => ({ id: s.id, name: s.serviceName, label: s.grouped ? s.serviceName : `${s.serviceName} (${s.tier})`, billingType: s.billingType, subServices: s.subServices, plan: !s.grouped && s.planPricePaise ? { tier: s.tier, pricePaise: s.planPricePaise, note: s.planNote } : undefined })));
       })
@@ -45,7 +62,16 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, onServices, fixedCli
     <div className="grid gap-3 sm:grid-cols-2" data-testid="quote-meta">
       <label className="grid gap-1 text-xs font-medium">
         Client
-        <Select value={meta.clientOrgId} onChange={(e) => pickServices([], { clientOrgId: e.target.value })} disabled={fixedClient} aria-label="Client">
+        <Select
+          value={meta.clientOrgId}
+          onChange={(e) => {
+            pickServices([], { clientOrgId: e.target.value });
+            // A new client: Bill to is filled again from that client's record.
+            onServices((c) => ({ ...c, billTo: undefined }));
+          }}
+          disabled={fixedClient}
+          aria-label="Client"
+        >
           <option value="">{clients ? "Pick the client…" : "Loading…"}</option>
           {(clients ?? []).filter((c) => !c.archivedAt).map((c) => (
             <option key={c.id} value={c.id}>
@@ -94,19 +120,19 @@ export function QuoteMetaForm({ meta, onChange, onTemplate, onServices, fixedCli
           </Select>
         </label>
       )}
-      <label className="grid gap-1 text-xs font-medium">
-        Valid until
-        <Input type="date" min={inDays(0)} value={meta.validUntil} onChange={(e) => set({ validUntil: e.target.value })} aria-label="Valid until" />
-      </label>
+      <div className="grid items-start gap-3 sm:col-span-2 sm:grid-cols-2">
+        <label className="grid gap-1 text-xs font-medium">
+          Quotation date
+          <Input type="date" value={quoteDate} onChange={(e) => onQuoteDate(e.target.value)} aria-label="Quotation date" />
+        </label>
+        <label className="grid gap-1 text-xs font-medium">
+          Valid until
+          <Input type="date" min={inDays(0)} value={meta.validUntil} onChange={(e) => set({ validUntil: e.target.value })} aria-label="Valid until" />
+          <span className="font-normal text-ink-muted">Leave empty for {QUOTE_DEFAULT_VALID_DAYS} days after the date.</span>
+        </label>
+      </div>
       <div className="grid gap-1 sm:col-span-2">
-        <span className="text-xs font-medium">Prepared for</span>
-        {who && (
-          <p className="text-sm text-ink-muted" data-testid="quote-prepared-for">
-            Printed from the client&apos;s record: {who.printed.join(" · ")}
-            {who.missing.length > 0 && <span className="text-[#9a6b00]"> Missing: {who.missing.join(", ")}. Add it with Edit client on Client 360.</span>}
-          </p>
-        )}
-        <span className="mt-1 text-xs font-medium">Extra lines (optional)</span>
+        <span className="text-xs font-medium">Extra lines under the client&apos;s name (optional)</span>
         <div className="grid gap-2 sm:grid-cols-3">
           {prepared.map((v, i) => (
             <Input key={i} value={v} placeholder={["e.g. Real Estate Developer", "e.g. Bengaluru, Karnataka", ""][i]} onChange={(e) => set({ preparedFor: prepared.map((x, j) => (j === i ? e.target.value : x)).filter(Boolean) })} aria-label={`Prepared for line ${i + 1}`} />

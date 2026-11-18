@@ -17,6 +17,8 @@ export const quotationsApi = (t: Transport) => ({
     send: (id: string) => t.post<QuoteView & { message: string }>(`/quotes/${id}/send`),
     cancel: (id: string) => t.post<QuoteView>(`/quotes/${id}/cancel`),
     overview: (body: QuoteOverviewInput) => t.post<{ text: string; ai: boolean }>("/quotes/overview", body),
+    /** The GST % and BMU's own state, so the form can show CGST + SGST or IGST before saving. */
+    formSettings: () => t.get<{ gstRatePct: number; sellerStateCode: string; sellerState: string }>("/quotes/form-settings"),
     raiseAdvance: (id: string) => t.post<QuoteView & { message: string }>(`/quotes/${id}/advance-invoice`),
     raiseBalance: (id: string) => t.post<QuoteView & { message: string }>(`/quotes/${id}/balance-invoice`),
     confirmPayment: (id: string) => t.post<QuoteView & { message: string }>(`/quotes/${id}/confirm-payment`),

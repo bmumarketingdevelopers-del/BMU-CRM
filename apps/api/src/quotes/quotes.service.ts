@@ -26,9 +26,15 @@ import {
   quoteDecisionSchema,
   quoteSaveSchema,
   quoteTemplateSchema,
+  quoteDefaultValidUntil,
+  quoteGstSplit,
+  quoteTermsChanges,
   quoteTotals,
+  type QuoteTerm,
   serviceAmountInWords,
+  serviceGstStateName,
   type Me,
+  type QuoteBillTo,
   type QuoteContent,
   type QuoteRow,
   type QuoteStatus,
@@ -107,12 +113,29 @@ export class QuotesService {
 
   /** v48: who the quotation is prepared for, from the client's record: its contact, else the lead's, else its Owner's login. */
   private async clientDetails(clientOrgId: string): Promise<QuoteClientDetails> {
-    const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: clientOrgId }, select: { name: true, legalName: true, billingAddress: true, billingEmail: true, primaryContact: true, leadId: true } });
+    const c = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: clientOrgId }, select: { name: true, legalName: true, billingAddress: true, billingEmail: true, primaryContact: true, leadId: true, gstin: true, placeOfSupply: true } });
     type Contact = { name?: string | null; email?: string | null } | null;
     const lead = !c.primaryContact && c.leadId ? await this.prisma.lead.findUnique({ where: { id: c.leadId }, select: { contact: true } }) : null;
     const contact = (c.primaryContact ?? lead?.contact ?? null) as Contact;
     const owner = await this.prisma.clientUser.findFirst({ where: { clientOrgId, clientRole: 'client_owner', user: { deletedAt: null } }, select: { user: { select: { name: true, email: true } } } });
-    return { company: c.legalName || c.name, owner: contact?.name || owner?.user.name || null, email: contact?.email || c.billingEmail || owner?.user.email || null, address: c.billingAddress || null };
+    return { company: c.legalName || c.name, owner: contact?.name || owner?.user.name || null, email: contact?.email || c.billingEmail || owner?.user.email || null, address: c.billingAddress || null, gstin: c.gstin || null, placeOfSupply: c.placeOfSupply || null };
+  }
+
+  /** "Bill to" typed on this quotation wins over the client's record, field by field (empty keeps the record's). */
+  private billed(details: QuoteClientDetails, billTo: QuoteBillTo | undefined): QuoteClientDetails {
+    if (!billTo) return details;
+    return { ...details, company: billTo.name || details.company, address: billTo.address || details.address, gstin: billTo.gstin || details.gstin || null, placeOfSupply: billTo.placeOfSupply || details.placeOfSupply || null };
+  }
+
+  /** The signer with the manager's choice applied: no signature (sign by hand) and / or no seal. */
+  private signChoice(signer: Signer, content: Pick<QuoteContent, 'signWith' | 'seal'>): Signer {
+    return { ...signer, signatureFileId: content.signWith === 'blank' ? null : signer.signatureFileId, sealFileId: content.seal === false ? null : signer.sealFileId };
+  }
+
+  async formSettings(me: Me) {
+    this.assertStaff(me);
+    const gst = await this.settings.get(me.orgId, 'gst');
+    return { gstRatePct: gst.ratePct ?? 18, sellerStateCode: gst.stateCode || '29', sellerState: gst.state || serviceGstStateName(gst.stateCode) || 'Karnataka' };
   }
 
   /** v49: two lines on what BMU will do for the client, for the manager to keep or edit. Plain wording when AI is off. */
@@ -162,8 +185,11 @@ export class QuotesService {
     ]);
     const stored = q.content as unknown as QuoteContent;
     // v46: the fixed terms (a quotation keeps the wording it was sent with).
-    const content = { ...stored, terms: stored.terms?.length && q.status !== 'draft' ? stored.terms : QUOTE_FIXED_TERMS };
+    // The terms the manager set (BMU's standard terms when none); a sent quotation keeps the wording it went out with.
+    const content = { ...stored, terms: stored.terms?.length ? stored.terms : QUOTE_FIXED_TERMS };
     const t = quoteTotals(content.lines, q.gstRatePct);
+    const billedTo = this.billed(details, stored.billTo);
+    const split = quoteGstSplit(q.gstPaise, gst.stateCode || '29', billedTo.placeOfSupply, billedTo.gstin);
     const status = this.status(q);
     const founder = branding.signatoryName ? null : await this.prisma.user.findFirst({ where: { orgId: q.orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, select: { name: true }, orderBy: { createdAt: 'asc' } });
     const signatory = `${branding.signatoryName || founder?.name || gst.legalName || tenant.name}${branding.designation ? `, ${branding.designation}` : ''}`;
@@ -173,7 +199,7 @@ export class QuotesService {
     const staff = me.type === 'staff';
     const manage = staff && (await this.canManage(me, q.clientOrgId));
     // v49: a draft shows who would sign it; older sent quotations only have the company's name.
-    const stamped = (q.content as Stamped).signedBy ?? (staff && q.status === 'draft' ? await this.signerFor(me) : null);
+    const stamped = (q.content as Stamped).signedBy ?? (staff && q.status === 'draft' ? this.signChoice(await this.signerFor(me), stored) : null);
     const notes = notesOf(q);
     const quoteInvoices = [q.advanceInvoiceId, q.balanceInvoiceId].filter((x): x is string => !!x);
     const recorded = quoteInvoices.length ? ((await this.prisma.payment.aggregate({ where: { invoiceId: { in: quoteInvoices } }, _sum: { amountPaise: true } }))._sum.amountPaise ?? 0) : 0;
@@ -185,10 +211,10 @@ export class QuotesService {
       id: q.id,
       number: q.number,
       status,
-      date: (q.sentAt ?? q.createdAt).toISOString(),
+      date: stored.quoteDate ? `${stored.quoteDate}T00:00:00.000Z` : (q.sentAt ?? q.createdAt).toISOString(),
       validUntil: q.validUntil.toISOString().slice(0, 10),
       seller: { name: gst.legalName || tenant.name, addressLines: address, website: gst.website?.trim() || 'www.bmumarketing.in', gstin: gst.gstin?.trim() || null, signatory },
-      client: { id: client.id, name: client.name, preparedFor: q.preparedFor, ...details },
+      client: { id: client.id, name: client.name, preparedFor: q.preparedFor, ...billedTo },
       signer: stamped
         ? { name: stamped.name, role: stamped.role, signatureUrl: stamped.signatureFileId ? signingFileUrl(stamped.signatureFileId) : null, sealUrl: stamped.sealFileId ? signingFileUrl(stamped.sealFileId) : null }
         : { name: signatory, role: '', signatureUrl: null, sealUrl: null },
@@ -207,6 +233,7 @@ export class QuotesService {
       subtotalPaise: q.subtotalPaise,
       gstRatePct: q.gstRatePct,
       gstPaise: q.gstPaise,
+      tax: { placeOfSupplyName: serviceGstStateName(split.placeOfSupply) ?? split.placeOfSupply, interState: split.interState, cgstPaise: split.cgstPaise, sgstPaise: split.sgstPaise, igstPaise: split.igstPaise },
       totalPaise: q.totalPaise,
       amountInWords: serviceAmountInWords(q.totalPaise).replace(/^Rupees/, 'Indian Rupees'),
       payment: {
@@ -247,7 +274,7 @@ export class QuotesService {
       client: q.client ?? { id: q.clientOrgId, name: '' },
       status: this.status(q),
       totalPaise: q.totalPaise,
-      date: (q.sentAt ?? q.createdAt).toISOString(),
+      date: content.quoteDate ? `${content.quoteDate}T00:00:00.000Z` : (q.sentAt ?? q.createdAt).toISOString(),
       validUntil: q.validUntil.toISOString().slice(0, 10),
       createdBy: q.createdById ? (names.get(q.createdById) ?? null) : null,
     };
@@ -299,11 +326,15 @@ export class QuotesService {
     if (!client) throw new BadRequestException('Pick the client');
     const serviceIds = [...new Set(input.engagementIds ?? [])];
     if (serviceIds.length && (await this.prisma.engagement.count({ where: { id: { in: serviceIds }, clientOrgId: client.id, deletedAt: null } })) !== serviceIds.length) throw new BadRequestException('Pick services this client signed up for');
-    if (input.validUntil < ymdIst()) throw new BadRequestException('The valid-until date is in the past');
+    // Empty "valid until": 30 days after the quotation date (today when no date is picked).
+    const validUntil = input.validUntil || quoteDefaultValidUntil(input.quoteDate || ymdIst());
+    if (validUntil < ymdIst()) throw new BadRequestException('The valid-until date is in the past');
+    if (input.quoteDate && validUntil < input.quoteDate) throw new BadRequestException('The valid-until date is before the quotation date');
     const gst = await this.settings.get(me.orgId, 'gst');
-    const { clientOrgId, engagementIds: _services, templateId, preparedFor, validUntil, ...rest } = input;
-    // v46: the terms are fixed; whatever was sent, every quotation carries BMU's terms.
-    const content = { ...(parse(quoteContentSchema, rest) as QuoteContent), terms: QUOTE_FIXED_TERMS };
+    const { clientOrgId, engagementIds: _services, templateId, preparedFor, validUntil: _validUntil, ...rest } = input;
+    // The manager may change the terms for this quotation (Admins and Founders are told when it is sent); none means BMU's standard terms.
+    const parsed = parse(quoteContentSchema, rest) as QuoteContent;
+    const content = { ...parsed, terms: parsed.terms.length ? parsed.terms.map((t, i) => ({ title: String(i + 1), text: t.text })) : QUOTE_FIXED_TERMS };
     const t = quoteTotals(content.lines, gst.ratePct ?? 18);
     if (t.subtotalPaise <= 0) throw new BadRequestException('The total is zero; add the rates');
     return {
@@ -353,7 +384,9 @@ export class QuotesService {
     if (!['draft', 'sent'].includes(before.status)) throw new BadRequestException(`This quotation is ${before.status}`);
     if (this.status(before) === 'expired') throw new BadRequestException('It has expired. Make a new quotation with a new valid-until date.');
     // v46: the wording it goes out with is kept on the quotation.
-    const fixedContent = before.status === 'draft' ? { ...(before.content as unknown as QuoteContent), terms: QUOTE_FIXED_TERMS, clientDetails: await this.clientDetails(before.clientOrgId), signedBy: await this.signerFor(me) } : (before.content as unknown as QuoteContent);
+    const draft = before.content as unknown as QuoteContent;
+    const terms = draft.terms?.length ? draft.terms : QUOTE_FIXED_TERMS;
+    const fixedContent = before.status === 'draft' ? { ...draft, terms, clientDetails: await this.clientDetails(before.clientOrgId), signedBy: this.signChoice(await this.signerFor(me), before.content as unknown as QuoteContent) } : (before.content as unknown as QuoteContent);
     const q = await this.prisma.quotation.update({ where: { id }, data: { status: 'sent', sentAt: before.sentAt ?? new Date(), sentById: me.id, changeRequest: null, content: fixedContent as unknown as Prisma.InputJsonValue } });
     const content = q.content as unknown as QuoteContent;
     const total = `₹${Math.round(q.totalPaise / 100).toLocaleString('en-IN')}`;
@@ -365,6 +398,7 @@ export class QuotesService {
       critical: true,
     });
     await this.audit.log(me, before.status === 'sent' ? 'quote.resent' : 'quote.sent', 'Quotation', id, { status: before.status }, { status: 'sent' }, ip);
+    if (before.status === 'draft') await this.tellTermsChanged(me, q, terms, ip);
     return { ...(await this.view(me, q)), message: before.status === 'sent' ? 'Sent again to the client.' : 'Sent. The client can accept it in their app.' };
   }
 
@@ -546,6 +580,24 @@ export class QuotesService {
       critical: true,
     });
     return { ...(await this.view(me, updated)), message: 'Accepted. Please pay using the details on the quotation, then tell us below.' };
+  }
+
+  /**
+   * A quotation went to the client with terms that differ from BMU's standard terms: Admins and Founders are told which
+   * ones (changed, added, removed), and it is kept in the audit log with the wording sent.
+   */
+  private async tellTermsChanged(me: Me, q: QuoteDb, terms: QuoteTerm[], ip?: string) {
+    const diff = quoteTermsChanges(terms);
+    if (!diff.any) return;
+    const parts = [diff.changed.length && `changed ${diff.changed.join(', ')}`, diff.added.length && `added ${diff.added.join(', ')}`, diff.removed.length && `removed ${diff.removed.join(', ')}`].filter(Boolean);
+    const client = await this.prisma.clientOrg.findUnique({ where: { id: q.clientOrgId }, select: { name: true } });
+    const admins = await this.prisma.user.findMany({ where: { orgId: q.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: { in: ['admin', 'founder'] } } } } }, select: { id: true } });
+    await this.notifications.notify(
+      q.orgId,
+      admins.map((a) => a.id).filter((id) => id !== me.id),
+      { kind: 'quote_terms_changed', title: `${me.name} changed the terms on ${q.number}`, body: `Sent to ${client?.name ?? 'the client'} with terms ${parts.join('; ')} (compared with BMU's standard terms).`, link: `/team/quotes/${q.id}` },
+    );
+    await this.audit.log(me, 'quote.terms_changed', 'Quotation', q.id, { terms: QUOTE_FIXED_TERMS }, { terms, ...diff }, ip);
   }
 
   private async withFounders(orgId: string, ids: string[]) {

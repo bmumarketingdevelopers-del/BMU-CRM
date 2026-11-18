@@ -32,6 +32,7 @@ export class CatalogueController {
           track: s.track,
           billingType: s.billingType,
           tiers: s.tiers.map((t) => ({ tier: t.tier, pricePaise: t.pricePaise })),
+          excludedNote: s.excludedNote,
         }));
       }
     } catch {
@@ -46,6 +47,7 @@ export class CatalogueController {
         tier,
         pricePaise: rupeesToPaise(rupees),
       })),
+      excludedNote: 'excluded_note' in s ? s.excluded_note : null,
     }));
   }
 

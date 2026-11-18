@@ -65,7 +65,8 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
     }
   };
   const startEdit = () =>
-    setEditing({ meta: { clientOrgId: q.client.id, engagementIds: q.engagementIds, templateId: q.templateId ?? "", preparedFor: q.client.preparedFor, validUntil: q.validUntil }, content: q.content });
+    // Older drafts have no quotation date: start from the date they show.
+    setEditing({ meta: { clientOrgId: q.client.id, engagementIds: q.engagementIds, templateId: q.templateId ?? "", preparedFor: q.client.preparedFor, validUntil: q.validUntil }, content: { ...q.content, quoteDate: q.content.quoteDate ?? q.date.slice(0, 10) } });
   const status = quoteStatusLabels[q.status].team;
   return (
     <>
@@ -117,8 +118,22 @@ export default function QuotePage({ params }: { params: Promise<{ id: string }> 
       {msg && <p className={`mb-3 text-sm ${msg.ok ? "text-green" : "text-red"}`}>{msg.text}</p>}
       {editing ? (
         <div className="grid max-w-4xl gap-6">
-          <QuoteMetaForm meta={editing.meta} onChange={(meta) => setEditing({ ...editing, meta })} onServices={(update) => setEditing((e) => e && { ...e, content: update(e.content) })} fixedClient />
-          <QuoteEditor value={editing.content} onChange={(content) => setEditing({ ...editing, content })} gstRatePct={q.gstRatePct} clientOrgId={q.client.id} />
+          <QuoteEditor
+            value={editing.content}
+            onChange={(content) => setEditing((e) => e && { ...e, content })}
+            gstRatePct={q.gstRatePct}
+            clientOrgId={q.client.id}
+            details={
+              <QuoteMetaForm
+                meta={editing.meta}
+                onChange={(meta) => setEditing((e) => e && { ...e, meta })}
+                onServices={(update) => setEditing((e) => e && { ...e, content: update(e.content) })}
+                fixedClient
+                quoteDate={editing.content.quoteDate ?? ""}
+                onQuoteDate={(quoteDate) => setEditing((e) => e && { ...e, content: { ...e.content, quoteDate } })}
+              />
+            }
+          />
           <SaveBar busy={busy}>
             <Button
               disabled={busy}
