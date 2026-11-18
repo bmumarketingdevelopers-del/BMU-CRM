@@ -1,5 +1,5 @@
-// v45 quotations: the CM makes one from a template, sends it, the client's Owner accepts it in the app and the advance
-// invoice follows; the CM raises the balance invoice later.
+// v45 quotations: the CM makes one from a template, sends it, the client's Owner accepts it in the app and the invoice
+// follows. v52: no advance payment for now: one invoice for the full amount, no balance invoice.
 import 'dotenv/config';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
@@ -46,7 +46,7 @@ afterAll(async () => {
 });
 
 describe('quotations (v45)', () => {
-  it('template → quote → send → client accepts → advance invoice; then the balance invoice', async () => {
+  it('template → quote → send → client accepts → one invoice for the full amount', async () => {
     const templates = (await http().get('/quotes/templates').set(as('cm')).expect(200)).body as { id: string; name: string; lines: unknown[]; title: string }[];
     const tpl = templates.find((t) => t.name === 'Influencer Campaign')!;
     expect(tpl.lines).toHaveLength(2);
@@ -117,32 +117,32 @@ describe('quotations (v45)', () => {
     // Answering twice is refused.
     await http().post(`/client/quotes/${q.id}/decision`).set(as('client')).send({ decision: 'accept', name: 'Ravi Kumar', signatureFileId: sig.fileId }).expect(400);
 
-    // v49: the client says they paid; the CM and Founders are told; the invoice then records it.
-    const advanceTotal = Math.round(3_450_000 * 1.18);
-    await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: advanceTotal }).expect(400);
-    const told = (await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: advanceTotal, reference: 'UTR123456' }).expect(200)).body;
+    // No advance payment for now: once accepted, one invoice for the full amount (no balance invoice).
+    // The client says they paid half; the CM and Founders are told; the invoice records it.
+    const fullTotal = Math.round(6_900_000 * 1.18);
+    const half = Math.round(fullTotal / 2);
+    expect(ok.content.advancePct).toBe(100);
+    await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: half }).expect(400);
+    const told = (await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: half, reference: 'UTR123456' }).expect(200)).body;
     expect(told.paymentNotes).toHaveLength(1);
     expect(await prisma.notification.count({ where: { kind: 'quote_paid', link: `/team/quotes/${q.id}` } })).toBeGreaterThanOrEqual(2);
-    await http().post(`/quotes/${q.id}/balance-invoice`).set(as('cm')).expect(400); // the advance comes first
+    expect(told.can.raiseBalance).toBe(false);
+    await http().post(`/quotes/${q.id}/balance-invoice`).set(as('cm')).expect(400); // no balance invoice
     const sentInv = (await http().post(`/quotes/${q.id}/advance-invoice`).set(as('cm')).expect(200)).body;
-    expect(sentInv.advanceInvoice).toMatchObject({ totalPaise: advanceTotal, status: 'paid' });
-    const adv = await prisma.invoice.findUniqueOrThrow({ where: { id: sentInv.advanceInvoice.id } });
-    expect(adv).toMatchObject({ kind: 'quote_advance', clientOrgId: ids.sunrise, subtotalPaise: 3_450_000 });
+    expect(sentInv.advanceInvoice).toMatchObject({ totalPaise: fullTotal, status: 'partially_paid' });
+    const inv = await prisma.invoice.findUniqueOrThrow({ where: { id: sentInv.advanceInvoice.id } });
+    expect(inv).toMatchObject({ kind: 'quote_advance', clientOrgId: ids.sunrise, subtotalPaise: 6_900_000 });
     await http().post(`/quotes/${q.id}/advance-invoice`).set(as('cm')).expect(400);
-
-    // The founder can do the same, and the invoice is in the quotation's design.
-    const bal = (await http().post(`/quotes/${q.id}/balance-invoice`).set(as('founder')).expect(200)).body;
-    expect(bal.balanceInvoice).toMatchObject({ totalPaise: advanceTotal, status: 'issued' });
-    await http().post(`/quotes/${q.id}/balance-invoice`).set(as('cm')).expect(400);
-    const tax = (await http().get(`/finance/cm/invoices/${bal.balanceInvoice.id}/tax-invoice`).set(as('cm')).expect(200)).body;
+    // The invoice is in the quotation's design.
+    const tax = (await http().get(`/finance/cm/invoices/${inv.id}/tax-invoice`).set(as('cm')).expect(200)).body;
     expect(tax.quote).toMatchObject({ number: q.number, signedBy: { role: 'Client Manager' } });
 
-    // A payment reported after the invoice went out is confirmed from the quotation.
-    await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: advanceTotal, reference: 'UTR999999' }).expect(200);
+    // The rest, reported after the invoice went out, is confirmed from the quotation.
+    await http().post(`/client/quotes/${q.id}/paid`).set(as('client')).send({ amountPaise: fullTotal - half, reference: 'UTR999999' }).expect(200);
     const seenAgain = (await http().get(`/quotes/${q.id}`).set(as('cm')).expect(200)).body;
     expect(seenAgain.can.confirmPayment).toBe(true);
     const done = (await http().post(`/quotes/${q.id}/confirm-payment`).set(as('cm')).expect(200)).body;
-    expect(done.balanceInvoice.status).toBe('paid');
+    expect(done.advanceInvoice.status).toBe('paid');
   });
 
   it('decline with a reason; an expired quote cannot be accepted', async () => {

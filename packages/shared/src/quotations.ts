@@ -31,7 +31,11 @@ export const quoteLineSchema = z.object({
   service: text(120).optional(),
   billing: z.enum(["", "monthly", "one_time", "per_unit"]).optional(),
   gstRatePct: z.number().int().min(0).max(28).optional(),
+  /** Invoices: "service" carries GST; ad spend, creator fees and other pass-through costs are billed at cost, no GST. */
+  costKind: z.enum(["service", "ad_spend", "creator_fee", "other_pass_through"]).optional(),
 });
+/** A pass-through item (ad spend, creator fee…) is billed at cost with no GST. */
+export const isPassThroughLine = (l: { costKind?: string }) => !!l.costKind && l.costKind !== "service";
 /** v52: one GST rate for the whole document; 0 = no GST. */
 export const QUOTE_GST_RATES = [5, 12, 18, 28] as const;
 export const docGstRateSchema = z.union([z.literal(0), z.literal(5), z.literal(12), z.literal(18), z.literal(28)]);
@@ -144,12 +148,13 @@ export function quoteLineAmounts(lines: Pick<QuoteLine, "kind" | "qty" | "unitPr
   return lines.map((l) => (l.kind === "percent" ? Math.round((base * (l.pct || 0)) / 100) : Math.round((l.qty || 0) * (l.unitPricePaise || 0))));
 }
 
-export function quoteTotals(lines: Pick<QuoteLine, "kind" | "qty" | "unitPricePaise" | "pct">[], gstRatePct: number) {
+export function quoteTotals(lines: (Pick<QuoteLine, "kind" | "qty" | "unitPricePaise" | "pct"> & { costKind?: string })[], gstRatePct: number) {
   const amounts = quoteLineAmounts(lines);
   const subtotalPaise = amounts.reduce((s, a) => s + a, 0);
-  // v52: tax per item, round(taxable × rate / 100), then added up.
-  const gstPaise = amounts.reduce((s, a) => s + Math.round((a * gstRatePct) / 100), 0);
-  return { amounts, subtotalPaise, gstPaise, totalPaise: subtotalPaise + gstPaise };
+  // v52: tax per item, round(taxable × rate / 100), then added up; pass-through items (at cost) carry no GST.
+  const gstPaise = amounts.reduce((s, a, i) => s + (isPassThroughLine(lines[i]) ? 0 : Math.round((a * gstRatePct) / 100)), 0);
+  const passThroughPaise = amounts.reduce((s, a, i) => s + (isPassThroughLine(lines[i]) ? a : 0), 0);
+  return { amounts, subtotalPaise, taxablePaise: subtotalPaise - passThroughPaise, passThroughPaise, gstPaise, totalPaise: subtotalPaise + gstPaise };
 }
 
 /** v52: the terms line that follows the "Valid until" field, e.g. "This quotation is valid until 17 December 2026." */

@@ -3,8 +3,8 @@
 // v29: a Client Manager's view of one of their clients' invoices, with "Sign invoice" when it waits for a signature.
 // v52: a draft can be edited in the shared form, then issued; once issued, its items and amounts are locked.
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { SigningStatus } from "@/components/service/signing-status";
 import { TaxInvoice } from "@/components/service/tax-invoice";
 import { Button, LoadState } from "@/components/ui";
@@ -13,6 +13,7 @@ import { useLoad } from "@/lib/use-load";
 
 export default function TeamInvoicePage() {
   const { id } = useParams<{ id: string }>()!;
+  const router = useRouter();
   const state = useLoad(() => api.service.cmTaxInvoice(id));
   const [msg, setMsg] = useState<{ ok: boolean; text: string }>();
   const [busy, setBusy] = useState(false);
@@ -30,6 +31,10 @@ export default function TeamInvoicePage() {
     }
   }
   const draft = state.data?.status === "draft";
+  // This is the Client Manager's view; Founders and Finance see invoices under Admin → Finance.
+  useEffect(() => {
+    if (state.error === "For Client Managers") router.replace(`/admin/finance/invoices/${id}`);
+  }, [state.error, id, router]);
   return (
     <>
       <Link href="/team/invoices" className="no-print mb-4 inline-block text-sm underline">

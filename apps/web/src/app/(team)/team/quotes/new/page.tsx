@@ -5,9 +5,9 @@
 // by hand); the overview is written from them; autosave about 4 seconds after a change (and when the tab is hidden),
 // the first one turning this page into the saved draft's page so a reload continues the same draft.
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useRef, useState } from "react";
-import { quoteDefaultValidUntil, type QuoteContent } from "@bmu/shared";
-import { cleanContent, emptyContent, linesFromClientServices, QuoteEditor, quoteProblem, SaveBar, useDocAutosave } from "@/components/quotes/quote-editor";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { quoteDefaultValidUntil, type ClientsDetail, type PriceList, type QuoteContent } from "@bmu/shared";
+import { cleanContent, emptyContent, linesFromClient, QuoteEditor, quoteProblem, SaveBar, useDocAutosave } from "@/components/quotes/quote-editor";
 import { inDays, QuoteMetaForm, type QuoteMeta } from "@/components/quotes/quote-meta";
 import { Button, PageTitle } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -21,6 +21,21 @@ function NewQuote() {
   const [content, setContent] = useState<QuoteContent>({ ...emptyContent(), quoteDate: inDays(0) });
   const [clientName, setClientName] = useState("");
   const itemsEdited = useRef(false);
+  // The price list prices the sub services on the client's projects (the client is filled in once both are loaded).
+  const [priceList, setPriceList] = useState<PriceList>();
+  const [loadedClient, setLoadedClient] = useState<ClientsDetail>();
+  useEffect(() => {
+    api.catalogue.priceList().then(setPriceList, () => setPriceList({ groups: [], bundles: [] }));
+  }, []);
+  useEffect(() => {
+    if (!loadedClient || !priceList) return;
+    const d = loadedClient;
+    // The quotation is for all of the client's running services (printed under the project); no ticking.
+    setMeta((m) => ({ ...m, engagementIds: d.services.filter((x) => !["closed", "delivered"].includes(x.status)).map((x) => x.id) }));
+    if (itemsEdited.current) return;
+    const lines = linesFromClient(d, priceList);
+    if (lines.length) setContent((cur) => ({ ...cur, lines, title: cur.title.trim() ? cur.title : [...new Set(lines.map((l) => l.service || l.title))].join(", ").slice(0, 160) }));
+  }, [loadedClient, priceList]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const body = () => ({ ...cleanContent(content), ...meta, templateId: meta.templateId || null });
@@ -61,17 +76,15 @@ function NewQuote() {
             <QuoteMetaForm
               meta={meta}
               onChange={setMeta}
-              // A template brings the document; this quotation's date, Bill to, signature, notes and terms stay.
-              onTemplate={(c) => setContent((cur) => ({ ...c, quoteDate: cur.quoteDate, billTo: cur.billTo, signWith: cur.signWith, seal: cur.seal, notes: cur.notes, terms: cur.terms, gstRatePct: cur.gstRatePct }))}
+              // A template brings the document; this quotation's items (the client's services), date, Bill to, signature, notes and terms stay.
+              onTemplate={(c) => setContent((cur) => ({ ...c, lines: cur.lines.some((l) => l.title.trim()) ? cur.lines : c.lines, quoteDate: cur.quoteDate, billTo: cur.billTo, signWith: cur.signWith, seal: cur.seal, notes: cur.notes, terms: cur.terms, gstRatePct: cur.gstRatePct }))}
               onServices={setContent}
               fixedClient={!!preset}
               quoteDate={content.quoteDate ?? ""}
               onQuoteDate={(quoteDate) => setContent((cur) => ({ ...cur, quoteDate }))}
               onClientLoaded={(d) => {
                 setClientName(d.name);
-                if (itemsEdited.current) return;
-                const lines = linesFromClientServices(d.clientServices);
-                if (lines.length) setContent((cur) => ({ ...cur, lines, title: cur.title.trim() ? cur.title : [...new Set(lines.map((l) => l.title.replace(/\s*\((Starter|Growth|Premium) plan\)$/, "")))].join(", ").slice(0, 160) }));
+                setLoadedClient(d);
               }}
             />
           }

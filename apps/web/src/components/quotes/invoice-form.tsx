@@ -7,10 +7,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { INVOICE_DEFAULT_DUE_DAYS, type InvoiceDocSaveInput, type QuoteContent } from "@bmu/shared";
+import { INVOICE_DEFAULT_DUE_DAYS, type InvoiceDocSaveInput, type PriceList, type QuoteContent } from "@bmu/shared";
 import { Button, Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
-import { emptyContent, linesFromClientServices, QuoteEditor, SaveBar, useDocAutosave } from "./quote-editor";
+import { emptyContent, linesFromClient, QuoteEditor, SaveBar, useDocAutosave } from "./quote-editor";
 
 const todayIst = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
 type Meta = { clientOrgId: string; engagementId: string; invoiceDate: string; dueDate: string };
@@ -51,11 +51,14 @@ export function InvoiceForm({ id, presetClientId = "" }: { id?: string; presetCl
   const [clientName, setClientName] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<string>();
   const itemsEdited = useRef(!!id);
   const clientLoadedFor = useRef<string>("");
 
+  const [priceList, setPriceList] = useState<PriceList>();
   useEffect(() => {
     api.ops.finance.options().then(setOpts, (e: Error) => setError(e.message));
+    api.catalogue.priceList().then(setPriceList, () => setPriceList({ groups: [], bundles: [] }));
   }, []);
   // An existing draft: everything comes from the invoice (older ones from their lines).
   useEffect(() => {
@@ -76,7 +79,7 @@ export function InvoiceForm({ id, presetClientId = "" }: { id?: string; presetCl
   }, [id]);
   // Choosing a client fills Bill to and, on a new invoice, starts the items from the client's services.
   useEffect(() => {
-    if (!meta.clientOrgId || clientLoadedFor.current === meta.clientOrgId) return;
+    if (!meta.clientOrgId || !priceList || clientLoadedFor.current === meta.clientOrgId) return;
     clientLoadedFor.current = meta.clientOrgId;
     api.clientsActions.get(meta.clientOrgId).then(
       (d) => {
@@ -84,13 +87,14 @@ export function InvoiceForm({ id, presetClientId = "" }: { id?: string; presetCl
         const gstin = d.billing.gstin ?? "";
         const billTo = { name: d.billing.billingName || d.name, gstin, placeOfSupply: d.billing.placeOfSupply || (/^\d{2}/.test(gstin) ? gstin.slice(0, 2) : ""), address: d.billing.billingAddress ?? "" };
         setContent((c) => {
-          const lines = itemsEdited.current ? c.lines : linesFromClientServices(d.clientServices);
+          // All of the client's services, with their service, sub service and price; the manager adds or removes items.
+          const lines = itemsEdited.current ? c.lines : linesFromClient(d, priceList);
           return { ...c, billTo, lines: lines.length ? lines : c.lines };
         });
       },
       () => undefined,
     );
-  }, [meta.clientOrgId]);
+  }, [meta.clientOrgId, priceList]);
 
   const auto = useDocAutosave({
     enabled: loaded && !locked,
@@ -101,15 +105,38 @@ export function InvoiceForm({ id, presetClientId = "" }: { id?: string; presetCl
       if (!id) router.replace(`/team/invoices/${r.id}/edit`);
     },
   });
-  async function save() {
+  // A draft stays in this form (Founders and Finance only see issued invoices in Admin → Finance).
+  async function save(): Promise<string | null> {
     const p = invoiceProblem(meta, content);
-    if (p) return setError(`Can't save yet: ${p}.`);
+    if (p) {
+      setError(`Can't save yet: ${p}.`);
+      return null;
+    }
     setBusy(true);
     setError(undefined);
+    setSaved(undefined);
     try {
       const r = await api.ops.finance.saveInvoiceDoc(bodyOf(meta, content), id);
       auto.markSaved();
-      router.push(`/team/invoices/${r.id}`);
+      if (!id) router.replace(`/team/invoices/${r.id}/edit`);
+      else setSaved(r.message);
+      return r.id;
+    } catch (e) {
+      setError((e as Error).message);
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Issue: saves first, then issues; the invoice is then locked and opens in its view.
+  async function issue() {
+    if (!window.confirm("Issue this invoice to the client? Its items and amounts are locked once it is issued.")) return;
+    const saved = await save();
+    if (!saved) return;
+    setBusy(true);
+    try {
+      await api.ops.finance.issue(saved);
+      router.push(`/team/invoices/${saved}`);
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
@@ -170,9 +197,15 @@ export function InvoiceForm({ id, presetClientId = "" }: { id?: string; presetCl
           }
         />
         <SaveBar busy={busy} error={error}>
-          <Button onClick={save} disabled={busy || !!locked} data-testid="invoice-save">
+          <Button variant={id ? "secondary" : undefined} onClick={() => void save()} disabled={busy || !!locked} data-testid="invoice-save">
             {id ? "Save changes" : "Save invoice as draft"}
           </Button>
+          {id && !locked && (
+            <Button onClick={() => void issue()} disabled={busy} data-testid="invoice-issue">
+              Issue invoice
+            </Button>
+          )}
+          {saved && <span className="text-xs text-green">{saved}</span>}
           <span className="text-xs text-ink-muted" data-testid="invoice-autosave">
             {auto.status}
           </span>

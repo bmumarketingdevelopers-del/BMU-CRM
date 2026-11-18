@@ -10,6 +10,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   formatINR,
   itemBillingLabels,
+  OPS_INVOICE_LINE_KINDS,
+  opsInvoiceLineKindLabels,
   priceListEntries,
   QUOTE_GST_RATES,
   QUOTE_OVERVIEW_MAX,
@@ -23,6 +25,8 @@ import {
   quoteTermsWithValidUntil,
   quoteTotals,
   SERVICE_GST_STATES,
+  lowestPlan,
+  type ClientsDetail,
   type ClientServiceRow,
   type PriceList,
   type QuoteContent,
@@ -45,7 +49,7 @@ export const emptyContent = (): QuoteContent => ({
   scope: [],
   timeline: [],
   terms: [],
-  advancePct: 50,
+  advancePct: 100,
   footerLine: "",
   signWith: "mine",
   seal: true,
@@ -70,6 +74,39 @@ export function linesFromClientServices(rows: ClientServiceRow[]): QuoteLine[] {
   return rows
     .filter((r) => r.status === "active" && r.pricePaise != null)
     .map((r) => ({ ...blankLine(), title: `${r.name}${r.pricedPlan ? ` (${tierName(r.pricedPlan)} plan)` : ""}`.slice(0, 160), details: r.description.slice(0, 600), unitPricePaise: r.pricePaise ?? 0, service: r.service, billing: r.billing }));
+}
+
+/**
+ * All of a client's services as items, so the manager never has to tick them: first what the client has bought with its
+ * plan (Services and plans), then the sub services on the client's running projects that are not already there, each
+ * with its service (the group), billing and today's price for its plan (the lowest priced plan when none is chosen).
+ * Older price-list projects use their plan's price. The manager adds or removes items afterwards.
+ */
+export function linesFromClient(d: Pick<ClientsDetail, "clientServices" | "services">, list?: PriceList): QuoteLine[] {
+  const out = linesFromClientServices(d.clientServices);
+  const subs = new Map((list?.groups ?? []).flatMap((g) => g.subServices.map((s) => [s.id, { ...s, group: g.name }] as const)));
+  const bundles = new Map((list?.bundles ?? []).map((b) => [b.id, b]));
+  // Sub services already covered: bought on their own, or inside a bundle the client has.
+  const covered = new Set(
+    d.clientServices
+      .filter((r) => r.status === "active")
+      .flatMap((r) => (r.kind === "bundle" ? (bundles.get(r.itemId)?.subServiceIds ?? []) : [r.itemId])),
+  );
+  for (const e of d.services.filter((s) => !["closed", "delivered"].includes(s.status))) {
+    if (e.grouped) {
+      for (const s of e.subServices) {
+        if (covered.has(s.id)) continue;
+        covered.add(s.id);
+        const item = subs.get(s.id);
+        const plan = item ? lowestPlan(item.prices) : null;
+        const price = item && plan ? (item.prices[plan] ?? 0) : 0;
+        out.push({ ...blankLine(), title: `${s.name}${plan ? ` (${tierName(plan)} plan)` : ""}`.slice(0, 160), details: (item?.covers ?? s.covers).slice(0, 600), unitPricePaise: price, service: item?.group ?? e.serviceName, billing: (item?.billing ?? (e.billingType === "one_time" ? "one_time" : "monthly")) as QuoteLine["billing"] });
+      }
+    } else if (e.planPricePaise) {
+      out.push({ ...blankLine(), title: `${e.serviceName} (${tierName(e.tier)} plan)`.slice(0, 160), details: (e.planNote ?? "").slice(0, 600), unitPricePaise: e.planPricePaise, service: e.serviceName, billing: (e.billingType === "one_time" ? "one_time" : e.billingType === "per_unit" ? "per_unit" : "monthly") as QuoteLine["billing"] });
+    }
+  }
+  return out;
 }
 
 /**
@@ -386,7 +423,13 @@ export function QuoteEditor({
                   <option value="percent">% of the fees</option>
                 </Select>
               ) : (
-                <span />
+                <Select value={l.costKind ?? "service"} onChange={(e) => line(i, { costKind: e.target.value as QuoteLine["costKind"] })} aria-label={`Line ${i + 1} type`} data-testid="invoice-line-kind">
+                  {OPS_INVOICE_LINE_KINDS.map((k) => (
+                    <option key={k} value={k}>
+                      {k === "service" ? "Service (with GST)" : `${opsInvoiceLineKindLabels[k].replace(" (pass-through)", "")} (pass-through, no GST)`}
+                    </option>
+                  ))}
+                </Select>
               )}
             </div>
           </div>
@@ -428,7 +471,7 @@ export function QuoteEditor({
             <>
               <span className="flex justify-between">
                 <span>Taxable value</span>
-                <span className="tabular-nums">{formatINR(t.subtotalPaise)}</span>
+                <span className="tabular-nums">{formatINR(t.taxablePaise)}</span>
               </span>
               {split.interState ? (
                 <span className="flex justify-between">
@@ -454,6 +497,12 @@ export function QuoteEditor({
               <span className="tabular-nums">{formatINR(t.subtotalPaise)}</span>
             </span>
           )}
+          {t.passThroughPaise > 0 && (
+            <span className="flex justify-between" data-testid="quote-pass-through">
+              <span>Pass-through (no GST)</span>
+              <span className="tabular-nums">{formatINR(t.passThroughPaise)}</span>
+            </span>
+          )}
           <span className="flex justify-between border-t border-border pt-1 font-semibold">
             <span>Total</span>
             <span className="tabular-nums" data-testid="quote-editor-total">
@@ -463,13 +512,7 @@ export function QuoteEditor({
           {!gstOn && <span className="text-xs text-ink-muted">No GST: the total is the items alone.</span>}
           {showMixed && <span className="text-xs text-[#9a6b00]">The items had different GST rates. Saving applies this one to all of them.</span>}
         </div>
-        {quote && (
-          <label className="flex items-center gap-2 text-sm">
-            Advance to invoice first:
-            <Input type="number" min={0} max={100} className="w-20" value={v.advancePct} onChange={(e) => set("advancePct", Math.max(0, Math.min(100, Number(e.target.value) || 0)))} aria-label="Advance percent" />% ({formatINR(Math.round((t.subtotalPaise * v.advancePct) / 100))}
-            {gstOn ? " + GST" : ""})
-          </label>
-        )}
+        {/* The advance % (50% unless a template sets another) is not asked here: it decides the invoices after the client accepts. */}
       </QuoteFormSection>
 
       {quote && (

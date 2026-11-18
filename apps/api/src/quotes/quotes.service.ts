@@ -339,7 +339,8 @@ export class QuotesService {
     // v52: one GST rate for every item (0 = no GST); the valid-until line follows the date while it is the automatic one.
     const rate = input.gstRatePct ?? gst.ratePct ?? 18;
     const terms = parsed.terms.length ? quoteTermsWithValidUntil(parsed.terms, validUntil).map((t, i) => ({ title: String(i + 1), text: t.text })) : quoteDefaultTerms(validUntil);
-    const content = { ...parsed, terms, lines: parsed.lines.map((l) => ({ ...l, gstRatePct: rate })) };
+    // No advance payment for now: once the client accepts, one invoice for the full amount (advance 100%, no balance).
+    const content = { ...parsed, advancePct: 100, terms, lines: parsed.lines.map((l) => ({ ...l, gstRatePct: rate })) };
     const t = quoteTotals(content.lines, rate);
     if (t.subtotalPaise <= 0) throw new BadRequestException('The total is zero; add the rates');
     return {
