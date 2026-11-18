@@ -125,7 +125,7 @@ describe('Daily reports', () => {
 
 describe('Raise an issue with HR', () => {
   const issue = { category: 'workload', subject: `Too many weekend shoots ${stamp}`, details: 'Three weekends in a row on shoots, no comp-off yet.' };
-  type Issue = { id: string; status: string; response: string | null; resolvedAt: string | null; from?: { id: string; name: string } };
+  type Issue = { id: string; raisedTo: string; status: string; response: string | null; resolvedAt: string | null; from?: { id: string; name: string } };
 
   it('any team member raises one; HR are told; only they and HR can see it', async () => {
     const raised = (await http().post('/hr-issues').set(as('producer')).send(issue).expect(201)).body as Issue;
@@ -138,9 +138,14 @@ describe('Raise an issue with HR', () => {
     // HR's list says who raised it.
     const inbox = (await http().get('/hr-issues').set(as('hr')).expect(200)).body as Issue[];
     expect(inbox.find((i) => i.id === raised.id)?.from?.id).toBe(ids.producer);
-    // Confidential: not their Department Head, the Branch Manager or the Founder; and not in the Audit Log.
-    for (const who of ['head', 'admin', 'founder']) await http().get('/hr-issues').set(as(who)).expect(403);
-    await http().patch(`/hr-issues/${raised.id}`).set(as('producer')).send({ status: 'resolved' }).expect(403);
+    expect(raised.raisedTo).toBe('hr');
+    // Confidential: not their Department Head; the Branch Manager and Founder only see issues raised by HR; not in the Audit Log.
+    await http().get('/hr-issues').set(as('head')).expect(403);
+    for (const who of ['admin', 'founder']) {
+      expect(((await http().get('/hr-issues?status=all').set(as(who)).expect(200)).body as Issue[]).map((i) => i.id)).not.toContain(raised.id);
+      await http().patch(`/hr-issues/${raised.id}`).set(as(who)).send({ status: 'resolved' }).expect(404);
+    }
+    await http().patch(`/hr-issues/${raised.id}`).set(as('producer')).send({ status: 'resolved' }).expect(404);
     expect(await prisma.auditEvent.count({ where: { entityId: raised.id } })).toBe(0);
   });
 
@@ -165,13 +170,21 @@ describe('Raise an issue with HR', () => {
     await http().post('/hr-issues').set(as('client')).send(issue).expect(403);
   });
 
-  it("HR's own issue goes to the rest of HR, never to themselves", async () => {
-    const otherHr = await prisma.user.count({ where: { id: { not: ids.hr }, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'hr_ops' } } } } });
-    const res = await http().post('/hr-issues').set(as('hr')).send({ ...issue, subject: `HR own ${stamp}` });
-    if (!otherHr) return expect(res.status).toBe(400);
-    expect(res.status).toBe(201);
-    issueIds.push(res.body.id);
-    expect(((await http().get('/hr-issues').set(as('hr')).expect(200)).body as Issue[]).map((i) => i.id)).not.toContain(res.body.id);
-    await http().patch(`/hr-issues/${res.body.id}`).set(as('hr')).send({ status: 'resolved' }).expect(403);
+  it("HR's own issue goes to the Branch Manager and Founder, never to HR", async () => {
+    expect((await http().get('/hr-issues/setup').set(as('hr')).expect(200)).body).toMatchObject({ raisesTo: 'leadership', handlesHr: true });
+    expect((await http().get('/hr-issues/setup').set(as('producer')).expect(200)).body).toMatchObject({ raisesTo: 'hr', handlesHr: false, handlesLeadership: false });
+    const res = await http().post('/hr-issues').set(as('hr')).send({ ...issue, subject: `HR own ${stamp}` }).expect(201);
+    const own = res.body as Issue;
+    issueIds.push(own.id);
+    expect(own.raisedTo).toBe('leadership');
+    expect(await prisma.notification.findFirst({ where: { userId: ids.admin, kind: 'hr_issue', title: { contains: `HR own ${stamp}` } } })).toBeTruthy();
+    // HR (including other HR people) never see it; the Branch Manager does, with who raised it.
+    expect(((await http().get('/hr-issues?status=all').set(as('hr')).expect(200)).body as Issue[]).map((i) => i.id)).not.toContain(own.id);
+    await http().patch(`/hr-issues/${own.id}`).set(as('hr')).send({ status: 'resolved' }).expect(404);
+    const bm = ((await http().get('/hr-issues').set(as('admin')).expect(200)).body as Issue[]).find((i) => i.id === own.id);
+    expect(bm?.from?.id).toBe(ids.hr);
+    const replied = (await http().patch(`/hr-issues/${own.id}`).set(as('admin')).send({ response: 'Noted. Let us talk on Monday.' }).expect(200)).body as Issue;
+    expect(replied.status).toBe('in_progress');
+    expect(await prisma.notification.findFirst({ where: { userId: ids.hr, kind: 'hr_issue_update', title: { contains: `HR own ${stamp}` } } })).toBeTruthy();
   });
 });

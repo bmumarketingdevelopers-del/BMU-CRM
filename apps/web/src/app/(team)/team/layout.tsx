@@ -64,7 +64,8 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
         { label: "My onboarding", href: "/team/onboarding" },
         { label: "Profile, leave & attendance", href: "/team/profile" },
         // v50: anyone can raise a concern with HR, confidentially; HR answer them on the same page.
-        { label: me.roles.includes("hr_ops") ? "HR issues" : "Raise an issue with HR", href: "/team/hr-issues" },
+        // v52: HR raise theirs with the Branch Manager and Founder, who answer them on the same page.
+        { label: me.roles.includes("hr_ops") ? "HR issues" : me.roles.some((r) => r === "admin" || r === "founder") ? "Issues from HR" : "Raise an issue with HR", href: "/team/hr-issues" },
       ],
     },
     ...(isAdmin ? [{ section: "Admin", items: [{ label: "Command Centre", href: "/admin" }, ...(isStudio ? [{ label: "Dashboard Studio", href: "/admin/dashboards" }] : [])] }] : []),

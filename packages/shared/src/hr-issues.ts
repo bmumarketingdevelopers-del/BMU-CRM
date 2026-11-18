@@ -32,8 +32,18 @@ export const hrIssueUpdateSchema = z
   .refine((v) => v.status !== undefined || v.response !== undefined, { message: "Change the status or write a reply" });
 export type HrIssueUpdate = z.infer<typeof hrIssueUpdateSchema>;
 
+/**
+ * Who an issue is raised with. Everyone raises with HR; the HR people themselves (HR / Ops role or the HR department)
+ * raise with leadership instead: the Branch Manager and the Founder.
+ */
+export type HrIssueRaisedTo = "hr" | "leadership";
+
+/** What this person can do on the page: who their own issues go to, and which issues they answer. */
+export type HrIssueSetup = { raisesTo: HrIssueRaisedTo; handlesHr: boolean; handlesLeadership: boolean };
+
 export type HrIssueView = {
   id: string;
+  raisedTo: HrIssueRaisedTo;
   category: HrIssueCategory;
   subject: string;
   details: string;
