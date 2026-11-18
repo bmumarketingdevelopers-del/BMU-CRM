@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { HR_ISSUE_CATEGORIES, HR_ISSUE_STATUSES, type HrIssueCategory, type HrIssueStatus, type HrIssueView } from "@bmu/shared";
+import { HR_ISSUE_CATEGORIES, HR_ISSUE_STATUSES, type HrIssueCategory, type HrIssueRaisedTo, type HrIssueStatus, type HrIssueView } from "@bmu/shared";
 import { Empty, Panel, Tabs } from "@/components/dash";
 import { Badge, Button, Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
@@ -10,33 +10,50 @@ import { useLoad } from "@/lib/use-load";
 const when = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 const tone = (s: HrIssueStatus) => (s === "resolved" ? "green" : s === "in_progress" ? "amber" : "neutral");
 
-/** v50 Raise an issue with HR. Everyone: raise one and follow it. HR: also the issues raised with HR, to reply and resolve. */
-export function HrIssuesWorkspace({ isHr }: { isHr: boolean }) {
-  const [view, setView] = useState<"mine" | "inbox">(isHr ? "inbox" : "mine");
+/** Who an issue goes to, in words. */
+const TO: Record<HrIssueRaisedTo, string> = { hr: "HR", leadership: "the Branch Manager" };
+
+/**
+ * v50 Raise an issue with HR. Everyone: raise one and follow it. HR: also the issues raised with HR, to reply and resolve.
+ * v52: HR people raise theirs with the Branch Manager and Founder, who answer them here.
+ */
+export function HrIssuesWorkspace() {
+  const setup = useLoad(() => api.hrIssues.setup());
+  const [view, setView] = useState<"mine" | "inbox">();
+  if (!setup.data) return <LoadState loading={setup.loading} error={setup.error} />;
+  const { raisesTo, handlesHr, handlesLeadership } = setup.data;
+  const answers = handlesHr || handlesLeadership;
+  const shown = view ?? (answers ? "inbox" : "mine");
+  const inboxLabel = handlesHr && handlesLeadership ? "Raised with you" : handlesHr ? "Raised with HR" : "Raised by HR";
   return (
     <div>
       <PageTitle
-        title={isHr ? "HR issues" : "Raise an issue with HR"}
-        subtitle="Confidential: only you and the HR team see what you raise here. Not your manager, your Department Head or leadership."
+        title={handlesHr ? "HR issues" : handlesLeadership ? "Issues raised by HR" : `Raise an issue with ${TO[raisesTo]}`}
+        subtitle={
+          raisesTo === "leadership"
+            ? "Confidential: only you, the Branch Manager and the Founder see what you raise here. Not your manager or Department Head."
+            : "Confidential: only you and the HR team see what you raise here. Not your manager, your Department Head or leadership."
+        }
       />
-      {isHr && (
+      {answers && (
         <div className="mb-6">
           <Tabs
-            value={view}
+            value={shown}
             onChange={setView}
             options={[
-              { value: "inbox", label: "Raised with HR" },
-              { value: "mine", label: "Raise your own" },
+              { value: "inbox", label: inboxLabel },
+              { value: "mine", label: raisesTo === "leadership" ? "Raise yours with the Branch Manager" : "Raise your own" },
             ]}
           />
         </div>
       )}
-      {view === "inbox" ? <Inbox /> : <Mine />}
+      {shown === "inbox" ? <Inbox handlesHr={handlesHr} /> : <Mine raisesTo={raisesTo} />}
     </div>
   );
 }
 
-function Mine() {
+function Mine({ raisesTo }: { raisesTo: HrIssueRaisedTo }) {
+  const to = TO[raisesTo];
   const loaded = useLoad(() => api.hrIssues.mine());
   const [fresh, setFresh] = useState<HrIssueView[]>();
   const list = fresh ?? loaded.data;
@@ -63,7 +80,7 @@ function Mine() {
 
   return (
     <div className="grid gap-6">
-      <Panel title="Raise an issue" subtitle="HR will be told straight away. You'll get a notification when they reply.">
+      <Panel title="Raise an issue" subtitle={`${to === "HR" ? "HR" : "The Branch Manager and the Founder"} will be told straight away. You'll get a notification when they reply.`}>
         <form onSubmit={submit} className="grid gap-4" data-testid="raise-hr-issue">
           <div className="grid gap-4 md:grid-cols-[220px_1fr]">
             <label className="block text-sm">
@@ -91,13 +108,13 @@ function Mine() {
               maxLength={4000}
               required
               minLength={10}
-              placeholder="Tell HR what is going on, since when, and what would help."
+              placeholder={`Tell ${to} what is going on, since when, and what would help.`}
             />
           </label>
           {error && <p className="text-sm text-red">{error}</p>}
-          {sent && !error && <p className="text-sm text-ink-muted">Sent to HR. You can follow it below.</p>}
+          {sent && !error && <p className="text-sm text-ink-muted">Sent to {to}. You can follow it below.</p>}
           <div>
-            <Button disabled={busy}>{busy ? "Sending…" : "Send to HR"}</Button>
+            <Button disabled={busy}>{busy ? "Sending…" : `Send to ${to}`}</Button>
           </div>
         </form>
       </Panel>
@@ -105,7 +122,7 @@ function Mine() {
         {!list ? (
           <LoadState loading={loaded.loading} error={loaded.error} />
         ) : !list.length ? (
-          <Empty>You haven&apos;t raised anything with HR.</Empty>
+          <Empty>You haven&apos;t raised anything with {to}.</Empty>
         ) : (
           <ul className="grid gap-4" data-testid="my-hr-issues">
             {list.map((i) => (
@@ -114,7 +131,7 @@ function Mine() {
                 <p className="mt-2 whitespace-pre-wrap text-sm">{i.details}</p>
                 {i.response && (
                   <div className="mt-3 border-l-2 border-green bg-canvas/60 px-3 py-2 text-sm">
-                    <p className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">Reply from HR{i.handledBy ? ` · ${i.handledBy}` : ""}</p>
+                    <p className="text-[11px] uppercase tracking-[0.1em] text-ink-muted">{i.raisedTo === "leadership" ? `Reply${i.handledBy ? ` from ${i.handledBy}` : ""}` : `Reply from HR${i.handledBy ? ` · ${i.handledBy}` : ""}`}</p>
                     <p className="mt-1 whitespace-pre-wrap">{i.response}</p>
                   </div>
                 )}
@@ -142,7 +159,7 @@ function IssueHead({ i }: { i: HrIssueView }) {
   );
 }
 
-function Inbox() {
+function Inbox({ handlesHr }: { handlesHr: boolean }) {
   const [status, setStatus] = useState<"active" | "resolved" | "all">("active");
   return (
     <div className="grid gap-4">
@@ -155,17 +172,17 @@ function Inbox() {
           { value: "all", label: "All" },
         ]}
       />
-      <InboxList key={status} status={status} />
+      <InboxList key={status} status={status} handlesHr={handlesHr} />
     </div>
   );
 }
 
-function InboxList({ status }: { status: "active" | "resolved" | "all" }) {
+function InboxList({ status, handlesHr }: { status: "active" | "resolved" | "all"; handlesHr: boolean }) {
   const loaded = useLoad(() => api.hrIssues.inbox(status === "active" ? undefined : status));
   const [fresh, setFresh] = useState<HrIssueView[]>();
   const list = fresh ?? loaded.data;
   if (!list) return <LoadState loading={loaded.loading} error={loaded.error} />;
-  if (!list.length) return <Empty>{status === "active" ? "No open issues. Nothing waiting for HR." : "Nothing here."}</Empty>;
+  if (!list.length) return <Empty>{status === "active" ? `No open issues. Nothing waiting for ${handlesHr ? "HR" : "you"}.` : "Nothing here."}</Empty>;
   const replace = (v: HrIssueView) => setFresh(list.map((x) => (x.id === v.id ? v : x)));
   return (
     <ul className="grid gap-4" data-testid="hr-inbox">

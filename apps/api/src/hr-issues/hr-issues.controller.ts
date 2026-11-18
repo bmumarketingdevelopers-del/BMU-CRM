@@ -14,6 +14,11 @@ export class HrIssuesController {
     return this.issues.raise(me, parse(hrIssueSchema, body));
   }
 
+  @Get('setup')
+  setup(@CurrentUser() me: Me) {
+    return this.issues.setup(me);
+  }
+
   @Get('mine')
   mine(@CurrentUser() me: Me) {
     return this.issues.mine(me);

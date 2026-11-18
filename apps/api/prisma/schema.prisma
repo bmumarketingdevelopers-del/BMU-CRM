@@ -3954,13 +3954,16 @@ model QuoteTemplate {
   @@map("quote_templates")
 }
 
-/// v50 Raise an issue with HR: a concern a team member brings to HR. Confidential: only the person who raised it and
-/// HR see it (not their manager, Department Head or leadership), and it is kept out of the Audit Log.
+/// v50 Raise an issue with HR: a concern a team member brings to HR (v52: HR people raise theirs with the Branch Manager
+/// and Founder). Confidential: only the person who raised it and whoever it was raised with see it (never their manager
+/// or Department Head), and it is kept out of the Audit Log.
 model HrIssue {
   id          String    @id @default(cuid())
   orgId       String
   /// Who raised it.
   userId      String
+  /// v52: who it was raised with: hr (everyone) | leadership (raised by HR people: the Branch Manager and Founder answer)
+  raisedTo    String    @default("hr")
   /// workplace | conduct | pay | workload | facilities | other (HR_ISSUE_CATEGORIES)
   category    String
   subject     String
