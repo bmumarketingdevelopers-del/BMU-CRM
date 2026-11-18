@@ -31,6 +31,18 @@ export const quoteLineSchema = z.object({
 export type QuoteLine = z.infer<typeof quoteLineSchema>;
 
 export const QUOTE_OVERVIEW_MAX = 250;
+const ymd = /^\d{4}-\d{2}-\d{2}$/;
+/** "Bill to" on one quotation: filled from the client's billing details, changed here for this document only. */
+export const quoteBillToSchema = z.object({
+  name: text(200).default(""),
+  gstin: text(15).default(""),
+  /** GST state code, e.g. "29" for Karnataka. */
+  placeOfSupply: text(2).default(""),
+  address: text(600).default(""),
+});
+export type QuoteBillTo = z.infer<typeof quoteBillToSchema>;
+/** Left empty, "valid until" is this many days after the quotation date. */
+export const QUOTE_DEFAULT_VALID_DAYS = 30;
 /** What a template and a quotation share: the project wording, the cost lines and pages 2 and 3. */
 export const quoteContentSchema = z.object({
   title: text(160).min(2, "Name the project, e.g. Bengaluru Influencer Campaign"),
@@ -49,6 +61,15 @@ export const quoteContentSchema = z.object({
   /** Advance invoiced first (the rest is the balance invoice). */
   advancePct: z.number().int().min(0).max(100).default(50),
   footerLine: text(160).optional().default(""),
+  /** The date printed on the quotation (YYYY-MM-DD); older quotations use the day they were sent. */
+  quoteDate: z.string().regex(ymd, "Pick the quotation date").optional(),
+  billTo: quoteBillToSchema.optional(),
+  /** "mine": signed with the sender's signature; "blank": the line is left to sign by hand. */
+  signWith: z.enum(["mine", "blank"]).optional().default("mine"),
+  /** Add the company seal under the signature. */
+  seal: z.boolean().optional().default(true),
+  /** Printed on the document above the terms. */
+  notes: text(1000).optional().default(""),
 });
 export type QuoteContent = z.infer<typeof quoteContentSchema>;
 export type QuoteContentInput = z.input<typeof quoteContentSchema>;
@@ -67,7 +88,8 @@ export const quoteSaveSchema = quoteContentSchema.extend({
   templateId: z.string().optional().nullable(),
   /** "Prepared for" lines under the client's name, e.g. "Real Estate Developer", "Bengaluru, Karnataka". */
   preparedFor: z.array(text(120)).max(3).default([]),
-  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the date it is valid until"),
+  /** Empty: QUOTE_DEFAULT_VALID_DAYS after the quotation date. */
+  validUntil: z.union([z.literal(""), z.string().regex(ymd, "Pick the date it is valid until")]).optional().default(""),
 });
 export type QuoteSaveInput = z.input<typeof quoteSaveSchema>;
 
@@ -119,6 +141,20 @@ export function quoteTotals(lines: Pick<QuoteLine, "kind" | "qty" | "unitPricePa
   return { amounts, subtotalPaise, gstPaise, totalPaise: subtotalPaise + gstPaise };
 }
 
+/**
+ * Same rule as tax invoices: inside the seller's state the GST is split into CGST and SGST (half each); anywhere else it is IGST.
+ * No place of supply: the client's GSTIN state, else the seller's own state.
+ */
+export function quoteGstSplit(gstPaise: number, sellerStateCode: string, placeOfSupply?: string | null, clientGstin?: string | null) {
+  const pos = placeOfSupply || (clientGstin && /^\d{2}/.test(clientGstin) ? clientGstin.slice(0, 2) : "") || sellerStateCode;
+  const interState = pos !== sellerStateCode;
+  const cgstPaise = interState ? 0 : Math.round(gstPaise / 2);
+  return { placeOfSupply: pos, interState, cgstPaise, sgstPaise: interState ? 0 : gstPaise - cgstPaise, igstPaise: interState ? gstPaise : 0 };
+}
+
+/** "Valid until" when left empty: QUOTE_DEFAULT_VALID_DAYS after the quotation date. */
+export const quoteDefaultValidUntil = (quoteDate: string) => new Date(Date.parse(`${quoteDate}T00:00:00Z`) + QUOTE_DEFAULT_VALID_DAYS * 86_400_000).toISOString().slice(0, 10);
+
 export type QuoteView = {
   id: string;
   number: string;
@@ -144,6 +180,8 @@ export type QuoteView = {
   subtotalPaise: number;
   gstRatePct: number;
   gstPaise: number;
+  /** CGST + SGST inside the seller's state, IGST elsewhere (from the place of supply). */
+  tax: { placeOfSupplyName: string | null; interState: boolean; cgstPaise: number; sgstPaise: number; igstPaise: number };
   totalPaise: number;
   amountInWords: string;
   payment: { accountName: string | null; accountNumber: string | null; ifsc: string | null; swift: string | null; bank: string | null; upiId: string | null; upiUri: string | null };
@@ -171,6 +209,9 @@ export const quoteTemplateContent = (t: QuoteTemplateRow): QuoteContent => ({
   terms: t.terms,
   advancePct: t.advancePct,
   footerLine: t.footerLine,
+  signWith: "mine",
+  seal: true,
+  notes: "",
 });
 
 /** v46: BMU's terms & conditions: fixed, added to every quotation by the server, and not editable. */
@@ -184,6 +225,28 @@ export const QUOTE_FIXED_TERMS: { title: string; text: string }[] = [
   { title: "7", text: "Paid advertising budgets, ad spends and third-party tool costs are not included and are borne by the client." },
   { title: "8", text: "Either party may end this engagement with 30 days' written notice. This quotation is valid for 15 days from the date of issue." },
 ];
+
+export type QuoteTerm = { title: string; text: string };
+const sameText = (a?: string, b?: string) => (a ?? "").replace(/\s+/g, " ").trim().toLowerCase() === (b ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/** One term per line, numbered 1, 2, 3… ("1. " at the start of a line is dropped). At most 12, as the schema allows. */
+export const quoteTermsFromText = (text: string): QuoteTerm[] =>
+  text
+    .split("\n")
+    .map((l) => l.replace(/^\s*\d+[.)]\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 12)
+    .map((t, i) => ({ title: String(i + 1), text: t.slice(0, 600) }));
+export const quoteTermsToText = (terms: QuoteTerm[]) => terms.map((t, i) => `${i + 1}. ${t.text}`).join("\n");
+
+/** Which terms differ from BMU's standard terms, by number: changed, added (past the end) and removed. */
+export function quoteTermsChanges(terms: QuoteTerm[], standard: QuoteTerm[] = QUOTE_FIXED_TERMS) {
+  const changed: number[] = [];
+  terms.forEach((t, i) => i < standard.length && !sameText(t.text, standard[i].text) && changed.push(i + 1));
+  const added = terms.slice(standard.length).map((_, i) => standard.length + i + 1);
+  const removed = standard.slice(terms.length).map((_, i) => terms.length + i + 1);
+  return { changed, added, removed, any: changed.length + added.length + removed.length > 0 };
+}
 
 /** The starting template (from BMU's influencer-campaign quotation). */
 export const DEFAULT_QUOTE_TEMPLATE: QuoteTemplateInput = {
@@ -217,7 +280,8 @@ export const DEFAULT_QUOTE_TEMPLATE: QuoteTemplateInput = {
   footerLine: "Let's put your project in front of Bengaluru's home buyers.",
 };
 
-export type QuoteClientDetails = { company: string; owner: string | null; email: string | null; address: string | null };
+/** Older sent quotations have no GSTIN or place of supply stamped. */
+export type QuoteClientDetails = { company: string; owner: string | null; email: string | null; address: string | null; gstin?: string | null; placeOfSupply?: string | null };
 
 /**
  * v47: a service ticked on a quotation, with its sub-services. A price-book service (Starter / Growth / Premium) also

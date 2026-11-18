@@ -13,8 +13,9 @@ function NewQuote() {
   // useSearchParams() can be null outside a request (e.g. while building): read the client once, safely.
   const preset = useSearchParams()?.get("clientId") ?? "";
   const router = useRouter();
-  const [meta, setMeta] = useState<QuoteMeta>({ clientOrgId: preset, engagementIds: [], templateId: "", preparedFor: [], validUntil: inDays(15) });
-  const [content, setContent] = useState<QuoteContent>(emptyContent());
+  // Valid until starts empty: the server makes it 30 days after the quotation date.
+  const [meta, setMeta] = useState<QuoteMeta>({ clientOrgId: preset, engagementIds: [], templateId: "", preparedFor: [], validUntil: "" });
+  const [content, setContent] = useState<QuoteContent>({ ...emptyContent(), quoteDate: inDays(0) });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   async function save() {
@@ -32,8 +33,24 @@ function NewQuote() {
     <>
       <PageTitle title="New quotation" subtitle="Pick the client and a template, edit it for this client, then save. You'll see the document and can send it next." />
       <div className="grid max-w-4xl gap-6">
-        <QuoteMetaForm meta={meta} onChange={setMeta} onTemplate={(c) => setContent(c)} onServices={setContent} fixedClient={!!preset} />
-        <QuoteEditor key={meta.templateId} value={content} onChange={setContent} clientOrgId={meta.clientOrgId} />
+        <QuoteEditor
+          key={meta.templateId}
+          value={content}
+          onChange={setContent}
+          clientOrgId={meta.clientOrgId}
+          details={
+            <QuoteMetaForm
+              meta={meta}
+              onChange={setMeta}
+              // A template brings the document; this quotation's date, Bill to, signature, notes and terms stay.
+              onTemplate={(c) => setContent((cur) => ({ ...c, quoteDate: cur.quoteDate, billTo: cur.billTo, signWith: cur.signWith, seal: cur.seal, notes: cur.notes, terms: cur.terms }))}
+              onServices={setContent}
+              fixedClient={!!preset}
+              quoteDate={content.quoteDate ?? ""}
+              onQuoteDate={(quoteDate) => setContent((cur) => ({ ...cur, quoteDate }))}
+            />
+          }
+        />
         <SaveBar busy={busy} error={error}>
           <Button onClick={save} disabled={busy} data-testid="quote-save">
             Save and preview

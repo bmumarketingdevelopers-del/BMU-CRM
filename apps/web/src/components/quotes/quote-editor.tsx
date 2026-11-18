@@ -4,12 +4,11 @@
 // template (name, service). Everything else is the document: project, highlights, cost lines (quantity × rate or a
 // percentage of the fees) and the advance % invoiced when the client accepts. v46: scope and timeline are optional;
 // the terms are fixed, so they are not edited here (the server adds them to every quotation).
-import { useRef, useState } from "react";
-import { formatINR, QUOTE_OVERVIEW_MAX, quoteTotals, type QuoteContent, type QuoteLine } from "@bmu/shared";
+import { useEffect, useRef, useState } from "react";
+import { formatINR, QUOTE_FIXED_TERMS, QUOTE_OVERVIEW_MAX, quoteGstSplit, quoteTermsChanges, quoteTermsFromText, quoteTermsToText, quoteTotals, SERVICE_GST_STATES, type QuoteContent, type QuoteLine, type ServiceSummary } from "@bmu/shared";
 import { Button, Input, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 
-const h = "text-xs font-semibold uppercase tracking-[0.12em] text-ink-muted";
 const area = "w-full border border-border bg-surface px-3 py-2 text-sm";
 const rupees = (p: number) => (p ? String(p / 100) : "");
 const paise = (v: string) => Math.round((Number(v.replace(/[^\d.]/g, "")) || 0) * 100);
@@ -25,6 +24,9 @@ export const emptyContent = (): QuoteContent => ({
   terms: [],
   advancePct: 50,
   footerLine: "",
+  signWith: "mine",
+  seal: true,
+  notes: "",
 });
 
 /** Before saving: optional cards and steps left blank are dropped. */
@@ -42,22 +44,107 @@ function Fixed({ label, values, max, onChange, placeholder }: { label: string; v
   );
 }
 
+const tierName = (tier: string) => tier.charAt(0).toUpperCase() + tier.slice(1);
+const blankLine = (): QuoteLine => ({ title: "", details: "", kind: "unit", qty: 1, unitPricePaise: 0, pct: 0 });
+
+/** "+ Add a line" opens this: pick a service and plan from the old price list (today's prices), or add a blank line. */
+function PriceListPicker({ onPick, onBlank, onCancel }: { onPick: (line: QuoteLine) => void; onBlank: () => void; onCancel: () => void }) {
+  const [list, setList] = useState<ServiceSummary[]>();
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    api.services().then(setList, (e: Error) => setError(e.message));
+  }, []);
+  const options = (list ?? []).flatMap((s) => s.tiers.filter((t) => t.pricePaise > 0).map((t) => ({ key: `${s.id}:${t.tier}`, s, t })));
+  const pick = (key: string) => {
+    const o = options.find((x) => x.key === key);
+    if (o) onPick({ ...blankLine(), title: `${o.s.name} (${tierName(o.t.tier)} plan)`.slice(0, 160), details: (o.s.excludedNote ?? "").slice(0, 600), unitPricePaise: o.t.pricePaise });
+  };
+  return (
+    <div className="grid gap-2 border border-border p-3 sm:max-w-xl" data-testid="quote-price-list">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-medium">Add from the price list</span>
+        <span className="flex gap-3 text-xs">
+          <button type="button" className="underline" onClick={onBlank} data-testid="quote-add-blank">
+            Add a blank item instead
+          </button>
+          <button type="button" className="text-ink-muted underline" onClick={onCancel}>
+            Cancel
+          </button>
+        </span>
+      </div>
+      <Select value="" onChange={(e) => pick(e.target.value)} aria-label="Add from the price list" disabled={!list}>
+        <option value="">{list ? "Choose a service and plan" : error ? "Could not load the price list" : "Loading…"}</option>
+        {options.map((o) => (
+          <option key={o.key} value={o.key}>
+            {o.s.track} › {o.s.name} — {tierName(o.t.tier)} · {formatINR(o.t.pricePaise)} {o.s.billingType === "monthly" ? "per month" : "one time"}
+          </option>
+        ))}
+      </Select>
+      <span className="text-xs text-ink-muted">Fills in the description and rate, before GST. For a monthly service, set Qty to the number of months.</span>
+    </div>
+  );
+}
+
+/** One titled card of the quotation form (Details, Bill to, Items, …), with a short hint under the title. */
+export function QuoteFormSection({ title, hint, children, testId }: { title: string; hint?: string; children: React.ReactNode; testId?: string }) {
+  return (
+    <section className="quote-form-section border border-border bg-surface-raised" data-testid={testId}>
+      <header className="quote-form-section-header border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
+      </header>
+      <div className="quote-form-section-body grid gap-3 p-4">{children}</div>
+    </section>
+  );
+}
+
+const emptyBillTo = { name: "", gstin: "", placeOfSupply: "", address: "" };
+
+/**
+ * The quotation form, in the order of the document: Details, Bill to, Items (with the scope and timeline after them),
+ * Signature and seal, Notes and terms. `details` is the client / services / dates part (QuoteMetaForm); without it
+ * (the template editor) only the document parts are shown.
+ */
 export function QuoteEditor({
   value,
   onChange,
-  gstRatePct = 18,
+  gstRatePct: fixedRate,
   clientOrgId,
+  details,
 }: {
   value: QuoteContent;
   onChange: (v: QuoteContent) => void;
+  /** A saved quotation keeps the GST % it was made with; a new one uses today's setting. */
   gstRatePct?: number;
   clientOrgId?: string;
+  details?: React.ReactNode;
 }) {
   const v = value;
   const set = <K extends keyof QuoteContent>(k: K, x: QuoteContent[K]) => onChange({ ...v, [k]: x });
+  const [settings, setSettings] = useState<{ gstRatePct: number; sellerStateCode: string; sellerState: string }>();
+  useEffect(() => {
+    api.quotes.formSettings().then(setSettings, () => undefined);
+  }, []);
+  const gstRatePct = fixedRate ?? settings?.gstRatePct ?? 18;
   const t = quoteTotals(v.lines, gstRatePct);
+  const billTo = { ...emptyBillTo, ...v.billTo };
+  const setBillTo = (patch: Partial<typeof billTo>) => set("billTo", { ...billTo, ...patch });
+  const split = quoteGstSplit(t.gstPaise, settings?.sellerStateCode ?? "29", billTo.placeOfSupply, billTo.gstin);
+  const half = gstRatePct / 2;
+  // Terms: BMU's standard terms unless this quotation has its own. The text box keeps what is typed (blank lines too).
+  const terms = v.terms.length ? v.terms : QUOTE_FIXED_TERMS;
+  const termsChanged = quoteTermsChanges(terms).any;
+  const [termsDraft, setTermsDraft] = useState<string>();
   const line = (i: number, patch: Partial<QuoteLine>) => set("lines", v.lines.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   const [bulletsDraft, setBulletsDraft] = useState<Record<number, string>>({});
+  const [picking, setPicking] = useState(false);
+  // A price-list pick takes the place of the empty starting line, if there is one.
+  const addLine = (l: QuoteLine) => {
+    const empty = (x: QuoteLine) => !x.title.trim() && !x.details.trim() && !x.unitPricePaise && !x.pct;
+    const last = v.lines[v.lines.length - 1];
+    set("lines", l.title && last && empty(last) ? [...v.lines.slice(0, -1), l] : [...v.lines, l]);
+    setPicking(false);
+  };
   const [writing, setWriting] = useState(false);
   const [aiNote, setAiNote] = useState<string>();
   // v49: the overview is written from the project and cost lines; the manager can change it.
@@ -87,8 +174,8 @@ export function QuoteEditor({
   };
   return (
     <div className="grid gap-6" data-testid="quote-editor">
-      <section className="grid gap-3">
-        <p className={h}>Project</p>
+      <QuoteFormSection title="Details" testId="quote-section-details">
+        {details}
         <Input value={v.title} onChange={(e) => set("title", e.target.value)} placeholder="Project name, e.g. Bengaluru Influencer Campaign" aria-label="Project name" maxLength={160} />
         <label className="grid gap-1 text-xs font-medium sm:w-72">
           Plan (printed under the project name)
@@ -110,10 +197,42 @@ export function QuoteEditor({
           {aiNote && <span className="text-xs text-ink-muted">{aiNote}</span>}
         </div>
         <Fixed label="Lines under the project name" values={v.projectLines} max={3} onChange={(x) => set("projectLines", x)} placeholder="e.g. 6 micro-influencers" />
-      </section>
+      </QuoteFormSection>
 
-      <section className="grid gap-3">
-        <p className={h}>Cost breakdown</p>
+      {details && (
+        <QuoteFormSection title="Bill to" hint="Filled in from the client. Change them here for this document only." testId="quote-section-bill-to">
+          <div className="grid items-start gap-3 sm:grid-cols-3">
+            <label className="grid min-w-0 gap-1 text-xs font-medium">
+              Name
+              <Input value={billTo.name} onChange={(e) => setBillTo({ name: e.target.value })} aria-label="Bill to name" maxLength={200} />
+            </label>
+            <label className="grid min-w-0 gap-1 text-xs font-medium">
+              Client GSTIN
+              <Input value={billTo.gstin} onChange={(e) => setBillTo({ gstin: e.target.value.toUpperCase() })} placeholder="15 characters, if registered" aria-label="Client GSTIN" maxLength={15} />
+            </label>
+            <label className="grid min-w-0 gap-1 text-xs font-medium">
+              Place of supply
+              <Select className="w-full min-w-0" value={billTo.placeOfSupply} onChange={(e) => setBillTo({ placeOfSupply: e.target.value })} aria-label="Place of supply">
+                <option value="">Not set</option>
+                {SERVICE_GST_STATES.map((s) => (
+                  <option key={s.code} value={s.code}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+              <span className="font-normal text-ink-muted">
+                Within {settings?.sellerState ?? "Karnataka"} is charged CGST and SGST. Anywhere else is charged IGST.
+              </span>
+            </label>
+          </div>
+          <label className="grid gap-1 text-xs font-medium">
+            Address
+            <textarea className={`${area} h-16`} value={billTo.address} onChange={(e) => setBillTo({ address: e.target.value })} aria-label="Bill to address" maxLength={600} />
+          </label>
+        </QuoteFormSection>
+      )}
+
+      <QuoteFormSection title="Items" hint="Check the rates and quantities. Prices are before GST." testId="quote-section-items">
         {v.lines.map((l, i) => (
           <div key={i} className="grid gap-2 border border-border p-3" data-testid="quote-line">
             <div className="flex items-center justify-between">
@@ -145,20 +264,36 @@ export function QuoteEditor({
             </div>
           </div>
         ))}
-        {v.lines.length < 30 && (
-          <button type="button" className="justify-self-start text-sm underline" onClick={() => set("lines", [...v.lines, { title: "", details: "", kind: "unit", qty: 1, unitPricePaise: 0, pct: 0 }])} data-testid="quote-add-line">
-            + Add a line
-          </button>
-        )}
+        {v.lines.length < 30 &&
+          (picking ? (
+            <PriceListPicker onPick={addLine} onBlank={() => addLine(blankLine())} onCancel={() => setPicking(false)} />
+          ) : (
+            <button type="button" className="justify-self-start text-sm underline" onClick={() => setPicking(true)} data-testid="quote-add-line">
+              + Add a line
+            </button>
+          ))}
         <div className="ml-auto grid w-72 gap-1 text-sm">
           <span className="flex justify-between">
             <span>Subtotal</span>
             <span className="tabular-nums">{formatINR(t.subtotalPaise)}</span>
           </span>
-          <span className="flex justify-between">
-            <span>GST @ {gstRatePct}%</span>
-            <span className="tabular-nums">{formatINR(t.gstPaise)}</span>
-          </span>
+          {split.interState ? (
+            <span className="flex justify-between">
+              <span>IGST @ {gstRatePct}%</span>
+              <span className="tabular-nums">{formatINR(split.igstPaise)}</span>
+            </span>
+          ) : (
+            <>
+              <span className="flex justify-between">
+                <span>CGST @ {half}%</span>
+                <span className="tabular-nums">{formatINR(split.cgstPaise)}</span>
+              </span>
+              <span className="flex justify-between">
+                <span>SGST @ {half}%</span>
+                <span className="tabular-nums">{formatINR(split.sgstPaise)}</span>
+              </span>
+            </>
+          )}
           <span className="flex justify-between border-t border-border pt-1 font-semibold">
             <span>Grand total</span>
             <span className="tabular-nums" data-testid="quote-editor-total">
@@ -170,9 +305,9 @@ export function QuoteEditor({
           Advance to invoice first:
           <Input type="number" min={0} max={100} className="w-20" value={v.advancePct} onChange={(e) => set("advancePct", Math.max(0, Math.min(100, Number(e.target.value) || 0)))} aria-label="Advance percent" />% ({formatINR(Math.round((t.subtotalPaise * v.advancePct) / 100))} + GST)
         </label>
-      </section>
+      </QuoteFormSection>
 
-      <section className="grid gap-3">
+      <QuoteFormSection title="Scope and timeline" hint="Optional. Printed on page 2." testId="quote-section-scope">
         <label className="flex items-center gap-2 text-sm font-medium">
           <input type="checkbox" checked={v.scope.length > 0} onChange={(e) => toggleScope(e.target.checked)} data-testid="quote-scope-toggle" />
           Add the scope of work (optional)
@@ -202,9 +337,6 @@ export function QuoteEditor({
             + Add a card
           </button>
         )}
-      </section>
-
-      <section className="grid gap-3">
         <label className="flex items-center gap-2 text-sm font-medium">
           <input type="checkbox" checked={v.timeline.length > 0} onChange={(e) => toggleTimeline(e.target.checked)} data-testid="quote-timeline-toggle" />
           Add the timeline (optional)
@@ -224,13 +356,59 @@ export function QuoteEditor({
             + Add a step
           </button>
         )}
-      </section>
+      </QuoteFormSection>
 
-      <section className="grid gap-3">
-        <p className={h}>Last page</p>
-        <p className="text-sm text-ink-muted">The terms &amp; conditions, payment details and signature lines are added to every quotation automatically. It is signed with your name, role, signature and the company seal when you send it.</p>
+      {details && (
+        <QuoteFormSection title="Signature and seal" hint="Printed at the bottom, with your name and title under the signature." testId="quote-section-signature">
+          <label className="grid gap-1 text-xs font-medium">
+            Signature
+            <Select value={v.signWith ?? "mine"} onChange={(e) => set("signWith", e.target.value as QuoteContent["signWith"])} aria-label="Signature">
+              <option value="mine">Sign with my signature</option>
+              <option value="blank">Leave blank to sign by hand</option>
+            </Select>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={v.seal !== false} onChange={(e) => set("seal", e.target.checked)} data-testid="quote-seal-toggle" />
+            Add the company seal under the signature
+          </label>
+        </QuoteFormSection>
+      )}
+
+      <QuoteFormSection title={details ? "Notes and terms" : "Last page"} hint={details ? "Both are printed on the document the client sees." : undefined} testId="quote-section-notes">
+        {details && (
+          <label className="grid gap-1 text-xs font-medium">
+            Notes
+            <textarea className={`${area} h-20`} value={v.notes ?? ""} onChange={(e) => set("notes", e.target.value)} aria-label="Notes" maxLength={1000} />
+          </label>
+        )}
+        {details ? (
+          <label className="grid gap-1 text-xs font-medium">
+            <span className="flex flex-wrap items-center justify-between gap-2">
+              Terms
+              <button type="button" className="font-normal underline disabled:opacity-40" disabled={!termsChanged} onClick={() => (setTermsDraft(undefined), set("terms", QUOTE_FIXED_TERMS))} data-testid="quote-terms-reset">
+                Reset to BMU&apos;s standard terms
+              </button>
+            </span>
+            <textarea
+              className={`${area} h-48`}
+              value={termsDraft ?? quoteTermsToText(terms)}
+              onChange={(e) => {
+                setTermsDraft(e.target.value);
+                set("terms", quoteTermsFromText(e.target.value));
+              }}
+              aria-label="Terms"
+              data-testid="quote-terms-input"
+            />
+            <span className={`font-normal ${termsChanged ? "text-[#9a6b00]" : "text-ink-muted"}`} data-testid="quote-terms-hint">
+              One term per line (up to 12).{" "}
+              {termsChanged ? "These differ from BMU's standard terms: the Admin is told when you send this quotation." : "These are BMU's standard terms."}
+            </span>
+          </label>
+        ) : (
+          <p className="text-sm text-ink-muted">The terms &amp; conditions and payment details are added to every quotation automatically.</p>
+        )}
         <Input value={v.footerLine} onChange={(e) => set("footerLine", e.target.value)} placeholder="Thank-you line, e.g. Let's put your project in front of Bengaluru's home buyers." aria-label="Thank-you line" maxLength={160} />
-      </section>
+      </QuoteFormSection>
     </div>
   );
 }

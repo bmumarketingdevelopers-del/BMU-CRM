@@ -36,6 +36,11 @@ export class QuotesController {
     return this.quotes.overview(me, body);
   }
 
+  @Get('form-settings')
+  formSettings(@CurrentUser() me: Me) {
+    return this.quotes.formSettings(me);
+  }
+
   @Get()
   list(@CurrentUser() me: Me, @Query('clientOrgId') clientOrgId?: string, @Query('status') status?: string) {
     return this.quotes.list(me, { clientOrgId, status });
