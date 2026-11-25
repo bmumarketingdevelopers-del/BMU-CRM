@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useFonts, ZenDots_400Regular } from '@expo-google-fonts/zen-dots';
 import { AlbertSans_400Regular, AlbertSans_600SemiBold } from '@expo-google-fonts/albert-sans';
 import { APP_VERSION, type Me } from '@bmu/shared';
-import { api, onSessionExpired, session } from './src/api';
+import { api, isSignedOutError, onSessionExpired, session } from './src/api';
 import { stopLive } from './src/live';
 import { SignInScreen } from './src/SignInScreen';
 import { ClientBilling, ClientFiles, ClientHome, ClientMessages, ClientRequests, ClientReviews } from './src/screens/client';
@@ -50,6 +50,8 @@ export default function App() {
   const [notice, setNotice] = useState<string>();
   const [toast, setToast] = useState<string>();
   const [version, setVersion] = useState(0);
+  // Signed in, but the first check could not reach BMU and no copy of their account is on the phone.
+  const [cannotConnect, setCannotConnect] = useState(false);
   const [pushNote, setPushNote] = useState<string | null>(null);
   const lock = useLock(!!me);
   const flash = (m: string) => {
@@ -88,17 +90,53 @@ export default function App() {
     [],
   );
 
-  // Restore a saved session on launch.
-  useEffect(() => {
-    session
-      .load()
-      .then((token) => (token ? api.auth.me() : null))
-      .then((m) => {
-        if (m && isFounderView(m)) setTab('pulse');
-        setMe(m);
-      })
-      .catch(() => session.clear().then(() => setMe(null)));
+  // Restore a saved session on launch. Only the server saying "not signed in" ends it: with no signal they carry on with
+  // the copy of their account kept on the phone, or try again.
+  const restore = useCallback(async () => {
+    const open = (m: Me) => {
+      if (isFounderView(m)) setTab('pulse');
+      setMe(m);
+    };
+    try {
+      if (!(await session.load())) return setMe(null);
+    } catch {
+      return setMe(null);
+    }
+    try {
+      const m = await api.auth.me();
+      void cache.set('me', m);
+      open(m);
+    } catch (e) {
+      if (isSignedOutError(e)) {
+        await session.clear().catch(() => undefined);
+        return setMe(null);
+      }
+      const copy = await cache.get<Me>('me');
+      if (copy) open(copy.data);
+      else setCannotConnect(true);
+    }
   }, []);
+  useEffect(() => {
+    void restore();
+  }, [restore]);
+
+  // Android Back: out of a detail, then to the first tab, then out of the app (still signed in). Never to sign-in.
+  const firstTab = me && isFounderView(me) ? 'pulse' : 'home';
+  useEffect(() => {
+    if (!me || lock.locked) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (detail) {
+        setDetail(undefined);
+        return true;
+      }
+      if (tab !== firstTab) {
+        setTab(firstTab);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [me, lock.locked, detail, tab, firstTab]);
 
   // Unread notifications badge, refreshed every 30 seconds.
   useEffect(() => {
@@ -109,6 +147,20 @@ export default function App() {
     return () => clearInterval(t);
   }, [me, tab]);
 
+  if (fontsLoaded && me === undefined && cannotConnect) {
+    return (
+      <View style={[styles.screen, styles.center, { padding: 32 }]}>
+        <Body style={{ textAlign: 'center' }}>Can&apos;t reach BMU Hub. Check your connection. You are still signed in.</Body>
+        <Button
+          title="Try again"
+          onPress={() => {
+            setCannotConnect(false);
+            void restore();
+          }}
+        />
+      </View>
+    );
+  }
   if (!fontsLoaded || me === undefined) {
     return (
       <View style={[styles.screen, styles.center]}>
@@ -125,9 +177,9 @@ export default function App() {
     await syncNow();
     await unregisterPush();
     await api.auth.logout().catch(() => undefined);
-    await cache.clear();
     stopLive();
     await session.clear();
+    await cache.clear();
     setMe(null);
     go('home');
   };
@@ -152,7 +204,7 @@ export default function App() {
         ];
 
   function content() {
-    if (!me) return <SignInScreen notice={notice} onSignedIn={(m) => (setMe(m), setNotice(undefined), go(isFounderView(m) ? 'pulse' : 'home'))} />;
+    if (!me) return <SignInScreen notice={notice} onSignedIn={(m) => (void cache.set('me', m), setMe(m), setNotice(undefined), go(isFounderView(m) ? 'pulse' : 'home'))} />;
     if (tab === 'more') {
       if (detail === 'notifications') return <NotificationsScreen />;
       if (detail === 'billing') return <ClientBilling onBack={() => go('more')} />;
@@ -200,9 +252,11 @@ export default function App() {
       <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
         <StatusBar style="dark" />
         <View style={styles.header}>
-          <Text style={styles.logo}>
-            BMU<Text style={{ color: ui.accent }}>.</Text>
-          </Text>
+          <Pressable onPress={() => me && go(firstTab)} disabled={!me} hitSlop={10} accessibilityLabel="BMU Hub home">
+            <Text style={styles.logo}>
+              BMU<Text style={{ color: ui.accent }}>.</Text>
+            </Text>
+          </Pressable>
           {me ? (
             <Pressable onPress={() => go('more', 'notifications')} hitSlop={10} style={styles.bell}>
               <Body>🔔</Body>
