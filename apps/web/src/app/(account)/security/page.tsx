@@ -17,7 +17,7 @@ export default async function SecurityPage({ searchParams }: { searchParams: Pro
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10">
       <div className="mb-8 flex items-center justify-between">
-        <Logo className="text-ink" />
+        <Logo className="text-ink" href={homePathFor(me)} />
         {!me.mustEnroll2fa && (
           <Link href={homePathFor(me)} className="text-sm underline">
             Back to BMU Hub

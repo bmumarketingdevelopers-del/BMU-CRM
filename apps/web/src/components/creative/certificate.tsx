@@ -24,7 +24,7 @@ export function Certificate({ c, loading, error, back }: { c?: ApprovalCertifica
       </div>
       <article className="mx-auto max-w-2xl border border-border bg-white p-8 text-sm print:border-0 print:p-0" data-testid="certificate">
         <div className="flex items-start justify-between gap-4">
-          <Logo />
+          <Logo href={back.href} />
           <div className="text-right">
             <p className="text-[11px] uppercase tracking-[0.12em] text-ink-muted">Approval certificate</p>
             <p className="font-mono text-sm font-semibold">{c.code}</p>

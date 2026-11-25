@@ -1,4 +1,4 @@
-import { APP_VERSION, personRoleTitle } from "@bmu/shared";
+import { APP_VERSION, homePathFor, personRoleTitle } from "@bmu/shared";
 import type { Me } from "@bmu/shared";
 import { Copilot } from "./ai/copilot";
 import { Logo } from "./logo";
@@ -38,7 +38,7 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
                 </p>
               )
             ) : (
-              <Logo />
+              <Logo href={homePathFor(me)} />
             )}
             <p className="mt-0.5 text-[11px] text-ink-muted">
               {brand ? brand.name : surface} · {APP_VERSION}

@@ -10,13 +10,16 @@ import { resetBrowserAlertsAsk } from "@/lib/web-push";
 
 type Demo = { name: string; email: string; role: string };
 
-export function SignInForm() {
+export function SignInForm({ me: signedIn }: { me?: Me }) {
   const router = useRouter();
   const params = useSearchParams()!; // never null in the App Router (src/pages only holds the API route)
   // Only same-site paths: never send someone to another website after sign-in.
   const rawNext = params.get("next");
   const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.startsWith("/sign-in") ? rawNext : null;
   const expired = params.get("expired") === "1";
+  // Already signed in: only "Sign out" ends a session, so carry on instead of asking for a new code. Not when a screen
+  // just sent them here because its session was refused: going straight back could loop.
+  const me = expired ? undefined : signedIn;
   const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"identify" | "code" | "second">("identify");
@@ -32,6 +35,7 @@ export function SignInForm() {
   const [hashNext, setHashNext] = useState<string | null>(null);
 
   useEffect(() => {
+    if (me) return;
     // The next sign-in asks again to turn on browser notifications (if still undecided).
     resetBrowserAlertsAsk();
     api.auth
@@ -42,10 +46,15 @@ export function SignInForm() {
       .methods()
       .then((m) => setGoogleOn(m.google))
       .catch(() => setGoogleOn(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once, on arrival
   }, []);
 
   // Coming back from Google: signed in, needs the second step, or an error to explain.
   useEffect(() => {
+    if (me) {
+      go(me);
+      return;
+    }
     const hash = new URLSearchParams(window.location.hash.slice(1));
     const pending = hash.get("second");
     if (pending) {
@@ -154,6 +163,8 @@ export function SignInForm() {
       setBusy(false);
     }
   }
+
+  if (me) return <p className="text-sm text-ink-muted">You are signed in. Opening BMU Hub…</p>;
 
   return (
     <div className="grid gap-8">
