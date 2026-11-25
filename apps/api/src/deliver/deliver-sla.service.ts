@@ -7,7 +7,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { isLeadership, visibleEngagementWhere } from '../engagements/engagement-access.js';
+import { headScope, isLeadership, visibleEngagementWhere } from '../engagements/engagement-access.js';
 
 const OPEN_TASK = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'] as const;
 /** Deliverables whose clock is on BMU (not done, not waiting on the client). */
@@ -50,6 +50,7 @@ export class DeliverSlaService {
     const engagementScope = await visibleEngagementWhere(this.prisma, me);
     const myDept = (await this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } }))?.departmentId ?? null;
     const isHead = me.roles.includes('department_head');
+    const head = await headScope(this.prisma, me);
 
     const taskWhere: Prisma.TaskWhereInput = {
       orgId: me.orgId,
@@ -62,7 +63,7 @@ export class DeliverSlaService {
     if (me.roles.includes('account_manager')) mineTask.push({ deliverable: { cycle: { engagement: { amId: me.id } } } });
     const [tasks, deliverables, escalations] = await Promise.all([
       this.prisma.task.findMany({
-        where: opts.mine || !(isLeadership(me) || isHead) ? { AND: [taskWhere, { OR: opts.mine ? mineTask : [...mineTask, { deliverable: { cycle: { engagement: engagementScope } } }] }] } : taskWhere,
+        where: opts.mine || !isLeadership(me) ? { AND: [taskWhere, { OR: opts.mine ? mineTask : [...mineTask, { deliverable: { cycle: { engagement: engagementScope } } }, ...(head ? [{ engagementId: { in: head.engagementIds } }] : [])] }] } : taskWhere,
         include: { owner: { select: { name: true } }, deliverable: { select: { id: true, title: true, cycle: { select: { engagementId: true, engagement: { select: { clientOrg: { select: { id: true, name: true } } } } } } } } },
         orderBy: { deadline: 'asc' },
         take: 300,

@@ -23,6 +23,7 @@ import { TasksActionsService } from '../actions/tasks/tasks.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { calendarFor } from '../production/generate.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { assertStaff, isAdmin, isClientLead } from './clients-access.js';
@@ -72,7 +73,7 @@ export class ClientsRequestsService implements OnModuleInit {
     assertStaff(me);
     const r = await this.prisma.request.findFirst({ where: { id, orgId: me.orgId }, include: { engagement: { include: { clientOrg: { select: { id: true, name: true } }, service: { select: { name: true } } } } } });
     if (!r) throw new NotFoundException('Request not found');
-    if (!isClientLead(me) && r.engagement.amId !== me.id && r.assigneeId !== me.id && !hasRole(me, 'department_head')) throw new ForbiddenException("This request belongs to another Client Manager's client");
+    if (!isClientLead(me) && r.engagement.amId !== me.id && r.assigneeId !== me.id && !(await headScope(this.prisma, me))?.hasEngagement(r.engagementId)) throw new ForbiddenException("This request belongs to another Client Manager's client");
     return r;
   }
 

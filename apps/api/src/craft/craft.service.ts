@@ -45,6 +45,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { CraftManagerService } from './craft-manager.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { checkWindow, leaveOn, loadWorkCalendar } from '../admin-org/work-calendar.js';
@@ -151,7 +152,7 @@ export class CraftService {
     });
     if (!d) throw new NotFoundException('Deliverable not found');
     const ok =
-      d.tasks.some((t) => t.ownerId === me.id) || d.cycle.engagement.amId === me.id || me.roles.some((r) => [...LEADS_ALL, 'department_head'].includes(r));
+      d.tasks.some((t) => t.ownerId === me.id) || d.cycle.engagement.amId === me.id || me.roles.some((r) => LEADS_ALL.includes(r)) || !!(await headScope(this.prisma, me))?.hasEngagement(d.cycle.engagement.id);
     // A social media manager runs the whole content pipeline of the clients they work on.
     const smm =
       !ok &&
@@ -1348,7 +1349,7 @@ export class CraftService {
     this.staffOnly(me);
     const client = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId, deletedAt: null }, select: { id: true, name: true, amUserId: true } });
     if (!client) throw new NotFoundException('Client not found');
-    if (me.roles.some((r) => [...LEADS_ALL, 'department_head'].includes(r)) || client.amUserId === me.id) return client;
+    if (me.roles.some((r) => LEADS_ALL.includes(r)) || client.amUserId === me.id || (await headScope(this.prisma, me))?.hasClient(client.id)) return client;
     const works = await this.prisma.task.count({ where: { ownerId: me.id, OR: [{ deliverable: { cycle: { engagement: { clientOrgId } } } }, { engagementId: { in: (await this.prisma.engagement.findMany({ where: { clientOrgId }, select: { id: true } })).map((e) => e.id) } }] } });
     if (!works) throw new ForbiddenException('You can only open brand kits of clients you work on');
     return client;

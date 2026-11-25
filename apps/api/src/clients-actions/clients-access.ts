@@ -1,9 +1,11 @@
 // v11 clients: who may see / change a client. The CM sees their own clients (and a previous CM keeps read access for
-// 7 days after a reassignment); leadership, finance, department heads and sales managers see every client.
+// 7 days after a reassignment); leadership, finance and sales managers see every client; a department head the clients
+// their department works on or they are assigned to (v53).
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { CLIENTS_SEE_ALL_ROLES, type Me } from '@bmu/shared';
 import { hasRole } from '../actions/people.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 
 export const isStaff = (me: Me) => me.type === 'staff';
 export const isAdmin = (me: Me) => hasRole(me, 'founder', 'admin');
@@ -26,7 +28,7 @@ export async function loadClient(prisma: PrismaService, me: Me, id: string, opts
   assertStaff(me);
   const c = await prisma.clientOrg.findFirst({ where: { id, orgId: me.orgId, deletedAt: null } });
   if (!c) throw new NotFoundException('Client not found');
-  if (seesAllClients(me)) return { client: c, readOnly: false };
+  if (seesAllClients(me) || (await headScope(prisma, me))?.hasClient(id)) return { client: c, readOnly: false };
   if (hasRole(me, 'account_manager') && c.amUserId === me.id) return { client: c, readOnly: false };
   if (!opts.write && (await hasHandoverAccess(prisma, me, id))) return { client: c, readOnly: true };
   if (opts.write && hasRole(me, 'account_manager') && (await hasHandoverAccess(prisma, me, id))) throw new ForbiddenException('You handed this client over. You can still read it for 7 days, but only the new client manager can change it.');

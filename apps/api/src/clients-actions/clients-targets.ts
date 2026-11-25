@@ -7,6 +7,7 @@ import { hasRole } from '../actions/people.js';
 import { ActionsRegistry, type ReassignItem } from '../actions/registry.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { AM_BASE_ROLES, assertStaff, isClientLead, seesAllClients } from './clients-access.js';
 
 const OPEN_REQUEST = ['received', 'scope_check', 'in_scope', 'quoted', 'approved', 'paid', 'in_progress', 'rescheduled'];
@@ -30,7 +31,8 @@ export class ClientsTargets implements OnModuleInit {
         assertStaff(me);
         const rows = await this.prisma.clientOrg.findMany({ where: { id: { in: ids }, orgId: me.orgId, deletedAt: null } });
         if (rows.length !== new Set(ids).size) throw new NotFoundException('Client not found');
-        if (!seesAllClients(me) && rows.some((r) => r.amUserId !== me.id)) throw new ForbiddenException("You don't have access to one of these clients");
+        const head = await headScope(this.prisma, me);
+        if (!seesAllClients(me) && rows.some((r) => r.amUserId !== me.id && !head?.hasClient(r.id))) throw new ForbiddenException("You don't have access to one of these clients");
         // The CM seat is client-facing and always "in progress": the old CM writes a handover note.
         return rows.map((c): ReassignItem => ({ id: c.id, title: c.name, ownerId: c.amUserId, deadline: null, status: c.archivedAt ? 'archived' : 'active', inProgress: true, clientOrgId: c.id, amId: null, hours: 0, href: `/team/clients/${c.id}` }));
       },

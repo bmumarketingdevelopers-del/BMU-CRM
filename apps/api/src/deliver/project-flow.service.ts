@@ -32,7 +32,7 @@ import {
 } from '@bmu/shared';
 import { AuditService } from '../audit/audit.service.js';
 import { parse } from '../common/zod.js';
-import { isLeadership } from '../engagements/engagement-access.js';
+import { headScope, isLeadership } from '../engagements/engagement-access.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { relPath, sha256, type OpsUpload } from '../ops-actions/ops-util.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -69,7 +69,8 @@ export class ProjectFlowService {
       where: { id: engagementId, orgId: me.orgId, deletedAt: null },
       select: { id: true, amId: true, clientOrgId: true, clientOrg: { select: { name: true } }, service: { select: { name: true } } },
     });
-    if (!e) throw new NotFoundException('Project not found');
+    const head = await headScope(this.prisma, me);
+    if (!e || (head && !head.hasEngagement(e.id))) throw new NotFoundException('Project not found');
     return e;
   }
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { deliverableStatusLabels, type DeliverableStatus, type Me, type OpsDeliveryView, type OpsGateStep, type OpsInsight, type OpsWipRow } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { calendarFor } from '../production/generate.js';
 import {
   DAY,
@@ -41,10 +42,11 @@ export class OpsDeliveryService {
     const r = parseRange(q.from, q.to);
     const orgId = me.orgId;
     const now = new Date();
+    const head = await headScope(this.prisma, me);
     const [cal, engagements, approvals, qc] = await Promise.all([
       calendarFor(this.prisma, orgId),
       this.prisma.engagement.findMany({
-        where: { orgId, deletedAt: null, createdAt: { lt: r.to } },
+        where: { orgId, deletedAt: null, createdAt: { lt: r.to }, ...(head ? { id: { in: head.engagementIds } } : {}) },
         select: {
           id: true,
           createdAt: true,

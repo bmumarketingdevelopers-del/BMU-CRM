@@ -37,6 +37,7 @@ import { checkWindow, leaveOn, loadWorkCalendar } from '../admin-org/work-calend
 import { assertAssignee, assignScope } from '../actions/tasks/assign-rules.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { DAY, pct, plural, shortDay, weekStart } from './craft-util.js';
 
 const OPEN = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'] as const;
@@ -765,6 +766,8 @@ export class CraftManagerService {
       const e = await this.prisma.engagement.findFirst({ where: { id: engagementId, orgId: me.orgId, deletedAt: null } });
       if (!e) throw new NotFoundException('Engagement not found');
       if (s.kind === 'own_clients' && e.amId !== me.id) throw new ForbiddenException("You can only add tasks to your own clients' work");
+      const head = await headScope(this.prisma, me);
+      if (head && !head.hasEngagement(e.id)) throw new ForbiddenException('You can only add tasks to projects your department works on');
     } else if (s.kind === 'own_clients') {
       throw new BadRequestException('Pick which client engagement this task is for');
     }

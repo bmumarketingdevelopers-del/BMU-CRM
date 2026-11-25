@@ -5,6 +5,7 @@ import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/com
 import { ModuleRef } from '@nestjs/core';
 import { canSeeMetric, formatMetric, metricDef, METRICS, pctChange, type Me, type MetricDef, type MetricValueView } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { AnalyticsService } from '../analytics/analytics.service.js';
 import { LIVE, loadEngagements } from '../analytics/sales-data.js';
 import { canReadCommand, canSeeMoney } from '../insights/access.js';
@@ -61,6 +62,8 @@ export class MetricsService {
 
   async view(me: Me, key: string, period: Period, clientOrgId?: string | null): Promise<MetricValueView> {
     const def = await this.assertCanSee(me, key);
+    const head = await headScope(this.prisma, me);
+    if (head && clientOrgId && !head.hasClient(clientOrgId)) throw new ForbiddenException('You can only see clients your department works on');
     const v = await this.pair(me, def, period, clientOrgId ?? null);
     return { key, label: def.label, unit: def.unit, direction: def.direction, formula: def.formula, value: v.value, previous: v.previous, changePct: pctChange(v.value, v.previous), display: formatMetric(v.value, def.unit), from: period.from, to: period.to };
   }

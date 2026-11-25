@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { TEAM_ACTIVITY_ENTITIES, type Me, type TeamActivityEntity, type TeamActivityFeed, type TeamActivityItem } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
-import { visibleEngagementWhere } from '../engagements/engagement-access.js';
+import { headScope, visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TaskAccess } from '../actions/tasks/task-access.js';
 import { capable, hasRole, isStaff } from './access.js';
@@ -102,7 +102,7 @@ export class ActivityService {
   ) {}
 
   private async clientVisible(me: Me, clientOrgId: string) {
-    if (hasRole(me, 'founder', 'admin', 'am_lead', 'finance', 'department_head')) return true;
+    if (hasRole(me, 'founder', 'admin', 'am_lead', 'finance') || (await headScope(this.prisma, me))?.hasClient(clientOrgId)) return true;
     const c = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId }, select: { amUserId: true, am: { select: { teamId: true } } } });
     if (!c) return false;
     if (c.amUserId === me.id) return true;

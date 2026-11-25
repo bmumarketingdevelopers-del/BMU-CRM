@@ -2,6 +2,7 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { CORE_TASK_PRIORITIES, type Me } from '@bmu/shared';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { headScope } from '../../engagements/engagement-access.js';
 import { hasRole, isLeader, OPEN_TASK } from '../people.js';
 import { ActionsRegistry } from '../registry.js';
 import { TasksActionsService } from './tasks.service.js';
@@ -46,10 +47,11 @@ export class TaskImport implements OnModuleInit {
   }
 
   private async resolve(me: Me, rows: Record<string, string>[]) {
+    const head = await headScope(this.prisma, me);
     const [depts, people, engs] = await Promise.all([
       this.prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { id: true, name: true } }),
       this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null, status: 'active' }, select: { id: true, name: true, email: true } }),
-      this.prisma.engagement.findMany({ where: { orgId: me.orgId, deletedAt: null, archivedAt: null, ...(isLeader(me) || hasRole(me, 'department_head') ? {} : { amId: me.id }) }, include: { clientOrg: { select: { name: true } } }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.engagement.findMany({ where: { orgId: me.orgId, deletedAt: null, archivedAt: null, ...(isLeader(me) ? {} : head ? { id: { in: head.engagementIds } } : { amId: me.id }) }, include: { clientOrg: { select: { name: true } } }, orderBy: { createdAt: 'desc' } }),
     ]);
     const lc = (s: string | undefined) => (s ?? '').trim().toLowerCase();
     return rows.map((r) => {

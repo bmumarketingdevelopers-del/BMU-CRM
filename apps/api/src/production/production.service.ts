@@ -38,7 +38,7 @@ import { ReassignService } from '../actions/reassign.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { DeliveryService } from '../requests/delivery.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { isLeadership } from '../engagements/engagement-access.js';
+import { headScope, isLeadership } from '../engagements/engagement-access.js';
 import { approvalStatus, pendingUserIds } from '../deliver/approval-policy.js';
 import { DeliverSlaService } from '../deliver/deliver-sla.service.js';
 import { carryOpenComments, proofRounds, ProofingService } from '../creative/proofing.service.js';
@@ -118,7 +118,8 @@ export class ProductionService {
 
   private async canSeeDeliverable(me: Me, d: DeliverableRow) {
     if (me.type !== 'staff' || d.orgId !== me.orgId) return false;
-    if (isLeadership(me) || me.roles.includes('department_head') || me.roles.includes('qc_reviewer')) return true;
+    if (isLeadership(me) || me.roles.includes('qc_reviewer')) return true;
+    if ((await headScope(this.prisma, me))?.hasEngagement(d.cycle.engagementId)) return true;
     if (d.cycle.engagement.amId === me.id) return true;
     return d.tasks.some((t) => t.ownerId === me.id);
   }

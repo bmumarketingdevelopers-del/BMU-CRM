@@ -16,6 +16,7 @@ import {
   type WorkCalendar,
 } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { calendarFor } from '../production/generate.js';
 import { istParts } from '../insights/ist.js';
@@ -45,15 +46,17 @@ export class OpsSlaService {
     const r = parseRange(q.from, q.to);
     const orgId = me.orgId;
     const now = new Date();
+    const head = await headScope(this.prisma, me);
+    const mine = head ? { engagementId: { in: head.engagementIds } } : {};
     const [cal, sla, requests, open] = await Promise.all([
       calendarFor(this.prisma, orgId),
       this.settings.get(orgId, 'sla'),
       this.prisma.request.findMany({
-        where: { orgId, createdAt: { gte: r.prevFrom, lt: r.to } },
+        where: { orgId, createdAt: { gte: r.prevFrom, lt: r.to }, ...mine },
         select: { id: true, type: true, createdAt: true, slaDue: true, firstReplyAt: true, engagement: { select: { amId: true, am: { select: { name: true } } } } },
       }),
       this.prisma.request.findMany({
-        where: { orgId, status: { notIn: ['done', 'declined'] } },
+        where: { orgId, status: { notIn: ['done', 'declined'] }, ...mine },
         select: {
           id: true,
           type: true,

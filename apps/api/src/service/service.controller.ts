@@ -13,7 +13,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { parse } from '../common/zod.js';
-import { isLeadership } from '../engagements/engagement-access.js';
+import { headScope, isLeadership } from '../engagements/engagement-access.js';
 import { canReadCommand } from '../insights/access.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
@@ -180,6 +180,8 @@ export class ServiceController {
       if (!me.roles.includes('account_manager')) throw new ForbiddenException('Satisfaction is for Client Managers and leadership');
       scope = { orgId: me.orgId, engagement: { amId: me.id } };
     }
+    const head = await headScope(this.prisma, me);
+    if (head) scope = { orgId: me.orgId, engagementId: { in: head.engagementIds } };
     const end = to && !Number.isNaN(Date.parse(to)) ? new Date(to) : new Date();
     const start = from && !Number.isNaN(Date.parse(from)) ? new Date(from) : new Date(end.getTime() - 90 * DAY);
     const [done, rated, reopened] = await Promise.all([

@@ -4,7 +4,8 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { coreParsePaletteIntent, type CorePaletteResult, type Me } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { hasRole, isLeader } from './people.js';
+import { headScope } from '../engagements/engagement-access.js';
+import { isLeader } from './people.js';
 import { TaskAccess } from './tasks/task-access.js';
 
 const LIVE = ['onboarding', 'blocked', 'planning', 'awaiting_plan_approval', 'in_production', 'in_review', 'awaiting_final_payment', 'active_retainer', 'paused'] as const;
@@ -26,7 +27,8 @@ export class PaletteService {
         out.actions.push({ label: 'New task', hint: 'Opens the task form', action: 'new', entity: 'task', prefill: intent.title ? { title: intent.title } : {} });
         return out;
       }
-      const engWhere = isLeader(me) || hasRole(me, 'department_head') ? {} : { OR: [{ amId: me.id }, { id: { in: await this.access.strategistEngagements(me) } }] };
+      const head = await headScope(this.prisma, me);
+      const engWhere = isLeader(me) ? {} : head ? { id: { in: head.engagementIds } } : { OR: [{ amId: me.id }, { id: { in: await this.access.strategistEngagements(me) } }] };
       const engs = await this.prisma.engagement.findMany({
         where: { orgId: me.orgId, deletedAt: null, archivedAt: null, status: { in: [...LIVE] }, clientOrg: { name: { contains: intent.client, mode: 'insensitive' } }, ...engWhere },
         include: { clientOrg: { select: { name: true } }, service: { select: { name: true } } },

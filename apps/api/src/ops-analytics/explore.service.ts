@@ -17,6 +17,7 @@ import {
 } from '@bmu/shared';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { calendarFor } from '../production/generate.js';
 import { canReadCommand, canSeeMoney } from '../insights/access.js';
@@ -74,7 +75,14 @@ export class OpsExploreService {
       const p = f.dims.person;
       return Array.isArray(p) ? p.some((x) => x.key === me.id) : p?.key === me.id;
     };
-    const facts = ownOnly ? all.filter(mine) : all;
+    // A Department Head's numbers leave out clients they may not see.
+    const head = await headScope(this.prisma, me);
+    const clientOk = (f: Fact) => {
+      const c = f.dims.client;
+      return !c || (Array.isArray(c) ? c : [c]).every((x) => x.key.startsWith('_') || !!head?.hasClient(x.key));
+    };
+    const seen = head ? all.filter(clientOk) : all;
+    const facts = ownOnly ? seen.filter(mine) : seen;
     const isRate = info.unit === 'pct';
     const value = (num: number, den: number) => (isRate ? (den ? round1((num / den) * 100) : 0) : info.unit === 'count' ? num : round1(num));
 

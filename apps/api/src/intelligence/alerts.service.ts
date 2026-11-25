@@ -9,6 +9,7 @@ import { parse } from '../common/zod.js';
 import { assertCommand } from '../insights/access.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { todayIst } from '../money/dates.js';
 import { MetricsService, windowOf } from './metrics.service.js';
 import { systemActor } from './actor.js';
@@ -86,7 +87,8 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
     assertCommand(me);
     await this.ensureBuiltIns(me.orgId);
     const visible = new Set((await this.metrics.visible(me)).map((m) => m.key));
-    const rows = (await this.prisma.metricAlert.findMany({ where: { orgId: me.orgId }, orderBy: [{ builtIn: 'desc' }, { createdAt: 'asc' }] })).filter((a) => visible.has(a.metricKey));
+    const head = await headScope(this.prisma, me);
+    const rows = (await this.prisma.metricAlert.findMany({ where: { orgId: me.orgId }, orderBy: [{ builtIn: 'desc' }, { createdAt: 'asc' }] })).filter((a) => visible.has(a.metricKey) && (!head || !a.clientOrgId || head.hasClient(a.clientOrgId)));
     const clients = new Map((await this.prisma.clientOrg.findMany({ where: { orgId: me.orgId }, select: { id: true, name: true } })).map((c) => [c.id, c.name]));
     return { alerts: await Promise.all(rows.map((a) => this.view(a, clients))), events: await this.events(me, rows.map((r) => r.id)), canEdit: this.canEdit(me) };
   }
@@ -99,7 +101,9 @@ export class AlertsService implements OnModuleInit, OnModuleDestroy {
   }
 
   async events(me: Me, alertIds?: string[], take = 30): Promise<MetricAlertEventView[]> {
-    const rows = await this.prisma.metricAlertEvent.findMany({ where: { orgId: me.orgId, ...(alertIds ? { alertId: { in: alertIds } } : {}) }, orderBy: { createdAt: 'desc' }, take });
+    // The subject is "org" or a client: a Department Head gets only the clients they may see.
+    const head = await headScope(this.prisma, me);
+    const rows = await this.prisma.metricAlertEvent.findMany({ where: { orgId: me.orgId, ...(alertIds ? { alertId: { in: alertIds } } : {}), ...(head ? { subject: { in: ['org', ...head.clientIds] } } : {}) }, orderBy: { createdAt: 'desc' }, take });
     const names = new Map((await this.prisma.metricAlert.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.alertId))] } }, select: { id: true, name: true } })).map((a) => [a.id, a.name]));
     return rows.map((r) => ({ id: r.id, alertId: r.alertId, alertName: names.get(r.alertId) ?? 'Alert', subject: r.subject, value: r.value, baseline: r.baseline, message: r.message, createdAt: r.createdAt.toISOString() }));
   }

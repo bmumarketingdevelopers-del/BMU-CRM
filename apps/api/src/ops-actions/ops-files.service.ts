@@ -26,6 +26,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { parse } from '../common/zod.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { ATTACHMENT_KIND } from '../requests/messages.service.js';
 import { appUrl } from '../service/email.service.js';
 import { day, hasRole, isLeadership, lc, relPath, sha256, type OpsUpload } from './ops-util.js';
@@ -91,10 +92,12 @@ export class OpsFilesService implements OnModuleInit {
   // -------------------------------------------------------------------------
   // Scope
 
-  /** Client ids a team member works on ('all' for leadership, department heads, finance). */
+  /** Client ids a team member works on ('all' for leadership, finance). */
   private async clientScope(me: Me): Promise<'all' | string[]> {
     if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
-    if (isLeadership(me) || hasRole(me, 'department_head', 'finance')) return 'all';
+    if (isLeadership(me) || hasRole(me, 'finance')) return 'all';
+    const head = await headScope(this.prisma, me);
+    if (head) return head.clientIds;
     const [clients, engs, tasks] = await Promise.all([
       this.prisma.clientOrg.findMany({ where: { orgId: me.orgId, amUserId: me.id }, select: { id: true } }),
       this.prisma.engagement.findMany({ where: { orgId: me.orgId, amId: me.id }, select: { clientOrgId: true } }),
