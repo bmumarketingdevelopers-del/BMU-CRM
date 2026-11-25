@@ -1,7 +1,7 @@
 "use client";
 
-// v28: the pop-up that adds the company seal and the Founder's signature to an invoice. It asks for the signing
-// password; a held invoice is delivered to the client once it is signed. Closing it leaves the invoice unsigned and
+// v28: the pop-up that adds the company seal and a signature to an invoice: a Client Manager's own, or the Founder's.
+// It asks for the signing password (the Client Manager's own one, or the company's); a held invoice is delivered to the client once it is signed. Closing it leaves the invoice unsigned and
 // unsent. Wrong passwords are logged and, from the third, the Founders are alerted.
 import { useState } from "react";
 import { formatINR } from "@bmu/shared";
@@ -48,7 +48,7 @@ export function SignInvoiceDialog({ invoice, onClose, onSigned }: { invoice: { i
     >
       <p className="text-sm text-ink-muted">
         {invoice.client ? `${invoice.client}${invoice.totalPaise ? `, ${formatINR(invoice.totalPaise)}` : ""}. ` : ""}
-        Enter the signing password to add the company seal and the Founder&apos;s signature. The invoice goes to the client only after it is signed.
+        Enter the signing password to add the company seal and the signature. Client Managers use their own signing password (Invoices → My signature). The invoice goes to the client only after it is signed.
       </p>
       <Field label="Signing password" required error={error}>
         <input

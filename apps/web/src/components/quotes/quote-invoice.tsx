@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { formatINR, type ServiceTaxInvoice } from "@bmu/shared";
+import { documentName, usePrintTitle } from "@/lib/print-title";
 import { DocFooter, GREEN, INK, Logo, Qr, QD_CSS, SignBox } from "./quotation-document";
 
 const day = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" });
@@ -163,6 +164,7 @@ const noop = () => () => {};
 
 export function QuoteInvoice({ t, actions }: { t: ServiceTaxInvoice; actions?: React.ReactNode }) {
   const mounted = useSyncExternalStore(noop, () => true, () => false);
+  usePrintTitle(documentName(`${t.title} ${t.number}`, t.buyer.legalName));
   return (
     <>
       <style>{QD_CSS}</style>

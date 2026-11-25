@@ -11,8 +11,8 @@ import { parse } from '../common/zod.js';
 import { canWriteFinance } from '../insights/access.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { cmDesignation, cmOwnsClient, checkProfilePassword } from './cm-signing.service.js';
-import { checkSigningPassword, readInvoiceBranding } from './invoice-branding.service.js';
+import { CM_DESIGNATION, checkProfilePassword, cmOwnsClient, signsAsCm } from './cm-signing.service.js';
+import { checkSigningPassword, founderSigner, readInvoiceBranding } from './invoice-branding.service.js';
 import { ServiceBillingService } from './service-billing.service.js';
 
 const WINDOW_MS = 30 * 60_000;
@@ -36,9 +36,9 @@ export class InvoiceSigningService {
     const inv = await this.prisma.invoice.findFirst({ where: { id, orgId: me.orgId }, include: { clientOrg: { select: { name: true } } } });
     if (!inv) throw new NotFoundException('Invoice not found');
     // Founder / Branch Manager / Finance sign with the company password and the Founder's signature; a Client Manager
-    // signs their own clients' invoices with their own password and signature.
-    const asCompany = canWriteFinance(me);
-    const asCm = !asCompany && (await cmOwnsClient(this.prisma, me, inv.clientOrgId));
+    // signs their own clients' invoices with their own password and signature, also when they are a Branch Manager too.
+    const asCm = signsAsCm(me) && (await cmOwnsClient(this.prisma, me, inv.clientOrgId));
+    const asCompany = !asCm && canWriteFinance(me);
     if (!asCompany && !asCm) throw new ForbiddenException("Only the people who handle invoices, or the client's Client Manager, can sign it");
     if (inv.status === 'void') throw new BadRequestException('This invoice was cancelled');
     if (inv.signedAt) throw new BadRequestException(`Invoice ${inv.number} is already signed`);
@@ -70,10 +70,10 @@ export class InvoiceSigningService {
     }
 
     // What is printed is kept on the invoice: a later change of signature never alters a signed invoice.
-    const founderName = b.signatoryName || (await this.prisma.user.findFirst({ where: { orgId: me.orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } }, NOT: { name: { equals: 'BMU Owner', mode: 'insensitive' } } }, orderBy: { createdAt: 'asc' }, select: { name: true } }))?.name || '';
+    const founder = founderSigner(b);
     const printed = asCompany
-      ? { signedRole: 'founder', signatureFileId: b.signatureFileId, signatoryName: founderName, signatoryDesignation: b.designation || 'Founder' }
-      : { signedRole: 'client_manager', signatureFileId: profile!.signatureFileId, signatoryName: me.name, signatoryDesignation: cmDesignation(me) };
+      ? { signedRole: 'founder', signatureFileId: b.signatureFileId, signatoryName: founder.name, signatoryDesignation: founder.designation }
+      : { signedRole: 'client_manager', signatureFileId: profile!.signatureFileId, signatoryName: me.name, signatoryDesignation: CM_DESIGNATION };
     await this.prisma.invoice.update({ where: { id: inv.id }, data: { signedAt: new Date(), signedById: me.id, deliveryHeldAt: null, sealFileId: b.sealFileId, ...printed } });
     await this.audit.log(me, 'invoice.signed', 'Invoice', inv.id, { signedAt: null }, { number: inv.number, delivered: !!inv.deliveryHeldAt, as: printed.signedRole }, ip);
     // A held invoice goes to the client now, with the seal and signature.
