@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
-import { createApiClient } from '@bmu/shared';
+import { ApiError, createApiClient } from '@bmu/shared';
 
 /**
  * API base URL. Set EXPO_PUBLIC_API_URL in .env to override. Otherwise, in development
@@ -44,14 +44,31 @@ export function onSessionExpired(fn: () => void) {
   };
 }
 
+/** The server itself says this sign-in is over (not a weak signal, a timeout or a server error). */
+export const isSignedOutError = (e: unknown) => e instanceof ApiError && e.status === 401;
+
+let checking = false;
+/** A refused request is checked once more before anyone is signed out; only a clear "not signed in" ends the session. */
+async function confirmExpired() {
+  const refused = token;
+  if (!refused || checking) return;
+  checking = true;
+  try {
+    await api.auth.me();
+  } catch (e) {
+    if (isSignedOutError(e) && token === refused) {
+      await session.clear();
+      expiredListeners.forEach((fn) => fn());
+    }
+  } finally {
+    checking = false;
+  }
+}
+
 export const API_URL = resolveApiUrl();
 export const api = createApiClient(API_URL, {
   getToken: () => token,
-  onUnauthorized: () => {
-    if (!token) return;
-    void session.clear();
-    expiredListeners.forEach((fn) => fn());
-  },
+  onUnauthorized: () => void confirmExpired(),
 });
 
 /** Files are served by the API at /files/:id; web URLs are '/api/files/:id'. */

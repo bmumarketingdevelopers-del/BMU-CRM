@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { needsSecondFactor, type Me } from '@bmu/shared';
 import { api, API_URL, session } from './api';
 import { colors, fonts } from './theme';
@@ -23,6 +23,16 @@ export function SignInScreen({ onSignedIn, notice }: { onSignedIn: (me: Me) => v
       .then(setDemo)
       .catch(() => setError(`Can't reach the API at ${API_URL}. Run \`pnpm dev\` on your computer and keep the phone on the same Wi-Fi.`));
   }, []);
+
+  // Android Back while entering a code: back to the email step instead of leaving the app.
+  useEffect(() => {
+    if (step === 'identify') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setStep('identify');
+      return true;
+    });
+    return () => sub.remove();
+  }, [step]);
 
   async function requestCode(id = identifier) {
     setBusy(true);

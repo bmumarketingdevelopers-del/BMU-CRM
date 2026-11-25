@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { startAuthentication } from "@simplewebauthn/browser";
-import { homePathFor, needsSecondFactor, type Me, type SecondFactorChallenge } from "@bmu/shared";
+import { ApiError, homePathFor, needsSecondFactor, type Me, type SecondFactorChallenge } from "@bmu/shared";
 import { Button, Input } from "@/components/ui";
 import { api } from "@/lib/api";
+import { clearSignedIn, mayResume, signedInHint } from "@/lib/signed-in";
 import { resetBrowserAlertsAsk } from "@/lib/web-push";
 
 type Demo = { name: string; email: string; role: string };
@@ -18,7 +19,7 @@ export function SignInForm({ me: signedIn }: { me?: Me }) {
   const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") && !rawNext.startsWith("/sign-in") ? rawNext : null;
   const expired = params.get("expired") === "1";
   // Already signed in: only "Sign out" ends a session, so carry on instead of asking for a new code. Not when a screen
-  // just sent them here because its session was refused: going straight back could loop.
+  // just sent them here because its session was refused: that goes through resume() below, which cannot loop.
   const me = expired ? undefined : signedIn;
   const [identifier, setIdentifier] = useState("");
   const [code, setCode] = useState("");
@@ -79,6 +80,24 @@ export function SignInForm({ me: signedIn }: { me?: Me }) {
     }
     const reason = params.get("google_error");
     if (reason) setError(googleErrors(reason, params.get("email")));
+    // The page may be an old copy (the Back button) or an old "session ended" link: check whether they are still in.
+    const resume = () => {
+      if (!signedInHint()) return;
+      api.auth.me().then(
+        (m) => {
+          if (!expired || mayResume()) go(m);
+        },
+        (e) => {
+          if (e instanceof ApiError && e.status === 401) clearSignedIn();
+        },
+      );
+    };
+    resume();
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) resume();
+    };
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once, on arrival
   }, []);
 
@@ -103,7 +122,8 @@ export function SignInForm({ me: signedIn }: { me?: Me }) {
     const home = homePathFor(me);
     const target = next ?? hashNext;
     const allowed = target && (target.startsWith(home) || (me.type === "staff" && (target.startsWith("/team") || target.startsWith("/admin"))));
-    router.push(allowed ? target : home);
+    // Replaces the sign-in page, so Back never lands on it.
+    router.replace(allowed ? target : home);
     router.refresh();
   }
 

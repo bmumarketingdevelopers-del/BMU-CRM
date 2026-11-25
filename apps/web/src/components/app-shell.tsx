@@ -4,6 +4,7 @@ import { Copilot } from "./ai/copilot";
 import { Logo } from "./logo";
 import { NotificationBell } from "./notification-bell";
 import { SignOutButton } from "./sign-out-button";
+import { SignedInMark } from "./signed-in-mark";
 import { SideNav, type NavSection } from "./side-nav";
 import { GlobalSearch } from "./global-search";
 import { ActionsProvider } from "./actions/actions-provider";
@@ -52,14 +53,17 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
         {me.type === "staff" && <GlobalSearch surface={surface === "Command Centre" ? "admin" : "team"} />}
         <SideNav sections={nav} />
         <InstallAppButton />
-        <div className="hidden border-t border-border px-5 py-4 text-sm md:block">
-          <p className="font-medium">{me.name}</p>
-          {/* Their own role name (a custom role such as "SEO Executive"), else their job role (e.g. Graphic designer), else the built-in role. */}
-          <p className="text-xs text-ink-muted">
-            {me.clientOrg ? me.clientOrg.name : me.roleTitle || personRoleTitle(me.roles, { specialty: me.specialty })}
-          </p>
-          <div className="flex items-center gap-3">
-            <a href="/security" className="mt-2 text-xs text-ink-muted underline hover:text-ink">
+        {/* On a phone too (the website, the Android app and the installed app): Sign out is the only way to sign out. */}
+        <div className="flex items-center justify-between gap-3 border-t border-border px-5 py-2 text-sm md:block md:py-4">
+          <div className="min-w-0">
+            <p className="truncate font-medium">{me.name}</p>
+            {/* Their own role name (a custom role such as "SEO Executive"), else their job role (e.g. Graphic designer), else the built-in role. */}
+            <p className="truncate text-xs text-ink-muted">
+              {me.clientOrg ? me.clientOrg.name : me.roleTitle || personRoleTitle(me.roles, { specialty: me.specialty })}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            <a href="/security" className="py-2 text-xs md:mt-2 md:py-0 text-ink-muted underline hover:text-ink">
               Sign-in security
             </a>
             <SignOutButton />
@@ -84,6 +88,7 @@ export function AppShell({ me, surface, nav, children, brand }: { me: Me; surfac
   const stream = !process.env.VERCEL || !!process.env.API_URL;
   return (
     <LiveProvider meId={me.id} stream={stream}>
+      <SignedInMark />
       {me.type === "staff" ? (
         <ActionsProvider me={me} surface={surface === "Command Centre" ? "admin" : "team"}>
           {shell}

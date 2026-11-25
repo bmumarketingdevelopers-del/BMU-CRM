@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { Logo } from "./logo";
+import { SignInLink } from "./sign-in-link";
 
 const nav = [
   // Services live on the main BMU Marketing website (opens in a new tab).
   { href: "https://bmumarketing.in/services", label: "Services", external: true },
   { href: "/#industries", label: "Industries" },
-  { href: "/sign-in", label: "Sign in" },
 ];
 
 export function SiteHeader() {
@@ -25,6 +25,7 @@ export function SiteHeader() {
               </Link>
             ),
           )}
+          <SignInLink className="transition-colors hover:text-ink" />
           <Link href="/enquiry" className="bg-charcoal px-4 py-2 text-ivory transition-opacity hover:opacity-90">
             Book a call
           </Link>

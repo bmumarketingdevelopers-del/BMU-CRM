@@ -1,16 +1,23 @@
 import { createApiClient, rupeesToPaise, services, type ServiceSummary } from "@bmu/shared";
 
+let signingOut = false;
+/** Set by Sign out, so requests refused while it finishes do not show "Your session has ended". */
+export const setSigningOut = (on: boolean) => {
+  signingOut = on;
+};
+
 /**
  * Browser-side client. Goes through the /api rewrite so the session cookie is sent.
  * When the session has expired (401), the browser goes back to sign-in and returns here afterwards.
  */
 export const api = createApiClient("/api", {
   onUnauthorized: () => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || signingOut) return;
     const here = window.location.pathname;
     if (here.startsWith("/sign-in") || !/^\/(admin|team|client|creator)(\/|$)/.test(here)) return;
-    // A full page load (not router.push): this runs outside React, and the sign-in page must start fresh.
-    window.location.href = new URL(`/sign-in?expired=1&next=${encodeURIComponent(here + window.location.search)}`, window.location.origin).href;
+    // A full page load (not router.push): this runs outside React, and the sign-in page must start fresh. It replaces
+    // the refused page, so Back does not land on a sign-in page after they have signed in again.
+    window.location.replace(new URL(`/sign-in?expired=1&next=${encodeURIComponent(here + window.location.search)}`, window.location.origin).href);
   },
   // v20: roles that must use two-factor go to set it up first.
   onTwoFactorRequired: () => {
