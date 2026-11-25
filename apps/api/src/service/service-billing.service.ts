@@ -17,6 +17,7 @@ import { PaymentsService } from '../proposals/payments.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { EmailService } from './email.service.js';
+import { cmOwnsClient, signsAsCm } from './cm-signing.service.js';
 import { clientVisibleInvoiceWhere, invoiceHeld, readInvoiceBranding } from './invoice-branding.service.js';
 import { buildTaxInvoice, taxInvoiceEmailHtml, taxInvoiceEmailText } from './tax-invoice.js';
 
@@ -122,7 +123,10 @@ export class ServiceBillingService {
     if (!t) throw new NotFoundException('Invoice not found');
     // v28: people who handle invoices can add the seal and signature (with the signing password).
     const b = await readInvoiceBranding(this.prisma, me.orgId);
-    t.signing.canSign = canWriteFinance(me) && !t.signing.signed && t.status !== 'void' && !!b.passwordHash;
+    // A Client Manager (also one who is a Branch Manager) signs with their own signature; signing says what they still need to set up.
+    const inv = await this.prisma.invoice.findUnique({ where: { id }, select: { clientOrgId: true } });
+    const asCm = signsAsCm(me) && (await cmOwnsClient(this.prisma, me, inv?.clientOrgId ?? null));
+    t.signing.canSign = canWriteFinance(me) && !t.signing.signed && t.status !== 'void' && (asCm || !!b.passwordHash);
     return t;
   }
 

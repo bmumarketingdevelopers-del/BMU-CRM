@@ -579,7 +579,7 @@ export function QuoteEditor({
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={v.seal !== false} onChange={(e) => set("seal", e.target.checked)} data-testid="quote-seal-toggle" />
-            Add the company seal under the signature
+            Add the company seal (the signature goes on top of it)
           </label>
         </QuoteFormSection>
       )}

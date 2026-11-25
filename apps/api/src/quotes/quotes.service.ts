@@ -50,9 +50,9 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { PrismaService } from '../prisma/prisma.service.js';
 import { relPath, sha256, type OpsUpload } from '../ops-actions/ops-util.js';
 import { BillingService, issueInvoiceTx } from '../requests/billing.service.js';
-import { cmDesignation, signingFileUrl } from '../service/cm-signing.service.js';
+import { CM_DESIGNATION, signingFileUrl, signsAsCm } from '../service/cm-signing.service.js';
 import { sendStoredFile } from '../storage/file-store.js';
-import { readInvoiceBranding } from '../service/invoice-branding.service.js';
+import { founderSigner, readInvoiceBranding } from '../service/invoice-branding.service.js';
 import { ServiceBillingService } from '../service/service-billing.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 
@@ -166,12 +166,13 @@ export class QuotesService {
     return { text: (r.text || basic).trim().slice(0, QUOTE_OVERVIEW_MAX), ai: r.mode === 'ai' };
   }
 
-  /** v49: who signs a quotation for BMU: a Founder or Admin with the company signature, anyone else with their own. */
+  /** v49: who signs a quotation for BMU: a Founder with the company signature (v54: only a Founder), anyone else with their own. */
   private async signerFor(me: Me): Promise<Signer> {
     const b = await readInvoiceBranding(this.prisma, me.orgId);
-    if (has(me, 'founder', 'admin')) return { name: b.signatoryName || me.name, role: b.designation || (has(me, 'founder') ? 'Founder' : 'Admin'), signatureFileId: b.signatureFileId, sealFileId: b.sealFileId };
+    const founder = founderSigner(b);
+    if (has(me, 'founder')) return { name: founder.name, role: founder.designation, signatureFileId: b.signatureFileId, sealFileId: b.sealFileId };
     const p = await this.prisma.signingProfile.findUnique({ where: { userId: me.id }, select: { signatureFileId: true } });
-    return { name: me.name, role: has(me, 'am_lead', 'account_manager') ? cmDesignation(me) : 'Finance', signatureFileId: p?.signatureFileId ?? null, sealFileId: b.sealFileId };
+    return { name: me.name, role: signsAsCm(me) ? CM_DESIGNATION : has(me, 'admin') ? 'Branch Manager' : 'Finance', signatureFileId: p?.signatureFileId ?? null, sealFileId: b.sealFileId };
   }
 
   private async view(me: Me, q: QuoteDb): Promise<QuoteView> {
@@ -193,8 +194,8 @@ export class QuotesService {
     const billedTo = this.billed(details, stored.billTo);
     const split = quoteGstSplit(q.gstPaise, gst.stateCode || '29', billedTo.placeOfSupply, billedTo.gstin);
     const status = this.status(q);
-    const founder = branding.signatoryName ? null : await this.prisma.user.findFirst({ where: { orgId: q.orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, select: { name: true }, orderBy: { createdAt: 'asc' } });
-    const signatory = `${branding.signatoryName || founder?.name || gst.legalName || tenant.name}${branding.designation ? `, ${branding.designation}` : ''}`;
+    const founder = founderSigner(branding);
+    const signatory = `${founder.name}, ${founder.designation}`;
     const address = (gst.address?.trim() || BMU_ADDRESS).split(/\n|,\s*(?=\S)/).map((s) => s.trim()).filter(Boolean);
     const upiId = gst.upiId?.trim() || null;
     const payee = gst.bankAccountName?.trim() || gst.legalName || tenant.name;

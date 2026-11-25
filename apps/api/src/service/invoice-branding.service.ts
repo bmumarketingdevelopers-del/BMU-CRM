@@ -37,6 +37,12 @@ export type InvoiceBranding = {
   requiredSince: string | null;
 };
 
+/** Who signs for the company when no name is saved in GST & Invoice Settings. */
+export const BMU_FOUNDER = 'Mukesh BN';
+
+/** The Founder as printed under the company signature: the saved name and title, else BMU's Founder. */
+export const founderSigner = (b: Pick<InvoiceBranding, 'signatoryName' | 'designation'>) => ({ name: b.signatoryName.trim() || BMU_FOUNDER, designation: b.designation.trim() || 'Founder' });
+
 const EMPTY: InvoiceBranding = { signatoryName: '', designation: 'Founder', signatureFileId: null, sealFileId: null, updatedAt: null, passwordHash: null, passwordSalt: null, passwordSetAt: null, requireSignature: false, requiredSince: null };
 
 const hashPassword = (password: string, salt: string) => scryptSync(password, salt, 64).toString('hex');

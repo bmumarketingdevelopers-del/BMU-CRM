@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import { formatINR, itemBillingLabels, quotePlanLabels, type QuoteView } from "@bmu/shared";
+import { documentName, usePrintTitle } from "@/lib/print-title";
 
 export const INK = "#121619";
 export const GREEN = "#8cb63c";
@@ -73,14 +74,29 @@ export function DocFooter({ website, page }: { website: string; page: number }) 
   );
 }
 
+/** v54: the signature on top of the seal, as when signed by hand (white around a photographed signature disappears). */
+export function SignedSeal({ signature, seal, sealClass, signatureClass }: { signature: string | null; seal: string | null; sealClass: string; signatureClass: string }) {
+  if (!signature && !seal) return null;
+  return (
+    <div className="grid h-full shrink-0 place-items-center [&>img]:col-start-1 [&>img]:row-start-1" data-testid="signed-seal">
+      {/* eslint-disable-next-line @next/next/no-img-element -- an uploaded image */}
+      {seal && <img src={seal} alt="Seal" className={`object-contain ${sealClass}`} />}
+      {/* eslint-disable-next-line @next/next/no-img-element -- an uploaded image */}
+      {signature && <img src={signature} alt="Signature" className={`relative z-10 object-contain mix-blend-multiply ${signatureClass}`} />}
+    </div>
+  );
+}
+
 /** v49: the line to sign on, with the signature and seal on it when there are any. */
 export function SignBox({ signature, seal, compact, children }: { signature: string | null; seal: string | null; compact?: boolean; children?: React.ReactNode }) {
   return (
-    <div className={`mt-1 flex items-end gap-3 border-b ${compact ? "h-[12mm]" : "h-[17mm]"}`} style={{ borderColor: INK }}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- an uploaded image */}
-      {signature && <img src={signature} alt="Signature" className="max-h-full max-w-[38mm] object-contain" />}
-      {/* eslint-disable-next-line @next/next/no-img-element -- an uploaded image */}
-      {seal && <img src={seal} alt="Seal" className="max-h-full max-w-[20mm] object-contain" />}
+    <div className={`mt-1 flex items-end gap-3 border-b ${compact ? "h-[13mm]" : "h-[18mm]"}`} style={{ borderColor: INK }}>
+      <SignedSeal
+        signature={signature}
+        seal={seal}
+        sealClass={compact ? "h-[12.5mm] max-w-[20mm]" : "h-[17.5mm] max-w-[24mm]"}
+        signatureClass={compact ? "max-h-[10mm] max-w-[34mm]" : "max-h-[13mm] max-w-[38mm]"}
+      />
       {children}
     </div>
   );
@@ -481,6 +497,7 @@ const noop = () => () => {};
 /** The printable quotation. "Download PDF" opens the print window: choose "Save as PDF". */
 export function QuotationDocument({ q, actions }: { q: QuoteView; actions?: React.ReactNode }) {
   const mounted = useSyncExternalStore(noop, () => true, () => false);
+  usePrintTitle(documentName(`Quotation ${q.number}`, q.client.name));
   return (
     <>
       <style>{QD_CSS}</style>

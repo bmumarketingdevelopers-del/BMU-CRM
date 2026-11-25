@@ -6,7 +6,9 @@
 // the screen theme never changes the document; the print copy sits outside the app shell so the PDF is only the invoice.
 // v45: BMU's document design (as on quotations): logo, cream pages with a green edge, a dark amount box, dark table
 // header, green total, and a payment box with the UPI QR. Every GST detail stays as it was.
+import { SignedSeal } from "@/components/quotes/quotation-document";
 import { QuoteInvoice } from "@/components/quotes/quote-invoice";
+import { documentName, usePrintTitle } from "@/lib/print-title";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { createPortal } from "react-dom";
@@ -138,11 +140,8 @@ function Signature({ t }: { t: ServiceTaxInvoice }) {
   return (
     <div className="w-[64mm] text-center" data-testid="invoice-signature">
       <p className="text-[11.5px] text-[#4b5563]">For {t.seller.legalName}</p>
-      <div className="flex h-[28mm] items-end justify-center gap-0 pb-1">
-        {/* eslint-disable-next-line @next/next/no-img-element -- signed-in image from the API, not optimisable */}
-        {s.sealUrl && <img src={s.sealUrl} alt="Company seal" className="h-[24mm] w-[24mm] shrink-0 object-contain opacity-90" />}
-        {/* eslint-disable-next-line @next/next/no-img-element -- signed-in image from the API, not optimisable */}
-        {s.signatureUrl && <img src={s.signatureUrl} alt="Signature" className={`relative z-10 max-h-[16mm] max-w-[40mm] object-contain ${s.sealUrl ? "-ml-[4mm] mb-[1mm]" : ""}`} />}
+      <div className="flex h-[28mm] items-end justify-center pb-1">
+        <SignedSeal signature={s.signatureUrl} seal={s.sealUrl} sealClass="h-[25mm] w-[25mm] opacity-90" signatureClass="max-h-[16mm] max-w-[42mm]" />
       </div>
       <div className="border-t border-[#1c2430] pt-1">
         {s.name && <p className="text-[12px] font-semibold text-[#1c2430]">{s.name}</p>}
@@ -470,6 +469,7 @@ export function TaxInvoice({ t, actions }: { t: ServiceTaxInvoice; actions?: Rea
 function ClassicInvoice({ t, actions }: { t: ServiceTaxInvoice; actions?: React.ReactNode }) {
   // true in the browser, false while rendering on the server (the print copy is added after hydration).
   const mounted = useSyncExternalStore(noop, () => true, () => false);
+  usePrintTitle(documentName(`${t.title} ${t.number}`, t.buyer.legalName));
   return (
     <>
       <style>{PRINT_CSS}</style>

@@ -179,6 +179,50 @@ describe('invoice signing', () => {
     expect(await prisma.invoice.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({ signedRole: 'founder', signatoryDesignation: expect.any(String) });
   });
 
+  it('a Branch Manager who is also the CM Lead signs as a Client Manager; a Founder as "Mukesh BN, Founder" when no name is saved', async () => {
+    const { orgId } = await prisma.invoice.findUniqueOrThrow({ where: { id: ids.held }, select: { orgId: true } });
+    const roles = await prisma.role.findMany({ where: { orgId, isCustom: false, baseRole: { in: ['admin', 'am_lead'] } } });
+    const both = await prisma.user.create({ data: { orgId, type: 'staff', name: `Yash ${stamp}`, email: `yash.${stamp}@bmu.demo`, status: 'active', roles: { create: roles.map((r) => ({ roleId: r.id })) } } });
+    tokens.both = await signIn(both.email!);
+    const saved = (await http().get('/finance/invoice-branding').set(as('founder')).expect(200)).body as { signatoryName: string; designation: string };
+    await http().put('/finance/invoice-branding').set(as('founder')).send({ signatoryName: '', designation: 'Founder' }).expect(200);
+    const made = async (createdById: string | null, n: string) =>
+      prisma.invoice.create({ data: { orgId, clientOrgId: ids.sunrise, createdById, number: `${n}-${stamp}`, lines: [{ label: 'x', amountPaise: 100000 }], subtotalPaise: 100000, gstPaise: 18000, totalPaise: 118000, dueDate: new Date(Date.now() + 5 * 86_400_000), status: 'issued' } });
+    const see = async (id: string) => (await http().get(`/service/finance/invoices/${id}/tax-invoice`).set(as('founder')).expect(200)).body as ServiceTaxInvoice;
+
+    // Before signing: the name of the person who made it.
+    const a = await made(both.id, 'YASH');
+    expect((await see(a.id)).signatory).toMatchObject({ name: both.name, designation: 'Client Manager', signatureUrl: null });
+    const b = await made(users.founder, 'FNDR');
+    expect((await see(b.id)).signatory).toMatchObject({ name: 'Mukesh BN', designation: 'Founder' });
+
+    // Signing: never with the company password and the Founder's signature; with their own once set up.
+    const refused = await http().post(`/finance/invoices/${a.id}/sign`).set(as('both')).send({ password: PASSWORD }).expect(400);
+    expect(refused.body.message).toMatch(/My signature/);
+    const p = (await http().post('/finance/my-signing/signature').set(as('both')).attach('file', png, { filename: 'yash.png', contentType: 'image/png' }).expect(200)).body as SigningProfileView;
+    expect(p.designation).toBe('Client Manager');
+    await http().put('/finance/my-signing/password').set(as('both')).send({ password: `Yash-${stamp}`, confirm: `Yash-${stamp}` }).expect(200);
+    await http().post(`/finance/invoices/${a.id}/sign`).set(as('both')).send({ password: PASSWORD }).expect(403);
+    await http().post(`/finance/invoices/${a.id}/sign`).set(as('both')).send({ password: `Yash-${stamp}` }).expect(200);
+    expect((await see(a.id)).signatory).toMatchObject({ name: both.name, designation: 'Client Manager', signatureUrl: `/api/invoice-branding/file/${p.signature!.url.split('/').pop()}`, sealUrl: expect.any(String) });
+    await http().post(`/finance/invoices/${b.id}/sign`).set(as('founder')).send({ password: PASSWORD }).expect(200);
+    expect((await see(b.id)).signatory).toMatchObject({ name: 'Mukesh BN', designation: 'Founder' });
+
+    // Quotations: the same names.
+    const tpl = ((await http().get('/quotes/templates').set(as('founder')).expect(200)).body as Record<string, unknown>[])[0];
+    const { id: _id, name: _n, serviceKey: _s, updatedAt: _u, ...content } = tpl;
+    const services = await prisma.engagement.findMany({ where: { clientOrgId: ids.sunrise, deletedAt: null }, select: { id: true }, take: 1 });
+    const quote = { ...content, terms: [], clientOrgId: ids.sunrise, engagementIds: services.map((s) => s.id), templateId: tpl.id, preparedFor: [], validUntil: dueIn(10) };
+    for (const [who, name, role] of [['both', both.name, 'Client Manager'], ['founder', 'Mukesh BN', 'Founder']] as const) {
+      const r = await http().post('/quotes').set(as(who)).send(quote);
+      if (r.status >= 400) throw new Error(JSON.stringify(r.body));
+      const q = (await http().get(`/quotes/${r.body.id}`).set(as(who)).expect(200)).body;
+      expect(q.signer).toMatchObject({ name, role });
+      await prisma.quotation.delete({ where: { id: r.body.id } });
+    }
+    await http().put('/finance/invoice-branding').set(as('founder')).send({ signatoryName: saved.signatoryName, designation: saved.designation }).expect(200);
+  });
+
   it('the Founder tracks who created, signed and issued each invoice, with a summary per person', async () => {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
     const all = (await http().get(`/finance/invoices?from=${today}&to=${today}`).set(as('founder')).expect(200)).body as FinanceInvoiceList;

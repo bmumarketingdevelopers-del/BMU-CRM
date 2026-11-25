@@ -6,8 +6,8 @@ import { BMU_ADDRESS, BMU_EMAIL, BMU_PHONE, quotePlanLabels, serviceAmountInWord
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { SettingsService } from '../settings/settings.service.js';
 import { escapeHtml } from './email.service.js';
-import { signingFileUrl } from './cm-signing.service.js';
-import { invoiceBrandingUrl, invoiceHeld, readInvoiceBranding } from './invoice-branding.service.js';
+import { CM_DESIGNATION, signingFileUrl, signsAsCm } from './cm-signing.service.js';
+import { founderSigner, invoiceBrandingUrl, invoiceHeld, readInvoiceBranding } from './invoice-branding.service.js';
 
 type InvoiceLine = { label: string; amountPaise: number; title?: string; details?: string; passThrough?: boolean; kind?: string };
 
@@ -63,7 +63,6 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   const upiUri = upiId && balance > 0 ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payee)}&am=${(balance / 100).toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Invoice ${inv.number}`)}` : null;
   const email = tenant.supportEmail?.trim() || BMU_EMAIL;
   const phone = tenant.supportPhone?.trim() || BMU_PHONE;
-  // The founder who signs: the name set with the signature, else the first Founder.
   const variant = serviceInvoiceVariant({ status: inv.status, kind: inv.kind, dueDate: inv.dueDate.toISOString(), paidPaise: paid, creditedPaise: credited, balancePaise: balance });
   // v28: the seal and signature are printed only once the invoice is signed with the signing password.
   const signed = !!inv.signedAt;
@@ -71,7 +70,10 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
   // v49: raised from a quotation: it prints in the quotation's design.
   const fromQuote = inv.kind.startsWith('quote_') ? await prisma.quotation.findFirst({ where: { orgId, OR: [{ advanceInvoiceId: inv.id }, { balanceInvoiceId: inv.id }] } }) : null;
   const quoted = fromQuote?.content as { title?: string; planType?: keyof typeof quotePlanLabels | ''; clientDetails?: { owner?: string | null }; signedBy?: { name: string; role: string } } | undefined;
-  const founder = branding.signatoryName ? null : await prisma.user.findFirst({ where: { orgId, type: 'staff', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, orderBy: { createdAt: 'asc' }, select: { name: true } });
+  // v54: until it is signed, the name of the person who made it when they are a Client Manager, else the Founder.
+  const maker = !inv.signedRole && !signed && inv.createdById ? await prisma.user.findUnique({ where: { id: inv.createdById }, select: { name: true, type: true, roles: { select: { role: { select: { baseRole: true } } } } } }) : null;
+  const makerCm = maker?.type === 'staff' && signsAsCm({ roles: maker.roles.map((r) => r.role.baseRole) });
+  const founder = founderSigner(branding);
   return {
     id: inv.id,
     number: inv.number,
@@ -93,8 +95,8 @@ export async function buildTaxInvoice(prisma: PrismaService, settings: SettingsS
           sealUrl: inv.sealFileId && doc?.seal !== false ? signingFileUrl(inv.sealFileId) : null,
         }
       : {
-          name: branding.signatoryName || (founder?.name && !/^bmu owner$/i.test(founder.name) ? founder.name : ''),
-          designation: branding.designation || 'Founder',
+          name: makerCm ? maker!.name : founder.name,
+          designation: makerCm ? CM_DESIGNATION : founder.designation,
           signatureUrl: signed && branding.signatureFileId && doc?.signWith !== 'blank' ? invoiceBrandingUrl('signature', branding.signatureFileId) : null,
           sealUrl: signed && branding.sealFileId && doc?.seal !== false ? invoiceBrandingUrl('seal', branding.sealFileId) : null,
         },

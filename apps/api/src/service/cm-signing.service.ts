@@ -20,8 +20,14 @@ const hash = (password: string, salt: string) => scryptSync(password, salt, 64).
 export const SIGNING_FILE_TAGS = ['invoice-signature', 'invoice-seal', 'cm-signature', 'quote-client-signature', 'quote-client-seal'];
 export const signingFileUrl = (fileId: string) => `/api/invoice-branding/file/${fileId}`;
 
-/** "Client Manager", or "Client Manager Lead" for the CM Lead. */
-export const cmDesignation = (me: { roles: string[] }) => (me.roles.includes('am_lead') && !me.roles.includes('account_manager') ? 'Client Manager Lead' : 'Client Manager');
+/** The title printed under a Client Manager's signature (the CM Lead's too). */
+export const CM_DESIGNATION = 'Client Manager';
+
+/**
+ * v54: does this person sign as a Client Manager (own name, title and signature)? Anyone with a Client Manager or CM Lead
+ * role, also when they are a Branch Manager too; a Founder always signs as the Founder.
+ */
+export const signsAsCm = (me: { roles: string[] }) => !me.roles.includes('founder') && me.roles.some((r) => r === 'account_manager' || r === 'am_lead');
 
 /** Clients a Client Manager may invoice: their own; the CM Lead every client. Null = not a Client Manager. */
 export function cmClientWhere(me: Me): Prisma.ClientOrgWhereInput | null {
@@ -63,7 +69,7 @@ export class CmSigningService {
     const [p, b] = await Promise.all([this.profile(me), readInvoiceBranding(this.prisma, me.orgId)]);
     const f = p.signatureFileId ? await this.prisma.file.findUnique({ where: { id: p.signatureFileId }, select: { id: true, name: true, createdAt: true } }) : null;
     const signature = f ? { url: signingFileUrl(f.id), name: f.name ?? 'signature', updatedAt: f.createdAt.toISOString() } : null;
-    return { name: me.name, designation: cmDesignation(me), signature, passwordSet: !!p.passwordHash, companySeal: !!b.sealFileId, ready: !!signature && !!p.passwordHash && !!b.sealFileId };
+    return { name: me.name, designation: CM_DESIGNATION, signature, passwordSet: !!p.passwordHash, companySeal: !!b.sealFileId, ready: !!signature && !!p.passwordHash && !!b.sealFileId };
   }
 
   async uploadSignature(me: Me, file: OpsUpload | undefined, ip?: string) {
