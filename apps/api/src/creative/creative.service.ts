@@ -19,7 +19,7 @@ import {
 import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { parse } from '../common/zod.js';
-import { CraftService } from '../craft/craft.service.js';
+import { CraftService, type BrandUpload } from '../craft/craft.service.js';
 import { DeliverCalendarService } from '../deliver/deliver-calendar.service.js';
 import { visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
@@ -86,6 +86,10 @@ export class CreativeService implements OnModuleInit, OnModuleDestroy {
   async clientBrandKit(me: Me) {
     if (!me.clientOrg) throw new ForbiddenException('Client accounts only');
     return this.ref.get(CraftService, { strict: false }).brandKitView(me.clientOrg.id);
+  }
+
+  addClientBrandFile(me: Me, file: BrandUpload | undefined, storageRoot: string, ip?: string) {
+    return this.ref.get(CraftService, { strict: false }).addClientBrandFile(me, file, storageRoot, ip);
   }
 
   // ------------------------------------------------------------------------------------------------ channels and the publishing rule

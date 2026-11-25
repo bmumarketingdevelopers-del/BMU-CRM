@@ -101,6 +101,34 @@ export type ClientOnboarding = {
   engagements: { id: string; serviceName: string; rcdAt: string | null; requirements: RequirementItemView[] }[];
 };
 
+/** The client's Onboarding page: when they joined, who looks after them, and what they chose. No prices, no internal notes. */
+export type ClientOnboardingDetails = {
+  company: { name: string; industry: string | null; website: string | null; brands: string[]; contact: { name: string | null; phone: string | null; email: string | null } };
+  /** lead | onboarding | active | on_hold | inactive */
+  status: string;
+  /** The onboarding date BMU entered, else the start of their tenure, else the day the account was made. */
+  onboardedAt: string;
+  accountCreatedAt: string;
+  firstProjectStartedAt: string | null;
+  manager: { name: string; email: string | null; phone: string | null } | null;
+  /** From the price list (v52): sub-services and bundles, with the plan chosen. */
+  services: { id: string; name: string; group: string; description: string; plan: string | null; billing: string; status: string; startDate: string | null }[];
+  projects: {
+    id: string;
+    name: string;
+    includes: string[];
+    plan: string | null;
+    billingType: string;
+    status: string;
+    addedAt: string;
+    /** Set once BMU has everything needed to begin. */
+    startedAt: string | null;
+    endDate: string | null;
+    /** Only when it is not the client's main Client Manager. */
+    manager: string | null;
+  }[];
+};
+
 export type EngagementRow = {
   id: string;
   client: { id: string; name: string };

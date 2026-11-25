@@ -22,7 +22,7 @@ import { storageRoot } from '../production/production.controller.js';
 import { CraftService } from './craft.service.js';
 import { putFile, relPathOf } from '../storage/file-store.js';
 
-const brandUpload = FileInterceptor('file', {
+export const brandUpload = FileInterceptor('file', {
   storage: diskStorage({
     destination: (_req, _file, cb) => {
       const dir = join(storageRoot(), new Date().toISOString().slice(0, 7));

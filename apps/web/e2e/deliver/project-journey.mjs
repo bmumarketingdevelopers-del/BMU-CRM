@@ -5,6 +5,7 @@
 // send → client Review Studio (pin, video time comment, compare, request changes, approve version) → G4 → balance
 // invoice → sign-off + test payment → G5 → final delivery page: zip download + feedback → Client Health.
 // Run: BASE_URL=http://localhost:3000 node apps/web/e2e/deliver/project-journey.mjs
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { api, check, freshClient, FIXTURES, launch, shot, signIn, BASE } from "./lib.mjs";
 
@@ -39,18 +40,16 @@ try {
     await c.owner.post("/client/team", { name: "Ravi Approver", email: approverEmail, role: "client_approver" });
   });
 
-  console.log("2. Client onboarding: upload a file and send a note");
+  console.log("2. Client onboarding: details page; a file and a note sent for the checklist");
   let page = await as(c.email);
   await go(page, "/client/onboarding");
-  const items = page.locator("li", { has: page.getByRole("button", { name: "Send" }) });
-  check((await items.count()) >= 2, "onboarding checklist shows the items to send");
-  await items.nth(0).locator('input[type="file"]').setInputFiles(join(FIXTURES, "brand.pdf"));
-  await items.nth(0).getByRole("button", { name: "Send" }).click();
-  await page.getByText("Sent, BMU is checking").first().waitFor();
-  await items.nth(0).getByRole("textbox").fill("https://drive.google.com/drive/folders/brand-assets");
-  await items.nth(0).getByRole("button", { name: "Send" }).click();
-  await page.waitForFunction(() => document.querySelectorAll('li input[type="file"]').length === 0);
-  check((await page.getByText("Sent, BMU is checking").count()) >= 2, "both items show as sent");
+  await page.getByText("Your Client Manager").first().waitFor();
+  check(await page.getByText("Onboarded on").isVisible(), "onboarding page shows the onboarding details");
+  check((await page.locator('main input[type="file"]').count()) === 0, "onboarding page no longer asks for items");
+  const items = (await (await page.request.get(`${BASE}/api/client/onboarding`)).json()).engagements.find((x) => x.id === e.id).requirements;
+  const sent = await page.request.post(`${BASE}/api/deliver/client/requirements/${items[0].id}/upload`, { multipart: { file: { name: "brand.pdf", mimeType: "application/pdf", buffer: readFileSync(join(FIXTURES, "brand.pdf")) } } });
+  check(sent.ok(), "client sends a file for a checklist item");
+  await c.owner.post(`/client/requirements/${items[1].id}/submit`, { note: "https://drive.google.com/drive/folders/brand-assets" });
   await shot(page, "j1-client-onboarding");
 
   console.log("3. CM: open project, check the file, block then receive, mark RCD (G1)");

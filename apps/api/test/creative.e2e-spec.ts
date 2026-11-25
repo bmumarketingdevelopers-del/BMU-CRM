@@ -340,6 +340,22 @@ describe('brand kits and the Creative reviewer', () => {
     expect(mine.donts).toEqual(['No red backgrounds']);
   });
 
+  it('the client uploads to their own brand kit; the team sees the file and the CM is told; the team cannot use that route', async () => {
+    const name = `logo-${stamp}.png`;
+    const kit = (await http().post('/client/brand-kit/files').set(as('client')).attach('file', png, { filename: name, contentType: 'image/png' }).expect(201)).body;
+    const file = kit.files.find((f: { name: string }) => f.name === name);
+    expect(file).toMatchObject({ kind: 'image' });
+    await http().get(file.url.replace('/api', '')).set(as('client')).expect(200);
+    const team = (await http().get(`/craft/brand/${clientId}`).set(as('am')).expect(200)).body;
+    expect(team.files.some((f: { id: string }) => f.id === file.id)).toBe(true);
+    const other = (await http().get(`/craft/brand/${otherClientId}`).set(as('founder')).expect(200)).body;
+    expect(other.files.some((f: { id: string }) => f.id === file.id)).toBe(false);
+    const am = (await prisma.clientOrg.findUniqueOrThrow({ where: { id: clientId }, select: { amUserId: true } })).amUserId!;
+    expect(await prisma.notification.count({ where: { userId: am, title: { contains: name } } })).toBe(1);
+    await http().post('/client/brand-kit/files').set(as('client')).expect(400);
+    await http().post('/client/brand-kit/files').set(as('am')).attach('file', png, { filename: 'x.png', contentType: 'image/png' }).expect(403);
+  });
+
   it('checks a new draft against the brand kit, flags a picture uploaded for a reel and tells the maker', async () => {
     ids.reel2 = await deliverable('reel', `Offer reel ${stamp}`);
     const up = (await http().post(`/deliverables/${ids.reel2}/versions`).set(as('am')).attach('file', png, { filename: 'frame.png', contentType: 'image/png' }).expect(201)).body as DeliverableDetail;

@@ -5,26 +5,10 @@ import { DashGrid } from "@/components/dashboards/grid";
 import { Panel, StatRow, StatTile } from "@/components/dash";
 import { GateTrack } from "@/components/gate-track";
 import { Badge, PageTitle } from "@/components/ui";
+import { clientProjectStatus as clientStatus } from "@/lib/client-labels";
 import { requireMe, serverApi } from "@/lib/session";
 
 export const metadata = { title: "Home | BMU Hub" };
-
-// Client-facing status labels (glossary: Blocked → Waiting on input).
-const clientStatus: Record<string, string> = {
-  pending_payment: "Awaiting payment",
-  onboarding: "Getting started",
-  blocked: "Waiting on input",
-  planning: "Planning",
-  awaiting_plan_approval: "Plan ready for you",
-  in_production: "In production",
-  in_review: "Ready for your review",
-  awaiting_final_payment: "Final payment due",
-  delivered: "Delivered",
-  active_retainer: "Active",
-  paused: "Paused",
-  offboarding: "Wrapping up",
-  closed: "Closed",
-};
 
 type Action = { key: string; title: string; detail?: string; href: string; cta: string; amount?: string };
 
@@ -44,14 +28,16 @@ export default async function ClientHome() {
   const quotes = requests.filter((r) => r.status === "quoted");
   const finals = delivery.filter((d) => d.allApproved && !d.filesReleased);
   const toReview = reviews.filter((r) => r.waitingOnYou);
-  const pendingInputs = o.engagements.reduce((s, e) => s + e.requirementsPending, 0);
+  const pendingAccess = o.engagements.reduce((s, e) => s + e.accessPending, 0);
+  const pendingInputs = o.engagements.reduce((s, e) => s + e.requirementsPending, 0) - pendingAccess;
   const due = o.invoicesDue.reduce((s, i) => s + i.totalPaise - i.paidPaise, 0);
   const openRequests = requests.filter((r) => !["done", "declined"].includes(r.status)).length;
   const canBill = (me.permissions.invoices_payments?.scope ?? "none") !== "none";
 
   const actions: Action[] = [
     ...o.invoicesDue.map((i) => ({ key: i.id, title: `Invoice ${i.number} is due`, detail: `Due by ${new Date(i.dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}`, href: "/client/billing", cta: "View billing", amount: formatINR(i.totalPaise - i.paidPaise) })),
-    ...(pendingInputs > 0 ? [{ key: "inputs", title: `Send us ${pendingInputs} item${pendingInputs > 1 ? "s" : ""} to get started`, detail: "Your project start date is set once we have everything.", href: "/client/onboarding", cta: "Open the checklist" }] : []),
+    ...(pendingInputs > 0 ? [{ key: "inputs", title: `Send us ${pendingInputs} item${pendingInputs > 1 ? "s" : ""} to get started`, detail: "Your project start date is set once we have everything.", href: "/client/brand-kit", cta: "Send items" }] : []),
+    ...(pendingAccess > 0 ? [{ key: "access", title: `Give us access to ${pendingAccess} account${pendingAccess > 1 ? "s" : ""}`, detail: "Tell us how to get in, so work can start.", href: "/client/onboarding", cta: "Give access" }] : []),
     ...(toReview.length > 0 ? [{ key: "reviews", title: `${toReview.length} draft${toReview.length > 1 ? "s" : ""} ready for your review`, detail: toReview.map((r) => r.title).join(", "), href: "/client/reviews", cta: "Open Review Studio" }] : []),
     ...quotes.map((r) => ({ key: r.id, title: "A quote is ready for your extra request", detail: r.description, href: `/client/requests/${r.id}`, cta: "Review the quote" })),
     ...finals.map((d) => ({ key: d.engagementId, title: `${d.serviceName} is finished`, detail: "Sign off and pay the final invoice to unlock your files.", href: "/client/files", cta: "Go to final delivery" })),

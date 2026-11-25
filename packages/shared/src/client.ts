@@ -9,6 +9,8 @@ export type ClientEngagement = {
   currentGate: string;
   track: GateTrack;
   requirementsPending: number;
+  /** Of those, account access (website admin, ad account…): answered on the Onboarding page. */
+  accessPending: number;
 };
 
 export type ClientInvoice = {

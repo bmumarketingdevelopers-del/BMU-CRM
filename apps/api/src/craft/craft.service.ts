@@ -95,6 +95,8 @@ type CommentRow = { id: string; targetId: string; body: string; timestampOrPin: 
 const isOpen = (s: string) => (OPEN as readonly string[]).includes(s);
 const deliverableHref = (id: string) => `/team/deliverables/${id}`;
 
+export type BrandUpload = { path: string; originalname: string; mimetype: string; size: number };
+
 @Injectable()
 export class CraftService {
   constructor(
@@ -1391,15 +1393,29 @@ export class CraftService {
     return this.brandKit(me, clientOrgId);
   }
 
-  async addBrandFile(me: Me, clientOrgId: string, file: { path: string; originalname: string; mimetype: string; size: number } | undefined, storageRoot: string, ip?: string) {
+  async addBrandFile(me: Me, clientOrgId: string, file: BrandUpload | undefined, storageRoot: string, ip?: string) {
     await this.assertClientAccess(me, clientOrgId);
-    if (!file) throw new BadRequestException('Choose a file to upload');
-    const kind = file.mimetype.startsWith('image/') ? 'image' : file.mimetype === 'application/pdf' ? 'pdf' : file.mimetype.startsWith('video/') ? 'video' : 'other';
-    const f = await this.prisma.file.create({
-      // v36: who uploaded it and their department.
-      data: { orgId: me.orgId, clientOrgId, path: file.path.slice(storageRoot.length + 1), kind, name: file.originalname, mimeType: file.mimetype, sizeBytes: file.size, tags: ['brand'], folder: 'brand', uploadedById: me.id, departmentId: await uploaderDepartment(this.prisma, me.id) },
-    });
+    const f = await this.createBrandFile(me, clientOrgId, file, storageRoot);
     await this.audit.log(me, 'craft.brand_file_added', 'ClientOrg', clientOrgId, undefined, { fileId: f.id, name: f.name }, ip);
     return this.brandKit(me, clientOrgId);
+  }
+
+  /** A client adds a file to their own brand kit; their Client Manager is told. */
+  async addClientBrandFile(me: Me, file: BrandUpload | undefined, storageRoot: string, ip?: string) {
+    if (me.type !== 'client' || !me.clientOrg) throw new ForbiddenException('Client accounts only');
+    const f = await this.createBrandFile(me, me.clientOrg.id, file, storageRoot);
+    await this.audit.log(me, 'craft.brand_file_added_by_client', 'ClientOrg', me.clientOrg.id, undefined, { fileId: f.id, name: f.name }, ip);
+    const org = await this.prisma.clientOrg.findUnique({ where: { id: me.clientOrg.id }, select: { amUserId: true } });
+    await this.notifications.notify(me.orgId, [org?.amUserId], { kind: 'requirement_sent', title: `${me.clientOrg.name} added ${f.name} to their brand kit`, body: 'It is in Brand kits for everyone working on this client.', link: '/team/brand-kits' });
+    return this.brandKitView(me.clientOrg.id);
+  }
+
+  private async createBrandFile(me: Me, clientOrgId: string, file: BrandUpload | undefined, storageRoot: string) {
+    if (!file) throw new BadRequestException('Choose a file to upload');
+    const kind = file.mimetype.startsWith('image/') ? 'image' : file.mimetype === 'application/pdf' ? 'pdf' : file.mimetype.startsWith('video/') ? 'video' : 'other';
+    return this.prisma.file.create({
+      // v36: who uploaded it and their department (none for a client: everyone working on that client sees it).
+      data: { orgId: me.orgId, clientOrgId, path: file.path.slice(storageRoot.length + 1), kind, name: file.originalname.slice(0, 200), mimeType: file.mimetype, sizeBytes: file.size, tags: ['brand'], folder: 'brand', uploadedById: me.id, departmentId: await uploaderDepartment(this.prisma, me.id) },
+    });
   }
 }

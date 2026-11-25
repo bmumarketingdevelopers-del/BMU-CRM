@@ -66,6 +66,11 @@ QC, design head and Founder.
   up again. It now reopens.
 - **Onboarding uploads.** Clients could only type a note on onboarding items. They can now upload the file
   itself, and the CM sees it as an "open file" link. Clients can open their own uploaded files.
+  The client's **Onboarding** page now shows their onboarding record instead (dates, Client Manager and contact, chosen
+  services and projects) and, below it, the account access they give in text (e.g. website admin login). Every other
+  checklist item is sent from **Brand kit** ("Items we need from you"): a file, a link or a note.
+- **Brand kit uploads.** Clients add their own files with **Upload brand kit**; their Client Manager is told and the
+  files show in the team's Brand kits.
 - **Client Files** listed every superseded version. It now shows one row per deliverable: the approved version,
   otherwise the latest one sent.
 - **Overdue invoices.** The Gate 3 check only counted invoices already marked "overdue". It now also counts issued
