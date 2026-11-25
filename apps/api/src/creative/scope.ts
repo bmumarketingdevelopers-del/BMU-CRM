@@ -1,16 +1,20 @@
-// v16 creative: who can see which client's creative work. Same rule as Files: leadership, department heads and
-// finance see every client; everyone else sees the clients they manage or have tasks for.
+// v16 creative: who can see which client's creative work. Same rule as Files: leadership and finance see every client;
+// a department head the clients their department works on or they are assigned to (v53); everyone else the clients they
+// manage or have tasks for.
 import { ForbiddenException } from '@nestjs/common';
 import type { Me } from '@bmu/shared';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 
 export const hasRole = (me: { roles: string[] }, ...roles: string[]) => me.roles.some((r) => roles.includes(r));
 export const isLeadership = (me: { roles: string[] }) => hasRole(me, 'founder', 'admin', 'am_lead');
 
-/** Client ids a team member works on ('all' for leadership, department heads and finance). */
+/** Client ids a team member works on ('all' for leadership and finance). */
 export async function clientScope(prisma: PrismaService, me: Me): Promise<'all' | string[]> {
   if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
-  if (isLeadership(me) || hasRole(me, 'department_head', 'finance')) return 'all';
+  if (isLeadership(me) || hasRole(me, 'finance')) return 'all';
+  const head = await headScope(prisma, me);
+  if (head) return head.clientIds;
   const [clients, engs, tasks] = await Promise.all([
     prisma.clientOrg.findMany({ where: { orgId: me.orgId, amUserId: me.id }, select: { id: true } }),
     prisma.engagement.findMany({ where: { orgId: me.orgId, amId: me.id }, select: { clientOrgId: true } }),

@@ -6,7 +6,7 @@ import { addWorkingDays, deliverApprovalModeLabels, fileKindFromMime, type Deliv
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { isLeadership } from '../engagements/engagement-access.js';
+import { headScope, isLeadership } from '../engagements/engagement-access.js';
 import { approvalStatus, asApprovalMode, clientDecidersOf, pendingUserIds, planRound } from './approval-policy.js';
 
 export type ClientUpload = { path: string; originalname: string; mimetype: string; size: number };
@@ -29,7 +29,7 @@ export class DeliverApprovalsService {
     const c = await this.prisma.clientOrg.findFirst({ where: { id: clientOrgId, orgId: me.orgId, deletedAt: null } });
     if (!c) throw new NotFoundException('Client not found');
     const canEdit = isLeadership(me) || c.amUserId === me.id;
-    const canSee = canEdit || me.roles.some((r) => ['department_head', 'strategist', 'finance'].includes(r));
+    const canSee = canEdit || me.roles.some((r) => ['strategist', 'finance'].includes(r)) || !!(await headScope(this.prisma, me))?.hasClient(c.id);
     if (!canSee) throw new NotFoundException('Client not found');
     return { c, canEdit };
   }

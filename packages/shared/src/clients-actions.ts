@@ -24,7 +24,7 @@ export const CLIENTS_OFFBOARD_ROLES = ["founder", "admin", "am_lead"] as const;
 /** add_engagement: CM (propose), Sales Manager, Admin. */
 export const CLIENTS_ENGAGEMENT_ROLES = ["founder", "admin", "am_lead", "sales_manager", "account_manager"] as const;
 /** People whose list of clients shows everyone. */
-export const CLIENTS_SEE_ALL_ROLES = ["founder", "admin", "am_lead", "finance", "department_head", "sales_manager"] as const;
+export const CLIENTS_SEE_ALL_ROLES = ["founder", "admin", "am_lead", "finance", "sales_manager"] as const;
 
 type Who = { type?: string; roles: string[] };
 const staff = (me: Who) => me.type !== "client" && me.type !== "creator";

@@ -21,12 +21,12 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { canReadCommand, canReadFinance, seesAllDepartments } from '../insights/access.js';
 import { OpsExploreService } from '../ops-analytics/explore.service.js';
 import { seesAllClients } from '../clients-actions/clients-access.js';
-import { visibleEngagementWhere } from '../engagements/engagement-access.js';
+import { headScope, visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { isCustomEntity } from '../customise/custom-fields.service.js';
 
 const OPEN_TASK = ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'] as const;
 const OPEN_REQUEST = ['received', 'scope_check', 'in_scope', 'quoted', 'approved', 'paid', 'in_progress', 'rescheduled'] as const;
-const REQUEST_LEADERS = ['founder', 'admin', 'am_lead', 'finance', 'department_head'];
+const REQUEST_LEADERS = ['founder', 'admin', 'am_lead', 'finance'];
 const DAY = 86_400_000;
 
 const day = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
@@ -95,18 +95,19 @@ export class DashboardDataService {
     const select = { customFields: true } as const;
     const take = 5000;
     let rows: { customFields: unknown }[];
+    const head = await headScope(this.prisma, me);
     switch (entity as CustomFieldEntity) {
       case 'lead':
         rows = await this.prisma.lead.findMany({ where: { AND: [{ orgId, deletedAt: null, archivedAt: null }, this.leadScope(me), scope === 'open' ? { stage: { notIn: ['won', 'lost'] } } : {}] }, select, take });
         break;
       case 'client':
-        rows = await this.prisma.clientOrg.findMany({ where: { orgId, deletedAt: null, ...(scope === 'open' ? { archivedAt: null } : {}), ...(seesAllClients(me) ? {} : { amUserId: me.id }) }, select, take });
+        rows = await this.prisma.clientOrg.findMany({ where: { orgId, deletedAt: null, ...(scope === 'open' ? { archivedAt: null } : {}), ...(seesAllClients(me) ? {} : head ? { id: { in: head.clientIds } } : { amUserId: me.id }) }, select, take });
         break;
       case 'engagement':
         rows = await this.prisma.engagement.findMany({ where: { AND: [await visibleEngagementWhere(this.prisma, me), scope === 'open' ? { status: { not: 'closed' }, archivedAt: null } : {}] }, select, take });
         break;
       case 'request':
-        rows = await this.prisma.request.findMany({ where: { AND: [{ orgId }, this.requestScope(me), scope === 'open' ? { status: { in: [...OPEN_REQUEST] } } : {}] }, select, take });
+        rows = await this.prisma.request.findMany({ where: { AND: [{ orgId }, await this.requestScope(me), scope === 'open' ? { status: { in: [...OPEN_REQUEST] } } : {}] }, select, take });
         break;
       default:
         rows = await this.prisma.creator.findMany({ where: { orgId }, select, take });
@@ -158,8 +159,10 @@ export class DashboardDataService {
     return { ownerId: me.id };
   }
 
-  private requestScope(me: Me): Prisma.RequestWhereInput {
+  private async requestScope(me: Me): Promise<Prisma.RequestWhereInput> {
     if (me.roles.some((r) => REQUEST_LEADERS.includes(r))) return {};
+    const head = await headScope(this.prisma, me);
+    if (head) return { engagementId: { in: head.engagementIds } };
     if (me.roles.includes('account_manager')) return { OR: [{ assigneeId: me.id }, { engagement: { amId: me.id } }] };
     return { assigneeId: me.id };
   }
@@ -204,7 +207,7 @@ export class DashboardDataService {
       case 'open_requests':
       case 'late_requests': {
         const where: Prisma.RequestWhereInput = {
-          AND: [{ orgId, status: { in: [...OPEN_REQUEST] } }, this.requestScope(me), source === 'late_requests' ? { slaDue: { lt: now }, firstReplyAt: null } : {}],
+          AND: [{ orgId, status: { in: [...OPEN_REQUEST] } }, await this.requestScope(me), source === 'late_requests' ? { slaDue: { lt: now }, firstReplyAt: null } : {}],
         };
         const [rows, total] = await Promise.all([
           this.prisma.request.findMany({ where, select: { id: true, type: true, description: true, slaDue: true, firstReplyAt: true, engagement: { select: { clientOrg: { select: { name: true } } } } }, orderBy: [{ slaDue: { sort: 'asc', nulls: 'last' } }], take: limit }),

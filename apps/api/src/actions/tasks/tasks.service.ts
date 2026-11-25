@@ -38,6 +38,7 @@ import type { Prisma } from '../../generated/prisma/client.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { NotificationsService } from '../../notifications/notifications.service.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { headScope } from '../../engagements/engagement-access.js';
 import { calendarFor } from '../../production/generate.js';
 import { ApprovalsService } from '../approvals.service.js';
 import { DAY_MS, dbDay, hasRole, isLeader, OPEN_TASK, parseDue, PeopleDirectory, ymd } from '../people.js';
@@ -387,7 +388,10 @@ export class TasksActionsService implements OnModuleInit {
     const manager = hasRole(me, ...MANAGER_ROLES);
     const live = ['onboarding', 'blocked', 'planning', 'awaiting_plan_approval', 'in_production', 'in_review', 'awaiting_final_payment', 'active_retainer', 'paused'] as const;
     const engWhere: Prisma.EngagementWhereInput = { orgId: me.orgId, deletedAt: null, archivedAt: null, status: { in: [...live] } };
-    if (!c.leader && !hasRole(me, 'department_head')) {
+    const head = await headScope(this.prisma, me);
+    // AND, so the engagement asked for (added to OR below) stays inside what the head may see.
+    if (head) engWhere.AND = [{ OR: [{ id: { in: head.engagementIds } }, { id: { in: [...c.am, ...c.strat] } }] }];
+    else if (!c.leader) {
       const ids = [...c.am, ...c.strat];
       engWhere.OR = [{ amId: me.id }, { id: { in: ids } }];
       if (!manager) engWhere.OR.push({ id: { in: (await this.prisma.task.findMany({ where: { ownerId: me.id, engagementId: { not: null } }, select: { engagementId: true }, distinct: ['engagementId'] })).map((t) => t.engagementId!) } });
@@ -401,7 +405,7 @@ export class TasksActionsService implements OnModuleInit {
       this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } }),
     ]);
     // Visibility already checked above; filter engagements by engagementId param only if visible.
-    const visibleEngs = engagementId && !c.leader && !hasRole(me, 'department_head') && !c.am.has(engagementId) && !c.strat.has(engagementId) ? engs.filter((e) => e.id !== engagementId || e.amId === me.id) : engs;
+    const visibleEngs = engagementId && !c.leader && !head && !c.am.has(engagementId) && !c.strat.has(engagementId) ? engs.filter((e) => e.id !== engagementId || e.amId === me.id) : engs;
     const addOns = await this.prisma.request.findMany({ where: { engagementId: { in: visibleEngs.map((e) => e.id) }, type: 'new_scope', status: { in: ADDON_OK as never[] } }, select: { id: true, engagementId: true, description: true } });
     const latest = templates.filter((t, i) => templates.findIndex((x) => x.departmentId === t.departmentId && x.name === t.name) === i);
     const pods = await this.prisma.clientPod.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { clientIds: true, producerIds: true, strategistUserId: true, amUserId: true } });
@@ -442,7 +446,9 @@ export class TasksActionsService implements OnModuleInit {
     if (!e) throw new NotFoundException('Engagement not found');
     if (e.archivedAt) throw new BadRequestException('That engagement is archived');
     const me = c.me;
-    if (!c.leader && !hasRole(me, 'department_head')) {
+    const head = await headScope(this.prisma, me);
+    if (head && !head.hasEngagement(e.id) && !c.am.has(e.id) && !c.strat.has(e.id)) throw new ForbiddenException('You can only add tasks to projects your department works on');
+    if (!c.leader && !head) {
       const mine = e.amId === me.id || c.am.has(e.id) || c.strat.has(e.id);
       if (hasRole(me, 'account_manager', 'strategist') && !mine) throw new ForbiddenException("You can only add tasks to your own clients' work");
       if (!hasRole(me, ...MANAGER_ROLES) && !mine) {

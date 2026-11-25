@@ -18,6 +18,7 @@ import {
   type ContentWeekView,
 } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { assertCommand, assertMoney, canSeeMoney, canWriteFinance, isDepartmentView, seesAllDepartments } from './access.js';
 import { DAY, daysBetween, dayLabel, monthKey, monthLabel, startOfDay, startOfFy, startOfMonth, startOfQuarter, startOfWeek } from './ist.js';
 import { isBillable, loadLedger, revenueBucket, type LedgerInvoice } from './ledger.js';
@@ -515,7 +516,9 @@ export class InsightsService {
 
   async clientHealth(me: Me): Promise<ClientHealthRow[]> {
     assertCommand(me);
-    return this.health(me.orgId);
+    const head = await headScope(this.prisma, me);
+    const rows = await this.health(me.orgId);
+    return head ? rows.filter((r) => head.hasClient(r.id)) : rows;
   }
 
   /** Score 0–100 per client: starts at 100, loses points for each problem, with the reasons spelled out. */

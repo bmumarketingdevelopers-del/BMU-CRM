@@ -22,6 +22,7 @@ import { parse } from '../common/zod.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { ClientIp, CurrentUser } from '../common/decorators.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { generateProductionTasks } from '../production/generate.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { approvalStatus, pendingUserIds, planRound } from '../deliver/approval-policy.js';
@@ -328,8 +329,11 @@ export class ClientsController {
   @Get()
   async list(@CurrentUser() me: Me): Promise<ClientRow[]> {
     let where: Prisma.ClientOrgWhereInput = { orgId: me.orgId, deletedAt: null };
-    if (me.roles.some((r) => ['founder', 'admin', 'am_lead', 'finance', 'department_head'].includes(r))) {
+    const head = await headScope(this.prisma, me);
+    if (me.roles.some((r) => ['founder', 'admin', 'am_lead', 'finance'].includes(r))) {
       // all clients
+    } else if (head) {
+      where = { ...where, id: { in: head.clientIds } };
     } else if (me.roles.includes('account_manager')) {
       where = { ...where, amUserId: me.id };
     } else if (me.roles.includes('strategist')) {

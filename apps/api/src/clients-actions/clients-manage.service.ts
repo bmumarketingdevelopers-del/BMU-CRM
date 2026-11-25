@@ -45,6 +45,7 @@ import { priceList } from '../catalogue/service-groups.js';
 import { clientForServices, clientServiceRows, loadClientServiceRow, setClientServicesTx } from './client-services.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { assertStaff, contactOf, hasHandoverAccess, isAdmin, isClientLead, loadClient, runsClient, seesAllClients } from './clients-access.js';
 import { istDate } from '../flows/flow-util.js';
 import { ClientsCreateService } from './clients-create.service.js';
@@ -103,7 +104,9 @@ export class ClientsManageService implements OnModuleInit {
   async list(me: Me, q: ClientsListQuery): Promise<ClientsListRow[]> {
     assertStaff(me);
     let where: Prisma.ClientOrgWhereInput = { orgId: me.orgId, deletedAt: null };
-    if (!seesAllClients(me)) {
+    const head = seesAllClients(me) ? null : await headScope(this.prisma, me);
+    if (head) where = { ...where, id: { in: head.clientIds } };
+    else if (!seesAllClients(me)) {
       if (!hasRole(me, 'account_manager', 'strategist')) throw new ForbiddenException("You don't have access to the client list");
       const handover = await this.prisma.assignment.findMany({ where: { orgId: me.orgId, targetType: 'client_am', fromUserId: me.id, readAccessUntil: { gt: new Date() } }, select: { targetId: true } });
       if (hasRole(me, 'account_manager')) where = { ...where, OR: [{ amUserId: me.id }, { id: { in: handover.map((h) => h.targetId) } }] };
@@ -181,7 +184,8 @@ export class ClientsManageService implements OnModuleInit {
     if (rows.length !== ids.length) throw new NotFoundException('One of the clients was not found');
     if (input.action === 'tag') {
       if (!input.tag) throw new BadRequestException('Type the tag');
-      for (const c of rows) if (!runsClient(me, c) && !seesAllClients(me)) throw new ForbiddenException(`You can't tag ${c.name}`);
+      const head = await headScope(this.prisma, me);
+      for (const c of rows) if (!runsClient(me, c) && !seesAllClients(me) && !head?.hasClient(c.id)) throw new ForbiddenException(`You can't tag ${c.name}`);
       const tag = await this.records.addTag(me, 'client', ids, input.tag);
       for (const c of rows) await this.audit.log(me, 'record.tagged', 'ClientOrg', c.id, null, { tag: tag.name }, ip);
       const undo = null;

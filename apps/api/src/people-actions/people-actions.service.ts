@@ -46,6 +46,7 @@ import { UndoService } from '../actions/undo.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { appUrl, EmailService } from '../service/email.service.js';
 import { PeopleService } from '../team-flows/people.service.js';
 import { OffboardingService } from './offboarding.service.js';
@@ -189,6 +190,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
     staffOnly(me);
     const can = peopleCan(me);
     if (!Object.values(can).some(Boolean)) throw new ForbiddenException("You don't have access to people actions");
+    const head = await headScope(this.prisma, me);
     const [roles, branches, departments, staff, sops, flows, qc, clients, pods, self] = await Promise.all([
       this.prisma.role.findMany({ where: { orgId: me.orgId, NOT: { baseRole: { startsWith: 'client_' } } }, include: { permissions: true }, orderBy: [{ isCustom: 'asc' }, { name: 'asc' }] }),
       this.prisma.branch.findMany({ where: { orgId: me.orgId, deletedAt: null }, orderBy: { createdAt: 'asc' } }),
@@ -197,7 +199,7 @@ export class PeopleActionsService implements OnModuleInit, OnModuleDestroy {
       this.prisma.sOP.findMany({ where: { orgId: me.orgId, status: 'published' }, select: { id: true, title: true, departmentId: true }, orderBy: { title: 'asc' } }),
       this.prisma.flowTemplate.findMany({ where: { orgId: me.orgId, active: true }, include: { department: { select: { name: true } } }, orderBy: [{ name: 'asc' }, { version: 'desc' }] }),
       this.prisma.checklistTemplate.findMany({ where: { orgId: me.orgId, kind: 'qc' }, orderBy: [{ name: 'asc' }, { version: 'desc' }] }),
-      this.prisma.clientOrg.findMany({ where: { orgId: me.orgId, deletedAt: null, archivedAt: null }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
+      this.prisma.clientOrg.findMany({ where: { orgId: me.orgId, deletedAt: null, archivedAt: null, ...(head ? { id: { in: head.clientIds } } : {}) }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       this.prisma.clientPod.findMany({ where: { orgId: me.orgId, deletedAt: null }, select: { id: true, clientIds: true } }),
       this.prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } }),
     ]);

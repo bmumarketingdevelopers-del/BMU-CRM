@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { personRoleTitle, formatINR, searchNormalise, type Me, type TeamSearchItem, type TeamSearchKind, type TeamSearchResult } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
-import { isLeadership, visibleEngagementWhere } from '../engagements/engagement-access.js';
+import { headScope, isLeadership, visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { FlagsService } from '../platform/flags.service.js';
 import { SearchIndexService, type IndexedKind } from '../platform/search-index.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -138,9 +138,11 @@ export class SearchService {
 
   private async clients(me: Me, like: Prisma.StringFilter, h: Hits): Promise<TeamSearchItem[]> {
     let where: Prisma.ClientOrgWhereInput = { orgId: me.orgId, deletedAt: null, OR: this.or<Prisma.ClientOrgWhereInput>([{ name: like }], h) };
-    if (hasRole(me, 'founder', 'admin', 'am_lead', 'finance', 'department_head')) {
+    const head = await headScope(this.prisma, me);
+    if (hasRole(me, 'founder', 'admin', 'am_lead', 'finance')) {
       // every client
-    } else if (hasRole(me, 'account_manager')) where = { ...where, amUserId: me.id };
+    } else if (head) where = { AND: [where, { id: { in: head.clientIds } }] };
+    else if (hasRole(me, 'account_manager')) where = { ...where, amUserId: me.id };
     else if (hasRole(me, 'strategist')) {
       const self = await this.prisma.user.findUniqueOrThrow({ where: { id: me.id }, select: { teamId: true } });
       where = { ...where, am: { teamId: self.teamId ?? '__none__' } };

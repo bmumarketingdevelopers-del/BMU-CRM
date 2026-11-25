@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { formatINR, GATES, type FlowEdge, type FlowGateStrip, type FlowMap, type FlowNode, type FlowPulse, type FlowStageKey, type Me } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
-import { visibleEngagementWhere } from '../engagements/engagement-access.js';
+import { headScope, visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { GATE_KEYS, loadSnapshot, STAGE_META, type EngagementFacts, type GateKey, type Snapshot } from './flow-snapshot.js';
 import { assertRoles, avg, DAY_MS, daysSince, inWindow, istDate, MAP_ROLES, pct, PULSE_ROLES, windows, type Window } from './flow-util.js';
 
@@ -22,7 +22,9 @@ export class FlowsService {
   async map(me: Me, from?: string, to?: string): Promise<FlowMap> {
     assertRoles(me, MAP_ROLES, 'business flow map');
     const { cur, prev } = windows(from, to);
-    const snap = await loadSnapshot(this.prisma, me.orgId);
+    // A Department Head's map has only the projects they may see.
+    const head = await headScope(this.prisma, me);
+    const snap = await loadSnapshot(this.prisma, me.orgId, head ? { engagementIds: head.engagementIds } : {});
     const edges = this.edges(snap, cur, prev);
     const nodes = ORDER.map((key) => this.node(snap, key, cur));
     const health = {

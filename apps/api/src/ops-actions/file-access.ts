@@ -11,6 +11,7 @@
 import type { Me } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 
 const ALL_FILES = ['founder', 'admin', 'am_lead', 'finance'];
 /** v38: who also sees files sent in discussions and on tasks they are not part of. */
@@ -66,9 +67,10 @@ async function sentFiles(prisma: PrismaService, me: Me, projectClients: 'all' | 
 export async function fileScope(prisma: PrismaService, me: Me): Promise<FileScope> {
   if (me.type !== 'staff') return { all: false, cmClients: [], headDepts: [], memberDept: null, workClients: [], headClients: [], sent: [], allSent: false };
   const allSent = has(me, SENT_FILES_ALL);
-  // Project threads are open to leadership and Department Heads (as in Discussions).
-  const allProjects = has(me, ['founder', 'admin', 'am_lead', 'department_head']);
-  if (has(me, ALL_FILES)) return { all: true, allSent, sent: allSent ? [] : await sentFiles(prisma, me, allProjects ? 'all' : []) };
+  // Project threads are open to leadership; a Department Head's on the clients they may see (as in Discussions).
+  const allProjects = has(me, ['founder', 'admin', 'am_lead']);
+  const head = await headScope(prisma, me);
+  if (has(me, ALL_FILES)) return { all: true, allSent, sent: allSent ? [] : await sentFiles(prisma, me, allProjects ? 'all' : (head?.clientIds ?? [])) };
   const self = await prisma.user.findUnique({ where: { id: me.id }, select: { departmentId: true } });
   const [managed, engs, myTasks] = await Promise.all([
     prisma.clientOrg.findMany({ where: { orgId: me.orgId, amUserId: me.id }, select: { id: true } }),
@@ -94,7 +96,7 @@ export async function fileScope(prisma: PrismaService, me: Me): Promise<FileScop
     : [];
   const mine = engIds.length ? await prisma.engagement.findMany({ where: { id: { in: engIds } }, select: { clientOrgId: true } }) : [];
   const workClients = [...new Set([...mine.map((e) => e.clientOrgId), ...deptEngs.map((e) => e.clientOrgId), ...cmClients])];
-  const sent = await sentFiles(prisma, me, allProjects ? 'all' : [...new Set([...mine.map((e) => e.clientOrgId), ...cmClients])]);
+  const sent = await sentFiles(prisma, me, allProjects ? 'all' : (head?.clientIds ?? [...new Set([...mine.map((e) => e.clientOrgId), ...cmClients])]));
   return { all: false, cmClients, headDepts, memberDept: self?.departmentId ?? null, workClients, headClients: [...new Set(deptEngs.map((e) => e.clientOrgId))], sent, allSent };
 }
 

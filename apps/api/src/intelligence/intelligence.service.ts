@@ -5,6 +5,7 @@ import type { ForecastReason, ForecastView, IntelligenceOverview, Me } from '@bm
 import type { Forecast } from '../generated/prisma/client.js';
 import { assertCommand, canSeeMoney } from '../insights/access.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { headScope } from '../engagements/engagement-access.js';
 import { AlertsService } from './alerts.service.js';
 import { ForecastService } from './forecast.service.js';
 import { GoalsService } from './goals.service.js';
@@ -51,7 +52,8 @@ export class IntelligenceService {
       await this.refresh(me.orgId);
       rows = await this.prisma.forecast.findMany({ where: { orgId: me.orgId } });
     }
-    const of = (k: string) => rows.filter((r) => r.kind === k);
+    const head = await headScope(this.prisma, me);
+    const of = (k: string) => rows.filter((r) => r.kind === k && (!head || k !== 'churn' || head.hasClient(r.subjectId)));
     const [clients, leads, tasks] = await Promise.all([
       this.prisma.clientOrg.findMany({ where: { id: { in: of('churn').map((r) => r.subjectId) } }, select: { id: true, name: true } }),
       this.prisma.lead.findMany({ where: { id: { in: of('win').map((r) => r.subjectId) } }, select: { id: true, contact: true } }),
