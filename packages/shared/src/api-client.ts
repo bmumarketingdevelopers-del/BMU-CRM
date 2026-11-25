@@ -5,7 +5,7 @@ import type { InviteUser, OrgTree, OrgUser, RoleWithPermissions, UpdateUser } fr
 import type { BundleInput, BundleView, IndustryInput, IndustryView, PriceList, ServiceGroupInput, ServiceGroupView, SubServiceInput } from "./service-groups.js";
 import type { CreateProposal, PricedAddOn, PricedBundle, PricedService, ProposalView } from "./proposals.js";
 import type { ClientInvoice, ClientOverview, ClientRow } from "./client.js";
-import type { ClientOnboarding, ClientPlanView, EngagementDetail, EngagementRow, PlanContent } from "./delivery.js";
+import type { ClientOnboarding, ClientOnboardingDetails, ClientPlanView, EngagementDetail, EngagementRow, PlanContent } from "./delivery.js";
 import type {
   ClientDeliverableDetail,
   DeliverableDetail,
@@ -350,6 +350,7 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
       overview: () => request<ClientOverview>("/client/overview"),
       invoices: () => request<ClientInvoice[]>("/client/invoices"),
       onboarding: () => request<ClientOnboarding>("/client/onboarding"),
+      onboardingDetails: () => request<ClientOnboardingDetails>("/client/onboarding/details"),
       submitRequirement: (id: string, note: string) => post<ClientOnboarding>(`/client/requirements/${id}/submit`, { note }),
       plans: () => request<ClientPlanView[]>("/client/plans"),
       approvePlan: (planId: string) => post<ClientPlanView[]>(`/client/plans/${planId}/approve`),

@@ -4,8 +4,10 @@ import {
   clientSubmitRequirementSchema,
   GATES,
   planContentSchema,
+  SERVICE_GROUP_KEY_PREFIX,
   type ClientInvoice,
   type ClientOnboarding,
+  type ClientOnboardingDetails,
   type ClientOverview,
   type ClientPlanView,
   type ClientRow,
@@ -13,6 +15,8 @@ import {
   type Me,
 } from '@bmu/shared';
 import { AuditService } from '../audit/audit.service.js';
+import { clientServiceRows } from '../clients-actions/client-services.js';
+import { contactOf } from '../clients-actions/clients-access.js';
 import { engagementInclude, toPlanView, toRequirement } from '../engagements/engagements.service.js';
 import { parse } from '../common/zod.js';
 import type { Prisma } from '../generated/prisma/client.js';
@@ -89,6 +93,7 @@ export class ClientPortalController {
         currentGate: e.currentGate,
         track: trackFor(e.currentGate, e.status),
         requirementsPending: e.cycles[0]?.requirements.filter((r) => r.status !== 'received').length ?? 0,
+        accessPending: e.cycles[0]?.requirements.filter((r) => r.status !== 'received' && r.type === 'access').length ?? 0,
       })),
       invoicesDue: invoices.map(toInvoice),
     };
@@ -117,6 +122,54 @@ export class ClientPortalController {
         serviceName: e.service.name,
         rcdAt: e.cycles[0]?.rcdAt?.toISOString() ?? null,
         requirements: (e.cycles[0]?.requirements ?? []).map(toRequirement),
+      })),
+    };
+  }
+
+  /** The client's Onboarding page: joining date, Client Manager, chosen services and projects (no prices or internal notes). */
+  @Get('onboarding/details')
+  async onboardingDetails(@CurrentUser() me: Me): Promise<ClientOnboardingDetails> {
+    const clientOrgId = this.clientOrgId(me);
+    const org = await this.prisma.clientOrg.findUniqueOrThrow({
+      where: { id: clientOrgId },
+      include: {
+        am: { select: { id: true, name: true, email: true, phone: true } },
+        brands: { where: { deletedAt: null }, select: { name: true }, orderBy: { name: 'asc' } },
+        engagements: {
+          where: { deletedAt: null },
+          include: { service: { select: { key: true, name: true } }, am: { select: { id: true, name: true } }, cycles: { where: { rcdAt: { not: null } }, select: { rcdAt: true }, orderBy: { rcdAt: 'asc' }, take: 1 } },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+    const [services, subs, lead] = await Promise.all([
+      clientServiceRows(this.prisma, me.orgId, clientOrgId),
+      this.prisma.subService.findMany({ where: { orgId: me.orgId, id: { in: org.engagements.flatMap((e) => e.subServiceIds) } }, select: { id: true, name: true } }),
+      // Proposal clients keep their contact on the lead they came from.
+      !org.primaryContact && org.leadId ? this.prisma.lead.findUnique({ where: { id: org.leadId }, select: { contact: true } }) : null,
+    ]);
+    const subName = new Map(subs.map((s) => [s.id, s.name]));
+    const started = org.engagements.flatMap((e) => e.cycles.map((c) => c.rcdAt!.getTime()));
+    return {
+      company: { name: org.name, industry: org.industry, website: org.website, brands: org.brands.map((b) => b.name), contact: contactOf({ primaryContact: org.primaryContact ?? lead?.contact }) },
+      status: org.clientStatus,
+      onboardedAt: (org.onboardingDate ?? org.tenureStart ?? org.createdAt).toISOString(),
+      accountCreatedAt: org.createdAt.toISOString(),
+      firstProjectStartedAt: started.length ? new Date(Math.min(...started)).toISOString() : null,
+      manager: org.am && { name: org.am.name, email: org.am.email, phone: org.am.phone },
+      services: services.filter((s) => s.status !== 'ended').map((s) => ({ id: s.id, name: s.name, group: s.service, description: s.description, plan: s.plan, billing: s.billing, status: s.status, startDate: s.startDate })),
+      projects: org.engagements.map((e) => ({
+        id: e.id,
+        name: e.service.name,
+        includes: e.subServiceIds.map((id) => subName.get(id)).filter((n): n is string => !!n),
+        // Service groups have no price-list plan of their own.
+        plan: e.service.key.startsWith(SERVICE_GROUP_KEY_PREFIX) ? null : e.tier,
+        billingType: e.billingType,
+        status: e.status,
+        addedAt: e.createdAt.toISOString(),
+        startedAt: e.cycles[0]?.rcdAt?.toISOString() ?? null,
+        endDate: e.endDate?.toISOString() ?? null,
+        manager: e.am && e.am.id !== org.am?.id ? e.am.name : null,
       })),
     };
   }

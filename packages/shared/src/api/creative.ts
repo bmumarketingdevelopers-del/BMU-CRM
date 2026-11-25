@@ -66,6 +66,12 @@ export const creativeApi = (t: Transport) => ({
   creative: {
     brandKits: () => t.get<BrandKitListItem[]>("/creative/brand-kits"),
     clientBrandKit: () => t.get<CraftBrandKitView>("/client/brand-kit"),
+    /** The client adds a file to their own brand kit. */
+    uploadClientBrandFile: (file: File) => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      return t.request<CraftBrandKitView>("/client/brand-kit/files", { method: "POST", body: form });
+    },
     settings: () => t.get<CreativeSettingsView>("/creative/settings"),
     addChannel: (body: ContentChannelInput) => t.post<CreativeSettingsView>("/creative/channels", body),
     removeChannel: (id: string) => t.del<CreativeSettingsView>(`/creative/channels/${id}`),

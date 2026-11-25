@@ -1,7 +1,10 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import type { Response } from 'express';
 import type { Me } from '@bmu/shared';
 import { ClientIp, CurrentUser, Public } from '../common/decorators.js';
+import { brandUpload } from '../craft/craft.controller.js';
+import type { BrandUpload } from '../craft/craft.service.js';
+import { storageRoot } from '../production/production.controller.js';
 import { sendStoredFile } from '../storage/file-store.js';
 import { CreativeService } from './creative.service.js';
 import { ProofingService } from './proofing.service.js';
@@ -74,6 +77,12 @@ export class CreativeClientController {
   @Get('client/brand-kit')
   brandKit(@CurrentUser() me: Me) {
     return this.creative.clientBrandKit(me);
+  }
+
+  @Post('client/brand-kit/files')
+  @UseInterceptors(brandUpload)
+  addBrandFile(@CurrentUser() me: Me, @UploadedFile() file: BrandUpload | undefined, @ClientIp() ip?: string) {
+    return this.creative.addClientBrandFile(me, file, storageRoot(), ip);
   }
 
   @Get('client/post-results')

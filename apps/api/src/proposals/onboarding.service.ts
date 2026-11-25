@@ -171,8 +171,8 @@ export class OnboardingService {
       await this.notifications.notify(r.orgId, [r.ownerId], {
         kind: r.renewal ? 'renewal_confirmed' : 'welcome',
         title: r.renewal ? 'Thank you for renewing with BMU' : 'Welcome to BMU! Your account is ready',
-        body: r.renewal ? 'Your services continue without a break.' : `${r.amName ?? 'Your client manager'} will help you get started. First step: share the items on your onboarding checklist.`,
-        link: r.renewal ? '/client' : '/client/onboarding',
+        body: r.renewal ? 'Your services continue without a break.' : `${r.amName ?? 'Your client manager'} will help you get started. First step: send us the items listed in Brand kit.`,
+        link: r.renewal ? '/client' : '/client/brand-kit',
       });
       await this.notifications.notify(r.orgId, [r.amId], {
         kind: r.renewal ? 'renewal_paid' : 'client_assigned',

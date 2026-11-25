@@ -183,6 +183,19 @@ describe('one-time project: onboarding → plan → production → review → fi
     expect((await notes('owner')).some((n) => n.kind === 'project_started')).toBe(true);
   });
 
+  it('the onboarding page: dates, Client Manager and contact, chosen projects; no prices or internal notes; clients only', async () => {
+    const r = await http().get('/client/onboarding/details').set(as('owner')).expect(200);
+    const p = r.body.projects.find((x: { id: string }) => x.id === projectId);
+    expect(p.startedAt).toBeTruthy();
+    expect(r.body.firstProjectStartedAt).toBeTruthy();
+    expect(Date.parse(r.body.onboardedAt)).not.toBeNaN();
+    expect(r.body.manager).toHaveProperty('email');
+    expect(JSON.stringify(r.body)).not.toMatch(/paise|importantNotes|requirements/i);
+    const other = (await http().get('/client/onboarding/details').set({ Authorization: `Bearer ${otherClientToken}` }).expect(200)).body;
+    expect(other.projects.some((x: { id: string }) => x.id === projectId)).toBe(false);
+    await http().get('/client/onboarding/details').set(as('am')).expect(403);
+  });
+
   it('plan: strategist drafts and submits, CM sends, client asks for changes (planning reopens)', async () => {
     const content = {
       objectives: 'Launch identity',

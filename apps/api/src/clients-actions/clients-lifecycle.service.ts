@@ -391,7 +391,7 @@ export class ClientsLifecycleService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.clientServiceQuote.update({ where: { id: q.id }, data: { status: 'applied', appliedAt: new Date(), resultEngagementId: engagementId } });
     const body = q.kind === 'add_service' ? `${service.name} starts with its onboarding checklist (Gate 1).` : `${service.name} is now on ${q.tier}${q.effective === 'next_cycle' ? ' from the next cycle' : ''}.`;
     await this.notifications.notify(q.orgId, [c.amUserId], { kind: 'service_added', title: `${c.name}: ${q.kind === 'add_service' ? `${service.name} added` : `tier changed to ${q.tier}`}`, body, link: q.kind === 'add_service' ? `/team/projects/${engagementId}` : `/team/clients/${c.id}?tab=services` });
-    await this.notifications.notify(q.orgId, await this.owners(c.id), { kind: 'service_added', title: q.kind === 'add_service' ? `${service.name} is confirmed` : `${service.name} moves to ${q.tier}`, body: q.kind === 'add_service' ? 'Share the items on your onboarding checklist to get started.' : body, link: q.kind === 'add_service' ? '/client/onboarding' : '/client' });
+    await this.notifications.notify(q.orgId, await this.owners(c.id), { kind: 'service_added', title: q.kind === 'add_service' ? `${service.name} is confirmed` : `${service.name} moves to ${q.tier}`, body: q.kind === 'add_service' ? 'Send us the items listed in Brand kit to get started.' : body, link: q.kind === 'add_service' ? '/client/brand-kit' : '/client' });
   }
 
   // -------------------------------------------------------------------------
