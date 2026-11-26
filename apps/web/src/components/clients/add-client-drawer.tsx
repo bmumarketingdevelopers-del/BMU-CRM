@@ -7,7 +7,7 @@
  * later, and the payment (online in the app, offline confirmed by Finance, or none for a migrated client).
  */
 import { useEffect, useMemo, useState } from "react";
-import { CLIENT_STATUSES, clientServicesProblems, clientStatusLabels, clientsGateLabels, CLIENTS_GATES, formatINR, normaliseWebsite, rupeesToPaise, SERVICE_GST_STATES, SERVICE_GSTIN_RE, type ClientsCreate, type ClientsDuplicate, type ClientsFormOptions, type ClientStatus, type ClientTeamRole } from "@bmu/shared";
+import { CLIENT_STATUSES, clientServicesPlanProblems, clientServicesProblems, clientStatusLabels, clientsGateLabels, CLIENTS_GATES, formatINR, normaliseWebsite, rupeesToPaise, SERVICE_GST_STATES, SERVICE_GSTIN_RE, type ClientsCreate, type ClientsDuplicate, type ClientsFormOptions, type ClientStatus, type ClientTeamRole } from "@bmu/shared";
 import { ClientServicesPicker, emptyServices, toServicesInput, type ServicesValue } from "./client-services-picker";
 import { api } from "@/lib/api";
 import { ActionDrawer, Field, inputCls, TextArea, useDraftAutosave } from "@/components/actions/action-drawer";
@@ -166,7 +166,8 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
     if (dups.length && !dupChoice) e.dup = "Possible duplicate: choose Merge or Continue";
     // v52: the same services check as on the server; website http(s) only.
     if (!migration && opts) {
-      const problems = clientServicesProblems(toServicesInput(v.services), opts.priceList);
+      // v53: picked services start as projects, so each needs a plan (its tier). Not when merging into an existing client.
+      const problems = [...clientServicesProblems(toServicesInput(v.services), opts.priceList), ...(dupChoice?.mode === "merge" ? [] : clientServicesPlanProblems(toServicesInput(v.services), opts.priceList))];
       if (problems.length) e.services = problems[0];
     }
     if (v.website.trim() && normaliseWebsite(v.website) === null) e.website = "Enter a website like example.com (http or https only)";
@@ -388,7 +389,7 @@ export function AddClientDrawer({ open, onClose, prefill, onSaved }: NewDrawerPr
 
       <Section title="Services" hint={migration ? "Set the gate each service is at today, with a reason." : "Choose the services, then the sub services and bundles, then a plan for each."}>
         {!migration && opts && (
-          <ClientServicesPicker list={opts.priceList} value={v.services} onChange={(services) => set({ services })} problems={errors.services ? clientServicesProblems(toServicesInput(v.services), opts.priceList) : undefined} />
+          <ClientServicesPicker list={opts.priceList} value={v.services} onChange={(services) => set({ services })} problems={errors.services ? [...clientServicesProblems(toServicesInput(v.services), opts.priceList), ...(dupChoice?.mode === "merge" ? [] : clientServicesPlanProblems(toServicesInput(v.services), opts.priceList))] : undefined} />
         )}
         {v.engagements.map((l, i) => {
           const s = services.get(l.serviceId);

@@ -239,6 +239,30 @@ describe('add_client: who may add, validation and duplicates', () => {
   });
 });
 
+describe('v53: services picked when adding a client', () => {
+  it('need a plan, and start as projects at G1 with their sub-services and plan', async () => {
+    const list = (await http().get('/catalogue/price-list').set(as('lead')).expect(code(200))).body as { groups: { id: string; name: string; serviceId: string; subServices: { id: string; prices: Record<string, number | null> }[] }[] };
+    const group = list.groups.find((g) => g.subServices.some((s) => s.prices.growth != null));
+    if (!group) throw new Error('The demo price list needs a sub-service with a Growth price');
+    const sub = group.subServices.find((s) => s.prices.growth != null)!;
+    const services = { groupIds: [group.id], subServiceIds: [sub.id], bundleIds: [], plans: {} as Record<string, string> };
+
+    // No plan: refused in plain words, nothing created.
+    const noPlan = await http().post('/clients-actions').set(as('lead')).send(base('Plan Less', { services, payment: 'none' }));
+    expect(noPlan.status).toBe(400);
+    expect(noPlan.body.message).toMatch(/Choose a plan/);
+
+    const r = await create('lead', base('Picked Services', { services: { ...services, plans: { [sub.id]: 'growth' } }, payment: 'none' }));
+    expect(r.engagementIds).toHaveLength(1);
+    expect(r.message).toContain(`Started at G1: ${group.name}`);
+    const e = await prisma.engagement.findUniqueOrThrow({ where: { id: r.engagementIds[0] } });
+    expect(e).toMatchObject({ clientOrgId: r.client.id, serviceId: group.serviceId, tier: 'growth', currentGate: 'G1', status: 'onboarding', subServiceIds: [sub.id] });
+    // The Clients list now shows it as an active service.
+    const row = (await http().get('/clients-actions/list').query({ q: r.client.name }).set(as('lead')).expect(code(200))).body.find((c: { id: string }) => c.id === r.client.id);
+    expect(row.services.map((s: { serviceName: string }) => s.serviceName)).toContain(group.name);
+  });
+});
+
 describe('migrated client', () => {
   it('sets each service at its current gate with a reason, records migrated approvals and past invoices', async () => {
     const bad = await http()

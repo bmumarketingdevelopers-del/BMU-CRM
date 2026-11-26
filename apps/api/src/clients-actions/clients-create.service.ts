@@ -6,6 +6,7 @@ import {
   CLIENTS_INDUSTRIES,
   clientsAddsOwnOnly,
   clientsCanAdd,
+  clientServicesPlanProblems,
   clientServicesProblems,
   clientsCreateSchema,
   clientsDueNowPaise,
@@ -293,6 +294,42 @@ export class ClientsCreateService implements OnModuleInit {
     for (const p of input.pastInvoices) if (await this.prisma.invoice.findFirst({ where: { orgId: me.orgId, number: p.number } })) throw new BadRequestException(`Invoice number ${p.number} already exists`);
 
     const migration = input.startMode === 'migration';
+    // v53: a new client's picked services also start as projects, the same way "+ Add service" on the client page
+    // does: one project per service at G1 this month, with its ticked sub-services (a bundle's sub-services go to their
+    // own services) and the chosen plan as its tier. Without this, a new client had no projects at all.
+    const groupProjects: { name: string; serviceId: string; subServiceIds: string[]; tier: Tier; billingType: 'monthly' | 'one_time' }[] = [];
+    if (input.services && list && !merged && !migration) {
+      const planProblems = clientServicesPlanProblems(input.services, list);
+      if (planProblems.length) throw new BadRequestException(planProblems[0]);
+      const plans = input.services.plans ?? {};
+      const groupOf = new Map(list.groups.flatMap((g) => g.subServices.map((s) => [s.id, { group: g, sub: s }] as const)));
+      const picks = new Map<string, { group: (typeof list.groups)[number]; subs: Map<string, (typeof list.groups)[number]['subServices'][number]>; plans: Set<string> }>();
+      const pick = (subId: string, plan: string | undefined) => {
+        const hit = groupOf.get(subId);
+        if (!hit) return;
+        const p = picks.get(hit.group.id) ?? { group: hit.group, subs: new Map(), plans: new Set<string>() };
+        p.subs.set(subId, hit.sub);
+        if (plan) p.plans.add(plan);
+        picks.set(hit.group.id, p);
+      };
+      for (const id of input.services.subServiceIds ?? []) pick(id, plans[id] ?? undefined);
+      for (const id of input.services.bundleIds ?? []) for (const s of list.bundles.find((b) => b.id === id)?.subServiceIds ?? []) pick(s, plans[id] ?? undefined);
+      for (const p of picks.values()) {
+        const plan = p.plans.size === 1 ? [...p.plans][0] : null;
+        const subs = [...p.subs.values()];
+        groupProjects.push({
+          name: p.group.name,
+          serviceId: p.group.serviceId,
+          subServiceIds: [...p.subs.keys()],
+          // Several different plans inside one service: the project starts on Starter; the CM can change the tier.
+          tier: plan && (TIERS as readonly string[]).includes(plan) ? (plan as Tier) : 'starter',
+          billingType: subs.length && subs.every((s) => s.billing === 'one_time') ? 'one_time' : 'monthly',
+        });
+      }
+    }
+    const groupServices = groupProjects.length ? await this.prisma.service.findMany({ where: { orgId: me.orgId, id: { in: groupProjects.map((p) => p.serviceId) } } }) : [];
+    const groupReqs = new Map<string, Awaited<ReturnType<typeof requirementsFor>>>();
+    for (const s of groupServices) groupReqs.set(s.id, await requirementsFor(this.settings, me.orgId, s.key));
     const needsPayment = !migration && lines.length > 0 && input.payment !== 'none';
     const gst = input.gstin || null;
     const contact = { name: input.contactName, phone: normaliseIdentifier(input.contactPhone), email: input.contactEmail };
@@ -370,6 +407,27 @@ export class ClientsCreateService implements OnModuleInit {
           }),
         );
       }
+      // v53: the picked services as projects (see groupProjects above). Nothing is invoiced here, as with "+ Add service".
+      const groupIds: string[] = [];
+      for (const p of groupProjects) {
+        const service = groupServices.find((s) => s.id === p.serviceId);
+        if (!service) continue;
+        groupIds.push(
+          await createEngagementTx(tx, {
+            orgId: me.orgId,
+            clientOrgId: clientId,
+            service: { ...service, billingType: p.billingType },
+            tier: p.tier,
+            amId,
+            startMonth: null,
+            paymentPending: false,
+            requirements: groupReqs.get(service.id) ?? [],
+            byUserId: me.id,
+            subServiceIds: p.subServiceIds,
+            monthlyFeePaise: null,
+          }),
+        );
+      }
 
       // First invoice for the new services: paid online in the client app, or confirmed by Finance (offline).
       let invoice: { id: string; number: string; totalPaise: number } | null = null;
@@ -385,7 +443,7 @@ export class ClientsCreateService implements OnModuleInit {
       }
       const pastCount = migration ? await this.pastInvoicesTx(tx, me, clientId, input.pastInvoices) : 0;
       const invites = input.inviteNow ? await this.createInvitesTx(tx, me, clientId, input.invites, { creating: !merged }) : { created: [], pending: [] };
-      return { clientId, engagementIds, invoice, pastCount, invites };
+      return { clientId, engagementIds, groupIds, invoice, pastCount, invites };
     });
 
     const client = await this.prisma.clientOrg.findUniqueOrThrow({ where: { id: result.clientId } });
@@ -394,6 +452,10 @@ export class ClientsCreateService implements OnModuleInit {
     for (const [i, id] of result.engagementIds.entries()) {
       const l = lines[i];
       await this.audit.log(me, migration ? 'engagement.migrated' : 'engagement.created', 'Engagement', id, null, { service: l.service.name, tier: l.tier, gate: migration ? l.currentGate : 'G1', reason: migration ? (l.gateReason ?? null) : null, paymentPending: needsPayment }, ip);
+    }
+    for (const [i, id] of result.groupIds.entries()) {
+      const p = groupProjects[i];
+      await this.audit.log(me, 'engagement.created', 'Engagement', id, null, { service: p.name, tier: p.tier, gate: 'G1', subServiceIds: p.subServiceIds, source: 'client_added' }, ip);
     }
     if (result.pastCount) await this.audit.log(me, 'client.past_invoices_imported', 'ClientOrg', client.id, null, { count: result.pastCount }, ip);
     if (result.invoice) await this.serviceBilling.invoiceIssued(result.invoice.id).catch(() => 0);
@@ -429,7 +491,8 @@ export class ClientsCreateService implements OnModuleInit {
     // v33: the Founder hears about every client someone else adds (it also shows on the Weekly Review).
     const founders = await this.roleHolders(me.orgId, ['founder']);
     const finance = await this.roleHolders(me.orgId, ['finance']);
-    const services = lines.length ? `${lines.length} service${lines.length > 1 ? 's' : ''}` : 'no services yet';
+    const serviceCount = lines.length + result.groupIds.length;
+    const services = serviceCount ? `${serviceCount} service${serviceCount > 1 ? 's' : ''}` : 'no services yet';
     const link = `/team/clients/${client.id}`;
     await this.notifications.notify(me.orgId, [amId].filter((x) => x !== me.id), { kind: 'client_assigned', title: merged ? `${client.name}: details added by ${me.name}` : `New client: ${client.name} is yours`, body: [migration ? 'Existing client migrated at its current gates.' : `Added by ${me.name} with ${services}.`, input.handoverNote ? `Handover: ${input.handoverNote}` : null].filter(Boolean).join(' '), link });
     if (!merged) {
@@ -443,11 +506,11 @@ export class ClientsCreateService implements OnModuleInit {
 
     const message = merged
       ? `Details added to ${client.name}`
-      : `${client.name} added${approval ? '. Finance will confirm the payment before work starts' : result.invoice ? '. The first invoice is waiting for payment in the client app' : ''}`;
+      : `${client.name} added${approval ? '. Finance will confirm the payment before work starts' : result.invoice ? '. The first invoice is waiting for payment in the client app' : ''}${result.groupIds.length ? `. Started at G1: ${groupProjects.map((p) => p.name).join(', ')}` : ''}`;
     return {
       client: { id: client.id, name: client.name },
       merged: !!merged,
-      engagementIds: result.engagementIds,
+      engagementIds: [...result.engagementIds, ...result.groupIds],
       invoice: result.invoice,
       approval,
       invited: result.invites.created.length,
