@@ -131,6 +131,11 @@ export class QcController {
   queue(@CurrentUser() me: Me) {
     return this.production.qcQueue(me);
   }
+
+  @Get('board')
+  board(@CurrentUser() me: Me) {
+    return this.production.qcBoard(me);
+  }
 }
 
 @Controller('client/reviews')

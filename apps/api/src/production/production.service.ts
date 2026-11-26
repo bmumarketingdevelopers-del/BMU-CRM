@@ -19,6 +19,8 @@ import {
   type FileKind,
   type Me,
   type MyDayView,
+  type QcBoard,
+  type QcBoardRow,
   type QcQueueItem,
   type QcSubmit,
   type ReviewComment,
@@ -549,6 +551,82 @@ export class ProductionService {
         waitingSince: r.versions[0].createdAt.toISOString(),
       }))
       .sort((a, b) => a.waitingSince.localeCompare(b.waitingSince));
+  }
+
+  /**
+   * v50: the QC queue board. Versions waiting for QC (oldest first) plus every QC result of the last 30 days (newest
+   * first), with what the filters need: client, type, maker, reviewer and department. Same people and department
+   * limits as the queue. The page filters on the browser, so this is one call.
+   */
+  async qcBoard(me: Me): Promise<QcBoard> {
+    if (!this.canQc(me)) throw new ForbiddenException('QC reviewers only');
+    const days = 30;
+    const deliverableWhere: Prisma.DeliverableWhereInput = { orgId: me.orgId };
+    if (me.roles.includes('department_head') && !isLeadership(me) && !me.roles.includes('qc_reviewer')) {
+      deliverableWhere.departmentId = (await this.myDepartment(me)) ?? '__none__';
+    }
+    const deliverableInclude = {
+      cycle: { include: { engagement: { include: { clientOrg: { select: { id: true, name: true } }, service: { select: { name: true } } } } } },
+      versions: { orderBy: { number: 'desc' as const }, take: 1, select: { id: true, number: true, uploadedById: true, createdAt: true } },
+    };
+    const [waiting, results] = await Promise.all([
+      this.prisma.deliverable.findMany({ where: { ...deliverableWhere, status: 'in_qc' }, include: deliverableInclude }),
+      this.prisma.qCResult.findMany({
+        where: { orgId: me.orgId, createdAt: { gte: new Date(Date.now() - days * 86_400_000) }, version: { deliverable: deliverableWhere } },
+        include: { version: { select: { number: true, uploadedById: true, createdAt: true, sentToClientAt: true, deliverable: { include: deliverableInclude } } } },
+        orderBy: { createdAt: 'desc' },
+        take: 1000,
+      }),
+    ]);
+    const deliverables = [...waiting, ...results.map((r) => r.version.deliverable)];
+    const userIds = new Set<string>([...waiting.flatMap((d) => d.versions.map((v) => v.uploadedById)), ...results.flatMap((r) => [r.version.uploadedById, r.reviewerId])]);
+    const departmentIds = new Set(deliverables.map((d) => d.departmentId).filter((x): x is string => !!x));
+    const [users, departments] = await Promise.all([
+      this.prisma.user.findMany({ where: { id: { in: [...userIds] } }, select: { id: true, name: true } }),
+      this.prisma.department.findMany({ where: { id: { in: [...departmentIds] } }, select: { id: true, name: true } }),
+    ]);
+    const userName = new Map(users.map((u) => [u.id, u.name]));
+    const deptName = new Map(departments.map((d) => [d.id, d.name]));
+    type Row = (typeof waiting)[number];
+    const base = (d: Row) => ({
+      deliverableId: d.id,
+      title: d.title,
+      type: d.type,
+      clientId: d.cycle.engagement.clientOrg.id,
+      client: d.cycle.engagement.clientOrg.name,
+      serviceName: d.cycle.engagement.service.name,
+      departmentId: d.departmentId,
+      department: d.departmentId ? (deptName.get(d.departmentId) ?? null) : null,
+      latestVersion: d.versions[0]?.number ?? 0,
+      deliverableStatus: d.status,
+    });
+    const rows: QcBoardRow[] = [
+      ...waiting
+        .filter((d) => d.versions[0])
+        .map((d) => {
+          const v = d.versions[0];
+          return { ...base(d), key: v.id, state: 'waiting' as const, versionNumber: v.number, madeById: v.uploadedById, madeBy: userName.get(v.uploadedById) ?? '', uploadedAt: v.createdAt.toISOString(), reviewerId: null, reviewer: null, reviewedAt: null, sentToClient: false, failedItems: [] };
+        })
+        .sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt)),
+      ...results.map((r) => {
+        const list = ((r.items as { list?: { label: string; ok: boolean }[] } | null)?.list ?? []).filter((i) => !i.ok).map((i) => i.label);
+        return {
+          ...base(r.version.deliverable),
+          key: r.id,
+          state: r.result === 'pass' ? ('passed' as const) : ('failed' as const),
+          versionNumber: r.version.number,
+          madeById: r.version.uploadedById,
+          madeBy: userName.get(r.version.uploadedById) ?? '',
+          uploadedAt: r.version.createdAt.toISOString(),
+          reviewerId: r.reviewerId,
+          reviewer: userName.get(r.reviewerId) ?? null,
+          reviewedAt: r.createdAt.toISOString(),
+          sentToClient: !!r.version.sentToClientAt,
+          failedItems: r.result === 'pass' ? [] : list,
+        };
+      }),
+    ];
+    return { days, rows };
   }
 
   // -------------------------------------------------------------------------
