@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { coreCanUseTemplates, taskStatusLabels, TASK_STATUSES, type CoreTaskFormOptions, type CoreTaskQuery, type CoreTaskRow, type TaskStatus, type TaskView } from "@bmu/shared";
+import { coreCanManageTasks, coreCanUseTemplates, taskStatusLabels, TASK_STATUSES, type CoreTaskFormOptions, type CoreTaskQuery, type CoreTaskRow, type TaskStatus, type TaskView } from "@bmu/shared";
 import { CsvButton } from "@/components/charts";
 import { TaskBoard } from "@/components/task-list";
 import { Badge, PageTitle } from "@/components/ui";
@@ -253,7 +253,8 @@ export function TasksWorkspace() {
       {rows && rows.length === 0 && (
         <div className="border border-border bg-surface-raised px-4 py-10 text-center text-sm" data-testid="tasks-empty">
           <p className="text-ink-muted">{filters.show === "archived" ? "Nothing archived." : filters.show === "drafts" ? "No drafts." : active || filters.q ? "No tasks match these filters." : "No tasks here yet."}</p>
-          {canNew("task") && filters.show === "open" && (
+          {/* Team members who only add tasks for themselves use the "+ Add task" button at the top. */}
+          {canNew("task") && filters.show === "open" && coreCanManageTasks(me) && (
             <button type="button" className="mt-3 bg-charcoal px-3 py-1.5 text-sm text-ivory" onClick={addTask}>
               + Add task
             </button>
