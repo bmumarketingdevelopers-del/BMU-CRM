@@ -346,6 +346,38 @@ export type QcQueueItem = {
   waitingSince: string;
 };
 
+/** v50: the QC queue board: versions waiting for QC plus the QC results of the last `days` days. */
+export type QcBoardState = "waiting" | "passed" | "failed";
+export type QcBoardRow = {
+  /** The version id while waiting; the QC result id once reviewed. */
+  key: string;
+  state: QcBoardState;
+  deliverableId: string;
+  title: string;
+  type: string;
+  clientId: string;
+  client: string;
+  serviceName: string;
+  departmentId: string | null;
+  department: string | null;
+  versionNumber: number;
+  madeById: string;
+  madeBy: string;
+  /** When the version was uploaded (for "waiting for"). */
+  uploadedAt: string;
+  reviewerId: string | null;
+  reviewer: string | null;
+  reviewedAt: string | null;
+  /** Passed: this version has been sent to the client. */
+  sentToClient: boolean;
+  /** Failed: the checklist items that failed. */
+  failedItems: string[];
+  /** Failed: the deliverable's newest version and its status, to show whether a fix is on its way. */
+  latestVersion: number;
+  deliverableStatus: string;
+};
+export type QcBoard = { days: number; rows: QcBoardRow[] };
+
 // ---------------------------------------------------------------------------
 // My Day: attendance and end-of-day report
 

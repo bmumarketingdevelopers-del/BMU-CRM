@@ -134,6 +134,15 @@ describe('QC before the client sees anything', () => {
     expect(res.body.comments.some((c: { internal: boolean; body: string }) => c.internal && c.body.includes('brand green'))).toBe(true);
   });
 
+  it('the QC board shows the failed check with its failed items, and only to QC people', async () => {
+    const board = (await http().get('/qc/board').set(as('qc')).expect(200)).body;
+    const row = board.rows.find((r: { key: string; deliverableId: string }) => r.key !== v1.id && r.deliverableId === logoId);
+    expect(row).toMatchObject({ state: 'failed', versionNumber: 1, failedItems: ['Brand colours'], latestVersion: 1 });
+    expect(row.reviewer).toBeTruthy();
+    expect(board.rows.some((r: { deliverableId: string; state: string }) => r.deliverableId === logoId && r.state === 'waiting')).toBe(false);
+    await http().get('/qc/board').set(as('producer')).expect(403);
+  });
+
   it('files of versions never sent are hidden from the client', async () => {
     const fileId = v1.url.split('/').pop();
     await http().get(`/files/${fileId}`).set(as('am')).expect(200);

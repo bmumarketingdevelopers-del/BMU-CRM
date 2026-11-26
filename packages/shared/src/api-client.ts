@@ -13,6 +13,7 @@ import type {
   FlowTemplateInput,
   FlowTemplateView,
   MyDayView,
+  QcBoard,
   QcQueueItem,
   QcSubmit,
   ReviewCommentInput,
@@ -430,6 +431,7 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
 
     qc: {
       queue: () => request<QcQueueItem[]>("/qc/queue"),
+      board: () => request<QcBoard>("/qc/board"),
     },
 
     templates: {
