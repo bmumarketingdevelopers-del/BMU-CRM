@@ -157,7 +157,8 @@ export class ClientsCreateService implements OnModuleInit {
       groups,
       ams: own ? ams.filter((a) => a.id === me.id).map((a) => ({ ...a, suggested: true })) : ams,
       roles: CLIENT_TEAM_ROLES.map((r) => ({ key: r, label: clientRoleLabels[r].name })),
-      canMigrate: clientsCanAdd(me),
+      // Same rule as create() below: HR adds new clients but does not migrate existing ones.
+      canMigrate: hasRole(me, 'founder', 'admin', 'am_lead', 'sales_manager', 'account_manager'),
       ownOnly: own,
       priceList: list,
       industryList: industryList.map((i) => i.name),
@@ -242,7 +243,7 @@ export class ClientsCreateService implements OnModuleInit {
 
   async create(me: Me, body: unknown, ip?: string, opts: { source?: 'manual' | 'lead' | 'import'; leadId?: string; allowSalesManagerOnly?: boolean } = {}): Promise<ClientsCreateResult> {
     assertStaff(me);
-    if (!clientsCanAdd(me)) throw new ForbiddenException('Only the Founder, Branch Manager, Sales Manager, CM Lead or a Client Manager can add clients');
+    if (!clientsCanAdd(me)) throw new ForbiddenException('Only the Founder, Branch Manager, Sales Manager, CM Lead, a Client Manager or HR can add clients');
     const parsed = clientsCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.issues[0]?.message ?? 'Check the form');
     const input = parsed.data;

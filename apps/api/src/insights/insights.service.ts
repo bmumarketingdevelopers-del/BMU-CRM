@@ -19,7 +19,7 @@ import {
 } from '@bmu/shared';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { headScope } from '../engagements/engagement-access.js';
-import { assertCommand, assertMoney, canSeeMoney, canWriteFinance, isDepartmentView, seesAllDepartments } from './access.js';
+import { assertCommand, assertMoney, assertQuality, canSeeMoney, canWriteFinance, isDepartmentView, seesAllDepartments } from './access.js';
 import { DAY, daysBetween, dayLabel, monthKey, monthLabel, startOfDay, startOfFy, startOfMonth, startOfQuarter, startOfWeek } from './ist.js';
 import { isBillable, loadLedger, revenueBucket, type LedgerInvoice } from './ledger.js';
 
@@ -457,7 +457,7 @@ export class InsightsService {
   // Quality
 
   async quality(me: Me): Promise<QualityView> {
-    assertCommand(me);
+    assertQuality(me);
     const orgId = me.orgId;
     const now = new Date();
     const since = startOfWeek(now, -11);

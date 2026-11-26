@@ -70,7 +70,7 @@ beforeAll(async () => {
   const cu = await prisma.user.create({ data: { orgId, type: 'creator', name: `Creator ${stamp}`, email: `creator.${stamp}@example.com`, status: 'active' } });
   creatorId = (await prisma.creator.create({ data: { orgId, userId: cu.id, niche: ['food'] } })).id;
 
-  for (const who of ['founder', 'admin', 'finance', 'am', 'producer', 'design.head']) tokens[who] = await signIn(`${who}@bmu.demo`);
+  for (const who of ['founder', 'admin', 'finance', 'am', 'producer', 'design.head', 'hr']) tokens[who] = await signIn(`${who}@bmu.demo`);
 });
 
 afterAll(async () => {
@@ -128,6 +128,8 @@ describe('Command Centre dashboards', () => {
   it('capacity, quality and client health are readable by the Command Centre, not by producers or clients', async () => {
     await http().get('/insights/capacity').set(as('producer')).expect(403);
     await http().get('/insights/quality').set(as('owner')).expect(403);
+    // v53: HR can read QC pass rates.
+    await http().get('/insights/quality').set(as('hr')).expect(200);
     const cap = await http().get('/insights/capacity').set(as('founder')).expect(200);
     expect(cap.body.weekHours).toBe(45);
     // A department head sees only their own department.
