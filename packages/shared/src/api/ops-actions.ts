@@ -152,6 +152,11 @@ export const opsActionsApi = (t: Transport) => ({
       toRequest: (body: OpsMessageToRequest) => t.post<Msg & { id: string; href: string }>("/ops/messages/to-request", body),
       /** Discussion info: change the title, add or remove people. Returns the updated discussion. */
       update: (id: string, body: OpsThreadUpdate) => t.patch<OpsThreadView>(`/ops/threads/${id}`, body),
+      /**
+       * v53: the newest message and when someone else last read it, and "I have this open" (active) or "I left it".
+       * `beat` false: a quick check that does not save "reading it" (the screen saves it every few seconds).
+       */
+      pulse: (id: string, active: boolean, beat = true) => t.post<{ last: string | null; read: number }>(`/ops/threads/${id}/pulse`, { active, beat }),
     },
     announcements: {
       list: () => t.get<OpsAnnouncementRow[]>("/ops/announcements"),

@@ -18,7 +18,29 @@ export const ATTACHMENT_KIND = 'message_attachment';
 export const CM_THREAD = 'client_am';
 /** Client ↔ BMU Owner (Founder) chat: only the Founder starts it; the client sees it after the first message. */
 export const OWNER_THREAD = 'client_owner';
+/** v53: a team member talking with the client directly, started from Discussions (one per person and client). */
+export const CLIENT_STAFF_THREAD = 'client_staff';
 const isFounder = (me: Me) => me.type === 'staff' && me.roles.includes('founder');
+
+/**
+ * v53: client chats started by team members: the person who started it, the people they added, the client's Client
+ * Manager and leadership. Never anyone else on the team.
+ */
+export function clientStaffWhere(me: Me): Prisma.ThreadWhereInput {
+  const base = { orgId: me.orgId, type: CLIENT_STAFF_THREAD };
+  if (isLeadership(me)) return base;
+  return { ...base, OR: [{ createdById: me.id }, { participantIds: { has: me.id } }, { clientOrg: { amUserId: me.id } }] };
+}
+
+/** v53: how long a heartbeat counts as "has it open" (the screen sends one every few seconds). */
+const VIEWING_MS = 20_000;
+
+/** v53: of these people, the ones who have this conversation open right now (no notification for them). */
+export async function viewingNow(prisma: PrismaService, threadId: string, userIds: string[]) {
+  if (!userIds.length) return new Set<string>();
+  const rows = await prisma.threadRead.findMany({ where: { threadId, userId: { in: userIds }, viewingAt: { gte: new Date(Date.now() - VIEWING_MS) } }, select: { userId: true } });
+  return new Set(rows.map((r) => r.userId));
+}
 
 /** Staff who see client threads: their own clients for CMs, every client for leadership. Owner chats: Founder only. */
 export async function threadScope(me: Me): Promise<Prisma.ThreadWhereInput> {
@@ -57,7 +79,7 @@ export async function unreadByThread(prisma: PrismaService, me: Me, threadIds: s
 /** Total unread for the menu badge (clients: their thread; CMs: their clients; leadership: every client thread). */
 export async function unreadMessages(prisma: PrismaService, me: Me) {
   let where: Prisma.ThreadWhereInput;
-  if (me.type === 'client' && me.clientOrg) where = { clientOrgId: me.clientOrg.id, type: { in: [CM_THREAD, OWNER_THREAD] } };
+  if (me.type === 'client' && me.clientOrg) where = { clientOrgId: me.clientOrg.id, type: { in: [CM_THREAD, OWNER_THREAD, CLIENT_STAFF_THREAD] } };
   else if (me.type === 'staff' && me.roles.includes('account_manager') && !isLeadership(me)) where = { orgId: me.orgId, type: CM_THREAD, clientOrg: { amUserId: me.id } };
   else if (isFounder(me)) where = { orgId: me.orgId, type: { in: [CM_THREAD, OWNER_THREAD] } };
   else if (me.type === 'staff' && isLeadership(me)) where = { orgId: me.orgId, type: CM_THREAD };
@@ -98,8 +120,9 @@ export class MessagesService {
 
   private async attachments(ids: string[]): Promise<Map<string, ThreadAttachment>> {
     if (!ids.length) return new Map();
-    const files = await this.prisma.file.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, mimeType: true, sizeBytes: true } });
-    return new Map(files.map((f) => [f.id, { id: f.id, name: f.name ?? 'file', url: `/api/thread-files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes }]));
+    const files = await this.prisma.file.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, mimeType: true, sizeBytes: true, kind: true, path: true } });
+    // v53: client chats started from Discussions can also carry Drive (or other) links.
+    return new Map(files.map((f) => [f.id, { id: f.id, name: f.name ?? 'file', url: f.kind === 'link' ? f.path : `/api/thread-files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes }]));
   }
 
   /** Builds the view and marks the thread read for this person (unread = count before opening). */
@@ -126,7 +149,7 @@ export class MessagesService {
       create: { threadId: t.id, userId: me.id, orgId: t.orgId, lastReadAt: new Date() },
       update: { lastReadAt: new Date() },
     });
-    return { id: t.id, kind: t.type === OWNER_THREAD ? OWNER_THREAD : CM_THREAD, client: { id: t.clientOrg.id, name: t.clientOrg.name }, am: t.clientOrg.am?.name ?? null, messages: msgs, awaitingReply: me.type === 'staff' ? await this.awaiting(t, authors) : null, unread };
+    return { id: t.id, kind: t.type === OWNER_THREAD ? OWNER_THREAD : t.type === CLIENT_STAFF_THREAD ? CLIENT_STAFF_THREAD : CM_THREAD, client: { id: t.clientOrg.id, name: t.clientOrg.name }, am: t.clientOrg.am?.name ?? null, messages: msgs, awaitingReply: me.type === 'staff' ? await this.awaiting(t, authors) : null, unread };
   }
 
   private async clientThread(me: Me) {
@@ -140,6 +163,18 @@ export class MessagesService {
   private async clientOwnerThread(me: Me) {
     if (!me.clientOrg) throw new ForbiddenException('Client accounts only');
     return this.prisma.thread.findFirst({ where: { clientOrgId: me.clientOrg.id, type: OWNER_THREAD, messages: { some: {} } }, include, orderBy: { id: 'asc' } });
+  }
+
+  /** v53: a chat a team member started with this client (once they have written in it). */
+  private async clientStaffThread(me: Me, id: string) {
+    if (!me.clientOrg) throw new ForbiddenException('Client accounts only');
+    return this.prisma.thread.findFirst({ where: { id, clientOrgId: me.clientOrg.id, type: CLIENT_STAFF_THREAD, messages: { some: { isInternal: false } } }, include });
+  }
+
+  async forClientStaff(me: Me, id: string) {
+    const t = await this.clientStaffThread(me, id);
+    if (!t) throw new NotFoundException('Chat not found');
+    return this.view(me, t);
   }
 
   async forClient(me: Me) {
@@ -171,9 +206,21 @@ export class MessagesService {
         unread: unread.get(t.id) ?? 0,
       };
     };
+    // v53: chats team members started with this client, with who it is and their department.
+    const staffRows = await this.prisma.thread.findMany({ where: { clientOrgId: me.clientOrg!.id, type: CLIENT_STAFF_THREAD, messages: { some: { isInternal: false } } }, include });
+    const starters = await this.prisma.user.findMany({ where: { id: { in: staffRows.map((t) => t.createdById).filter((x): x is string => !!x) } }, select: { id: true, name: true, department: { select: { name: true } } } });
+    const staffUnread = await unreadByThread(this.prisma, me, staffRows.map((t) => t.id));
+    const staff = [];
+    for (const t of staffRows) {
+      const who = starters.find((u) => u.id === t.createdById);
+      const s = await summary(t);
+      staff.push({ id: t.id, name: who?.name ?? 'BMU team', title: who?.department?.name ?? null, ...s, unread: staffUnread.get(t.id) ?? 0 });
+    }
+    staff.sort((a, b) => (b.lastMessage?.at ?? '').localeCompare(a.lastMessage?.at ?? ''));
     return {
       owner: owner ? await summary(owner) : null,
       am: { name: cm.clientOrg.am?.name ?? null, ...(await summary(cm)) },
+      staff,
     };
   }
 
@@ -222,7 +269,9 @@ export class MessagesService {
 
   /** Staff: the thread by id (within their scope). Client: their Client Manager chat, or their Owner chat with `owner`. */
   private async threadFor(me: Me, threadId: string | null, owner = false) {
-    const t = threadId
+    const t = threadId && me.type === 'client'
+      ? await this.clientStaffThread(me, threadId)
+      : threadId
       ? await this.prisma.thread.findFirst({ where: { AND: [{ id: threadId }, await threadScope(me)] }, include })
       : owner
         ? await this.clientOwnerThread(me)
@@ -254,6 +303,12 @@ export class MessagesService {
       // v36: people who may see the file in Files (it was sent in the client conversation) can open it too.
       const msg = await this.prisma.message.findFirst({ where: { attachments: { has: fileId } }, select: { thread: { select: { type: true } } } });
       if (msg?.thread.type === OWNER_THREAD && !isFounder(me)) throw new NotFoundException('File not found');
+      // v53: client chats started from Discussions: the people who may read that chat.
+      if (msg?.thread.type === CLIENT_STAFF_THREAD) {
+        const seen = await this.prisma.message.findFirst({ where: { attachments: { has: fileId }, thread: clientStaffWhere(me) }, select: { id: true } });
+        if (seen) return file;
+        throw new NotFoundException('File not found');
+      }
       if (msg?.thread.type === CM_THREAD && canSeeFile(me, await fileScope(this.prisma, me), file)) return file;
       const scope = await threadScope(me).catch(() => null);
       const ok = scope && (await this.prisma.thread.findFirst({ where: { AND: [{ clientOrgId: file.clientOrgId ?? '' }, scope] }, select: { id: true } }));
@@ -274,7 +329,12 @@ export class MessagesService {
     await this.prisma.message.create({ data: { orgId: t.orgId, threadId: t.id, authorId: me.id, body, isInternal, attachments: ids } });
     await this.audit.log(me, 'message.sent', 'Thread', t.id, undefined, { internal: isInternal, attachments: ids.length }, ip);
     const preview = (body || `Sent ${ids.length} attachment${ids.length === 1 ? '' : 's'}`).slice(0, 140);
-    if (me.type === 'client') {
+    if (me.type === 'client' && t.type === CLIENT_STAFF_THREAD) {
+      // v53: a reply in a chat a team member started: the people in it, except those reading it right now.
+      const team = [...new Set([t.createdById, ...t.participantIds])].filter((x): x is string => !!x);
+      const reading = await viewingNow(this.prisma, t.id, team);
+      await this.notifications.notify(t.orgId, team.filter((x) => !reading.has(x)), { kind: 'message', title: `Message from ${me.name} (${t.clientOrg.name})`, body: preview, link: `/team/discussions/${t.id}` });
+    } else if (me.type === 'client') {
       // Owner chat → the Founder(s); Client Manager chat → the client's CM.
       const to = isOwnerChat
         ? (await this.prisma.user.findMany({ where: { orgId: t.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, select: { id: true } })).map((u) => u.id)

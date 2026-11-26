@@ -1551,6 +1551,8 @@ model ThreadRead {
   userId     String
   orgId      String
   lastReadAt DateTime @default(now())
+  /// v53: last heartbeat while this person had the conversation open in a tab they are looking at (no notifications then)
+  viewingAt  DateTime?
 
   @@id([threadId, userId])
   @@map("thread_reads")

@@ -285,6 +285,13 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
   const [q, setQ] = useState("");
   const [kind, setKind] = useState("");
 
+  // v53: new discussions and unread counts show within seconds, not only after a refresh.
+  const refreshList = list.refresh;
+  useEffect(() => {
+    const t = setInterval(() => document.visibilityState === "visible" && refreshList(), 8_000);
+    return () => clearInterval(t);
+  }, [refreshList]);
+
   const rows = (list.data ?? []).filter((t) => (!kind || t.kind === kind) && (!q.trim() || [t.title, t.client.name, t.engagement].some((x) => x?.toLowerCase().includes(q.trim().toLowerCase()))));
 
   /** Opens a discussion without reloading the page; the address follows so it can be shared or refreshed. */
@@ -295,7 +302,7 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
 
   return (
     <>
-      <PageTitle title="Discussions" subtitle="Project threads with the client's team, and internal threads for the people you add." />
+      <PageTitle title="Discussions" subtitle="Project threads for everyone on a client, internal threads for the people you add, and chats with your clients." />
       {!list.data ? (
         <LoadState loading={list.loading} error={list.error} />
       ) : list.data.length === 0 && !selectedId ? (
@@ -324,9 +331,10 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
                 onChange={(e) => setQ(e.target.value)}
               />
               <select className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm" aria-label="Filter by type" value={kind} onChange={(e) => setKind(e.target.value)}>
-                <option value="">Project and internal</option>
+                <option value="">All discussions</option>
                 <option value="project">Project</option>
                 <option value="internal">Internal</option>
+                <option value="client_staff">Client chats</option>
               </select>
             </div>
             <ul aria-label="Discussions" className="lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
@@ -342,7 +350,7 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
           {/* Open discussion */}
           <section className={`min-w-0 lg:block lg:h-full lg:min-h-0 ${selectedId ? "block" : "hidden"}`} data-testid="discussion-panel">
             {selectedId ? (
-              <DiscussionPanel key={selectedId} id={selectedId} onBack={() => open(undefined)} onPosted={() => list.reload()} onOpened={() => list.reload()} />
+              <DiscussionPanel key={selectedId} id={selectedId} onBack={() => open(undefined)} onPosted={() => list.refresh()} onOpened={() => list.refresh()} />
             ) : (
               <div className="flex h-full min-h-80 flex-col items-center justify-center gap-2 bg-ivory p-6 text-center text-sm text-ink-muted">
                 <span className="text-ink-muted">
@@ -367,6 +375,9 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
   );
 }
 
+/** v53: the three kinds of discussion. */
+const kindLabel = (k: string) => (k === "internal" ? "Internal" : k === "client_staff" ? "Client chat" : "Project");
+
 function DiscussionRow({ t, active, onOpen }: { t: OpsThreadSummary; active: boolean; onOpen: () => void }) {
   const last = t.lastMessage ? `${t.lastMessage.author}: ${t.lastMessage.body || "Sent a file"}` : "No messages yet";
   // The open discussion is being read, so it never shows a count.
@@ -379,7 +390,7 @@ function DiscussionRow({ t, active, onOpen }: { t: OpsThreadSummary; active: boo
       data-thread={t.title}
       className={`flex w-full items-start gap-3 border-b border-l-4 border-b-border px-4 py-3 text-left ${active ? "border-l-green bg-green/15" : "border-l-transparent hover:bg-canvas"}`}
     >
-      <span className="mt-0.5 text-ink-muted" title={t.kind === "internal" ? "Internal" : "Project"}>
+      <span className="mt-0.5 text-ink-muted" title={kindLabel(t.kind)}>
         {t.kind === "internal" ? <IconPeople /> : <IconChat />}
       </span>
       <span className="min-w-0 flex-1">
@@ -397,7 +408,7 @@ function DiscussionRow({ t, active, onOpen }: { t: OpsThreadSummary; active: boo
         </span>
         <span className="block truncate text-[11px] text-ink-muted">
           {t.client.name}
-          {t.engagement ? ` · ${t.engagement}` : ""} · {t.kind === "internal" ? "Internal" : "Project"}
+          {t.engagement ? ` · ${t.engagement}` : ""} · {kindLabel(t.kind)}
         </span>
       </span>
     </button>
@@ -406,6 +417,15 @@ function DiscussionRow({ t, active, onOpen }: { t: OpsThreadSummary; active: boo
 
 // ---------------------------------------------------------------------------------------------------------------
 // One discussion
+
+/** v53: how often an open discussion checks for new messages: while chatting, and when it is quiet. */
+const FAST_MS = 1_000;
+const QUIET_MS = 3_000;
+/** "Chatting": someone wrote in the last 2 minutes, or you typed in the last 30 seconds. */
+const CHATTING_MS = 120_000;
+const TYPING_MS = 30_000;
+/** How often "I am reading this" is saved (the server counts it for 20 seconds). */
+const BEAT_MS = 5_000;
 
 function FileCard({ f, mine }: { f: SentFile; mine: boolean }) {
   const card = `flex items-center gap-3 rounded-lg px-3 py-2 ${mine ? "bg-paper/70" : "bg-canvas"}`;
@@ -533,7 +553,7 @@ function DiscussionInfo({ t, meId, onClose, onChanged }: { t: OpsThreadView; meI
             </h3>
           )}
           <p className="text-sm text-ink-muted">
-            {t.kind === "internal" ? "Internal discussion" : "Project discussion"} · {t.client.name}
+            {t.kind === "internal" ? "Internal discussion" : t.kind === "client_staff" ? "Chat with the client" : "Project discussion"} · {t.client.name}
             {t.engagement ? ` · ${t.engagement}` : ""}
           </p>
           {t.startedBy && (
@@ -590,6 +610,7 @@ function DiscussionInfo({ t, meId, onClose, onChanged }: { t: OpsThreadView; meI
             )}
           </div>
           {t.kind === "project" && <p className="mb-2 text-xs text-ink-muted">Everyone on {t.client.name}&apos;s team can also read this discussion.</p>}
+          {t.kind === "client_staff" && <p className="mb-2 text-xs text-ink-muted">{t.client.name} reads and replies to this chat in their Messages. Their Client Manager can read it too.</p>}
 
           {adding && (
             <div className="mb-3 rounded-lg border border-border bg-canvas/50 p-3" data-testid="discussion-add-panel">
@@ -699,6 +720,81 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
     if (opened) onOpenedRef.current();
   }, [opened]);
 
+  // v53: new messages and ticks show within a second while people are chatting (someone wrote in the last 2 minutes,
+  // or you are typing), and within 3 seconds when it is quiet. Nothing is checked while the tab is not on screen.
+  // While the tab is open and looked at, the server knows this person is reading it, so they get no notification for
+  // it; in another tab, app or window, they do.
+  const typedAt = useRef(0);
+  useEffect(() => {
+    if (body) typedAt.current = Date.now();
+  }, [body]);
+  // My messages not yet seen by everyone: only then does someone else reading it change what is on screen (the ticks).
+  const waitingForTicks = useRef(false);
+  useEffect(() => {
+    waitingForTicks.current = !!t?.messages.some((m) => m.mine && !m.seen);
+  }, [t]);
+  useEffect(() => {
+    let stopped = false;
+    let lastMessage: string | null | undefined;
+    let lastRead = 0;
+    let busy = false;
+    let changedAt = Date.now();
+    let beatAt = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const looking = () => document.visibilityState === "visible" && document.hasFocus();
+    const tick = async () => {
+      if (stopped || busy) return;
+      busy = true;
+      try {
+        const now = Date.now();
+        const active = looking();
+        const beat = !active || now - beatAt >= BEAT_MS;
+        if (active && beat) beatAt = now;
+        const p = await api.ops.threads.pulse(id, active, beat);
+        const newMessage = lastMessage !== undefined && p.last !== lastMessage;
+        const newTicks = p.read !== lastRead && waitingForTicks.current;
+        if (lastMessage !== undefined && (newMessage || newTicks) && !stopped) {
+          // A new message keeps the quick checks going; someone reading it only redraws the ticks.
+          if (newMessage) changedAt = Date.now();
+          setFresh(await api.ops.threads.get(id));
+          onOpenedRef.current();
+        }
+        lastMessage = p.last;
+        lastRead = p.read;
+      } catch {
+        // offline or signed out: the next tick tries again
+      } finally {
+        busy = false;
+      }
+    };
+    const loop = () => {
+      if (stopped) return;
+      const chatting = Date.now() - changedAt < CHATTING_MS || Date.now() - typedAt.current < TYPING_MS;
+      timer = setTimeout(async () => {
+        if (document.visibilityState === "visible") await tick();
+        loop();
+      }, chatting ? FAST_MS : QUIET_MS);
+    };
+    const away = () => {
+      beatAt = 0;
+      if (!stopped) api.ops.threads.pulse(id, false).catch(() => {});
+    };
+    const onVisibility = () => (document.hidden ? away() : void tick());
+    void tick();
+    loop();
+    window.addEventListener("blur", away);
+    window.addEventListener("focus", tick);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("blur", away);
+      window.removeEventListener("focus", tick);
+      document.removeEventListener("visibilitychange", onVisibility);
+      away();
+      stopped = true;
+    };
+  }, [id]);
+
   async function send(e?: React.FormEvent) {
     e?.preventDefault();
     if (!body.trim() && !files.length) return setError("Write a message or attach a file");
@@ -732,7 +828,9 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
 
   const people = t.participants.length;
   const subtitle =
-    t.kind === "internal"
+    t.kind === "client_staff"
+      ? `Chat with ${t.client.name} · they see every message here`
+      : t.kind === "internal"
       ? `Internal · ${people} ${people === 1 ? "person" : "people"}${people ? `: ${t.participants.join(", ")}` : ""}`
       : `Project · ${t.client.name}${t.engagement ? ` · ${t.engagement}` : ""} · the client's team can read this`;
   const shown = find.trim() ? t.messages.filter((m) => m.body.toLowerCase().includes(find.trim().toLowerCase()) || m.author.toLowerCase().includes(find.trim().toLowerCase())) : t.messages;
@@ -770,7 +868,12 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
           <li key={m.id} className={`flex items-end gap-2 ${m.mine ? "justify-end" : "justify-start"}`} data-message={m.id}>
             {!m.mine && <Avatar name={m.author} />}
             <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm shadow-sm sm:max-w-[70%] ${m.mine ? "rounded-br-sm bg-green/25 text-charcoal" : "rounded-bl-sm border border-border bg-paper text-charcoal"}`}>
-              {!m.mine && <p className="mb-0.5 text-xs font-semibold text-charcoal">{m.author}</p>}
+              {!m.mine && (
+                <p className="mb-0.5 text-xs font-semibold text-charcoal">
+                  {m.author}
+                  {m.fromClient && <span className="ml-1 font-normal text-ink-muted">· {t.client.name}</span>}
+                </p>
+              )}
               {!!m.attachments?.length && (
                 <div className="mb-1 grid gap-1.5">
                   {m.attachments.map((f) => (
@@ -804,7 +907,7 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
       {t.canPost ? (
         <form onSubmit={send} className="grid gap-2 border-t border-border bg-paper p-3">
           <PendingFiles files={files} onRemove={(fid) => setFiles((x) => x.filter((y) => y.id !== fid))} />
-          {files.length > 0 && <span className="text-xs text-ink-muted">{t.kind === "internal" ? "Only the people in this discussion see the files (also in their Files)." : "Everyone on this client's team sees the files (also in their Files)."}</span>}
+          {files.length > 0 && <span className="text-xs text-ink-muted">{t.kind === "internal" ? "Only the people in this discussion see the files (also in their Files)." : t.kind === "client_staff" ? "The client gets these files with your message." : "Everyone on this client's team sees the files (also in their Files)."}</span>}
           <div className="flex items-end gap-2">
             <div className="relative">
               <button

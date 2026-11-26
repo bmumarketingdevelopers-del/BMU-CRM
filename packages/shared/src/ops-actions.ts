@@ -337,7 +337,8 @@ export type OpsPublicShare = { name: string; mimeType: string | null; sizeBytes:
 // ---------------------------------------------------------------------------
 // Communication
 
-export const OPS_THREAD_KINDS = ["project", "internal"] as const;
+/** v53: client_staff = a team member talking with the client directly (the client sees it in Messages). */
+export const OPS_THREAD_KINDS = ["project", "internal", "client_staff"] as const;
 export const opsThreadCreateSchema = z.object({
   kind: z.enum(OPS_THREAD_KINDS),
   clientOrgId: z.string().min(1, "Pick the client"),
@@ -385,8 +386,10 @@ export type OpsThreadView = OpsThreadSummary & {
     mine: boolean;
     at: string;
     attachments?: SentFile[];
-    /** My messages only: true once everyone else in the discussion has read it (blue ticks). */
+    /** My messages only: true once everyone else in the discussion has read it (blue ticks). Client chats: once the client has. */
     seen?: boolean;
+    /** v53: written by someone at the client (client chats). */
+    fromClient?: boolean;
   }[];
   canPost: boolean;
   /** Discussion info: who started it, the people in it (with ids), and whether you may edit the title / people. */

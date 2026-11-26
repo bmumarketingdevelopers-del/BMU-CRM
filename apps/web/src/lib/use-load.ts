@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveChanges } from "./live";
 
-export type Loaded<T> = { data?: T; error?: string; loading: boolean; reload: () => void };
+export type Loaded<T> = { data?: T; error?: string; loading: boolean; reload: () => void; /** Reload without showing the loading state. */ refresh: () => void };
 
 /**
  * Runs an async loader on mount and exposes data, error and reload.
@@ -66,7 +66,7 @@ export function useLoad<T>(load: () => Promise<T>, opts?: { live?: boolean | str
   const noop = useCallback(() => undefined, []);
   useLiveChanges(live === false ? noop : quiet, Array.isArray(live) ? live : undefined);
 
-  return { ...state, reload };
+  return { ...state, reload, refresh: quiet };
 }
 
 function safeJson(v: unknown): string | null {

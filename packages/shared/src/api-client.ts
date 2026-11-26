@@ -53,7 +53,7 @@ import { commsApi } from "./api/comms.js";
 import { finance2Api } from "./api/finance2.js";
 import { integrationsApi } from "./api/integrations.js";
 import { v20Api, type SignInResult } from "./api/v20.js";
-import type { ClientChatList, ClientFile, CreateRequest, DecideRequest, FinalDeliveryView, NotificationView, RequestView, ThreadSummary, ThreadView } from "./requests.js";
+import type { ClientChatList, ClientFile, CreateRequest, DecideRequest, FinalDeliveryView, NotificationView, RequestView, ThreadAttachment, ThreadSummary, ThreadView } from "./requests.js";
 
 export type QcTemplateView = { id: string; key: string; name: string; version: number; items: string[] };
 
@@ -377,6 +377,14 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
       chats: () => request<ClientChatList>("/client/chats"),
       ownerThread: () => request<ThreadView>("/client/owner-thread"),
       sendOwnerMessage: (body: string, attachmentIds: string[] = []) => post<ThreadView>("/client/owner-thread/messages", { body, attachmentIds }),
+      // v53: chats a team member started with the client
+      staffThread: (id: string) => request<ThreadView>(`/client/chats/${id}`),
+      sendStaffMessage: (id: string, body: string, attachmentIds: string[] = []) => post<ThreadView>(`/client/chats/${id}/messages`, { body, attachmentIds }),
+      uploadStaffAttachment: (id: string, file: File) => {
+        const fd = new FormData();
+        fd.append("file", file);
+        return request<ThreadAttachment>(`/client/chats/${id}/attachments`, { method: "POST", body: fd });
+      },
       checkout: (invoiceId: string) => post<Checkout>(`/client/invoices/${invoiceId}/checkout`),
       verifyPayment: (invoiceId: string, body: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
         post<{ ok: true }>(`/client/invoices/${invoiceId}/verify`, body),
