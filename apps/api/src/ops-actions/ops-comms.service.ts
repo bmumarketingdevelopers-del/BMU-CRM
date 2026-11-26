@@ -27,12 +27,19 @@ import { NotificationsService } from '../notifications/notifications.service.js'
 import { PrismaService } from '../prisma/prisma.service.js';
 import { headScope } from '../engagements/engagement-access.js';
 import { calendarFor } from '../production/generate.js';
-import { threadScope } from '../requests/messages.service.js';
+import { ATTACHMENT_KIND, CLIENT_STAFF_THREAD, threadScope, viewingNow } from '../requests/messages.service.js';
 import { EmailService } from '../service/email.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { hasRole, isLeadership, relPath, sha256, type OpsUpload } from './ops-util.js';
 
-const OPS_TYPES = ['project', 'internal'];
+const OPS_TYPES = ['project', 'internal', CLIENT_STAFF_THREAD];
+
+/**
+ * v53: who may see which discussion, remembered for 30 seconds per server, so the once-a-second check of an open
+ * discussion costs two small queries (someone removed from a discussion stops getting updates within 30 seconds).
+ */
+const VISIBLE_MS = 30_000;
+const visibleCache = new Map<string, { at: number; orgId: string }>();
 const threadInclude = { clientOrg: { select: { id: true, name: true, amUserId: true } }, engagement: { select: { id: true, service: { select: { name: true } } } }, messages: { orderBy: { createdAt: 'asc' as const } } } satisfies Prisma.ThreadInclude;
 type ThreadFull = Prisma.ThreadGetPayload<{ include: typeof threadInclude }>;
 
@@ -64,7 +71,10 @@ export class OpsCommsService {
     return [...new Set([...clients.map((c) => c.id), ...engs.map((e) => e.clientOrgId), ...taskEngs.map((e) => e.clientOrgId)])];
   }
 
-  /** Project threads: everyone on that client. Internal discussions: the people in it (and leadership). */
+  /**
+   * Project threads: everyone on that client. Internal discussions: the people in it (and leadership). v53: client chats:
+   * the people in it, the client's Client Manager (and leadership).
+   */
   private async visibleWhere(me: Me): Promise<Prisma.ThreadWhereInput> {
     const ids = await this.myClientIds(me);
     if (ids === 'all') return { orgId: me.orgId, type: { in: OPS_TYPES } };
@@ -74,6 +84,7 @@ export class OpsCommsService {
         { type: 'project', clientOrgId: { in: ids } },
         { type: { in: OPS_TYPES }, createdById: me.id },
         { type: { in: OPS_TYPES }, participantIds: { has: me.id } },
+        { type: CLIENT_STAFF_THREAD, clientOrg: { amUserId: me.id } },
       ],
     };
   }
@@ -146,19 +157,22 @@ export class OpsCommsService {
     });
     const fileIds = t.messages.flatMap((m) => m.attachments);
     const [users, files] = await Promise.all([
-      this.prisma.user.findMany({ where: { id: { in: t.messages.map((m) => m.authorId) } }, select: { id: true, name: true } }),
+      this.prisma.user.findMany({ where: { id: { in: t.messages.map((m) => m.authorId) } }, select: { id: true, name: true, type: true } }),
       fileIds.length ? this.prisma.file.findMany({ where: { id: { in: fileIds } }, select: { id: true, name: true, mimeType: true, sizeBytes: true, kind: true, path: true } }) : [],
     ]);
     const sent = (id: string): SentFile | null => {
       const f = files.find((x) => x.id === id);
-      return f ? { id: f.id, name: f.name ?? 'file', url: f.kind === 'link' ? f.path : `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes, kind: f.kind } : null;
+      return f ? { id: f.id, name: f.name ?? 'file', url: f.kind === 'link' ? f.path : f.kind === ATTACHMENT_KIND ? `/api/thread-files/${f.id}` : `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes, kind: f.kind } : null;
     };
     // Ticks on my messages (like WhatsApp): "seen" once everyone else in the discussion has opened it after the message.
     // The people in it: who started it, who was added, the client's CM on project threads, and anyone who has written.
     const members = new Set([t.createdById, ...t.participantIds, t.type === 'project' ? t.clientOrg.amUserId : null, ...t.messages.map((m) => m.authorId)].filter((x): x is string => !!x));
     members.delete(me.id);
     const reads = members.size ? await this.prisma.threadRead.findMany({ where: { threadId: t.id, userId: { in: [...members] } }, select: { userId: true, lastReadAt: true } }) : [];
-    const seenByAll = (at: Date) => members.size > 0 && [...members].every((u) => (reads.find((r) => r.userId === u)?.lastReadAt ?? new Date(0)) >= at);
+    // v53: in a client chat a message is seen once someone at the client has opened the chat after it.
+    const client = t.type === CLIENT_STAFF_THREAD;
+    const clientReads = client ? await this.prisma.threadRead.findMany({ where: { threadId: t.id, userId: { in: (await this.prisma.clientUser.findMany({ where: { clientOrgId: t.clientOrgId }, select: { userId: true } })).map((c) => c.userId) } }, select: { lastReadAt: true } }) : [];
+    const seenByAll = (at: Date) => (client ? clientReads.some((r) => r.lastReadAt >= at) : members.size > 0 && [...members].every((u) => (reads.find((r) => r.userId === u)?.lastReadAt ?? new Date(0)) >= at));
     return {
       ...s,
       messages: t.messages.map((m) => ({
@@ -166,6 +180,7 @@ export class OpsCommsService {
         body: m.body,
         author: users.find((u) => u.id === m.authorId)?.name ?? 'Team',
         mine: m.authorId === me.id,
+        ...(users.find((u) => u.id === m.authorId)?.type === 'client' ? { fromClient: true } : {}),
         at: m.createdAt.toISOString(),
         attachments: m.attachments.map(sent).filter((x): x is SentFile => !!x),
         ...(m.authorId === me.id ? { seen: seenByAll(m.createdAt) } : {}),
@@ -207,6 +222,14 @@ export class OpsCommsService {
     const participants = [...new Set([...t.participantIds.filter((x) => !input.removeIds.includes(x)), ...adding])];
     if (participants.length > 30) throw new BadRequestException('A discussion can have up to 30 people');
     if (t.type === 'internal' && !participants.length) throw new BadRequestException('An internal discussion needs at least one person besides you');
+    if (adding.length && t.type === CLIENT_STAFF_THREAD) {
+      // v53: only people who work on this client join a chat with them.
+      const ok = await this.prisma.user.findMany({ where: { id: { in: adding } }, select: { id: true, roles: { select: { role: { select: { baseRole: true } } } } } });
+      for (const u of ok) {
+        const scope = await this.myClientIds({ ...me, id: u.id, roles: u.roles.map((r) => r.role.baseRole) } as Me);
+        if (scope !== 'all' && !scope.includes(t.clientOrgId)) throw new BadRequestException('Add only people who work on this client');
+      }
+    }
     const removed = t.participantIds.filter((x) => input.removeIds.includes(x));
     await this.prisma.thread.update({ where: { id: t.id }, data: { ...(input.title ? { title: input.title } : {}), participantIds: participants } });
     await this.audit.log(me, 'thread.updated', 'Thread', t.id, undefined, { title: input.title ?? null, added: adding.length, removed: removed.length }, ip);
@@ -222,13 +245,16 @@ export class OpsCommsService {
   async attach(me: Me, id: string, file: OpsUpload | undefined, ip?: string): Promise<SentFile> {
     const t = await this.load(me, id);
     if (!file) throw new BadRequestException('Choose a file to send');
+    const toClient = t.type === CLIENT_STAFF_THREAD;
     const f = await this.prisma.file.create({
       data: {
         orgId: me.orgId,
         clientOrgId: t.clientOrgId,
         engagementId: t.engagementId,
         path: relPath(file.path),
-        kind: fileKindFromMime(file.mimetype),
+        // v53: a file sent to the client in a client chat opens for them like any chat attachment.
+        kind: toClient ? ATTACHMENT_KIND : fileKindFromMime(file.mimetype),
+        ...(toClient ? { released: true } : {}),
         name: file.originalname.slice(0, 200),
         mimeType: file.mimetype,
         sizeBytes: file.size,
@@ -239,7 +265,7 @@ export class OpsCommsService {
       },
     });
     await this.audit.log(me, 'thread.file_attached', 'File', f.id, undefined, { threadId: t.id, name: f.name, sizeBytes: f.sizeBytes }, ip);
-    return { id: f.id, name: f.name ?? 'file', url: `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes };
+    return { id: f.id, name: f.name ?? 'file', url: toClient ? `/api/thread-files/${f.id}` : `/api/files/${f.id}`, mimeType: f.mimeType, sizeBytes: f.sizeBytes };
   }
 
   /** v39: a Drive (or any) link to send in a discussion, for files over the upload limit. Same people as files. */
@@ -264,6 +290,11 @@ export class OpsCommsService {
     const people = input.participantIds.length ? await this.prisma.user.findMany({ where: { id: { in: input.participantIds }, orgId: me.orgId, type: 'staff', deletedAt: null }, select: { id: true } }) : [];
     if (people.length !== new Set(input.participantIds).size) throw new BadRequestException('Some people you picked are not on the team');
     if (input.kind === 'internal' && !people.length) throw new BadRequestException('Add at least one person to an internal discussion');
+    // v53: one client chat per person and client: starting it again opens the one there is.
+    if (input.kind === CLIENT_STAFF_THREAD) {
+      const mine = await this.prisma.thread.findFirst({ where: { orgId: me.orgId, clientOrgId: client.id, type: CLIENT_STAFF_THREAD, createdById: me.id }, select: { id: true } });
+      if (mine) return { id: mine.id, message: `Your chat with ${client.name} is open` };
+    }
     const t = await this.prisma.thread.create({
       data: {
         orgId: me.orgId,
@@ -274,7 +305,7 @@ export class OpsCommsService {
         createdById: me.id,
         participantIds: people.map((p) => p.id),
         // A first message only when one was given; otherwise the discussion starts empty.
-        ...(input.message ? { messages: { create: { orgId: me.orgId, authorId: me.id, body: input.message, isInternal: true } } } : {}),
+        ...(input.message ? { messages: { create: { orgId: me.orgId, authorId: me.id, body: input.message, isInternal: input.kind !== CLIENT_STAFF_THREAD } } } : {}),
       },
     });
     await this.audit.log(me, 'thread.started', 'ClientOrg', client.id, undefined, { threadId: t.id, kind: input.kind, title: input.title, participants: people.length }, ip);
@@ -285,7 +316,8 @@ export class OpsCommsService {
       notifyIds.filter((x) => x !== me.id),
       { kind: 'thread_started', title: `${me.name} started "${input.title}"`, body: input.message ? `${client.name}: ${input.message.slice(0, 120)}` : client.name, link: `/team/discussions/${t.id}`, noEmail: true },
     );
-    return { id: t.id, message: input.kind === 'project' ? 'Project thread started' : 'Internal discussion started' };
+    if (input.kind === CLIENT_STAFF_THREAD && input.message) await this.tellClient(me, { id: t.id, orgId: me.orgId, clientOrgId: client.id }, input.message);
+    return { id: t.id, message: input.kind === 'project' ? 'Project thread started' : input.kind === CLIENT_STAFF_THREAD ? `Chat with ${client.name} started. They see your messages in Messages.` : 'Internal discussion started' };
   }
 
   async post(me: Me, id: string, body: unknown, ip?: string) {
@@ -297,12 +329,61 @@ export class OpsCommsService {
       const ok = await this.prisma.file.count({ where: { id: { in: ids }, orgId: me.orgId, clientOrgId: t.clientOrgId, uploadedById: me.id, tags: { has: 'discussion-file' } } });
       if (ok !== ids.length) throw new BadRequestException('One of the files could not be found. Attach it again.');
     }
-    const m = await this.prisma.message.create({ data: { orgId: me.orgId, threadId: t.id, authorId: me.id, body: input.body, isInternal: true, attachments: ids } });
+    const toClient = t.type === CLIENT_STAFF_THREAD;
+    const m = await this.prisma.message.create({ data: { orgId: me.orgId, threadId: t.id, authorId: me.id, body: input.body, isInternal: !toClient, attachments: ids } });
     await this.audit.log(me, 'thread.message_posted', 'ClientOrg', t.clientOrgId, undefined, { threadId: t.id, messageId: m.id, files: ids.length }, ip);
-    const others = [...new Set([t.createdById, ...t.participantIds, ...t.messages.map((x) => x.authorId)])].filter((x): x is string => !!x && x !== me.id);
+    const authors = toClient ? (await this.prisma.user.findMany({ where: { id: { in: [...new Set(t.messages.map((x) => x.authorId))] }, type: 'staff' }, select: { id: true } })).map((u) => u.id) : t.messages.map((x) => x.authorId);
+    const others = [...new Set([t.createdById, ...t.participantIds, ...authors])].filter((x): x is string => !!x && x !== me.id);
     const preview = input.body || `Sent ${ids.length} file${ids.length === 1 ? '' : 's'}`;
-    await this.notifications.notify(me.orgId, others, { kind: 'thread_reply', title: `${me.name} replied in "${t.title ?? 'Discussion'}"`, body: preview.slice(0, 140), link: `/team/discussions/${t.id}`, noEmail: true });
+    if (toClient) await this.tellClient(me, t, preview);
+    // v53: nobody is notified while they have this discussion open in a tab they are looking at.
+    const reading = await viewingNow(this.prisma, t.id, others);
+    await this.notifications.notify(me.orgId, others.filter((x) => !reading.has(x)), { kind: 'thread_reply', title: `${me.name} replied in "${t.title ?? 'Discussion'}"`, body: preview.slice(0, 140), link: `/team/discussions/${t.id}`, noEmail: true });
     return this.thread(me, id);
+  }
+
+  /** v53: a team member wrote in a client chat: the client's people are told (it opens in their Messages). */
+  private async tellClient(me: Me, t: { id: string; orgId: string; clientOrgId: string }, preview: string) {
+    const users = await this.prisma.clientUser.findMany({ where: { clientOrgId: t.clientOrgId }, select: { userId: true } });
+    const reading = await viewingNow(this.prisma, t.id, users.map((u) => u.userId));
+    await this.notifications.notify(t.orgId, users.map((u) => u.userId).filter((x) => !reading.has(x)), { kind: 'message', title: `New message from ${me.name}`, body: preview.slice(0, 140), link: `/client/messages?chat=${t.id}` });
+  }
+
+  /**
+   * v53: the open discussion's heartbeat (every few seconds). `active`: open in a tab the person is looking at, so no
+   * notifications for it (and it counts as read). Returns a key that changes when there is something new to show.
+   */
+  async pulse(me: Me, id: string, body: unknown) {
+    this.staff(me);
+    const b = (body && typeof body === 'object' ? body : {}) as { active?: unknown; beat?: unknown };
+    const active = b.active === true;
+    const cacheKey = `${me.id}:${id}`;
+    let seen = visibleCache.get(cacheKey);
+    if (!seen || Date.now() - seen.at > VISIBLE_MS) {
+      const found = await this.prisma.thread.findFirst({ where: { AND: [{ id }, await this.visibleWhere(me)] }, select: { orgId: true } });
+      if (!found) {
+        visibleCache.delete(cacheKey);
+        throw new NotFoundException('Discussion not found');
+      }
+      if (visibleCache.size > 5_000) visibleCache.clear();
+      visibleCache.set(cacheKey, (seen = { at: Date.now(), orgId: found.orgId }));
+    }
+    const t = { id, orgId: seen.orgId };
+    const now = new Date();
+    // "Reading it" is saved on a heartbeat (`beat`, every few seconds), not on every check; leaving is saved at once.
+    if (active && b.beat === false) {
+      // a quick check only
+    } else if (active) {
+      await this.prisma.threadRead.upsert({ where: { threadId_userId: { threadId: t.id, userId: me.id } }, create: { threadId: t.id, userId: me.id, orgId: t.orgId, lastReadAt: now, viewingAt: now }, update: { lastReadAt: now, viewingAt: now } });
+    } else {
+      await this.prisma.threadRead.updateMany({ where: { threadId: t.id, userId: me.id }, data: { viewingAt: null } });
+    }
+    const [last, read] = await Promise.all([
+      this.prisma.message.findFirst({ where: { threadId: t.id }, orderBy: { createdAt: 'desc' }, select: { id: true } }),
+      this.prisma.threadRead.aggregate({ where: { threadId: t.id, userId: { not: me.id } }, _max: { lastReadAt: true } }),
+    ]);
+    // The newest message, and when someone else last read it (for the ticks on my messages).
+    return { last: last?.id ?? null, read: read._max.lastReadAt?.getTime() ?? 0 };
   }
 
   // -------------------------------------------------------------------------

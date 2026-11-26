@@ -9,10 +9,12 @@ import { listTime as timeOf } from "@/components/ops/discussion-chat";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
 
-type ChatKey = "owner" | "am";
+/** "owner", "am", or v53 the id of a chat a team member started. */
+type ChatKey = string;
 
 /**
- * Client messages, WhatsApp style: a chat list (BMU Owner once the Founder has written, then the Client Manager)
+ * Client messages, WhatsApp style: a chat list (BMU Owner once the Founder has written, the Client Manager, then v53 the
+ * team members who started a chat with the client)
  * and the open chat. Phone and tablet: the list first, tap a chat to open it, ← goes back. Desktop: list left, chat right.
  */
 export default function ClientMessagesPage() {
@@ -20,22 +22,25 @@ export default function ClientMessagesPage() {
   const [list, setList] = useState<ClientChatList>();
   const chats = list ?? loaded.data;
 
-  // A notification for the Owner chat links to ?chat=owner: open that chat straight away.
+  // A notification links to ?chat=owner or ?chat=<id>: open that chat straight away.
   // (The first render is the loading state on server and browser alike, so reading the address here is safe.)
-  const [fromOwnerLink] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("chat") === "owner");
-  const [selected, setSelected] = useState<ChatKey>(fromOwnerLink ? "owner" : "am");
+  const [fromLink] = useState(() => (typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("chat") : null));
+  const openFromLink = !!fromLink;
+  const [selected, setSelected] = useState<ChatKey>(fromLink ?? "am");
   /** Phone only: the chat is open (otherwise the list shows). */
-  const [phoneChatOpen, setPhoneChatOpen] = useState(fromOwnerLink);
+  const [phoneChatOpen, setPhoneChatOpen] = useState(openFromLink);
   const [thread, setThread] = useState<ThreadView>();
   const [threadError, setThreadError] = useState<string>();
 
   const refreshList = useCallback(async () => setList(await api.client.chats()), []);
-  const loadThread = useCallback(async (key: ChatKey) => (key === "owner" ? api.client.ownerThread() : api.client.thread()), []);
+  const loadThread = useCallback(async (key: ChatKey) => (key === "owner" ? api.client.ownerThread() : key === "am" ? api.client.thread() : api.client.staffThread(key)), []);
+  /** A chat that is not (or no longer) in the list falls back to the Client Manager chat. */
+  const pick = (key: ChatKey, c: { owner: unknown; staff?: { id: string }[] }) => (key === "owner" ? (c.owner ? key : "am") : key === "am" || c.staff?.some((x) => x.id === key) ? key : "am");
 
   // Open the selected chat (this marks it read), then refresh the list so its unread count clears.
   useEffect(() => {
     if (!chats) return;
-    const key: ChatKey = selected === "owner" && !chats.owner ? "am" : selected;
+    const key: ChatKey = pick(selected, chats);
     let stale = false;
     loadThread(key)
       .then((t) => {
@@ -50,7 +55,7 @@ export default function ClientMessagesPage() {
     };
     // When the list first arrives, the chosen chat changes, or the Owner chat first appears.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!chats, selected, !!chats?.owner, loadThread, refreshList]);
+  }, [!!chats, selected, !!chats?.owner, chats?.staff?.length, loadThread, refreshList]);
 
   // The list refreshes every 15 seconds (new chats, unread counts), like the open chat does.
   useEffect(() => {
@@ -62,7 +67,7 @@ export default function ClientMessagesPage() {
 
   if (!chats) return <LoadState loading={loaded.loading} error={loaded.error} />;
 
-  const current: ChatKey = selected === "owner" && !chats.owner ? "am" : selected;
+  const current: ChatKey = pick(selected, chats);
   const amName = chats.am.name;
   const open = (key: ChatKey) => {
     if (key !== current) {
@@ -73,11 +78,13 @@ export default function ClientMessagesPage() {
     setPhoneChatOpen(true);
   };
 
-  const rows: { key: ChatKey; name: string; line: string; at?: string; unread: number; initial: string }[] = [
+  const rows: { key: ChatKey; name: string; line: string; at?: string; unread: number; initial: string; title?: string | null }[] = [
     ...(chats.owner
       ? [{ key: "owner" as const, name: "BMU Owner", line: chats.owner.lastMessage?.body || "No messages yet", at: chats.owner.lastMessage?.at, unread: chats.owner.unread, initial: "B" }]
       : []),
     { key: "am", name: amName ?? "Client Manager", line: amName ? "Client Manager" : "Not assigned yet", at: chats.am.lastMessage?.at, unread: chats.am.unread, initial: (amName ?? "C").charAt(0).toUpperCase() },
+    // v53: team members who started a chat with you.
+    ...(chats.staff ?? []).map((c) => ({ key: c.id, name: c.name, line: c.lastMessage?.body || c.title || "BMU team", at: c.lastMessage?.at, unread: c.unread, initial: c.name.charAt(0).toUpperCase(), title: c.title })),
   ];
   const head = rows.find((r) => r.key === current)!;
 
@@ -132,7 +139,7 @@ export default function ClientMessagesPage() {
             </span>
             <span className="min-w-0">
               <span className="block truncate font-medium text-charcoal">{head.name}</span>
-              <span className="block truncate text-xs text-ink-muted">{current === "owner" ? "BMU Owner" : amName ? "Client Manager" : "Not assigned yet"}</span>
+              <span className="block truncate text-xs text-ink-muted">{current === "owner" ? "BMU Owner" : current === "am" ? (amName ? "Client Manager" : "Not assigned yet") : `BMU Marketing${"title" in head && head.title ? ` · ${head.title}` : ""}`}</span>
             </span>
           </div>
           {threadError ? (
@@ -146,11 +153,11 @@ export default function ClientMessagesPage() {
                 key={current}
                 thread={thread}
                 onSend={async (body, _internal, files) => {
-                  setThread(current === "owner" ? await api.client.sendOwnerMessage(body, files) : await api.client.sendMessage(body, files));
+                  setThread(current === "owner" ? await api.client.sendOwnerMessage(body, files) : current === "am" ? await api.client.sendMessage(body, files) : await api.client.sendStaffMessage(current, body, files));
                   refreshList().catch(() => {});
                 }}
                 onRefresh={async () => setThread(await loadThread(current))}
-                onUpload={(f) => (current === "owner" ? api.service.uploadOwnerAttachment(f) : api.service.uploadAttachment(f))}
+                onUpload={(f) => (current === "owner" ? api.service.uploadOwnerAttachment(f) : current === "am" ? api.service.uploadAttachment(f) : api.client.uploadStaffAttachment(current, f))}
               />
             </div>
           )}

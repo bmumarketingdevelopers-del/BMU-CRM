@@ -286,6 +286,13 @@ export class OpsCommsController {
     return this.comms.update(me, id, body, ip);
   }
 
+  /** v53: the open discussion's heartbeat: "I am reading this" (no notifications for it) and what changed. */
+  @Post('threads/:id/pulse')
+  @HttpCode(200)
+  pulse(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown) {
+    return this.comms.pulse(me, id, body);
+  }
+
   @Post('threads/:id/messages')
   post(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.comms.post(me, id, body, ip);

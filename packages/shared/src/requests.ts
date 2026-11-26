@@ -120,7 +120,8 @@ export type ThreadView = {
   kind?: ClientThreadKind;
 };
 
-export type ClientThreadKind = "client_am" | "client_owner";
+/** v53: client_staff = a chat a team member started with the client from Discussions. */
+export type ClientThreadKind = "client_am" | "client_owner" | "client_staff";
 
 export type ThreadSummary = {
   id: string;
@@ -141,6 +142,8 @@ export type ClientChatSummary = {
 export type ClientChatList = {
   owner: ClientChatSummary | null;
   am: ClientChatSummary & { name: string | null };
+  /** v53: chats other team members started with this client (newest first). */
+  staff: (ClientChatSummary & { id: string; name: string; title: string | null })[];
 };
 
 export const sendMessageSchema = z

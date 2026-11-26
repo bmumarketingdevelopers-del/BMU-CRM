@@ -153,6 +153,24 @@ export class ClientDeskController {
     return this.messages.clientChats(me);
   }
 
+  /** v53: a chat a team member started with the client. */
+  @Get('chats/:id')
+  staffChat(@CurrentUser() me: Me, @Param('id') id: string) {
+    return this.messages.forClientStaff(me, id);
+  }
+
+  @Post('chats/:id/messages')
+  sendToStaff(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    const m = parse(sendMessageSchema, body);
+    return this.messages.send(me, id, m.body, false, ip, m.attachmentIds);
+  }
+
+  @Post('chats/:id/attachments')
+  @UseInterceptors(attachmentUpload)
+  attachToStaff(@CurrentUser() me: Me, @Param('id') id: string, @UploadedFile() file: UploadedAttachment | undefined) {
+    return this.messages.upload(me, id, file, storageRoot());
+  }
+
   /** The client's chat with BMU Owner (Founder). 404 until the Founder has written. */
   @Get('owner-thread')
   ownerThread(@CurrentUser() me: Me) {
