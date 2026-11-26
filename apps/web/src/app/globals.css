@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* Hand cursor on everything clickable (Tailwind v4 leaves buttons on the default arrow). In the base layer so a
+   `cursor-*` class on an element still wins. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="tab"],
+  [role="option"],
+  summary,
+  select:not(:disabled),
+  label:has(> input[type="checkbox"]:not(:disabled)),
+  label:has(> input[type="radio"]:not(:disabled)),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
 /* BMU design tokens (packages/shared/src/tokens.ts). Uploaded UX/UI files override these. */
 :root {
   /* Light only, like bmumarketing.in: the app ignores the device's dark mode. */

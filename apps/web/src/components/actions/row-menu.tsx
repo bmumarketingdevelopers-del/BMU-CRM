@@ -72,7 +72,7 @@ export function RowMenu({ items, label = "More actions", align = "right", classN
         ⋯
       </button>
       {open && (
-        <div id={id} role="menu" className={`absolute top-full z-50 mt-1 w-60 border border-border bg-surface py-1 text-sm shadow-lg ${align === "right" ? "right-0" : "left-0"}`}>
+        <div id={id} role="menu" className={`absolute top-full z-50 mt-1 w-60 border border-border bg-surface py-1 text-sm text-ink shadow-lg ${align === "right" ? "right-0" : "left-0"}`}>
           {shown.map((i) => {
             const cls = `flex w-full items-start justify-between gap-2 px-3 py-1.5 text-left ${i.disabledReason ? "cursor-not-allowed text-ink-muted/60" : i.danger ? "text-red hover:bg-canvas" : "hover:bg-canvas"}`;
             const body = (
