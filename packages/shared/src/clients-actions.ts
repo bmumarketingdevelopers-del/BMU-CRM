@@ -126,6 +126,17 @@ export function clientServicesProblems(v: ClientServicesInput, list: PriceList):
   return [...new Set(out)];
 }
 
+/**
+ * v53: adding a client: each chosen sub service and bundle needs a plan, because the picks start as projects and the
+ * plan becomes the project's tier. (Changing a client's services later keeps plans optional.)
+ */
+export function clientServicesPlanProblems(v: ClientServicesInput, list: PriceList): string[] {
+  const plans = v.plans ?? {};
+  const names = new Map([...list.groups.flatMap((g) => g.subServices.map((s) => [s.id, s.name] as const)), ...list.bundles.map((b) => [b.id, b.name] as const)]);
+  const missing = [...(v.subServiceIds ?? []), ...(v.bundleIds ?? [])].filter((id) => !plans[id]).map((id) => names.get(id) ?? "a service");
+  return missing.length ? [`Choose a plan for ${missing.join(", ")}.`] : [];
+}
+
 /** A client's service or bundle as shown on the client page and used to start quotation and invoice items. */
 export type ClientServiceRow = {
   id: string;
