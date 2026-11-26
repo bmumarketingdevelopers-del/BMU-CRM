@@ -106,11 +106,13 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
         if (!live) return;
         setOpts(o);
         const forClient = prefill?.clientId ? o.engagements.filter((e) => e.clientId === prefill.clientId) : [];
+        // v51: a self task (team members, not subtasks) is always in the person's own department.
+        const ownDept = !o.canAssignOthers && !prefill?.parentId ? o.me.departmentId : null;
         setV((x) => ({
           ...x,
           ownerId: x.ownerId || (o.canAssignOthers ? "" : o.me.id),
           // v32: Founder / Branch Manager / client leads pick departments themselves; Department Heads start on their own.
-          departmentId: x.departmentId || (o.assignMode === "heads" ? "" : (o.teamDepartmentIds?.[0] ?? o.me.departmentId ?? "")),
+          departmentId: ownDept || x.departmentId || (o.assignMode === "heads" ? "" : (o.teamDepartmentIds?.[0] ?? o.me.departmentId ?? "")),
           engagementId: x.engagementId || (forClient.length === 1 ? forClient[0].id : ""),
           internal: x.internal || (!x.engagementId && !o.engagements.length),
         }));
@@ -168,6 +170,10 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
   }, [opts, v.engagementId, v.departmentId]);
   // v32: tasks from the Founder, Branch Manager and client leads go to the chosen departments' heads.
   const headsMode = opts?.assignMode === "heads";
+  // v51: team members who only add tasks for themselves get the short "Self task" form: their own department filled
+  // in, a description instead of "More details". People who assign work to others keep the full form.
+  const selfMode = !!opts && !opts.canAssignOthers && !prefill?.parentId;
+  const ownDept = selfMode && opts.me.departmentId ? opts.departments.find((d) => d.id === opts.me.departmentId) : undefined;
   const chosenDepts = headsMode ? (v.departmentIds.length ? v.departmentIds : v.departmentId ? [v.departmentId] : []) : [];
   const deptHeads = chosenDepts.map((id) => opts?.departments.find((d) => d.id === id)).filter((d): d is NonNullable<typeof d> => !!d);
   const headOwner = headsMode ? (deptHeads[0]?.head?.id ?? "") : "";
@@ -193,7 +199,7 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
     if (v.title.trim().length < 3) e.title = "Give the task a title (at least 3 characters)";
     if (mode !== "draft") {
       if (!v.internal && !v.engagementId) e.engagementId = "Pick the client engagement, or mark it Internal";
-      if (!v.departmentId) e.departmentId = headsMode ? "Pick at least one department" : "Pick a department";
+      if (!v.departmentId && !ownDept) e.departmentId = headsMode ? "Pick at least one department" : "Pick a department";
       else if (headsMode && deptHeads.some((d) => !d.head)) e.departmentId = `${deptHeads.filter((d) => !d.head).map((d) => d.name).join(", ")} has no Department Head yet`;
       if (!ownerId) e.ownerId = headsMode ? "The chosen department has no Department Head yet" : "Pick who will do it";
       if (!v.deadline) e.deadline = "Pick a deadline";
@@ -214,7 +220,7 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
         title: v.title.trim(),
         internal: v.internal,
         engagementId: v.internal ? null : v.engagementId || null,
-        departmentId: v.departmentId,
+        departmentId: ownDept?.id ?? v.departmentId,
         departmentIds: headsMode && chosenDepts.length > 1 ? chosenDepts : undefined,
         ownerId,
         deadline: v.deadline,
@@ -367,15 +373,15 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
   return (
     <ActionDrawer
       open={open}
-      title={prefill?.parentId ? "New subtask" : "New task"}
-      subtitle={parentTitle ? `Under “${parentTitle}”` : prefill?.source ? "From a message" : "Required fields first; the rest is under More details."}
+      title={prefill?.parentId ? "New subtask" : selfMode ? "Self task" : "New task"}
+      subtitle={parentTitle ? `Under “${parentTitle}”` : prefill?.source ? "From a message" : selfMode ? "A task for yourself, in your own department." : "Required fields first; the rest is under More details."}
       onClose={onClose}
       onSubmit={save}
       saving={saving}
       error={error ?? optsError}
       allowAnother
       allowDraft
-      more={more}
+      more={selfMode ? undefined : more}
       banner={draft.banner}
       footerNote={draft.savedAt ? `Draft autosaved ${new Date(draft.savedAt).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}` : undefined}
       testId="task-drawer"
@@ -439,6 +445,12 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
             ))}
           </div>
         </Field>
+      ) : ownDept ? (
+        <Field label="Department" required hint="Your department. Filled in for client work and internal tasks alike.">
+          <p className="border border-border bg-canvas/40 px-3 py-2 text-sm" data-testid="task-own-department">
+            {ownDept.name}
+          </p>
+        </Field>
       ) : (
         <Field label="Department" required error={errors.departmentId}>
           <select className={inputCls} value={v.departmentId} onChange={(e) => set("departmentId", e.target.value)} aria-label="Department">
@@ -492,6 +504,11 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
           <SendFileControls limit={20 - files.length} upload={(f) => api.coreTasks.stageFile(f)} addLink={(url) => api.coreTasks.stageLink({ url })} onAdded={(f) => setFiles((x) => [...x, f])} />
         </div>
       </Field>
+      {selfMode && (
+        <Field label="Description">
+          <TextArea value={v.description} onChange={(e) => set("description", e.target.value)} aria-label="Description" />
+        </Field>
+      )}
       {chosen?.onLeave && coreCanOverride(me) && (
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={v.overrideLeave} onChange={(e) => set("overrideLeave", e.target.checked)} /> Override leave (Department Head)
