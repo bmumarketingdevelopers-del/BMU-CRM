@@ -104,7 +104,10 @@ export function TasksWorkspace() {
   useActionShortcuts({ n: canNew("task") ? addTask : undefined, slash: () => search.current?.focus() });
 
   const clients = useMemo(() => [...new Map((opts?.engagements ?? []).map((e) => [e.clientId, e.client])).entries()].sort((a, b) => a[1].localeCompare(b[1])), [opts]);
-  const active = Object.entries(filters).filter(([k, v]) => v && !["q", "scope", "show"].includes(k)).length;
+  // v51: team members who only add tasks for themselves get a short filter bar: their clients, status, one date, tag.
+  const employee = !coreCanManageTasks(me);
+  // The single date fills both from and to, so it counts once.
+  const active = Object.entries(filters).filter(([k, v]) => v && !["q", "scope", "show", ...(employee ? ["to"] : [])].includes(k)).length;
   const manager = !!opts?.canAssignOthers;
   const canImport = me.roles.some((r) => ["founder", "admin", "am_lead", "department_head", "account_manager"].includes(r));
   const selected = sel.ids.map((id) => byId.get(id)).filter((r): r is CoreTaskRow => !!r);
@@ -190,32 +193,37 @@ export function TasksWorkspace() {
           <option value="drafts">Drafts</option>
           <option value="archived">Archived</option>
         </select>
-        <select className={selectCls} value={filters.ownerId} onChange={(e) => set({ ownerId: e.target.value, scope: e.target.value ? "team" : filters.scope })} aria-label="Owner">
-          <option value="">Any owner</option>
-          <option value="none">Unassigned</option>
-          {opts?.people.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        {!employee && (
+          <select className={selectCls} value={filters.ownerId} onChange={(e) => set({ ownerId: e.target.value, scope: e.target.value ? "team" : filters.scope })} aria-label="Owner">
+            <option value="">Any owner</option>
+            <option value="none">Unassigned</option>
+            {opts?.people.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {/* Team members: only the clients they work on (the same list as the task form). */}
         <select className={selectCls} value={filters.clientId} onChange={(e) => set({ clientId: e.target.value })} aria-label="Client">
-          <option value="">Any client</option>
-          <option value="internal">Internal</option>
+          <option value="">{employee ? "Client" : "Any client"}</option>
+          {!employee && <option value="internal">Internal</option>}
           {clients.map(([id, name]) => (
             <option key={id} value={id}>
               {name}
             </option>
           ))}
         </select>
-        <select className={selectCls} value={filters.departmentId} onChange={(e) => set({ departmentId: e.target.value })} aria-label="Department">
-          <option value="">Any department</option>
-          {opts?.departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+        {!employee && (
+          <select className={selectCls} value={filters.departmentId} onChange={(e) => set({ departmentId: e.target.value })} aria-label="Department">
+            <option value="">Any department</option>
+            {opts?.departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        )}
         <select className={selectCls} value={filters.status} onChange={(e) => set({ status: e.target.value })} aria-label="Status">
           <option value="">Any status</option>
           <option value="overdue">Overdue</option>
@@ -225,14 +233,23 @@ export function TasksWorkspace() {
             </option>
           ))}
         </select>
-        <label className="flex items-center gap-2 text-xs">
-          Due from
-          <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value })} aria-label="Due from" />
-        </label>
-        <label className="flex items-center gap-2 text-xs">
-          to
-          <input type="date" className={`${selectCls} flex-1`} value={filters.to} onChange={(e) => set({ to: e.target.value })} aria-label="Due to" />
-        </label>
+        {employee ? (
+          <label className="flex items-center gap-2 text-xs">
+            Date
+            <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value, to: e.target.value })} aria-label="Due on" title="Tasks due on this day" />
+          </label>
+        ) : (
+          <>
+            <label className="flex items-center gap-2 text-xs">
+              Due from
+              <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value })} aria-label="Due from" />
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              to
+              <input type="date" className={`${selectCls} flex-1`} value={filters.to} onChange={(e) => set({ to: e.target.value })} aria-label="Due to" />
+            </label>
+          </>
+        )}
         <input className={selectCls} value={filters.tag} onChange={(e) => set({ tag: e.target.value.trim() })} placeholder="Tag" aria-label="Tag" />
         {active > 0 && (
           <button type="button" className="text-left text-xs underline" onClick={() => setFilters((f) => ({ ...EMPTY, q: f.q, scope: f.scope }))}>
