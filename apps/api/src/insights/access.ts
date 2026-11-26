@@ -21,6 +21,10 @@ export const isDepartmentView = (me: Me) => me.roles.includes('department_head')
 export function assertCommand(me: Me) {
   if (!canReadCommand(me)) throw new ForbiddenException('Command Centre only');
 }
+/** v53: the Quality page (QC pass rates) is also open to HR, read-only. */
+export function assertQuality(me: Me) {
+  if (!canReadCommand(me) && !(isStaff(me) && me.roles.includes('hr_ops'))) throw new ForbiddenException('Quality is for leadership, Department Heads, Finance and HR');
+}
 export function assertMoney(me: Me) {
   if (!canSeeMoney(me)) throw new ForbiddenException('Revenue and collections are for Founder, Branch Manager and Finance');
 }

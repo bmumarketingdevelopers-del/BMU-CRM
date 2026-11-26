@@ -14,7 +14,8 @@ const hasAny = (roles: string[], allowed: readonly string[]) => roles.some((r) =
 
 /** add_client: Founder, Branch Manager, Sales Manager, CM Lead. */
 /** v33: Client Managers add (and migrate) clients too; the client is theirs. */
-export const CLIENTS_ADD_ROLES = ["founder", "admin", "sales_manager", "am_lead", "account_manager"] as const;
+// v53: HR can add clients too (new clients; migrating an existing one stays with leadership and Client Managers).
+export const CLIENTS_ADD_ROLES = ["founder", "admin", "sales_manager", "am_lead", "account_manager", "hr_ops"] as const;
 /** v33: a Client Manager without a leadership role: the clients they add are always their own. */
 export const clientsAddsOwnOnly = (me: Who) => staff(me) && me.roles.includes("account_manager") && !hasAny(me.roles, ["founder", "admin", "sales_manager", "am_lead"]);
 /** assign_reassign_am: CM Lead, Branch Manager, Founder. */
@@ -24,7 +25,8 @@ export const CLIENTS_OFFBOARD_ROLES = ["founder", "admin", "am_lead"] as const;
 /** add_engagement: CM (propose), Sales Manager, Admin. */
 export const CLIENTS_ENGAGEMENT_ROLES = ["founder", "admin", "am_lead", "sales_manager", "account_manager"] as const;
 /** People whose list of clients shows everyone. */
-export const CLIENTS_SEE_ALL_ROLES = ["founder", "admin", "am_lead", "finance", "sales_manager"] as const;
+// v53: HR sees every client (the same client access as Finance and Sales Managers).
+export const CLIENTS_SEE_ALL_ROLES = ["founder", "admin", "am_lead", "finance", "sales_manager", "hr_ops"] as const;
 
 type Who = { type?: string; roles: string[] };
 const staff = (me: Who) => me.type !== "client" && me.type !== "creator";

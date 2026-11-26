@@ -161,9 +161,11 @@ const restricted: Record<string, string[]> = {
   "Cash Flow": MONEY,
   Profit: [...FA, "finance", "am_lead"],
   Capacity: NOT_HR,
-  Quality: NOT_HR,
+  // v53: HR can read QC pass rates (read-only page).
+  Quality: [...NOT_HR, "hr_ops"],
   "Client Health": NOT_HR,
-  Clients: NOT_HR,
+  // v53: HR adds clients and sees every client.
+  Clients: [...NOT_HR, "hr_ops"],
   "Delivery Speed": NOT_HR,
   "SLA & Response": NOT_HR,
   "Report Builder": NOT_HR,
