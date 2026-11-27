@@ -73,7 +73,7 @@ export class OpsAdminService implements OnModuleInit {
     this.registry.registerApprovalHandler({
       action: 'template.qc_publish',
       label: 'Publish QC checklist',
-      href: () => '/admin/templates',
+      href: () => '/admin/qc-checklists',
       apply: async ({ approver, req }) => {
         const p = req.payload as { key: string; name: string; items: string[] };
         const current = await this.prisma.checklistTemplate.findFirst({ where: { orgId: approver.orgId, kind: 'qc', key: p.key }, orderBy: { version: 'desc' } });

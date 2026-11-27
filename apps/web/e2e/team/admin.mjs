@@ -271,7 +271,9 @@ check((await body(founder)).includes("1 read and acknowledged"), "?sop= opens th
 
 // ---------------------------------------------------------------------------
 console.log("Flow templates and QC checklists");
-await founder.goto(`${BASE}/admin/templates`, { waitUntil: "networkidle" });
+// v57: QC checklists have their own page.
+await founder.goto(`${BASE}/admin/qc-checklists`, { waitUntil: "networkidle" });
+check((await body(founder)).includes("QC checklists"), "QC checklists open on their own page");
 const qcBox = founder.locator("textarea").first();
 const qcWas = await qcBox.inputValue();
 await qcBox.fill(`${qcWas}\nJourney check ${stamp}`);
@@ -281,6 +283,8 @@ check(await founder.getByText("Saved.").first().isVisible(), "QC checklist saves
 await founder.locator("textarea").first().fill(qcWas);
 await founder.getByRole("button", { name: "Save", exact: true }).first().click();
 await settle(founder);
+await founder.goto(`${BASE}/admin/templates`, { waitUntil: "networkidle" });
+check(!(await body(founder)).includes("QC checklists"), "Department flow templates no longer show the QC checklists");
 await founder.getByRole("button", { name: "Save new version" }).first().click();
 await founder.getByText("Saved as a new version.").first().waitFor({ timeout: 10000 }).catch(() => {});
 check((await body(founder)).includes("Saved as a new version"), "flow template saves a new version");
