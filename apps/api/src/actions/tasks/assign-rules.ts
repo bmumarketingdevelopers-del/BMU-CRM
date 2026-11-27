@@ -1,7 +1,8 @@
 // v32: who may be given a task.
 // - Department Heads: their own team members (their department) or themselves.
-// - Everyone else who assigns work (Founder, Branch Manager, CM Lead, Client Managers, Strategists): only the Department
-//   Head of the department(s) they choose; picking several departments sends each head their own copy.
+// - Everyone else who assigns work (Founder, Branch Manager, CM Lead, Client Managers, Strategists): v54: anyone who works
+//   in the department they choose (its members or its head), or themselves. A department with no head still gets work.
+//   Picking several departments (no person) still sends each head their own copy.
 // - Team members (producers, interns, QC...): only themselves.
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { Me } from '@bmu/shared';
@@ -48,15 +49,22 @@ export async function assertAssignee(prisma: PrismaService, me: Me, scope: Assig
     if (!u?.departmentId || !scope.departmentIds.includes(u.departmentId)) throw new ForbiddenException('Department Heads assign tasks only to their own team members (or keep them).');
     return;
   }
-  if (!departmentId) throw new BadRequestException('Pick the department; the task goes to its Department Head');
-  const head = await departmentHead(prisma, me.orgId, departmentId);
-  if (ownerId !== head.id) throw new ForbiddenException(`Tasks go to the Department Head of the chosen department (${head.department}: ${head.name}).`);
+  if (!departmentId) throw new BadRequestException('Pick the department, then the person in it who will do the task');
+  if (ownerId === me.id) return;
+  const [d, u] = await Promise.all([
+    prisma.department.findFirst({ where: { id: departmentId, orgId: me.orgId, deletedAt: null }, select: { name: true, headUserId: true } }),
+    prisma.user.findFirst({ where: { id: ownerId, orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null }, select: { departmentId: true, name: true } }),
+  ]);
+  if (!d) throw new BadRequestException('Pick a department');
+  if (!u) throw new BadRequestException('Pick an active team member');
+  if (u.departmentId !== departmentId && d.headUserId !== ownerId) throw new ForbiddenException(`${u.name} doesn't work in ${d.name}. Pick someone from ${d.name}.`);
 }
 
-/** Narrows the assignee picker to the people `me` may assign (heads of the chosen department, or their team). */
+/** Narrows the assignee picker to the people `me` may assign (the chosen department's people, or their team). */
 export async function assigneeWhere(prisma: PrismaService, me: Me, scope: AssignScope, departmentId?: string | null): Promise<Prisma.UserWhereInput> {
   if (scope.kind === 'self') return { id: me.id };
   if (scope.kind === 'team') return { OR: [{ id: me.id }, { departmentId: { in: scope.departmentIds } }] };
-  const depts = await prisma.department.findMany({ where: { orgId: me.orgId, deletedAt: null, headUserId: { not: null }, ...(departmentId ? { id: departmentId } : {}) }, select: { headUserId: true } });
-  return { id: { in: depts.map((d) => d.headUserId!) } };
+  if (!departmentId) return { id: me.id };
+  const d = await prisma.department.findFirst({ where: { id: departmentId, orgId: me.orgId, deletedAt: null }, select: { headUserId: true } });
+  return { OR: [{ departmentId }, ...(d?.headUserId ? [{ id: d.headUserId }] : [])] };
 }

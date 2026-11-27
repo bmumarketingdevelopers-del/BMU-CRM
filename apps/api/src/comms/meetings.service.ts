@@ -48,6 +48,7 @@ import {
 import type { Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { parse } from '../common/zod.js';
+import { assertAssignee, assignScope } from '../actions/tasks/assign-rules.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { appUrl, EmailService } from '../service/email.service.js';
@@ -667,7 +668,11 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
     return { ...out, basic: isBasic };
   }
 
-  /** Turns chosen action items into tasks owned by the host (or the project's team when a project is picked). */
+  /**
+   * Turns chosen action items into tasks for the person picked (v54: following the usual task rules: a Department Head
+   * gives them to their team, Client Managers and leadership to anyone in a department, team members only to
+   * themselves), or for you when nobody is picked. The person is told.
+   */
   async createTasks(me: Me, id: string, body: unknown, ip?: string) {
     const m = await this.loadForStaff(me, id);
     this.assertEdit(me, m);
@@ -681,19 +686,30 @@ export class MeetingsService implements OnModuleInit, OnModuleDestroy {
       engagementId = (await this.prisma.engagement.findFirst({ where: { clientOrgId: m.clientOrgId, status: { notIn: ['delivered', 'closed', 'offboarding', 'pending_payment'] } }, orderBy: { createdAt: 'desc' }, select: { id: true } }))?.id ?? null;
     }
     const deadline = new Date(Date.now() + 2 * DAY);
-    let made = 0;
+    const ownerId = input.ownerId || me.id;
+    const owner = await this.prisma.user.findFirst({ where: { id: ownerId, orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null }, select: { id: true, name: true, departmentId: true } });
+    if (!owner) throw new BadRequestException('Pick an active team member');
+    if (owner.id !== me.id) await assertAssignee(this.prisma, me, await assignScope(this.prisma, me), owner.id, owner.departmentId);
+    const made: { id: string; title: string }[] = [];
     for (const i of input.items) {
       const item = items[i];
       if (!item || item.taskId) continue;
       const t = await this.prisma.task.create({
-        data: { orgId: me.orgId, title: item.text.slice(0, 200), ownerId: me.id, engagementId, isInternal: !engagementId, deadline, description: `From the meeting "${m.title}" on ${istLabel(m.startAt)}.` },
+        data: { orgId: me.orgId, title: item.text.slice(0, 200), ownerId: owner.id, departmentId: owner.departmentId, engagementId, isInternal: !engagementId, deadline, createdById: me.id, description: `From the meeting "${m.title}" on ${istLabel(m.startAt)}.` },
       });
       item.taskId = t.id;
-      made++;
+      made.push({ id: t.id, title: t.title });
     }
-    if (!made) throw new BadRequestException('Those action items already have tasks');
+    if (!made.length) throw new BadRequestException('Those action items already have tasks');
+    if (owner.id !== me.id)
+      await this.notifications.notify(me.orgId, [owner.id], {
+        kind: 'task_assigned',
+        title: made.length === 1 ? `${me.name} assigned you: ${made[0].title}` : `${me.name} assigned you ${made.length} tasks from "${m.title}"`,
+        body: `From the meeting on ${istLabel(m.startAt)}`,
+        link: made.length === 1 ? `/team/tasks/${made[0].id}` : '/team/tasks',
+      });
     const after = await this.prisma.meeting.update({ where: { id }, data: { actionItems: items.map((a) => ({ text: a.text, taskId: a.taskId ?? null })) } });
-    await this.audit.log(me, 'meeting.tasks_created', 'Meeting', id, null, { count: made }, ip);
+    await this.audit.log(me, 'meeting.tasks_created', 'Meeting', id, null, { count: made.length, ownerId: owner.id }, ip);
     return this.view(me, after);
   }
 

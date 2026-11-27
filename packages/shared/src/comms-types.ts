@@ -464,7 +464,8 @@ export const meetingNotesSchema = z.object({
 });
 export type MeetingNotesInput = z.infer<typeof meetingNotesSchema>;
 
-export const meetingTasksSchema = z.object({ items: z.array(z.number().int().min(0)).min(1).max(30), engagementId: z.string().nullable().optional() });
+/** v54: `ownerId` gives the tasks to someone else (the usual task rules decide who); empty keeps them with you. */
+export const meetingTasksSchema = z.object({ items: z.array(z.number().int().min(0)).min(1).max(30), engagementId: z.string().nullable().optional(), ownerId: z.string().nullable().optional() });
 
 /** Pulls action items from notes without AI: bullet lines, "Action:", "TODO" or "X will …". */
 export function basicActionItems(notes: string): string[] {

@@ -177,14 +177,25 @@ export class DashboardDataService {
     const orgId = me.orgId;
     const now = new Date();
     const clientOf = new Map<string, string>();
-    const taskRow = (t: { id: string; title: string; deadline: Date | null; status: string; blockedReason: string | null; owner: { name: string } | null; engagementId: string | null }): DashboardListRow => ({
+    const taskRow = (t: { id: string; title: string; deadline: Date | null; status: string; blockedReason: string | null; owner: { name: string } | null; engagementId: string | null; qcState: string | null; qcNote: string | null; qcReviewerId: string | null }): DashboardListRow => ({
       id: t.id,
       title: t.title,
-      meta: [(t.engagementId && clientOf.get(t.engagementId)) || 'Internal', t.owner?.name, source === 'blocked_tasks' ? t.blockedReason || 'No reason given' : t.deadline ? `due ${day.format(t.deadline)}` : 'no deadline'].filter(Boolean).join(' · '),
+      meta: [(t.engagementId && clientOf.get(t.engagementId)) || 'Internal', t.owner?.name, source === 'blocked_tasks' ? t.blockedReason || 'No reason given' : t.qcState === 'failed' && t.qcNote ? `QC: ${t.qcNote.slice(0, 80)}` : t.deadline ? `due ${day.format(t.deadline)}` : 'no deadline'].filter(Boolean).join(' · '),
       href: `/team/tasks/${t.id}`,
-      badge: t.status === 'blocked' ? { label: 'Blocked', tone: 'red' } : t.deadline && t.deadline < now ? { label: 'Late', tone: 'red' } : t.deadline && t.deadline < endOfToday() ? { label: 'Today', tone: 'amber' } : undefined,
+      badge:
+        t.status === 'blocked'
+          ? { label: 'Blocked', tone: 'red' }
+          : t.qcState === 'failed'
+            ? { label: 'QC not passed', tone: 'red' }
+            : t.status === 'in_qc'
+              ? { label: t.qcReviewerId === me.id ? 'QC for you' : 'In QC', tone: 'amber' }
+              : t.deadline && t.deadline < now
+                ? { label: 'Late', tone: 'red' }
+                : t.deadline && t.deadline < endOfToday()
+                  ? { label: 'Today', tone: 'amber' }
+                  : undefined,
     });
-    const taskSelect = { id: true, title: true, deadline: true, status: true, blockedReason: true, engagementId: true, owner: { select: { name: true } } } as const;
+    const taskSelect = { id: true, title: true, deadline: true, status: true, blockedReason: true, engagementId: true, qcState: true, qcNote: true, qcReviewerId: true, owner: { select: { name: true } } } as const;
 
     switch (source) {
       case 'my_tasks':
@@ -192,7 +203,7 @@ export class DashboardDataService {
       case 'overdue_tasks':
       case 'blocked_tasks': {
         const base: Prisma.TaskWhereInput = { orgId, archivedAt: null, isDraft: false, status: { in: [...OPEN_TASK] } };
-        const scope = source === 'my_tasks' ? { ownerId: me.id } : await this.taskScope(me);
+        const scope: Prisma.TaskWhereInput = source === 'my_tasks' ? { OR: [{ ownerId: me.id }, { qcReviewerId: me.id, status: 'in_qc' }] } : await this.taskScope(me);
         const extra: Prisma.TaskWhereInput =
           source === 'due_this_week' ? { deadline: { gte: now, lt: new Date(endOfToday().getTime() + 6 * DAY) } } : source === 'overdue_tasks' ? { deadline: { lt: now } } : source === 'blocked_tasks' ? { status: 'blocked' } : {};
         const where: Prisma.TaskWhereInput = { AND: [base, scope, extra] };

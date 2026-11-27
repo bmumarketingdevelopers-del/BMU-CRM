@@ -179,6 +179,8 @@ function MeetingNotes({ m, onSaved }: { m: MeetingView; onSaved: () => void }) {
   const [summary, setSummary] = useState(m.summary ?? "");
   const [items, setItems] = useState(m.actionItems);
   const [picked, setPicked] = useState<number[]>([]);
+  // v54: who the new tasks go to (the team in the meeting); empty keeps them with you.
+  const [giveTo, setGiveTo] = useState("");
   const [msg, setMsg] = useState<string>();
   const [busy, setBusy] = useState(false);
   const run = async (fn: () => Promise<unknown>, ok?: string) => {
@@ -246,6 +248,19 @@ function MeetingNotes({ m, onSaved }: { m: MeetingView; onSaved: () => void }) {
           </button>
         )}
       </div>
+      {m.can.edit && picked.length > 0 && m.participants.length > 0 && (
+        <label className="block text-xs">
+          <span className="font-medium">Give the tasks to</span>
+          <select className="mt-1 block w-full border border-border bg-surface-raised p-2 text-sm" value={giveTo} onChange={(e) => setGiveTo(e.target.value)} aria-label="Give the tasks to">
+            <option value="">Me</option>
+            {m.participants.map((p) => (
+              <option key={p.userId} value={p.userId}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {m.can.edit && (
         <div className="flex flex-wrap gap-2">
           <Button disabled={busy} onClick={() => save()}>
@@ -263,11 +278,11 @@ function MeetingNotes({ m, onSaved }: { m: MeetingView; onSaved: () => void }) {
             onClick={() =>
               run(async () => {
                 await api.meetings.saveNotes(m.id, { notes, summary: summary || null, actionItems: items.filter((a) => a.text.trim()).map((a) => ({ text: a.text, taskId: a.taskId })) });
-                const v = await api.meetings.createTasks(m.id, picked);
+                const v = await api.meetings.createTasks(m.id, picked, undefined, giveTo || null);
                 setItems(v.actionItems);
                 setPicked([]);
                 onSaved();
-              }, "Tasks created. They are on your task list.")
+              }, giveTo ? `Tasks created and given to ${m.participants.find((p) => p.userId === giveTo)?.name ?? "them"}. They have been told.` : "Tasks created. They are on your task list.")
             }
           >
             Make tasks ({picked.length})

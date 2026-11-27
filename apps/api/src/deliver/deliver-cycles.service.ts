@@ -315,6 +315,8 @@ export class DeliverCyclesService implements OnModuleInit {
     const held = await this.heldMessage(e.clientOrgId, created.invoiceId ?? undefined);
     if (created.invoiceId) await this.audit.logSystem(e.orgId, 'invoice.issued', 'Invoice', created.invoiceId, { kind: 'retainer', period, totalPaise: created.invoiceTotal });
     const label = deliverPeriodLabel(period);
+    // v54: nobody to plan the month (no Client Manager, no Strategist): the CM Leads are told.
+    if (!e.amId && !strategist) await this.notifications.noClientManager(e.orgId, e.clientOrg.name, `Planning ${label}`, `/team/projects/${engagementId}`);
     await this.notifications.notify(e.orgId, [e.amId, strategist?.id].filter((x) => x !== actor?.id), {
       kind: 'cycle_started',
       title: `${e.clientOrg.name}: ${label} has started`,

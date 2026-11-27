@@ -68,7 +68,7 @@ export const commsApi = (t: Transport) => ({
     create: (body: MeetingCreate) => t.post<MeetingView>("/meetings", body),
     saveNotes: (id: string, body: MeetingNotesInput) => t.patch<MeetingView>(`/meetings/${id}`, body),
     summarise: (id: string) => t.post<{ summary: string; actionItems: string[]; basic: boolean }>(`/meetings/${id}/summarise`),
-    createTasks: (id: string, items: number[], engagementId?: string | null) => t.post<MeetingView>(`/meetings/${id}/tasks`, { items, engagementId }),
+    createTasks: (id: string, items: number[], engagementId?: string | null, ownerId?: string | null) => t.post<MeetingView>(`/meetings/${id}/tasks`, { items, engagementId, ownerId }),
     cancel: (id: string) => t.post<MeetingView>(`/meetings/${id}/cancel`),
     // v23 meeting requests
     arrangeOptions: () => t.get<MeetingArrangeOptions>("/meetings/arrange-options"),

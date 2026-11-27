@@ -20,8 +20,9 @@ const todayLabel: Record<CraftTodayItem["kind"], string> = {
   invoice: "Invoice",
   reminder: "Reminder",
   unassigned: "No owner",
+  qc_review: "QC for you",
 };
-const todayTone = (k: CraftTodayItem["kind"]) => (["blocked", "overdue", "qc_failed"].includes(k) ? "red" : k === "client_reply" || k === "reminder" ? "amber" : k === "unassigned" ? "dark" : "neutral");
+const todayTone = (k: CraftTodayItem["kind"]) => (["blocked", "overdue", "qc_failed"].includes(k) ? "red" : k === "client_reply" || k === "reminder" || k === "qc_review" ? "amber" : k === "unassigned" ? "dark" : "neutral");
 
 function ago(iso: string) {
   const h = Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000);

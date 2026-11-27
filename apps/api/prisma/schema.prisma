@@ -879,13 +879,34 @@ model Task {
   deadlineChanges      Int       @default(0)
   recurrenceId         String?
   createdById          String?
+  /// v54: who checks the quality before the task counts as done (picked when the task is assigned)
+  qcReviewerId         String?
+  /// v54: waiting (sent for QC) | passed | failed (back with the owner, in progress, with the reviewer's note)
+  qcState              String?
+  qcNote               String?
+  qcAt                 DateTime?
 
   deliverable Deliverable? @relation(fields: [deliverableId], references: [id])
   owner       User?        @relation("TaskOwner", fields: [ownerId], references: [id])
 
   @@index([orgId, ownerId, status])
   @@index([parentId])
+  @@index([orgId, qcReviewerId, status])
   @@map("tasks")
+}
+
+/// v54: every QC check of a task (passed / not passed, with the reviewer's note).
+model TaskQcReview {
+  id         String    @id @default(cuid())
+  orgId      String
+  taskId     String
+  reviewerId String
+  result     QcOutcome
+  note       String?
+  createdAt  DateTime  @default(now())
+
+  @@index([taskId, createdAt])
+  @@map("task_qc_reviews")
 }
 
 model QCResult {

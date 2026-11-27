@@ -222,7 +222,8 @@ export type CraftKpi = {
   href?: string;
 };
 
-export type CraftNextKind = "overdue" | "due_today" | "assigned" | "feedback" | "blocked";
+/** v54: qc_failed = your task came back from QC with notes; qc_review = a task waiting for your QC check. */
+export type CraftNextKind = "overdue" | "due_today" | "assigned" | "feedback" | "blocked" | "qc_failed" | "qc_review";
 export type CraftNextItem = { id: string; kind: CraftNextKind; title: string; detail: string; href: string; due: string | null; client: string | null };
 
 export type CraftStrip = {
@@ -583,7 +584,7 @@ export type CraftClientCard = {
   href: string;
 };
 
-export type CraftTodayKind = "blocked" | "overdue" | "qc_failed" | "client_reply" | "approval" | "invoice" | "reminder" | "unassigned";
+export type CraftTodayKind = "blocked" | "overdue" | "qc_failed" | "client_reply" | "approval" | "invoice" | "reminder" | "unassigned" | "qc_review";
 export type CraftTodayItem = {
   id: string;
   kind: CraftTodayKind;

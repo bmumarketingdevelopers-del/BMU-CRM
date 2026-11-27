@@ -52,7 +52,8 @@ export class TaskAccess {
   async visibleWhere(me: Me): Promise<Prisma.TaskWhereInput> {
     if (me.type !== 'staff') throw new ForbiddenException('Team accounts only');
     if (isLeader(me)) return { orgId: me.orgId };
-    const or: Prisma.TaskWhereInput[] = [{ ownerId: me.id }, { createdById: me.id }];
+    // v54: the QC reviewer picked for a task sees it.
+    const or: Prisma.TaskWhereInput[] = [{ ownerId: me.id }, { createdById: me.id }, { qcReviewerId: me.id }];
     const [watched, moved] = await Promise.all([
       this.prisma.watcher.findMany({ where: { userId: me.id, targetType: 'task' }, select: { targetId: true } }),
       this.prisma.assignment.findMany({ where: { orgId: me.orgId, targetType: 'task', fromUserId: me.id, readAccessUntil: { gt: new Date() } }, select: { targetId: true } }),

@@ -194,8 +194,7 @@ describe('Manager workspace', () => {
   });
 
   it('assigning notifies the assignee and writes the audit log', async () => {
-    // v32: a Client Manager gives work only to the Department Head; the head gives it to the team.
-    await http().post(`/craft/manager/tasks/${ids.pmTask}/assign`).set(as('pm')).send({ ownerId: ids.design }).expect(403);
+    // v54: Client Managers and Department Heads both pick the person in the task's department (the head assigns here).
     const r = await http().post(`/craft/manager/tasks/${ids.pmTask}/assign`).set(as('head')).send({ ownerId: ids.design, priority: 'high', deadline: '2026-12-01' }).expect(200);
     expect(r.body.owner.id).toBe(ids.design);
     expect(r.body.priority).toBe('high');
@@ -255,8 +254,9 @@ describe('Manager workspace', () => {
     expect(r.body.client.id).toBe(ids.peak);
     expect(await prisma.notification.count({ where: { userId: ids.design, title: { contains: `Craft e2e ad-hoc ${stamp}` } } })).toBe(1);
     expect(await prisma.auditEvent.count({ where: { entityId: r.body.id, action: 'task.created' } })).toBe(1);
-    // v32: a Client Manager can't give the work straight to a designer.
-    await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e nope ${stamp}`, engagementId: ids.pmEng, specialty: 'graphic_designer', ownerId: ids.design }).expect(403);
+    // v54: a Client Manager can give the work straight to a designer.
+    const direct = await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e direct ${stamp}`, engagementId: ids.pmEng, specialty: 'graphic_designer', ownerId: ids.design }).expect(201);
+    expect(direct.body.owner.id).toBe(ids.design);
     // Not on another CM's engagement, and a CM must pick a client.
     await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e nope ${stamp}`, engagementId: ids.amEng }).expect(403);
     await http().post('/craft/manager/tasks').set(as('pm')).send({ title: `Craft e2e nope ${stamp}` }).expect(400);

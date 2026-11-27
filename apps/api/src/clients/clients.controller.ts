@@ -267,7 +267,8 @@ export class ClientPortalController {
     // Automation: plan approved → department tasks from flow templates, then the Gate 3 check.
     const result = await generateProductionTasks(this.prisma, plan.cycleId, now);
     await this.audit.logSystem(me.orgId, result.g3Passed ? 'gate.G3.passed' : 'gate.G3.waiting', 'Engagement', plan.cycle.engagementId, result);
-    // Tell the CM and everyone who just got work.
+    // Tell the CM and everyone who just got work (v54: with no CM, the CM Leads are told).
+    if (!engagement.amId) await this.notifications.noClientManager(me.orgId, engagement.clientOrg.name, `The ${engagement.service.name} plan was approved, and its client review steps`, `/team/projects/${engagement.id}`);
     const owners = await this.prisma.task.findMany({ where: { deliverable: { cycleId: plan.cycleId }, ownerId: { not: null } }, select: { ownerId: true } });
     await this.notifications.notify(me.orgId, [engagement.amId], {
       kind: 'plan_approved',

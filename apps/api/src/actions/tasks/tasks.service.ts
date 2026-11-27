@@ -32,6 +32,8 @@ import {
   type FlowStep,
   type Me,
   type TaskStatus,
+  type CoreTaskQcState,
+  coreTaskQcSchema,
 } from '@bmu/shared';
 import { z } from 'zod';
 import type { Prisma } from '../../generated/prisma/client.js';
@@ -187,12 +189,14 @@ export class TasksActionsService implements OnModuleInit {
     const depIds = [...new Set(tasks.flatMap((t) => t.dependsOn))];
     const engIds = [...new Set(tasks.filter((t) => !t.deliverable && t.engagementId).map((t) => t.engagementId!))];
     const deptIds = [...new Set(tasks.map((t) => t.departmentId ?? t.deliverable?.departmentId).filter((x): x is string => !!x))];
-    const [deps, subs, engs, depts, tags] = await Promise.all([
+    const qcIds = [...new Set(tasks.map((t) => t.qcReviewerId).filter((x): x is string => !!x))];
+    const [deps, subs, engs, depts, tags, reviewers] = await Promise.all([
       depIds.length ? this.prisma.task.findMany({ where: { id: { in: depIds } }, select: { id: true, status: true, title: true } }) : [],
       ids.length ? this.prisma.task.groupBy({ by: ['parentId', 'status'], where: { parentId: { in: ids }, archivedAt: null, isDraft: false }, _count: true }) : [],
       engIds.length ? this.prisma.engagement.findMany({ where: { id: { in: engIds } }, select: { id: true, amId: true, clientOrg: { select: { id: true, name: true } } } }) : [],
       deptIds.length ? this.prisma.department.findMany({ where: { id: { in: deptIds } }, select: { id: true, name: true } }) : [],
       this.records.tagsFor(c.me.orgId, 'task', ids),
+      qcIds.length ? this.prisma.user.findMany({ where: { id: { in: qcIds } }, select: { id: true, name: true } }) : [],
     ]);
     const now = Date.now();
     return tasks.map((t) => {
@@ -232,13 +236,24 @@ export class TasksActionsService implements OnModuleInit {
         waitingOn,
         tags: tags.get(t.id) ?? [],
         can: this.can(c, t, eng ? { id: eng.id, amId: eng.amId } : null, openSubs),
+        qc:
+          t.qcReviewerId || t.qcState
+            ? {
+                reviewer: reviewers.find((r) => r.id === t.qcReviewerId) ?? null,
+                state: (t.qcState as CoreTaskQcState | null) ?? null,
+                note: t.qcNote,
+                at: t.qcAt?.toISOString() ?? null,
+                mineToReview: t.qcReviewerId === c.me.id && t.status === 'in_qc',
+              }
+            : null,
       };
     });
   }
 
   async query(me: Me, q: CoreTaskQuery): Promise<CoreTaskRow[]> {
     const c = await this.ctx(me);
-    const and: Prisma.TaskWhereInput[] = [q.scope === 'mine' ? { orgId: me.orgId, ownerId: me.id } : await this.access.visibleWhere(me)];
+    // v54: "Mine" also lists the tasks waiting for my QC check.
+    const and: Prisma.TaskWhereInput[] = [q.scope === 'mine' ? { orgId: me.orgId, OR: [{ ownerId: me.id }, { qcReviewerId: me.id, status: 'in_qc' }] } : await this.access.visibleWhere(me)];
     if (q.archived === '1') and.push({ archivedAt: { not: null } });
     else if (q.drafts === '1') and.push({ isDraft: true, archivedAt: null });
     else if (q.completed === '1') and.push({ archivedAt: null, isDraft: false, status: 'done' });
@@ -264,7 +279,7 @@ export class TasksActionsService implements OnModuleInit {
     const c = await this.ctx(me);
     const t = await this.access.load(me, id);
     const [row] = await this.rows(c, [t]);
-    const [eng, subtasks, deps, dependents, watchers, assignments, pending, parent, responsible, createdBy, files] = await Promise.all([
+    const [eng, subtasks, deps, dependents, watchers, assignments, pending, parent, responsible, createdBy, files, qcReviews] = await Promise.all([
       this.access.engagementOf(t),
       this.prisma.task.findMany({ where: { parentId: t.id, archivedAt: null }, include: taskDetailInclude, orderBy: [{ createdAt: 'asc' }] }),
       t.dependsOn.length ? this.prisma.task.findMany({ where: { id: { in: t.dependsOn } }, select: { id: true, title: true, status: true } }) : [],
@@ -276,8 +291,9 @@ export class TasksActionsService implements OnModuleInit {
       t.blockedResponsibleId ? this.prisma.user.findUnique({ where: { id: t.blockedResponsibleId }, select: { name: true } }) : null,
       t.createdById ? this.prisma.user.findUnique({ where: { id: t.createdById }, select: { name: true } }) : null,
       t.attachments.length ? this.prisma.file.findMany({ where: { id: { in: t.attachments }, archivedAt: null }, select: { id: true, name: true, mimeType: true, sizeBytes: true, uploadedById: true, createdAt: true, kind: true, path: true } }) : [],
+      this.prisma.taskQcReview.findMany({ where: { taskId: t.id }, orderBy: { createdAt: 'desc' }, take: 30 }),
     ]);
-    const names = await this.people.names([...assignments.flatMap((a) => [a.fromUserId, a.toUserId, a.byId]), ...files.map((f) => f.uploadedById)]);
+    const names = await this.people.names([...assignments.flatMap((a) => [a.fromUserId, a.toUserId, a.byId]), ...files.map((f) => f.uploadedById), ...qcReviews.map((q) => q.reviewerId)]);
     return {
       ...row,
       description: t.description,
@@ -303,6 +319,7 @@ export class TasksActionsService implements OnModuleInit {
       pendingApprovals: pending.map((p) => ({ id: p.id, action: p.action, summary: p.summary, status: p.status })),
       createdBy: createdBy?.name ?? null,
       createdAt: t.createdAt.toISOString(),
+      qcHistory: qcReviews.map((q) => ({ id: q.id, result: q.result, note: q.note, by: names.get(q.reviewerId) ?? 'Someone', at: q.createdAt.toISOString() })),
     };
   }
 
@@ -522,10 +539,17 @@ export class TasksActionsService implements OnModuleInit {
       departmentId = departmentId ?? deliverable.departmentId;
     }
 
-    // v32: Department Heads give work to their team (or keep it); everyone else sends it to the department's head.
-    if (scope.kind === 'heads' && departmentId && !ownerId && (!isDraft || input.departmentId)) ownerId = (await departmentHead(this.prisma, me.orgId, departmentId)).id;
+    // v54: everyone who assigns work picks the person; with nobody picked, the work still goes to the department's head.
+    if (scope.kind === 'heads' && departmentId && !ownerId && !isDraft) {
+      const d = await this.prisma.department.findFirst({ where: { id: departmentId, orgId: me.orgId, deletedAt: null }, select: { name: true, headUserId: true } });
+      if (!d?.headUserId) throw new BadRequestException(`Pick the person in ${d?.name ?? 'the department'} who will do the task`);
+      ownerId = d.headUserId;
+    }
     if (!ownerId && !isDraft) ownerId = me.id;
     if (ownerId) await assertAssignee(this.prisma, me, scope, ownerId, departmentId);
+    // v54: who checks the quality (any active team member other than the person doing it).
+    const qcReviewerId = (input as { qcReviewerId?: string | null }).qcReviewerId || null;
+    const qcReviewer = qcReviewerId ? await this.qcReviewer(me, qcReviewerId, ownerId) : null;
 
     // Out of scope: needs an approved add-on request, otherwise it is saved as a draft and the CM is alerted.
     let draftReason: string | null = isDraft ? 'author' : null;
@@ -550,7 +574,7 @@ export class TasksActionsService implements OnModuleInit {
     }
     if (input.repeat && !draftReason) {
       if (!hasRole(me, 'founder', 'admin', 'am_lead', 'department_head', 'account_manager')) throw new ForbiddenException('Only a department head or client manager can set up recurring tasks');
-      return this.createRecurring(me, input as Required<Pick<DraftInput, 'title'>> & DraftInput, { ownerId: assess?.approval ? null : ownerId, departmentId, engagementId: engagement?.id ?? null, deadline, estimateMin }, ip);
+      return this.createRecurring(me, input as Required<Pick<DraftInput, 'title'>> & DraftInput, { ownerId: assess?.approval ? null : ownerId, departmentId, engagementId: engagement?.id ?? null, deadline, estimateMin, qcReviewerId: qcReviewer?.id ?? null }, ip);
     }
     const holdOwner = assess?.approval ? null : ownerId;
 
@@ -582,9 +606,10 @@ export class TasksActionsService implements OnModuleInit {
         addOnRequestId: input.addOnRequestId ?? null,
         dependsOn: input.dependsOn ?? [],
         createdById: me.id,
+        qcReviewerId: qcReviewer?.id ?? null,
       },
     });
-    await this.audit.log(me, draftReason ? 'task.drafted' : 'task.created', 'Task', created.id, undefined, { title: created.title, ownerId: holdOwner, engagementId: created.engagementId, deadline, priority: created.priority, internal: created.isInternal, draftReason, source: input.source ?? null, parentId: created.parentId }, ip);
+    await this.audit.log(me, draftReason ? 'task.drafted' : 'task.created', 'Task', created.id, undefined, { title: created.title, ownerId: holdOwner, engagementId: created.engagementId, deadline, priority: created.priority, internal: created.isInternal, draftReason, source: input.source ?? null, parentId: created.parentId, qcReviewerId: qcReviewer?.id ?? null }, ip);
     if (holdOwner && !draftReason) await this.engine.record(me, 'task', [{ id: created.id, fromUserId: null, toUserId: holdOwner }], 'new_task');
 
     // Subtasks, watchers, attachments.
@@ -623,6 +648,8 @@ export class TasksActionsService implements OnModuleInit {
         await this.notifications.notify(me.orgId, [holdOwner], { kind: 'task_assigned', title: `${me.name} assigned you: ${created.title}`, body: [engagement?.clientOrg.name ?? (created.isInternal ? 'Internal' : null), deadline ? `Due ${short(deadline)}` : null].filter(Boolean).join(' · ') || undefined, link: `/team/tasks/${created.id}` });
       }
       if (assess?.warning) message = `${message}. ${assess.warning}`;
+      if (qcReviewer && qcReviewer.id !== me.id)
+        await this.notifications.notify(me.orgId, [qcReviewer.id], { kind: 'task_qc_waiting', title: `You'll check the quality of: ${created.title}`, body: `${me.name} picked you as the QC reviewer. You'll be told when it's ready to check.`, link: `/team/tasks/${created.id}` });
       const notifyWatchers = watchers.filter((w) => w !== me.id && w !== holdOwner);
       if (notifyWatchers.length) await this.notifications.notify(me.orgId, notifyWatchers, { kind: 'task_watch', title: `You are watching: ${created.title}`, body: `Added by ${me.name}`, link: `/team/tasks/${created.id}` });
     }
@@ -686,6 +713,10 @@ export class TasksActionsService implements OnModuleInit {
       if (!(await this.prisma.department.findFirst({ where: { id: input.departmentId, orgId: me.orgId, deletedAt: null } }))) throw new BadRequestException('Pick a department');
       set('departmentId', input.departmentId, t.departmentId);
     }
+    if (input.qcReviewerId !== undefined) {
+      if (t.status === 'in_qc' && !input.qcReviewerId) throw new BadRequestException('This task is waiting for QC. Pick another reviewer instead of removing the check.');
+      set('qcReviewerId', input.qcReviewerId ? (await this.qcReviewer(me, input.qcReviewerId, t.ownerId)).id : null, t.qcReviewerId);
+    }
     if (input.deliverableId !== undefined) {
       if (input.deliverableId) {
         const d = await this.prisma.deliverable.findFirst({ where: { id: input.deliverableId, orgId: me.orgId }, select: { cycle: { select: { engagementId: true } } } });
@@ -697,6 +728,13 @@ export class TasksActionsService implements OnModuleInit {
     if (!Object.keys(data).length) return this.mutation(me, t.id, null, 'No changes');
     await this.prisma.task.update({ where: { id: t.id }, data });
     await this.audit.log(me, 'task.edited', 'Task', t.id, before, after, ip);
+    if (typeof after.qcReviewerId === 'string' && after.qcReviewerId !== me.id)
+      await this.notifications.notify(me.orgId, [after.qcReviewerId], {
+        kind: 'task_qc_waiting',
+        title: t.status === 'in_qc' ? `QC needed: ${t.title}` : `You'll check the quality of: ${t.title}`,
+        body: t.status === 'in_qc' ? `${t.owner?.name ?? 'The owner'} has finished it. Pass it, or say what needs fixing.` : `${me.name} picked you as the QC reviewer.`,
+        link: `/team/tasks/${t.id}`,
+      });
     if (after.priority === 'urgent' && t.ownerId && t.ownerId !== me.id) await this.notifications.notify(me.orgId, [t.ownerId], { kind: 'task_updated', title: `${t.title} is now urgent`, body: `Changed by ${me.name}`, link: `/team/tasks/${t.id}`, critical: true });
     const undo = await this.undo.create(me, `Edited "${t.title}"`, [{ model: 'task', id: t.id, data: before }]);
     return this.mutation(me, t.id, undo, 'Saved');
@@ -715,6 +753,10 @@ export class TasksActionsService implements OnModuleInit {
     if (t.status === input.status) return this.mutation(me, t.id, null, 'No change');
     if (input.status === 'done' && t.kind === 'qc') throw new BadRequestException('QC tasks complete when the QC checklist is submitted');
     if (input.status === 'done' && t.kind === 'client_review') throw new BadRequestException('Client review completes when the client approves');
+    // v54: a task with a QC reviewer is done only when they pass it; until then "Done" sends it for QC.
+    const toQc = input.status === 'done' && !!t.qcReviewerId && t.qcReviewerId !== t.ownerId;
+    if (input.status === 'in_qc' && !t.qcReviewerId) throw new BadRequestException('This task has no QC reviewer. Mark it done instead.');
+    if (t.status === 'in_qc' && toQc) throw new BadRequestException('Waiting for QC: the reviewer passes it to mark it done');
     if (['in_progress', 'done'].includes(input.status) && t.dependsOn.length) {
       const open = await this.prisma.task.findMany({ where: { id: { in: t.dependsOn }, status: { not: 'done' } }, select: { title: true } });
       if (open.length) throw new BadRequestException(`Waiting on: ${open.map((d) => d.title).join(', ')}`);
@@ -723,8 +765,8 @@ export class TasksActionsService implements OnModuleInit {
       const openSubs = await this.prisma.task.count({ where: { parentId: t.id, status: { in: [...OPEN_TASK] }, archivedAt: null, isDraft: false } });
       if (openSubs) throw new BadRequestException(`${openSubs} subtask${openSubs > 1 ? 's are' : ' is'} still open. Finish or archive them first.`);
     }
-    const data: Prisma.TaskUncheckedUpdateInput = { status: input.status };
-    const before = { status: t.status, blockedReason: t.blockedReason, blockedWaitingFor: t.blockedWaitingFor, blockedResponsibleId: t.blockedResponsibleId, blockedExpectedAt: t.blockedExpectedAt?.toISOString() ?? null, blockedAt: t.blockedAt?.toISOString() ?? null, startedAt: t.startedAt?.toISOString() ?? null, completedAt: t.completedAt?.toISOString() ?? null };
+    const data: Prisma.TaskUncheckedUpdateInput = { status: toQc ? 'in_qc' : input.status };
+    const before = { qcState: t.qcState, qcAt: t.qcAt?.toISOString() ?? null, status: t.status, blockedReason: t.blockedReason, blockedWaitingFor: t.blockedWaitingFor, blockedResponsibleId: t.blockedResponsibleId, blockedExpectedAt: t.blockedExpectedAt?.toISOString() ?? null, blockedAt: t.blockedAt?.toISOString() ?? null, startedAt: t.startedAt?.toISOString() ?? null, completedAt: t.completedAt?.toISOString() ?? null };
     const now = new Date();
     if (input.status === 'blocked') {
       const b = input.blocked;
@@ -738,8 +780,24 @@ export class TasksActionsService implements OnModuleInit {
       Object.assign(data, { blockedReason: b.reason, blockedWaitingFor: b.responsibleName?.trim() && !responsibleId ? `${b.waitingFor} (${b.responsibleName.trim()})` : b.waitingFor, blockedResponsibleId: responsibleId, blockedExpectedAt: dbDay(b.expectedAt), blockedAt: now });
     } else Object.assign(data, { blockedReason: null, blockedWaitingFor: null, blockedResponsibleId: null, blockedExpectedAt: null, blockedAt: null });
     if (input.status === 'in_progress' && !t.startedAt) data.startedAt = now;
-    if (input.status === 'done') data.completedAt = now;
+    if (input.status === 'done' && !toQc) data.completedAt = now;
+    const sendQc = toQc || (input.status === 'in_qc' && !!t.qcReviewerId);
+    if (sendQc) Object.assign(data, { qcState: 'waiting', qcAt: now });
+    // Taken back out of QC by the owner before the check: no longer waiting.
+    else if (t.status === 'in_qc' && t.qcState === 'waiting') data.qcState = null;
     await this.prisma.task.update({ where: { id: t.id }, data });
+    if (sendQc) {
+      await this.audit.log(me, 'task.sent_for_qc', 'Task', t.id, { status: t.status }, { status: 'in_qc', qcReviewerId: t.qcReviewerId }, ip);
+      const reviewer = await this.prisma.user.findUnique({ where: { id: t.qcReviewerId! }, select: { name: true } });
+      await this.notifications.notify(me.orgId, [t.qcReviewerId].filter((x) => x !== me.id), {
+        kind: 'task_qc_waiting',
+        title: `QC needed: ${t.title}`,
+        body: `${t.owner?.name ?? me.name} has finished it${t.qcState === 'failed' ? ' (fixed after your notes)' : ''}. Pass it, or say what needs fixing.`,
+        link: `/team/tasks/${t.id}`,
+      });
+      const undoQc = await this.undo.create(me, `"${t.title}" sent for QC`, [{ model: 'task', id: t.id, data: before }]);
+      return this.mutation(me, t.id, undoQc, `Sent to ${reviewer?.name ?? 'the QC reviewer'} for QC. It counts as done once QC passes.`);
+    }
     await this.audit.log(me, `task.${input.status === 'done' ? 'completed' : input.status === 'blocked' ? 'blocked' : 'status_changed'}`, 'Task', t.id, { status: t.status }, { status: input.status, ...(input.blocked ?? {}) }, ip);
     let message = `Moved to ${taskStatusLabels[input.status]}`;
     // Done on deliverable work routes to QC, never straight to the client.
@@ -752,6 +810,40 @@ export class TasksActionsService implements OnModuleInit {
     if (watchers.length) await this.notifications.notify(me.orgId, watchers, { kind: 'task_watch', title: `${t.title}: ${taskStatusLabels[input.status]}`, body: `By ${me.name}`, link: `/team/tasks/${t.id}` });
     const undo = await this.undo.create(me, `"${t.title}" moved to ${taskStatusLabels[input.status]}`, [{ model: 'task', id: t.id, data: before }]);
     return this.mutation(me, t.id, undo, message);
+  }
+
+  /** v54: a QC reviewer must be an active team member, and not the person doing the task. */
+  private async qcReviewer(me: Me, id: string, ownerId: string | null) {
+    const u = await this.prisma.user.findFirst({ where: { id, orgId: me.orgId, type: 'staff', status: 'active', deletedAt: null }, select: { id: true, name: true } });
+    if (!u) throw new BadRequestException('Pick an active team member to check the quality');
+    if (ownerId && u.id === ownerId) throw new BadRequestException(`${u.name} is doing the task, so pick someone else to check its quality`);
+    return u;
+  }
+
+  /**
+   * v54: the QC reviewer's check. Passed: the task is done. Not passed: it goes back to the person in progress with the
+   * reviewer's note, and shows "QC not passed" until the next check passes. The owner (and whoever assigned it) is told.
+   */
+  async qc(me: Me, id: string, body: unknown, ip?: string): Promise<CoreTaskMutation> {
+    const input = parse(coreTaskQcSchema, body);
+    const t = await this.access.load(me, id);
+    if (t.qcReviewerId !== me.id) throw new ForbiddenException('Only the QC reviewer picked for this task can pass it');
+    if (t.status !== 'in_qc') throw new BadRequestException(t.status === 'done' ? 'This task already passed QC' : 'This task has not been sent for QC yet');
+    const now = new Date();
+    const note = input.note?.trim() || null;
+    const passed = input.result === 'pass';
+    const before = { status: t.status, qcState: t.qcState, qcNote: t.qcNote, qcAt: t.qcAt?.toISOString() ?? null, completedAt: t.completedAt?.toISOString() ?? null };
+    await this.prisma.$transaction([
+      this.prisma.task.update({ where: { id: t.id }, data: passed ? { status: 'done', completedAt: now, qcState: 'passed', qcNote: note, qcAt: now } : { status: 'in_progress', qcState: 'failed', qcNote: note, qcAt: now } }),
+      this.prisma.taskQcReview.create({ data: { orgId: me.orgId, taskId: t.id, reviewerId: me.id, result: input.result, note } }),
+    ]);
+    await this.audit.log(me, passed ? 'task.qc_passed' : 'task.qc_failed', 'Task', t.id, before, { status: passed ? 'done' : 'in_progress', note }, ip);
+    const tell = [t.ownerId, t.createdById !== t.ownerId ? t.createdById : null].filter((x): x is string => !!x && x !== me.id);
+    if (passed) await this.notifications.notify(me.orgId, tell, { kind: 'task_qc_passed', title: `QC passed: ${t.title}`, body: `Checked by ${me.name}${note ? `: ${note}` : ''}`, link: `/team/tasks/${t.id}` });
+    else await this.notifications.notify(me.orgId, tell, { kind: 'task_qc_failed', title: `QC not passed: ${t.title}`, body: `${me.name}: ${note}`, link: `/team/tasks/${t.id}` });
+    const watchers = (await this.records.watcherIds(me.orgId, 'task', t.id)).filter((w) => w !== me.id && !tell.includes(w));
+    if (watchers.length) await this.notifications.notify(me.orgId, watchers, { kind: 'task_watch', title: `${t.title}: ${passed ? 'QC passed' : 'QC not passed'}`, body: `By ${me.name}`, link: `/team/tasks/${t.id}` });
+    return this.mutation(me, t.id, null, passed ? 'QC passed. The task is done.' : `QC not passed. ${t.owner?.name ?? 'The owner'} has your notes and the task is back in progress.`);
   }
 
   /** An ad-hoc task on a deliverable is done: make sure the deliverable has an open QC step. */
@@ -823,7 +915,7 @@ export class TasksActionsService implements OnModuleInit {
     const undoRows: UndoRow[] = [];
     for (let n = 0; n < input.count; n++) {
       const copy = await this.prisma.task.create({
-        data: { orgId: t.orgId, title: input.count > 1 ? `${t.title} (copy ${n + 1})` : `${t.title} (copy)`, engagementId: t.engagementId, deliverableId: t.deliverableId, parentId: t.parentId, ownerId: t.ownerId, departmentId: t.departmentId, deadline: t.deadline, priority: t.priority, specialty: t.specialty, kind: t.kind === 'work' || t.kind === 'planning' ? t.kind : 'work', status: 'todo', description: t.description, brief: t.brief, references: t.references, checklist: (t.checklist as { id: string; label: string }[]).map((i) => ({ ...i, done: false })), estimateMin: t.estimateMin, isInternal: t.isInternal, preProduction: t.preProduction, createdById: me.id, sort: t.sort },
+        data: { orgId: t.orgId, title: input.count > 1 ? `${t.title} (copy ${n + 1})` : `${t.title} (copy)`, engagementId: t.engagementId, deliverableId: t.deliverableId, parentId: t.parentId, ownerId: t.ownerId, departmentId: t.departmentId, deadline: t.deadline, priority: t.priority, specialty: t.specialty, kind: t.kind === 'work' || t.kind === 'planning' ? t.kind : 'work', status: 'todo', description: t.description, brief: t.brief, references: t.references, checklist: (t.checklist as { id: string; label: string }[]).map((i) => ({ ...i, done: false })), estimateMin: t.estimateMin, isInternal: t.isInternal, preProduction: t.preProduction, createdById: me.id, sort: t.sort, qcReviewerId: t.qcReviewerId },
       });
       ids.push(copy.id);
       undoRows.push({ model: 'task', id: copy.id, delete: true });
@@ -834,6 +926,14 @@ export class TasksActionsService implements OnModuleInit {
       await this.audit.log(me, 'task.duplicated', 'Task', copy.id, undefined, { from: t.id, title: copy.title }, ip);
     }
     const undo = await this.undo.create(me, `Duplicated "${t.title}"`, undoRows);
+    // v54: the person who gets the copies is told.
+    if (t.ownerId && t.ownerId !== me.id && ids.length)
+      await this.notifications.notify(me.orgId, [t.ownerId], {
+        kind: 'task_assigned',
+        title: ids.length === 1 ? `${me.name} assigned you: ${t.title} (copy)` : `${me.name} assigned you ${ids.length} copies of: ${t.title}`,
+        body: t.deadline ? `Due ${short(t.deadline)}` : undefined,
+        link: ids.length === 1 ? `/team/tasks/${ids[0]}` : '/team/tasks',
+      });
     return { ids, undo };
   }
 
@@ -1109,7 +1209,7 @@ export class TasksActionsService implements OnModuleInit {
     return out;
   }
 
-  private async createRecurring(me: Me, input: DraftInput, base: { ownerId: string | null; departmentId: string | null; engagementId: string | null; deadline: Date | null; estimateMin: number | null }, ip?: string): Promise<CoreTaskMutation> {
+  private async createRecurring(me: Me, input: DraftInput, base: { ownerId: string | null; departmentId: string | null; engagementId: string | null; deadline: Date | null; estimateMin: number | null; qcReviewerId: string | null }, ip?: string): Promise<CoreTaskMutation> {
     const start = base.deadline ? istDate(base.deadline) : istDate(new Date());
     const rule = input.repeat!;
     if (rule.end < start) throw new BadRequestException('The end date is before the first date');
@@ -1117,7 +1217,7 @@ export class TasksActionsService implements OnModuleInit {
     const rec = await this.prisma.taskRecurrence.create({
       data: {
         orgId: me.orgId,
-        template: { title: input.title, ownerId: base.ownerId, departmentId: base.departmentId, engagementId: base.engagementId, isInternal: !!input.internal, priority: input.priority ?? 'normal', description: input.description ?? null, estimateMin: base.estimateMin, preProduction: !!input.preProduction },
+        template: { title: input.title, ownerId: base.ownerId, departmentId: base.departmentId, engagementId: base.engagementId, isInternal: !!input.internal, priority: input.priority ?? 'normal', description: input.description ?? null, estimateMin: base.estimateMin, preProduction: !!input.preProduction, qcReviewerId: base.qcReviewerId },
         rule: rule.rule,
         dayOf,
         startDate: dbDay(start),
@@ -1126,15 +1226,18 @@ export class TasksActionsService implements OnModuleInit {
       },
     });
     await this.audit.log(me, 'task.recurring_created', 'Task', rec.id, undefined, { title: input.title, rule: rule.rule, end: rule.end }, ip);
-    const created = await this.generateFor(rec.id);
+    const created = await this.generateFor(rec.id, new Date(), false);
     const first = created[0];
     if (!first) throw new BadRequestException('No working days fall inside that repeat window. Pick another rule or end date.');
     if (base.ownerId && base.ownerId !== me.id) await this.notifications.notify(me.orgId, [base.ownerId], { kind: 'task_assigned', title: `${me.name} set up a recurring task for you: ${input.title}`, body: coreRepeatRuleLabels[rule.rule], link: '/team/tasks' });
     return this.mutation(me, first, null, `Recurring task set up (${coreRepeatRuleLabels[rule.rule].toLowerCase()}). ${created.length} upcoming instance${created.length === 1 ? '' : 's'} created; more are added 7 days ahead.`);
   }
 
-  /** Creates the missing instances of one rule up to 7 days ahead. Idempotent (lastDate). */
-  async generateFor(recId: string, now = new Date()): Promise<string[]> {
+  /**
+   * Creates the missing instances of one rule up to 7 days ahead. Idempotent (lastDate). v54: the owner is told about
+   * the new copies (not when the rule is first set up: they were told then).
+   */
+  async generateFor(recId: string, now = new Date(), announce = true): Promise<string[]> {
     const rec = await this.prisma.taskRecurrence.findUnique({ where: { id: recId } });
     if (!rec || !rec.active) return [];
     const cal = await calendarFor(this.prisma, rec.orgId);
@@ -1144,12 +1247,19 @@ export class TasksActionsService implements OnModuleInit {
     const to = [horizon, rec.endDate ? ymd(rec.endDate) : horizon].sort()[0];
     if (from > to) return [];
     const dates = this.ruleDates(rec.rule, rec.dayOf, from, to, cal);
-    const tpl = rec.template as { title: string; ownerId: string | null; departmentId: string | null; engagementId: string | null; isInternal: boolean; priority: string; description: string | null; estimateMin: number | null; preProduction: boolean };
+    const tpl = rec.template as { title: string; ownerId: string | null; departmentId: string | null; engagementId: string | null; isInternal: boolean; priority: string; description: string | null; estimateMin: number | null; preProduction: boolean; qcReviewerId?: string | null };
     const ids: string[] = [];
     for (const d of dates) {
-      const t = await this.prisma.task.create({ data: { orgId: rec.orgId, title: tpl.title, ownerId: tpl.ownerId, departmentId: tpl.departmentId, engagementId: tpl.engagementId, isInternal: tpl.isInternal, priority: tpl.priority, description: tpl.description, estimateMin: tpl.estimateMin, preProduction: tpl.preProduction, deadline: new Date(`${d}T18:00:00+05:30`), kind: 'work', status: 'todo', recurrenceId: rec.id, createdById: rec.createdById, sort: 800 } });
+      const t = await this.prisma.task.create({ data: { orgId: rec.orgId, title: tpl.title, ownerId: tpl.ownerId, departmentId: tpl.departmentId, engagementId: tpl.engagementId, isInternal: tpl.isInternal, priority: tpl.priority, description: tpl.description, estimateMin: tpl.estimateMin, preProduction: tpl.preProduction, qcReviewerId: tpl.qcReviewerId ?? null, deadline: new Date(`${d}T18:00:00+05:30`), kind: 'work', status: 'todo', recurrenceId: rec.id, createdById: rec.createdById, sort: 800 } });
       ids.push(t.id);
     }
+    if (announce && ids.length && tpl.ownerId && tpl.ownerId !== rec.createdById)
+      await this.notifications.notify(rec.orgId, [tpl.ownerId], {
+        kind: 'task_assigned',
+        title: ids.length === 1 ? `Recurring task: ${tpl.title}` : `${ids.length} new copies of your recurring task: ${tpl.title}`,
+        body: `Due ${dates.map((d) => short(new Date(`${d}T18:00:00+05:30`))).join(', ')}`,
+        link: ids.length === 1 ? `/team/tasks/${ids[0]}` : '/team/tasks',
+      });
     await this.prisma.taskRecurrence.update({ where: { id: rec.id }, data: { lastDate: dbDay(to), active: rec.endDate ? ymd(rec.endDate) > to : true } });
     return ids;
   }

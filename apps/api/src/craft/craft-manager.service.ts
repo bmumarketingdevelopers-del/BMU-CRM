@@ -598,6 +598,13 @@ export class CraftManagerService {
         items.push({ id: `q-${b.deliverable.id}`, kind: 'qc_failed', rank: 2, title: b.deliverable.title, detail: `Failed QC${b.owner ? ` · back with ${b.owner.name}` : ''}`, href: b.href, at: null, client: b.client?.name ?? null, deliverableId: b.deliverable.id });
       }
     }
+    // v54: tasks waiting for my QC check, and tasks of mine (or that I assigned) that did not pass QC.
+    const [toCheck, sentBack] = await Promise.all([
+      this.prisma.task.findMany({ where: { orgId: me.orgId, qcReviewerId: me.id, status: 'in_qc', archivedAt: null }, select: { id: true, title: true, deadline: true, owner: { select: { name: true } } }, orderBy: { qcAt: 'asc' }, take: 20 }),
+      this.prisma.task.findMany({ where: { orgId: me.orgId, qcState: 'failed', status: { in: [...OPEN] }, archivedAt: null, OR: [{ ownerId: me.id }, { createdById: me.id }] }, select: { id: true, title: true, deadline: true, qcNote: true, owner: { select: { name: true } } }, orderBy: { qcAt: 'desc' }, take: 20 }),
+    ]);
+    for (const t of toCheck) items.push({ id: `qr-${t.id}`, kind: 'qc_review', rank: 1, title: t.title, detail: `Check the quality${t.owner ? ` · done by ${t.owner.name}` : ''}`, href: `/team/tasks/${t.id}`, at: t.deadline?.toISOString() ?? null, client: null, taskId: t.id });
+    for (const t of sentBack) items.push({ id: `qf-${t.id}`, kind: 'qc_failed', rank: 2, title: t.title, detail: `QC not passed${t.owner ? ` · back with ${t.owner.name}` : ''}${t.qcNote ? `: ${t.qcNote.slice(0, 120)}` : ''}`, href: `/team/tasks/${t.id}`, at: t.deadline?.toISOString() ?? null, client: null, taskId: t.id });
     // Client messages where the client spoke last
     const threadIds = clients.map((c) => c.threadId).filter((x): x is string => !!x);
     if (threadIds.length) {
