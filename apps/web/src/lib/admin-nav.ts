@@ -26,8 +26,9 @@ const built: Record<string, string> = {
   "CM Assignment": "/admin/am-assignment",
   "Requests & Add-ons": "/admin/requests",
   Offboarding: "/admin/offboarding",
-  Bundles: "/admin/catalogue#bundles",
-  "Add-ons": "/admin/catalogue#addons",
+  // v57: Bundles and Add-ons have their own pages (were sections of Services & Tiers).
+  Bundles: "/admin/bundles",
+  "Add-ons": "/admin/add-ons",
   "Discount Limits": "/admin/discount-limits",
   "Proposal & Agreement Templates": "/admin/document-templates",
   "Quotation Templates": "/admin/quote-templates",

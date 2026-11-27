@@ -282,7 +282,8 @@ function IndustriesAdmin({ run }: { run: Run }) {
   );
 }
 
-export function ServiceGroupsAdmin() {
+/** v57: Services & Tiers shows services and industries; bundles have their own page (ServiceBundlesAdmin). */
+export function ServiceGroupsAdmin({ bundles = true }: { bundles?: boolean } = {}) {
   const groups = useLoad(() => api.catalogue.groups());
   const [error, setError] = useState<string>();
   const [saved, setSaved] = useState<string>();
@@ -328,8 +329,33 @@ export function ServiceGroupsAdmin() {
           </Button>
         </form>
       )}
-      {groups.data && <BundlesAdmin key={version} groups={groups.data} run={run} />}
+      {bundles && groups.data && <BundlesAdmin key={version} groups={groups.data} run={run} />}
       <IndustriesAdmin run={run} />
+    </section>
+  );
+}
+
+/** v57: the Bundles page: bundles of sub-services (what clients and quotations use), with their own messages. */
+export function ServiceBundlesAdmin() {
+  const groups = useLoad(() => api.catalogue.groups());
+  const [error, setError] = useState<string>();
+  const [saved, setSaved] = useState<string>();
+  async function run(label: string, fn: () => Promise<unknown>) {
+    setError(undefined);
+    setSaved(undefined);
+    try {
+      await fn();
+      setSaved(label);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+  return (
+    <section className="mb-10" data-testid="service-bundles-admin">
+      {error && <p className="mb-3 border border-red bg-red/10 px-4 py-2 text-sm">{error}</p>}
+      {saved && !error && <p className="mb-3 border border-green bg-green/10 px-4 py-2 text-sm">{saved}</p>}
+      <LoadState loading={groups.loading} error={groups.error} />
+      {groups.data && <BundlesAdmin groups={groups.data} run={run} />}
     </section>
   );
 }
