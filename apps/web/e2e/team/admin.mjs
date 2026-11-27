@@ -232,6 +232,11 @@ check(v1.body.length === v0.body.length + 1 && v1.body[0].status === "active", `
 await founder.locator('input[aria-label$="starter price"]').first().fill(was);
 await founder.locator('input[aria-label$="starter price"]').first().blur();
 await settle(founder);
+// v57: Services & Tiers keeps the price book history; Bundles and Add-ons have their own pages.
+check((await founder.locator("#versions").count()) === 1 && (await founder.getByLabel("Add-on name").count()) === 0, "Services & Tiers shows the price book history and no add-ons");
+await founder.goto(`${BASE}/admin/bundles`, { waitUntil: "networkidle" });
+check((await founder.getByTestId("bundles-admin").count()) === 1 && (await founder.getByLabel("New service name").count()) === 0, "Bundles open on their own page");
+await founder.goto(`${BASE}/admin/add-ons`, { waitUntil: "networkidle" });
 await founder.getByLabel("Add-on name").last().fill(`Journey add-on ${stamp}`);
 await founder.getByLabel("Price in rupees").last().fill("1500");
 await founder.getByLabel("Unit").last().fill("per item");
@@ -243,7 +248,7 @@ await founder.locator("li", { hasText: `Journey add-on ${stamp}` }).getByRole("b
 await settle(founder);
 await founder.waitForTimeout(500);
 check((await founder.locator("li", { hasText: `Journey add-on ${stamp}` }).count()) === 0, "add-on removed");
-check((await founder.locator("#addons").count()) === 1 && (await founder.locator("#versions").count()) === 1, "Add-ons anchor matches the menu and history is shown");
+check((await founder.getByLabel("New service name").count()) === 0, "the Add-ons page shows only add-ons");
 
 // ---------------------------------------------------------------------------
 console.log("SOP draft -> publish -> read");
