@@ -196,11 +196,35 @@ describe('basic mode (no API key)', () => {
   });
 });
 
+describe('everyone gets an answer from their own work (v55)', () => {
+  it('"Summary of the week" for a team member is their own week, not a refusal', async () => {
+    const title = `Copilot week task ${stamp}`;
+    const me = await prisma.user.findFirstOrThrow({ where: { email: 'producer@bmu.demo' } });
+    const t = await prisma.task.create({ data: { orgId: me.orgId, ownerId: me.id, title, isInternal: true, deadline: new Date(`${new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)}T23:30:00+05:30`) } });
+    try {
+      const r = await http().post('/ai/ask').set(as('producer')).send({ question: 'Summary of the week' }).expect(200);
+      expect(r.body.mode).toBe('basic');
+      expect(r.body.text).not.toMatch(/cannot see|can't see/);
+      expect(r.body.text).toMatch(/Your week/);
+      expect(r.body.text).toContain(title);
+      const mine = await http().post('/ai/ask').set(as('producer')).send({ question: 'What are my tasks?' }).expect(200);
+      expect(mine.body.text).toContain(title);
+      // Leadership still gets the business summary.
+      const f = await http().post('/ai/ask').set(as('founder')).send({ question: 'Summary of the week' }).expect(200);
+      expect(f.body.text).toMatch(/Weekly Review/);
+    } finally {
+      await prisma.task.delete({ where: { id: t.id } });
+    }
+  });
+});
+
 describe('permission scoping', () => {
   it("a producer can't read invoices through the copilot; the founder can", async () => {
-    // Basic mode: plain refusal.
+    // Basic mode: says invoices aren't theirs to see, then answers from their own work.
     const basic = await http().post('/ai/ask').set(as('producer')).send({ question: 'How much is overdue from Metro Dental?' }).expect(200);
-    expect(basic.body.text).toMatch(/cannot see invoices/);
+    expect(basic.body.text).toMatch(/can't see invoices/);
+    expect(basic.body.text).toMatch(/Your week/);
+    expect(basic.body.text).not.toMatch(/₹/);
 
     // AI mode: the model asks for invoices; the tool answers "not allowed" for the producer.
     fake.reset(true);

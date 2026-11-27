@@ -32,6 +32,7 @@ export type CopilotTool = {
 
 const day = (iso: string | null | undefined) =>
   iso ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null;
+const day_ = (iso: string | null | undefined) => (iso ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null);
 const has = (hay: string | null | undefined, needle?: string) => !needle || (hay ?? '').toLowerCase().includes(needle.toLowerCase());
 const get = <T>(ref: ModuleRef, cls: new (...args: never[]) => T): T => ref.get(cls as never, { strict: false }) as T;
 
@@ -240,6 +241,67 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
             citations: rows.slice(0, 8).map((r) => ({ label: `${r.client.name} request`, href: `/team/requests/${r.id}` })),
           };
         }),
+    },
+    {
+      name: 'my_week',
+      description:
+        "This person's own week, from their own dashboard: their open, overdue, due-today, due-this-week and blocked tasks, tasks done this week, QC checks waiting for them, the clients they manage with open requests, their open leads and follow-ups (sales), and delivery steps at risk. Any team member can use it; use it for 'summary of the week', 'my tasks', 'what should I do' when the company-wide summary is not allowed.",
+      schema: z.object({}),
+      properties: {},
+      status: 'Reading your week…',
+      run: async () => {
+        const prod = get(ref, ProductionService);
+        const now = Date.now();
+        const weekEnd = now + 7 * 86_400_000;
+        const safe = async <T>(fn: () => Promise<T>): Promise<T | null> => {
+          try {
+            return await fn();
+          } catch {
+            return null;
+          }
+        };
+        const [day, mine, clientRows, requests, leads] = await Promise.all([
+          prod.myDay(me),
+          prod.tasks(me, 'mine'),
+          safe(() => clients()),
+          safe(() => get(ref, RequestsService).list(me)),
+          (me.permissions.leads_pipeline?.scope ?? 'none') !== 'none' ? safe(() => get(ref, LeadsController).list(me)) : Promise.resolve(null),
+        ]);
+        const open = [...day.tasks.overdue, ...day.tasks.today, ...day.tasks.upcoming, ...day.tasks.blocked];
+        const link = (t: { id: string; deliverable: { id: string } | null }) => (t.deliverable ? `/team/deliverables/${t.deliverable.id}` : `/team/tasks/${t.id}`);
+        const row = (t: (typeof open)[number]) => ({ title: t.title, client: t.client?.name ?? null, status: t.status, due: day_(t.deadline), link: link(t) });
+        const dueThisWeek = open.filter((t) => t.deadline && new Date(t.deadline).getTime() >= now && new Date(t.deadline).getTime() < weekEnd && t.status !== 'blocked');
+        // Done in the last 7 days (the list keeps 14 days of finished work).
+        const doneThisWeek = mine.filter((t) => t.status === 'done').length;
+        const myClients = (clientRows ?? []).filter((c) => c.am?.id === me.id);
+        const openRequests = (requests ?? []).filter((r) => !['done', 'declined'].includes(r.status));
+        const myLeads = (leads ?? []).filter((l) => l.owner?.id === me.id && !['won', 'lost'].includes(l.stage));
+        const followUps = myLeads.filter((l) => l.nextFollowUpAt && new Date(l.nextFollowUpAt).getTime() < weekEnd);
+        return {
+          data: {
+            name: me.name,
+            tasks: {
+              open: open.length,
+              overdue: day.tasks.overdue.map(row),
+              dueToday: day.tasks.today.map(row),
+              dueThisWeek: dueThisWeek.map(row),
+              blocked: day.tasks.blocked.map((t) => ({ ...row(t), reason: t.blockedReason })),
+              doneRecently: doneThisWeek,
+            },
+            qc: {
+              sentBackToMe: (day as { taskQc?: { failed: unknown[] } }).taskQc?.failed ?? [],
+              waitingForMyCheck: (day as { taskQc?: { toReview: unknown[] } }).taskQc?.toReview ?? [],
+              versionsWaitingForQc: day.qcWaiting,
+            },
+            myClients: myClients.length ? myClients.map((c) => ({ name: c.name, health: c.health, link: `/team/clients/${c.id}` })) : undefined,
+            openRequests: requests ? { count: openRequests.length, replyOverdue: openRequests.filter((r) => r.sla.state === 'overdue').length } : undefined,
+            leads: leads ? { open: myLeads.length, followUpsThisWeek: followUps.map((l) => ({ name: l.contact.company || l.contact.name, due: day_(l.nextFollowUpAt ?? null), link: `/team/leads/${l.id}` })) } : undefined,
+            deliveryAtRisk: (day.deliverSla ?? []).slice(0, 8).map((s) => ({ title: s.title, state: s.state, client: s.client.name })),
+            onLeave: day.onLeave ?? null,
+          },
+          citations: [{ label: 'My Day', href: '/team' }, { label: 'My tasks', href: '/team/tasks' }],
+        };
+      },
     },
     {
       name: 'business_summary',
