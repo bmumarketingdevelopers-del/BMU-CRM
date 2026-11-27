@@ -1,18 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { DEPARTMENTS, type FlowStep, type FlowTemplateView, type QcTemplateView } from "@bmu/shared";
+import { DEPARTMENTS, type FlowStep, type FlowTemplateView } from "@bmu/shared";
 import { DELIVERABLE_TYPES } from "@/components/plan-editor";
 import { Button, Card, Input, LoadState, PageTitle, Select } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useLoad } from "@/lib/use-load";
-import { useActionsMaybe } from "@/components/actions/actions-provider";
-
-/** Founders and Branch Managers publish straight away; department heads' saves go to a Branch Manager to approve (v11). */
-function useCanPublish() {
-  const me = useActionsMaybe()?.me;
-  return !me || me.roles.some((r) => r === "founder" || r === "admin");
-}
+import { useCanPublish } from "@/components/templates/can-publish";
 
 const ROLES = [
   ["am", "Client's Client Manager"],
@@ -30,18 +24,13 @@ const KINDS = [
 
 export default function TemplatesPage() {
   const flows = useLoad(() => api.templates.flows());
-  const qc = useLoad(() => api.templates.qc());
   return (
     <>
       <PageTitle
-        title="Flow templates and QC checklists"
+        title="Department flow templates"
         subtitle="When a client approves a plan, each deliverable gets tasks from the matching flow. Saving creates a new version; tasks already created keep the old one."
       />
       {!flows.data ? <LoadState loading={flows.loading} error={flows.error} /> : <div className="grid gap-4">{flows.data.map((f) => <FlowEditor key={`${f.key}-${f.version}`} flow={f} />)}</div>}
-      <h2 id="qc" className="mt-10 mb-3 font-display text-xl">
-        QC checklists
-      </h2>
-      {!qc.data ? <LoadState loading={qc.loading} error={qc.error} /> : <div className="grid gap-4 md:grid-cols-2">{qc.data.map((c) => <QcEditor key={`${c.key}-${c.version}`} list={c} />)}</div>}
     </>
   );
 }
@@ -173,37 +162,6 @@ function FlowEditor({ flow }: { flow: FlowTemplateView }) {
           Add step
         </Button>
         <Button onClick={save}>Save new version</Button>
-        {msg && <span className={`text-sm ${msg.ok ? "text-ink-muted" : "text-red"}`}>{msg.text}</span>}
-      </div>
-    </Card>
-  );
-}
-
-function QcEditor({ list }: { list: QcTemplateView }) {
-  const canPublish = useCanPublish();
-  const [name, setName] = useState(list.name);
-  const [items, setItems] = useState(list.items.join("\n"));
-  const [version, setVersion] = useState(list.version);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string }>();
-  async function save() {
-    try {
-      const saved = await api.templates.saveQc(list.key, { name, items: items.split("\n").map((s) => s.trim()).filter(Boolean) });
-      setVersion(saved.find((c) => c.key === list.key)?.version ?? version);
-      setMsg({ ok: true, text: canPublish ? "Saved." : "Sent to a Branch Manager to publish. The current version stays live until then." });
-    } catch (e) {
-      setMsg({ ok: false, text: (e as Error).message });
-    }
-  }
-  return (
-    <Card>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <Input value={name} onChange={(e) => setName(e.target.value)} className="font-semibold" />
-        <span className="shrink-0 text-xs text-ink-muted">v{version}</span>
-      </div>
-      <textarea className="w-full border border-border bg-surface-raised px-3 py-2 text-sm" rows={6} value={items} onChange={(e) => setItems(e.target.value)} />
-      <p className="text-xs text-ink-muted">One check per line.</p>
-      <div className="mt-2 flex items-center gap-2">
-        <Button onClick={save}>Save</Button>
         {msg && <span className={`text-sm ${msg.ok ? "text-ink-muted" : "text-red"}`}>{msg.text}</span>}
       </div>
     </Card>

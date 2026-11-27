@@ -11,7 +11,8 @@ const built: Record<string, string> = {
   "Audit Log": "/admin/audit",
   Clients: "/admin/clients",
   "Department Flow Templates": "/admin/templates",
-  "QC Checklists": "/admin/templates#qc",
+  // v57: its own page (was a section of Department Flow Templates).
+  "QC Checklists": "/admin/qc-checklists",
   Revenue: "/admin/revenue",
   Collections: "/admin/collections",
   Capacity: "/admin/capacity",
