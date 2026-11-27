@@ -88,12 +88,29 @@ const website = z
 const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date");
 
 /** The client's services, as chosen in the steps: groups → sub-services, bundles, then a plan for each. */
+/** v56: how an amount entered for an item without plans is billed. */
+export const CUSTOM_BILLING = ["monthly", "one_time"] as const;
+export type CustomBilling = (typeof CUSTOM_BILLING)[number];
+export const customBillingLabels: Record<CustomBilling, string> = { monthly: "Monthly", one_time: "One-time project" };
 export const clientServicesInputSchema = z.object({
   groupIds: z.array(z.string().min(1)).max(50).default([]),
   subServiceIds: z.array(z.string().min(1)).max(200).default([]),
   bundleIds: z.array(z.string().min(1)).max(50).default([]),
   /** Plan by sub-service or bundle id; "" or missing = not chosen. */
   plans: z.record(z.string(), z.enum(["", ...PLANS])).default({}),
+  /**
+   * v56: by sub-service or bundle id, for items with no plan prices only: the amount agreed for this client (paise,
+   * before GST, optional) and how it is billed. Items that have plan prices use plans instead.
+   */
+  custom: z
+    .record(
+      z.string(),
+      z.object({
+        pricePaise: z.number().int().min(0, "The amount can't be negative").max(1_000_000_000).nullable().default(null),
+        billing: z.enum(CUSTOM_BILLING).default("monthly"),
+      }),
+    )
+    .default({}),
 });
 export type ClientServicesInput = z.input<typeof clientServicesInputSchema>;
 
@@ -127,13 +144,16 @@ export function clientServicesProblems(v: ClientServicesInput, list: PriceList):
 }
 
 /**
- * v53: adding a client: each chosen sub service and bundle needs a plan, because the picks start as projects and the
- * plan becomes the project's tier. (Changing a client's services later keeps plans optional.)
+ * v53: adding a client: each chosen sub service and bundle that has plan prices needs a plan, because the picks start
+ * as projects and the plan becomes the project's tier. v56: items without any plan price need none (Starter tier).
+ * (Changing a client's services later keeps plans optional.)
  */
 export function clientServicesPlanProblems(v: ClientServicesInput, list: PriceList): string[] {
   const plans = v.plans ?? {};
-  const names = new Map([...list.groups.flatMap((g) => g.subServices.map((s) => [s.id, s.name] as const)), ...list.bundles.map((b) => [b.id, b.name] as const)]);
-  const missing = [...(v.subServiceIds ?? []), ...(v.bundleIds ?? [])].filter((id) => !plans[id]).map((id) => names.get(id) ?? "a service");
+  const items = new Map<string, { name: string; prices: Record<string, number | null> }>([...list.groups.flatMap((g) => g.subServices.map((s) => [s.id, s] as const)), ...list.bundles.map((b) => [b.id, b] as const)]);
+  // v56: only items that have at least one plan price need a plan; items without plans are picked as they are.
+  const hasPlans = (id: string) => Object.values(items.get(id)?.prices ?? {}).some((p) => p != null);
+  const missing = [...(v.subServiceIds ?? []), ...(v.bundleIds ?? [])].filter((id) => !plans[id] && hasPlans(id)).map((id) => items.get(id)?.name ?? "a service");
   return missing.length ? [`Choose a plan for ${missing.join(", ")}.`] : [];
 }
 
@@ -153,6 +173,8 @@ export type ClientServiceRow = {
   pricePaise: number | null;
   /** The plan the price is for */
   pricedPlan: Plan | null;
+  /** v56: the price is the amount agreed for this client (the item has no plan prices), not a plan price. */
+  custom?: boolean;
   description: string;
 };
 export const clientServiceAddSchema = z

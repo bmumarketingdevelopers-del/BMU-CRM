@@ -3976,6 +3976,10 @@ model ClientService {
   bundleId     String?
   /// starter | growth | premium, or empty (not chosen)
   plan         String?
+  /// v56: for a sub-service or bundle with no plan prices in the price list: the amount agreed for this client
+  /// (paise, before GST) and how it is billed (monthly | one_time). Ignored once the item has plan prices.
+  customPricePaise Int?
+  customBilling    String?
   /// active | paused | ended
   status       String    @default("active")
   startDate    DateTime?

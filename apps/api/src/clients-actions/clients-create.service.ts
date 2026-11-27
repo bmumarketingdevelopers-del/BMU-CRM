@@ -322,9 +322,10 @@ export class ClientsCreateService implements OnModuleInit {
           name: p.group.name,
           serviceId: p.group.serviceId,
           subServiceIds: [...p.subs.keys()],
-          // Several different plans inside one service: the project starts on Starter; the CM can change the tier.
+          // No plan (an item without plan prices) or several plans inside one service: Starter; the CM can change it.
           tier: plan && (TIERS as readonly string[]).includes(plan) ? (plan as Tier) : 'starter',
-          billingType: subs.length && subs.every((s) => s.billing === 'one_time') ? 'one_time' : 'monthly',
+          // v56: an item without plan prices is billed the way entered for this client.
+          billingType: subs.length && subs.every((s) => (Object.values(s.prices).some((x) => x != null) ? s.billing : (input.services?.custom?.[s.id]?.billing ?? s.billing)) === 'one_time') ? 'one_time' : 'monthly',
         });
       }
     }

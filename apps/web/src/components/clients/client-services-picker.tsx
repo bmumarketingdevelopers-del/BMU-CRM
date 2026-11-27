@@ -4,13 +4,24 @@
 // 3 Plans (one row per sub service and bundle; only plans with a price are listed). Searchable multi-select lists.
 // The same check as on the server (clientServicesProblems) gives messages that follow the current choices.
 import { useState } from "react";
-import { billingPer, formatINR, planLabels, PLANS, type ClientServiceRow, type ClientServicesInput, type Plan, type PriceList } from "@bmu/shared";
+import { billingPer, CUSTOM_BILLING, customBillingLabels, formatINR, planLabels, PLANS, rupeesToPaise, type ClientServiceRow, type CustomBilling, type ClientServicesInput, type Plan, type PriceList } from "@bmu/shared";
 import { api } from "@/lib/api";
 import { inputCls } from "@/components/actions/action-drawer";
 
-export type ServicesValue = { groupIds: string[]; subServiceIds: string[]; bundleIds: string[]; plans: Record<string, "" | "starter" | "growth" | "premium"> };
-export const emptyServices = (): ServicesValue => ({ groupIds: [], subServiceIds: [], bundleIds: [], plans: {} });
-export const toServicesInput = (v: ServicesValue): ClientServicesInput => ({ groupIds: v.groupIds, subServiceIds: v.subServiceIds, bundleIds: v.bundleIds, plans: v.plans });
+// v56: custom = the amount (rupees, as typed) and billing for items that have no plan prices.
+export type ServicesValue = { groupIds: string[]; subServiceIds: string[]; bundleIds: string[]; plans: Record<string, "" | "starter" | "growth" | "premium">; custom?: Record<string, { amount: string; billing: CustomBilling }> };
+export const emptyServices = (): ServicesValue => ({ groupIds: [], subServiceIds: [], bundleIds: [], plans: {}, custom: {} });
+export const toServicesInput = (v: ServicesValue): ClientServicesInput => ({
+  groupIds: v.groupIds,
+  subServiceIds: v.subServiceIds,
+  bundleIds: v.bundleIds,
+  plans: v.plans,
+  custom: Object.fromEntries(
+    Object.entries(v.custom ?? {})
+      .filter(([id]) => v.subServiceIds.includes(id) || v.bundleIds.includes(id))
+      .map(([id, c]) => [id, { pricePaise: c.amount.trim() && Number(c.amount) >= 0 ? rupeesToPaise(Number(c.amount)) : null, billing: c.billing }]),
+  ),
+});
 
 /** A searchable list of tick boxes. */
 function MultiPick({ label, options, value, onChange, testId, empty }: { label: string; options: { id: string; label: string; hint?: string }[]; value: string[]; onChange: (ids: string[]) => void; testId: string; empty: string }) {
@@ -52,10 +63,10 @@ export function ClientServicesPicker({ list, value, onChange, problems }: { list
     onChange({ ...value, groupIds, subServiceIds, plans });
   };
   const rows = [
-    ...value.subServiceIds.flatMap((id) => (subs.get(id) ? [{ id, label: `${subs.get(id)!.group} › ${subs.get(id)!.name}`, prices: subs.get(id)!.prices, per: billingPer[subs.get(id)!.billing] }] : [])),
+    ...value.subServiceIds.flatMap((id) => (subs.get(id) ? [{ id, label: `${subs.get(id)!.group} › ${subs.get(id)!.name}`, prices: subs.get(id)!.prices, per: billingPer[subs.get(id)!.billing], billing: (subs.get(id)!.billing === "one_time" ? "one_time" : "monthly") as CustomBilling }] : [])),
     ...value.bundleIds.flatMap((id) => {
       const b = list.bundles.find((x) => x.id === id);
-      return b ? [{ id, label: `Bundle › ${b.name}`, prices: b.prices, per: "per month" }] : [];
+      return b ? [{ id, label: `Bundle › ${b.name}`, prices: b.prices, per: "per month", billing: "monthly" as CustomBilling }] : [];
     }),
   ];
   return (
@@ -83,6 +94,38 @@ export function ClientServicesPicker({ list, value, onChange, problems }: { list
           rows.map((r) => (
             <label key={r.id} className="grid gap-1 text-sm sm:grid-cols-[1fr_16rem] sm:items-center">
               <span>{r.label}</span>
+              {/* v56: no plan prices in the price list: enter this client's amount and how it is billed instead.
+                  Once the admin sets plan prices for it, the plan list below shows instead. */}
+              {!PLANS.some((p) => r.prices[p] != null) ? (
+                <span className="grid grid-cols-[1fr_auto] gap-2" data-testid="client-services-custom">
+                  <span className="flex items-center border border-border bg-surface-raised">
+                    <span className="pl-3 text-sm text-ink-muted">₹</span>
+                    <input
+                      className="w-full bg-transparent px-2 py-2 text-sm outline-none"
+                      type="number"
+                      min={0}
+                      step="any"
+                      inputMode="decimal"
+                      placeholder="Amount (optional)"
+                      value={value.custom?.[r.id]?.amount ?? ""}
+                      onChange={(e) => onChange({ ...value, custom: { ...value.custom, [r.id]: { billing: value.custom?.[r.id]?.billing ?? r.billing, amount: e.target.value } } })}
+                      aria-label={`Amount for ${r.label}`}
+                    />
+                  </span>
+                  <select
+                    className={inputCls}
+                    value={value.custom?.[r.id]?.billing ?? r.billing}
+                    onChange={(e) => onChange({ ...value, custom: { ...value.custom, [r.id]: { amount: value.custom?.[r.id]?.amount ?? "", billing: e.target.value as CustomBilling } } })}
+                    aria-label={`Billing for ${r.label}`}
+                  >
+                    {CUSTOM_BILLING.map((b) => (
+                      <option key={b} value={b}>
+                        {customBillingLabels[b]}
+                      </option>
+                    ))}
+                  </select>
+                </span>
+              ) : (
               <select className={inputCls} value={value.plans[r.id] ?? ""} onChange={(e) => onChange({ ...value, plans: { ...value.plans, [r.id]: e.target.value as ServicesValue["plans"][string] } })} aria-label={`Plan for ${r.label}`}>
                 <option value="">Not chosen</option>
                 {PLANS.filter((p) => r.prices[p] != null).map((p) => (
@@ -91,6 +134,7 @@ export function ClientServicesPicker({ list, value, onChange, problems }: { list
                   </option>
                 ))}
               </select>
+              )}
             </label>
           ))
         ) : (
@@ -142,7 +186,7 @@ export function ClientServicesPanel({ clientId, rows, list, canEdit, onDone, onE
                 <span className="text-ink-muted">
                   {" · "}
                   {r.status === "paused" ? "Paused" : r.kind === "bundle" ? "Monthly" : "Active"}
-                  {r.pricePaise != null ? ` · ${formatINR(r.pricePaise)} ${billingPer[r.billing]}${r.plan ? "" : ` (${planLabels[r.pricedPlan!]}, no plan chosen)`}` : ""}
+                  {r.pricePaise != null ? ` · ${formatINR(r.pricePaise)} ${billingPer[r.billing]}${r.custom ? " (agreed for this client)" : r.plan || !r.pricedPlan ? "" : ` (${planLabels[r.pricedPlan]}, no plan chosen)`}` : ""}
                 </span>
               </span>
               {canEdit && (
