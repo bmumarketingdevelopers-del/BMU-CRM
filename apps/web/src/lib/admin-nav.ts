@@ -55,16 +55,12 @@ const built: Record<string, string> = {
   "MRR & Retention": "/admin/analytics/retention",
   Profitability: "/admin/analytics/profitability",
   "Team Performance": "/admin/analytics/team",
-  "Specialist Dashboards": "/team/specialists",
   "Delivery Speed": "/admin/analytics/delivery",
   "SLA & Response": "/admin/analytics/sla",
   "Report Builder": "/admin/analytics/explore",
   "Business Flow Map": "/admin/flow",
   Automations: "/admin/automations",
   "Automation Log": "/admin/automations/runs",
-  // v10 sell
-  "Discount Approvals": "/team/approvals",
-  Renewals: "/team/renewals",
   // v10 service
   "Billing Run": "/admin/finance/billing-run",
   Outbox: "/admin/outbox",
@@ -87,7 +83,6 @@ const built: Record<string, string> = {
   "Pipeline Settings": "/admin/pipelines",
   // v15
   "AI Agents": "/admin/agents",
-  "Agent Inbox": "/team/agent-inbox",
   "Agent Run Log": "/admin/agents/runs",
   // v18
   "Payments to Match": "/admin/finance/reconcile",
@@ -95,7 +90,6 @@ const built: Record<string, string> = {
   "Expenses & Bills": "/admin/finance/expenses",
   Profit: "/admin/finance/profit",
   "Cash Flow": "/admin/finance/cashflow",
-  Workload: "/team/workload",
   // v19
   "API & Webhooks": "/admin/developer",
   // v20
@@ -106,20 +100,21 @@ const built: Record<string, string> = {
   Goals: "/admin/intelligence/goals",
   Security: "/admin/security",
   "Privacy (DPDP)": "/admin/privacy",
-  // v50: in the Team app (end-of-day reports from the people who report to you; concerns raised with HR).
-  "Daily Reports": "/team/reports",
+  // v50: in the Team app (concerns raised with HR).
   "HR Issues": "/team/hr-issues",
 };
 
+// v57: Daily Reports, Agent Inbox, Specialist Dashboards, Workload, Renewals and Discount Approvals were Command Centre
+// links to Team app pages (opening them switched apps). They live in the Team app menu only now.
 const spec: [string, string[]][] = [
-  ["Command", ["Weekly Review", "Pipeline", "Approvals", "Discount Approvals", "Renewals", "Revenue", "Collections", "Capacity", "Workload", "Quality", "Client Health"]],
+  ["Command", ["Weekly Review", "Pipeline", "Approvals", "Revenue", "Collections", "Capacity", "Quality", "Client Health"]],
   ["Dashboards", ["Dashboard Studio"]],
   ["Intelligence", ["Forecast & Risks", "Metrics", "Alerts", "Scheduled Reports", "Goals"]],
-  ["Analytics", ["Scorecard", "Sales Funnel", "Revenue Forecast", "MRR & Retention", "Profitability", "Team Performance", "Specialist Dashboards", "Delivery Speed", "SLA & Response", "Report Builder"]],
+  ["Analytics", ["Scorecard", "Sales Funnel", "Revenue Forecast", "MRR & Retention", "Profitability", "Team Performance", "Delivery Speed", "SLA & Response", "Report Builder"]],
   ["Flow", ["Business Flow Map", "Workflows", "Workflow Runs", "Automations", "Automation Log"]],
-  ["Agents", ["AI Agents", "Agent Inbox", "Agent Run Log"]],
+  ["Agents", ["AI Agents", "Agent Run Log"]],
   ["Customise", ["Custom Fields", "Forms", "Pipeline Settings"]],
-  ["Organisation", ["Hierarchy Tree", "Users", "Roles & Permissions", "Departments & Teams", "Branches", "Attendance & Leave", "Holidays & Working Hours", "Onboarding & Offboarding", "Timesheets", "Daily Reports", "HR Issues"]],
+  ["Organisation", ["Hierarchy Tree", "Users", "Roles & Permissions", "Departments & Teams", "Branches", "Attendance & Leave", "Holidays & Working Hours", "Onboarding & Offboarding", "Timesheets", "HR Issues"]],
   ["Clients", ["Clients", "Engagements", "CM Assignment", "Requests & Add-ons", "Offboarding"]],
   ["Catalogue", ["Services & Tiers", "Bundles", "Add-ons", "Discount Limits", "Proposal & Agreement Templates", "Quotations", "Quotation Templates"]],
   ["Operations", ["SOP Library", "Requirement Checklists", "Department Flow Templates", "QC Checklists", "Gate Rules", "SLA Rules", "Error Log"]],
@@ -173,7 +168,6 @@ const restricted: Record<string, string[]> = {
   Automations: NOT_HR,
   "Automation Log": NOT_HR,
   "Team Performance": LEADERS,
-  "Specialist Dashboards": LEADERS,
   "Business Flow Map": LEADERS,
   "Hierarchy Tree": [...PEOPLE, "am_lead"],
   Users: PEOPLE,
@@ -183,7 +177,6 @@ const restricted: Record<string, string[]> = {
   "Attendance & Leave": PEOPLE,
   "Onboarding & Offboarding": PEOPLE,
   Timesheets: PEOPLE,
-  "Daily Reports": [...FA, "hr_ops", "department_head", "am_lead", "finance"],
   "HR Issues": ["hr_ops"],
   "CM Assignment": CLIENT_OPS,
   Engagements: CLIENT_OPS,
@@ -200,8 +193,6 @@ const restricted: Record<string, string[]> = {
   // v43: client data and privacy: the Founder and the Client Manager Lead here (all clients); Client Managers in the Team app (their own).
   "Data Export / Deletion (DPDP)": ["founder", "am_lead"],
   "Tenant Settings": FA,
-  "Discount Approvals": FA,
-  Renewals: FA,
   "Billing Run": MONEY,
   Outbox: FA,
   "AI Copilot": FA,
