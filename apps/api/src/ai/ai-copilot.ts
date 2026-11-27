@@ -173,8 +173,17 @@ export class AiCopilotService {
     const staff = await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null }, select: { name: true } });
     const person = staff.find((u) => q.includes(u.name.toLowerCase())) ?? staff.find((u) => u.name.split(/\s+/)[0].length > 2 && new RegExp(`\\b${u.name.split(/\s+/)[0].toLowerCase()}\\b`).test(q));
     const notAllowed = (o: ToolOutput) => (o.data as { notAllowed?: boolean; message?: string })?.notAllowed;
-    const deny = (what: string) => ({ text: `Your role cannot see ${what}. The Founder, Branch Manager or Finance team can.`, citations: [] });
+    // v55: anything the role can't see is said once, then the answer comes from the person's own work (My Day).
+    const mine = async (lead?: string): Promise<AiOut> => {
+      const out = await this.call(tools, 'my_week', {}, emit);
+      const text = myWeekText(out.data as MyWeek);
+      return { text: lead ? `${lead}
 
+${text}` : text, citations: out.citations };
+    };
+    const deny = (what: string, who = 'the Founder, a Branch Manager or Finance') => mine(`Your role can't see ${what} (${who} can). Here is what you can see, from your own work:`);
+
+    if (/\b(my (tasks?|work|day|week|clients?|leads?|summary)|what should i|what do i have|my to ?do|pending for me|on my plate)\b/.test(q)) return mine();
     if (/\b(risk|health|churn|unhappy|at-risk)\b/.test(q)) {
       const out = await this.call(tools, 'clients_at_risk', {}, emit);
       if (notAllowed(out)) {
@@ -199,7 +208,7 @@ export class AiCopilotService {
     }
     if (person && /\b(working|work|tasks?|doing|busy|plate|assigned)\b/.test(q)) {
       const out = await this.call(tools, 'find_tasks', { person: person.name.split(/\s+/)[0] }, emit);
-      if (notAllowed(out)) return deny("other people's tasks");
+      if (notAllowed(out)) return deny("other people's tasks", 'their Department Head');
       const rows = out.data as { title: string; client: string | null; status: string; due: string | null; overdue: boolean; link: string }[];
       if (!rows.length) return { text: `${person.name} has no open tasks you can see.`, citations: [] };
       return {
@@ -209,7 +218,7 @@ export class AiCopilotService {
     }
     if (/\b(lead|leads|pipeline|follow|prospect)/.test(q)) {
       const out = await this.call(tools, 'find_leads', {}, emit);
-      if (notAllowed(out)) return deny('leads');
+      if (notAllowed(out)) return deny('leads', 'the sales team');
       const rows = (out.data as { name: string; company: string | null; stage: string; score: number; nextFollowUp: string | null; link: string }[]).filter((l) => !['Won', 'Lost'].includes(l.stage));
       return {
         text: rows.length ? `${rows.length} open leads. Highest scores first:\n${[...rows].sort((a, b) => b.score - a.score).slice(0, 10).map((l) => `- [${l.company || l.name}](${l.link}) · ${l.stage} · score ${l.score}${l.nextFollowUp ? ` · follow up ${l.nextFollowUp}` : ''}`).join('\n')}` : 'No open leads right now.',
@@ -218,7 +227,7 @@ export class AiCopilotService {
     }
     if (/\brequests?\b/.test(q)) {
       const out = await this.call(tools, 'find_requests', { client: client?.name }, emit);
-      if (notAllowed(out)) return deny('the requests desk');
+      if (notAllowed(out)) return deny('the requests desk', 'Client Managers and leadership');
       const rows = out.data as { client: string; type: string; status: string; text: string; replyTime: string; link: string }[];
       return {
         text: rows.length ? `${rows.length} open request${rows.length === 1 ? '' : 's'}:\n${rows.slice(0, 10).map((r) => `- [${r.client}: ${r.text.slice(0, 60)}](${r.link}) · ${r.type.replace('_', ' ')} · ${r.status.replace('_', ' ')}${r.replyTime === 'overdue' ? ' · reply overdue' : ''}`).join('\n')}` : 'No open requests.',
@@ -227,7 +236,7 @@ export class AiCopilotService {
     }
     if (client) {
       const out = await this.call(tools, 'client_360', { client: client.id }, emit);
-      if (notAllowed(out)) return deny('this client');
+      if (notAllowed(out)) return deny('this client', 'the people who work on it');
       const d = out.data as { client: { name: string; health: string; am: string | null }; stats: { activeServices: number; openRequests: number; draftsWaiting: number; outstanding: string }; deliverables: { title: string; overdue: boolean }[]; link: string };
       const overdue = d.deliverables.filter((x) => x.overdue).length;
       return {
@@ -237,7 +246,8 @@ export class AiCopilotService {
     }
     if (/\b(week|summary|how are we|revenue|business|numbers|overview)\b/.test(q)) {
       const out = await this.call(tools, 'business_summary', {}, emit);
-      if (notAllowed(out)) return deny('the business summary');
+      // v55: everyone gets a summary: the company's for those who can see it, otherwise their own week.
+      if (notAllowed(out)) return mine();
       const d = out.data as {
         money: { revenueThisMonth: string; revenueLastMonth: string; outstanding: string } | string;
         activeClients?: number;
@@ -259,7 +269,7 @@ export class AiCopilotService {
       return { text: `${money}${head}, ${d.overdueTasks} overdue tasks, ${d.replyTimeBreachesThisWeek} reply-time misses this week. See the [Weekly Review](/admin).`, citations: out.citations };
     }
     return {
-      text: `In basic mode I can answer questions like:\n- Which clients are at risk this month and why?\n- How much is overdue from ${clientList[0]?.name ?? 'Metro Dental'}?\n- What is ${staff[0]?.name.split(' ')[0] ?? 'Meera'} working on?\n- Show open leads / open requests\n- Summary of the week`,
+      text: `In basic mode I can answer questions like:\n- Summary of the week (your own work, or the business for leadership)\n- What are my tasks? What should I do today?\n- Which clients are at risk this month and why?\n- How much is overdue from ${clientList[0]?.name ?? 'Metro Dental'}?\n- What is ${staff[0]?.name.split(' ')[0] ?? 'Meera'} working on?\n- Show open leads / open requests\n- Summary of the week`,
       citations: [],
     };
   }
@@ -290,4 +300,40 @@ export class AiCopilotService {
       citations: out.citations,
     };
   }
+}
+
+type TaskLine = { title: string; client: string | null; status: string; due: string | null; link: string; reason?: string | null };
+type MyWeek = {
+  name: string;
+  tasks: { open: number; overdue: TaskLine[]; dueToday: TaskLine[]; dueThisWeek: TaskLine[]; blocked: TaskLine[]; doneRecently: number };
+  qc: { sentBackToMe: { id: string; title: string; note: string | null; reviewer: string | null }[]; waitingForMyCheck: { id: string; title: string; owner: string | null }[]; versionsWaitingForQc: number };
+  myClients?: { name: string; health: string; link: string }[];
+  openRequests?: { count: number; replyOverdue: number };
+  leads?: { open: number; followUpsThisWeek: { name: string; due: string | null; link: string }[] };
+  deliveryAtRisk: { title: string; state: string; client: string }[];
+  onLeave: { label: string; until: string } | null;
+};
+
+/** v55: "Summary of the week" for anyone: their own tasks, QC, clients, requests and leads (what My Day shows). */
+export function myWeekText(d: MyWeek): string {
+  const t = (x: TaskLine) => `- [${x.title}](${x.link})${x.client ? ` · ${x.client}` : ''}${x.due ? ` · due ${x.due}` : ''}${x.reason ? ` · ${x.reason}` : ''}`;
+  const out: string[] = [];
+  if (d.onLeave) out.push(`You are on ${d.onLeave.label.toLowerCase()} until ${d.onLeave.until}.`);
+  out.push(`**Your week, ${d.name.split(' ')[0]}:** ${d.tasks.open} open task${d.tasks.open === 1 ? '' : 's'}, ${d.tasks.overdue.length} overdue, ${d.tasks.dueToday.length} due today, ${d.tasks.dueThisWeek.length} due in the next 7 days, ${d.tasks.blocked.length} blocked. ${d.tasks.doneRecently} done in the last 2 weeks.`);
+  if (d.tasks.overdue.length) out.push(`Overdue first:\n${d.tasks.overdue.slice(0, 6).map(t).join('\n')}`);
+  if (d.tasks.dueToday.length) out.push(`Due today:\n${d.tasks.dueToday.slice(0, 6).map(t).join('\n')}`);
+  if (d.tasks.dueThisWeek.length) out.push(`Coming up this week:\n${d.tasks.dueThisWeek.slice(0, 6).map(t).join('\n')}`);
+  if (d.tasks.blocked.length) out.push(`Blocked:\n${d.tasks.blocked.slice(0, 4).map(t).join('\n')}`);
+  if (d.qc.sentBackToMe.length) out.push(`Sent back by QC:\n${d.qc.sentBackToMe.map((x) => `- [${x.title}](/team/tasks/${x.id})${x.note ? ` · ${x.reviewer ? `${x.reviewer}: ` : ''}${x.note.slice(0, 120)}` : ''}`).join('\n')}`);
+  if (d.qc.waitingForMyCheck.length) out.push(`Waiting for your QC check:\n${d.qc.waitingForMyCheck.map((x) => `- [${x.title}](/team/tasks/${x.id})${x.owner ? ` · done by ${x.owner}` : ''}`).join('\n')}`);
+  if (d.qc.versionsWaitingForQc) out.push(`${d.qc.versionsWaitingForQc} version${d.qc.versionsWaitingForQc === 1 ? ' is' : 's are'} waiting in the [QC queue](/team/qc).`);
+  if (d.myClients?.length) {
+    const watch = d.myClients.filter((c) => c.health !== 'green');
+    out.push(`You manage ${d.myClients.length} client${d.myClients.length === 1 ? '' : 's'}${watch.length ? `; ${watch.length} need attention: ${watch.map((c) => `[${c.name}](${c.link}) (${c.health})`).join(', ')}` : ', all green'}.`);
+  }
+  if (d.openRequests?.count) out.push(`${d.openRequests.count} open client request${d.openRequests.count === 1 ? '' : 's'}${d.openRequests.replyOverdue ? `, ${d.openRequests.replyOverdue} with the first reply overdue` : ''}. See [Requests](/team/requests).`);
+  if (d.leads) out.push(`${d.leads.open} open lead${d.leads.open === 1 ? '' : 's'} of yours${d.leads.followUpsThisWeek.length ? `; follow-ups due this week:\n${d.leads.followUpsThisWeek.slice(0, 6).map((l) => `- [${l.name}](${l.link})${l.due ? ` · ${l.due}` : ''}`).join('\n')}` : '.'}`);
+  if (d.deliveryAtRisk.length) out.push(`Delivery steps to watch: ${d.deliveryAtRisk.slice(0, 4).map((x) => `${x.title} (${x.client}, ${x.state === 'overdue' ? 'late' : 'due soon'})`).join('; ')}.`);
+  if (!d.tasks.open && !d.qc.waitingForMyCheck.length && !d.myClients?.length && !d.leads?.open) out.push('Nothing is waiting on you right now.');
+  return out.join('\n\n');
 }

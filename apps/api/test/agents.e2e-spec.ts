@@ -334,7 +334,7 @@ describe('Analyst', () => {
     expect(a.text).toContain(`/team/sops/${sop.id}`);
     // A salesperson asking about invoices gets "not allowed", never numbers.
     const s = (await http().post('/agents/analyst/ask').set(as('sales')).send({ question: 'How much is overdue from invoices?' }).expect(200)).body as { text: string };
-    expect(s.text).toMatch(/cannot see invoices/);
+    expect(s.text).toMatch(/can't see invoices/);
   });
 
   it('AI mode: an answer that used knowledge always lists its sources', async () => {
