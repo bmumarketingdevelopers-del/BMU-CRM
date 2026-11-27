@@ -318,6 +318,8 @@ export const coreTaskCreateBase = z.object({
   /** v32: several departments: each Department Head gets their own copy (Founder, Branch Manager, client leads). */
   departmentIds: z.array(z.string().min(1)).max(30).optional(),
   ownerId: z.string().min(1, "Pick who will do it"),
+  /** v54: who checks the quality; the task counts as done only once they pass it. */
+  qcReviewerId: z.string().min(1).optional().nullable(),
   deadline: dateOrDay,
   priority: z.enum(CORE_TASK_PRIORITIES).default("normal"),
   // More details
@@ -364,6 +366,8 @@ export const coreTaskEditSchema = z.object({
   departmentId: z.string().optional(),
   deliverableId: z.string().nullable().optional(),
   preProduction: z.boolean().optional(),
+  /** v54: change (or clear) who checks the quality. */
+  qcReviewerId: z.string().nullable().optional(),
 });
 export type CoreTaskEdit = z.infer<typeof coreTaskEditSchema>;
 export const CORE_TASK_EDIT_KEYS = Object.keys(coreTaskEditSchema.shape) as (keyof CoreTaskEdit)[];
@@ -456,7 +460,17 @@ export type CoreTaskRow = TaskView & {
   waitingOn: string[];
   tags: CoreTag[];
   can: CoreTaskCan;
+  /** v54: the QC check picked for the task: waiting (sent for QC), passed, or failed (back in progress with a note). */
+  qc?: { reviewer: Ref | null; state: CoreTaskQcState | null; note: string | null; at: string | null; mineToReview: boolean } | null;
 };
+
+export type CoreTaskQcState = "waiting" | "passed" | "failed";
+export const coreTaskQcStateLabels: Record<CoreTaskQcState, string> = { waiting: "Waiting for QC", passed: "QC passed", failed: "QC not passed" };
+/** v54: the reviewer's check: passed, or not passed with what to fix. */
+export const coreTaskQcSchema = z
+  .object({ result: z.enum(["pass", "fail"]), note: z.string().trim().max(5_000).optional() })
+  .refine((v) => v.result === "pass" || (v.note?.length ?? 0) >= 3, { message: "Say what needs fixing", path: ["note"] });
+export type CoreTaskQcInput = z.input<typeof coreTaskQcSchema>;
 
 export type CoreTaskDetail = CoreTaskRow & {
   description: string | null;
@@ -480,6 +494,8 @@ export type CoreTaskDetail = CoreTaskRow & {
   pendingApprovals: { id: string; action: string; summary: string; status: string }[];
   createdBy: string | null;
   createdAt: string;
+  /** v54: every QC check, newest first. */
+  qcHistory?: { id: string; result: "pass" | "fail"; note: string | null; by: string; at: string }[];
 };
 
 export type CoreTaskQuery = {

@@ -118,8 +118,33 @@ export function MyDayPanel({ layout, wrap, hasLeads }: DashLayoutProps & { hasLe
         <SlaList items={day.deliverSla} limit={8} />
       </Panel>
     ) : null,
-    tasks:
-      openCount === 0 ? (
+    tasks: (
+      <div className="grid gap-6">
+        {(day.taskQc?.failed.length || day.taskQc?.toReview.length) ? (
+          <Panel title="QC" subtitle="Tasks sent back by QC with notes to fix, and tasks waiting for your QC check.">
+            <ul className="grid gap-2 text-sm" data-testid="my-day-qc">
+              {day.taskQc!.failed.map((t) => (
+                <li key={t.id} className="border border-red bg-red/5 px-3 py-2">
+                  <Link href={`/team/tasks/${t.id}`} className="font-medium hover:underline">
+                    {t.title}
+                  </Link>
+                  <span className="ml-2 bg-red px-1.5 py-0.5 text-xs text-ivory">QC not passed</span>
+                  {t.note && <span className="mt-1 block whitespace-pre-wrap text-ink-muted">{t.reviewer ? `${t.reviewer}: ` : ""}{t.note}</span>}
+                </li>
+              ))}
+              {day.taskQc!.toReview.map((t) => (
+                <li key={t.id} className="border border-amber bg-amber/10 px-3 py-2">
+                  <Link href={`/team/tasks/${t.id}`} className="font-medium hover:underline">
+                    {t.title}
+                  </Link>
+                  <span className="ml-2 bg-amber px-1.5 py-0.5 text-xs">QC for you</span>
+                  {t.owner && <span className="mt-1 block text-ink-muted">Done by {t.owner}. Pass it, or say what needs fixing.</span>}
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        ) : null}
+        {openCount === 0 ? (
         <Panel>
           <Empty>No open tasks assigned to you. Enjoy the calm, or check the team board.</Empty>
         </Panel>
@@ -146,7 +171,9 @@ export function MyDayPanel({ layout, wrap, hasLeads }: DashLayoutProps & { hasLe
             ) : null,
           )}
         </div>
-      ),
+      )}
+      </div>
+    ),
     // v50: Founders report to no one, so they get their team's reports instead of the form.
     eod: day.eodExempt ? (
       <Panel title="Daily reports" subtitle="You don't file an end-of-day report. The people who report to you send theirs to you.">

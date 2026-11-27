@@ -119,6 +119,8 @@ export const coreActionsApi = (t: Transport) => ({
     edit: (id: string, input: CoreTaskEdit) => t.patch<CoreTaskMutation>(`/tasks/${id}/details`, input),
     status: (id: string, status: TaskStatus, blocked?: { reason: string; waitingFor: string; responsibleId?: string | null; responsibleName?: string; expectedAt: string }) =>
       t.post<CoreTaskMutation>(`/tasks/${id}/status`, { status, blocked }),
+    /** v54: the QC reviewer passes the task, or sends it back with what to fix. */
+    qc: (id: string, result: "pass" | "fail", note?: string) => t.post<CoreTaskMutation>(`/tasks/${id}/qc`, { result, note }),
     deadline: (id: string, deadline: string, reason: string) => t.post<CoreTaskMutation>(`/tasks/${id}/deadline`, { deadline, reason }),
     duplicate: (id: string, input: { withSubtasks?: boolean; count?: number } = {}) => t.post<{ ids: string[]; undo: CoreUndo | null }>(`/tasks/${id}/duplicate`, input),
     archive: (id: string, reason: string) => t.post<CoreTaskMutation>(`/tasks/${id}/archive`, { reason }),

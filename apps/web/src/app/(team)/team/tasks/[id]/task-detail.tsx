@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { taskStatusLabels, type CoreTaskDetail, type CoreTaskFormOptions, type CoreTaskRow, type TaskStatus } from "@bmu/shared";
+import { coreTaskQcStateLabels, taskStatusLabels, type CoreTaskDetail, type CoreTaskFormOptions, type CoreTaskRow, type TaskStatus } from "@bmu/shared";
 import { Badge } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useActions, useActionShortcuts } from "@/components/actions/actions-provider";
@@ -128,6 +128,11 @@ export function TaskDetailView({ id }: { id: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={statusTone(t.status)}>{t.archivedAt ? "Archived" : t.isDraft ? "Draft" : taskStatusLabels[t.status]}</Badge>
           {t.priority !== "normal" && <Badge tone={t.priority === "urgent" ? "red" : t.priority === "high" ? "amber" : "neutral"}>{t.priority}</Badge>}
+          {t.qc?.state === "failed" && t.status !== "done" && (
+            <span data-testid="qc-not-passed-badge">
+              <Badge tone="red">QC not passed</Badge>
+            </span>
+          )}
         </div>
       </div>
 
@@ -139,7 +144,7 @@ export function TaskDetailView({ id }: { id: string }) {
         )}
         {open && manual && t.can.status && t.status === "in_progress" && (
           <button type="button" className={primary} disabled={busy || !!t.can.blocked.status} title={t.can.blocked.status} onClick={() => setStatus("done")}>
-            Mark done
+            {t.qc?.reviewer && t.qc.reviewer.id !== t.owner?.id ? `Mark done · send to ${t.qc.reviewer.name} for QC` : "Mark done"}
           </button>
         )}
         {open && manual && t.can.status && t.status !== "blocked" && (
@@ -193,6 +198,7 @@ export function TaskDetailView({ id }: { id: string }) {
           </p>
         </div>
       )}
+      {t.qc && <QcBox task={t} onSaved={(m) => { setTask(m.task); notify(m.message ?? "Saved", null); }} onError={(e) => notify(e, null, "error")} />}
       {t.pendingApprovals.length > 0 && (
         <div className="mt-4 border border-amber bg-amber/10 px-4 py-3 text-sm">
           {t.pendingApprovals.map((a) => (
@@ -278,6 +284,89 @@ export function TaskDetailView({ id }: { id: string }) {
         </div>
       )}
       {dialogs}
+    </div>
+  );
+}
+
+/**
+ * v54: the QC check. Shows who checks it and the latest result (with the reviewer's notes when it didn't pass); the
+ * reviewer passes it, or sends it back with what to fix.
+ */
+function QcBox({ task, onSaved, onError }: { task: CoreTaskDetail; onSaved: (m: { task: CoreTaskDetail; message?: string }) => void; onError: (m: string) => void }) {
+  const qc = task.qc!;
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failing, setFailing] = useState(false);
+  async function check(result: "pass" | "fail") {
+    if (result === "fail" && note.trim().length < 3) return onError("Say what needs fixing");
+    setBusy(true);
+    try {
+      onSaved(await api.coreTasks.qc(task.id, result, note.trim() || undefined));
+      setNote("");
+      setFailing(false);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const failed = qc.state === "failed" && task.status !== "done";
+  const tone = failed ? "border-red bg-red/5" : qc.state === "passed" ? "border-green bg-green/5" : qc.state === "waiting" ? "border-amber bg-amber/10" : "border-border bg-canvas/40";
+  return (
+    <div className={`mt-4 border px-4 py-3 text-sm ${tone}`} data-testid="qc-box">
+      <p className="font-semibold">
+        {qc.state ? coreTaskQcStateLabels[qc.state] : "QC check"}
+        {qc.reviewer && <span className="font-normal text-ink-muted"> · QC reviewer: {qc.reviewer.name}</span>}
+      </p>
+      {failed && qc.note && (
+        <p className="mt-1 whitespace-pre-wrap" data-testid="qc-note">
+          {qc.note}
+        </p>
+      )}
+      {failed && <p className="mt-1 text-xs text-ink-muted">Fix it, then mark it done again to send it back for QC.</p>}
+      {qc.state === "passed" && qc.note && <p className="mt-1 whitespace-pre-wrap">{qc.note}</p>}
+      {!qc.state && qc.reviewer && <p className="mt-1 text-xs text-ink-muted">When it is marked done, {qc.reviewer.name} checks it. It counts as done only once QC passes.</p>}
+      {qc.state === "waiting" && !qc.mineToReview && <p className="mt-1 text-xs text-ink-muted">Waiting for {qc.reviewer?.name ?? "the reviewer"} to check it.</p>}
+      {qc.mineToReview && (
+        <div className="mt-3 grid gap-2" data-testid="qc-review">
+          <textarea
+            className="min-h-20 w-full border border-border bg-surface-raised p-2 text-sm"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={failing ? "What needs fixing (required)" : "Notes or edits (optional when it passes)"}
+            aria-label="QC notes"
+          />
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={primary} disabled={busy} onClick={() => check("pass")}>
+              QC passed
+            </button>
+            <button
+              type="button"
+              className={btn}
+              disabled={busy}
+              onClick={() => {
+                setFailing(true);
+                void check("fail");
+              }}
+            >
+              Not passed · send back
+            </button>
+          </div>
+        </div>
+      )}
+      {(task.qcHistory?.length ?? 0) > 0 && (
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer text-ink-muted">QC history ({task.qcHistory!.length})</summary>
+          <ul className="mt-1 grid gap-1">
+            {task.qcHistory!.map((h) => (
+              <li key={h.id}>
+                <span className={h.result === "pass" ? "text-green" : "text-red"}>{h.result === "pass" ? "Passed" : "Not passed"}</span> · {h.by} · {day.format(new Date(h.at))}
+                {h.note && <span className="block whitespace-pre-wrap text-ink-muted">{h.note}</span>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }

@@ -110,6 +110,13 @@ export class TasksActionsController {
     return this.tasks.status(me, id, parse(coreTaskStatusSchema, body), ip);
   }
 
+  /** v54: the QC reviewer passes the task, or sends it back with notes. */
+  @Post(':id/qc')
+  @HttpCode(200)
+  qc(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.tasks.qc(me, id, body, ip);
+  }
+
   @Post(':id/deadline')
   @HttpCode(200)
   deadline(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {

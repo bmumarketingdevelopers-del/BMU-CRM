@@ -336,7 +336,13 @@ export function TasksWorkspace() {
                 <span className="hidden truncate md:block">{t.owner?.name ?? <span className="text-ink-muted">Unassigned</span>}</span>
                 <span className={`hidden md:block ${t.overdue ? "font-semibold text-red" : ""}`}>{t.deadline ? day.format(new Date(t.deadline)) : "—"}</span>
                 <span className="hidden md:block">
-                  <Badge tone={statusTone(t.status)}>{taskStatusLabels[t.status]}</Badge>
+                  {t.qc?.mineToReview ? (
+                    <Badge tone="amber">QC for you</Badge>
+                  ) : t.qc?.state === "failed" && t.status !== "done" ? (
+                    <Badge tone="red">QC not passed</Badge>
+                  ) : (
+                    <Badge tone={statusTone(t.status)}>{taskStatusLabels[t.status]}</Badge>
+                  )}
                 </span>
                 <TaskRowMenu task={t} onChanged={reload} />
               </li>

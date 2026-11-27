@@ -404,6 +404,8 @@ export type MyDayView = {
   tasks: { overdue: TaskView[]; today: TaskView[]; upcoming: TaskView[]; blocked: TaskView[] };
   qcWaiting: number;
   sendToClientWaiting: number;
+  /** v54: my tasks sent back by QC (with the reviewer's notes), and tasks waiting for my QC check. */
+  taskQc?: { failed: { id: string; title: string; note: string | null; reviewer: string | null }[]; toReview: { id: string; title: string; owner: string | null }[] };
   /** v10: overdue / at-risk delivery items this person should act on. */
   deliverSla?: DeliverSlaItem[];
   eod: { completed: string[]; pending: string[]; blocked: string[]; waiting: string[]; submitted: boolean };

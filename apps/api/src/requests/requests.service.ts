@@ -289,7 +289,7 @@ export class RequestsService implements OnModuleInit {
 
   private async createWorkTask(r: Row, prefix: string) {
     const holidays = await calendarFor(this.prisma, r.orgId);
-    await this.prisma.task.create({
+    const task = await this.prisma.task.create({
       data: {
         orgId: r.orgId,
         engagementId: r.engagementId,
@@ -301,6 +301,10 @@ export class RequestsService implements OnModuleInit {
         deadline: addWorkingDays(new Date(), r.type === 'urgent' ? 1 : 2, holidays),
       },
     });
+    // v54: the Client Manager is told about the new work; with no Client Manager, the CM Leads are.
+    const client = await this.prisma.clientOrg.findUnique({ where: { id: r.engagement.clientOrgId }, select: { name: true } });
+    if (r.engagement.amId) await this.notifications.notify(r.orgId, [r.engagement.amId], { kind: 'task_assigned', title: `New task for you: ${task.title}`, body: `${client?.name ?? 'Client'} request · due ${task.deadline?.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' })}`, link: `/team/tasks/${task.id}` });
+    else await this.notifications.noClientManager(r.orgId, client?.name ?? 'This client', `The request task "${task.title}"`, `/team/tasks/${task.id}`);
   }
 
   async decide(me: Me, id: string, input: DecideRequest, ip?: string) {

@@ -73,7 +73,7 @@ const dInclude = {
 type DRow = Prisma.DeliverableGetPayload<{ include: typeof dInclude }>;
 type TRow = DRow['tasks'][number];
 
-type MyTask = Prisma.TaskGetPayload<{ select: { id: true; title: true; status: true; kind: true; flowStep: true; deadline: true; startedAt: true; completedAt: true; createdAt: true; timeLoggedMin: true; deliverableId: true; engagementId: true; blockedReason: true } }>;
+type MyTask = Prisma.TaskGetPayload<{ select: { id: true; title: true; status: true; kind: true; flowStep: true; deadline: true; startedAt: true; completedAt: true; createdAt: true; timeLoggedMin: true; deliverableId: true; engagementId: true; blockedReason: true; qcState: true; qcNote: true } }>;
 
 type Target = { id: string; name: string; specialty: string | null; departmentId: string | null; department: string | null; baseRole: string | null };
 
@@ -84,6 +84,8 @@ type Ctx = {
   p: Periods;
   now: Date;
   tasks: MyTask[];
+  /** v54: tasks waiting for the target's QC check. */
+  qcToReview: { id: string; title: string; deadline: Date | null; owner: { name: string } | null }[];
   dels: Map<string, DRow>;
   comments: CommentRow[];
   included: Map<string, number>;
@@ -263,13 +265,15 @@ export class CraftService {
     const horizon = new Date(Math.min(p.prev.from.getTime(), weekStart(now).getTime() - 8 * 7 * DAY));
     const tasks = await this.prisma.task.findMany({
       where: { orgId: me.orgId, ownerId: target.id, status: { not: 'cancelled' }, OR: [{ status: { not: 'done' } }, { completedAt: null }, { completedAt: { gte: horizon } }] },
-      select: { id: true, title: true, status: true, kind: true, flowStep: true, deadline: true, startedAt: true, completedAt: true, createdAt: true, timeLoggedMin: true, deliverableId: true, engagementId: true, blockedReason: true },
+      select: { id: true, title: true, status: true, kind: true, flowStep: true, deadline: true, startedAt: true, completedAt: true, createdAt: true, timeLoggedMin: true, deliverableId: true, engagementId: true, blockedReason: true, qcState: true, qcNote: true },
       orderBy: [{ deadline: 'asc' }],
       take: 800,
     });
+    // v54: tasks waiting for this person's QC check.
+    const qcToReview = await this.prisma.task.findMany({ where: { orgId: me.orgId, qcReviewerId: target.id, status: 'in_qc', archivedAt: null }, select: { id: true, title: true, deadline: true, owner: { select: { name: true } } }, orderBy: [{ qcAt: 'asc' }], take: 20 });
     const delIds = [...new Set(tasks.map((t) => t.deliverableId).filter((x): x is string => !!x))];
     const rows = delIds.length ? await this.prisma.deliverable.findMany({ where: { id: { in: delIds } }, include: dInclude }) : [];
-    const ctx: Ctx = { me, target, readOnly: target.id !== me.id, p, now, tasks, dels: new Map(rows.map((d) => [d.id, d])), comments: [], included: new Map(), checklists: new Map(), assigned: new Map() };
+    const ctx: Ctx = { me, target, readOnly: target.id !== me.id, p, now, tasks, qcToReview, dels: new Map(rows.map((d) => [d.id, d])), comments: [], included: new Map(), checklists: new Map(), assigned: new Map() };
     await this.hydrate(ctx, rows);
     const openIds = tasks.filter((t) => isOpen(t.status)).map((t) => t.id);
     if (openIds.length) {
@@ -486,6 +490,11 @@ export class CraftService {
     const hrefFor = (t: MyTask) => (t.deliverableId ? deliverableHref(t.deliverableId) : '/team/tasks');
     const clientOf = (t: MyTask) => (t.deliverableId ? (ctx.dels.get(t.deliverableId)?.cycle.engagement.clientOrg.name ?? null) : null);
     const open = ctx.tasks.filter((t) => isOpen(t.status) && t.kind !== 'client_review');
+    // v54: sent back from QC with notes (first), and tasks waiting for my QC check.
+    for (const t of open.filter((t) => t.qcState === 'failed'))
+      out.push({ id: `q-${t.id}`, kind: 'qc_failed', title: t.title, detail: `QC not passed${t.qcNote ? `: ${t.qcNote.slice(0, 140)}` : ''}`, href: `/team/tasks/${t.id}`, due: t.deadline?.toISOString() ?? null, client: clientOf(t) });
+    for (const t of ctx.qcToReview)
+      out.push({ id: `r-${t.id}`, kind: 'qc_review', title: t.title, detail: `Check the quality${t.owner ? ` · done by ${t.owner.name}` : ''}`, href: `/team/tasks/${t.id}`, due: t.deadline?.toISOString() ?? null, client: null });
     for (const t of open.filter((t) => t.status !== 'blocked' && t.deadline && t.deadline < ctx.now)) {
       const late = Math.max(1, Math.round(days(t.deadline!, ctx.now)));
       out.push({ id: `o-${t.id}`, kind: 'overdue', title: t.title, detail: `${plural(late, 'day')} late`, href: hrefFor(t), due: t.deadline!.toISOString(), client: clientOf(t) });

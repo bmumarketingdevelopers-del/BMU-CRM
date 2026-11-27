@@ -161,8 +161,10 @@ describe('Task create rules', () => {
   });
 
   it('blocks a new task for someone on leave on the deadline unless the head overrides', async () => {
-    // v32: a Client Manager can't give work to a team member at all (only to the Department Head).
-    await http().post('/tasks').set(as('am')).send({ title: tag('Leave day task'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp1, deadline: D }).expect(403);
+    // v54: a Client Manager can pick the team member too; on leave that day, the task waits for the head's approval.
+    const cmHeld = await http().post('/tasks').set(as('am')).send({ title: tag('Leave day task'), engagementId: ids.amEng, departmentId: ids.dept, ownerId: ids.temp1, deadline: D }).expect(201);
+    expect(cmHeld.body.approval?.id).toBeTruthy();
+    expect(cmHeld.body.task.owner).toBeNull();
     const blocked = await http().post('/tasks').set(as('head')).send({ title: tag('Head leave task'), internal: true, departmentId: ids.dept, ownerId: ids.temp1, deadline: D }).expect(400);
     expect(blocked.body.message).toMatch(/leave/);
     const over = await createTask('head', { title: tag('Head override task'), internal: true, departmentId: ids.dept, ownerId: ids.temp1, deadline: D, overrideLeave: true });
@@ -182,9 +184,10 @@ describe('Reassignment engine', () => {
     expect(t1.onLeave).toBe(true);
     expect(r.body.candidates.find((c: { id: string }) => c.id === ids.temp3).current).toBe(true);
     expect(r.body.reasons.length).toBeGreaterThan(3);
-    // v32: a Client Manager sees only the task department's head.
+    // v54: a Client Manager sees the people of the task's department (and its head).
     const cm = await http().get(`/actions/reassign/task/candidates?ids=${ids.rTask}`).set(as('am')).expect(200);
-    expect(cm.body.candidates.map((c: { id: string }) => c.id)).toEqual([ids.head]);
+    const cmIds = cm.body.candidates.map((c: { id: string }) => c.id);
+    expect(cmIds).toEqual(expect.arrayContaining([ids.head, ids.temp1, ids.temp2, ids.temp3]));
   });
 
   it('requires a reason and a handover note once work has started', async () => {
@@ -195,9 +198,9 @@ describe('Reassignment engine', () => {
     await prisma.task.update({ where: { id: ids.rTask }, data: { status: 'todo' } });
   });
 
-  it('keeps Client Managers to the Department Head and blocks heads moving work onto leave without override', async () => {
-    const cm = await http().post('/actions/reassign/task/apply').set(as('am')).send({ ids: [ids.rTask], toUserId: ids.temp1, reason: 'overload' }).expect(400);
-    expect(cm.body.message).toMatch(/can't take this kind of work/);
+  it('moving work onto someone on leave needs the head: their approval for a Client Manager, an override for the head', async () => {
+    const cm = await http().post('/actions/reassign/task/preview').set(as('am')).send({ ids: [ids.rTask], toUserId: ids.temp1 }).expect(200);
+    expect(cm.body.needsApproval).toBeTruthy();
     const h = await http().post('/actions/reassign/task/apply').set(as('head')).send({ ids: [ids.rTask], toUserId: ids.temp1, reason: 'overload' }).expect(400);
     expect(h.body.message).toMatch(/leave/);
   });

@@ -26,6 +26,8 @@ type Values = {
   /** v32: several departments: each Department Head gets their own copy. */
   departmentIds: string[];
   ownerId: string;
+  /** v54: who checks the quality before it counts as done (optional). */
+  qcReviewerId: string;
   deadline: string;
   priority: string;
   description: string;
@@ -56,6 +58,7 @@ function initial(prefill: NewDrawerProps["prefill"] = {}): Values {
     departmentId: prefill.departmentId ?? "",
     departmentIds: prefill.departmentId ? [prefill.departmentId] : [],
     ownerId: prefill.ownerId ?? "",
+    qcReviewerId: "",
     deadline: prefill.deadline ?? "",
     priority: "normal",
     description: prefill.description ?? "",
@@ -168,23 +171,23 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
     const members = opts?.engagements.find((e) => e.id === v.engagementId)?.podMemberIds ?? [];
     return members.find((id) => opts?.people.find((p) => p.id === id)?.departmentId === v.departmentId) ?? null;
   }, [opts, v.engagementId, v.departmentId]);
-  // v32: tasks from the Founder, Branch Manager and client leads go to the chosen departments' heads.
+  // v54: the Founder, Branch Manager and client leads pick the department, then the person in it (any department,
+  // with or without a Department Head). Department Heads pick from their own team.
   const headsMode = opts?.assignMode === "heads";
   // v51: team members who only add tasks for themselves get the short "Self task" form: their own department filled
   // in, a description instead of "More details". People who assign work to others keep the full form.
   const selfMode = !!opts && !opts.canAssignOthers && !prefill?.parentId;
   const ownDept = selfMode && opts.me.departmentId ? opts.departments.find((d) => d.id === opts.me.departmentId) : undefined;
-  const chosenDepts = headsMode ? (v.departmentIds.length ? v.departmentIds : v.departmentId ? [v.departmentId] : []) : [];
-  const deptHeads = chosenDepts.map((id) => opts?.departments.find((d) => d.id === id)).filter((d): d is NonNullable<typeof d> => !!d);
-  const headOwner = headsMode ? (deptHeads[0]?.head?.id ?? "") : "";
-  const ownerId = headsMode ? headOwner : v.ownerId || (opts?.assignMode === "team" ? podPick : null) || "";
+  const ownerId = v.ownerId || (opts?.canAssignOthers ? podPick : null) || "";
   const deptOptions = opts?.assignMode === "team" && opts.teamDepartmentIds?.length ? opts.departments.filter((d) => opts.teamDepartmentIds!.includes(d.id)) : (opts?.departments ?? []);
-  const toggleDept = (id: string) =>
-    setV((x) => {
-      const cur = x.departmentIds.length ? x.departmentIds : x.departmentId ? [x.departmentId] : [];
-      const next = cur.includes(id) ? cur.filter((d) => d !== id) : [...cur, id];
-      return { ...x, departmentIds: next, departmentId: next[0] ?? "" };
-    });
+  // A new department means a new list of people: the person picked before may not work there.
+  const pickDept = (id: string) => {
+    // Clear the old list so the previous department's people (or "just you") never show for the new one.
+    if (headsMode) setCands(undefined);
+    setV((x) => ({ ...x, departmentId: id, departmentIds: id ? [id] : [], ownerId: headsMode ? "" : x.ownerId }));
+  };
+  // v54: anyone on the team except the person doing it can check the quality.
+  const qcOptions = (opts?.people ?? []).filter((p) => p.id !== ownerId);
 
   const eng = opts?.engagements.find((e) => e.id === v.engagementId);
   const deliverables = (opts?.deliverables ?? []).filter((d) => d.engagementId === v.engagementId);
@@ -199,9 +202,9 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
     if (v.title.trim().length < 3) e.title = "Give the task a title (at least 3 characters)";
     if (mode !== "draft") {
       if (!v.internal && !v.engagementId) e.engagementId = "Pick the client engagement, or mark it Internal";
-      if (!v.departmentId && !ownDept) e.departmentId = headsMode ? "Pick at least one department" : "Pick a department";
-      else if (headsMode && deptHeads.some((d) => !d.head)) e.departmentId = `${deptHeads.filter((d) => !d.head).map((d) => d.name).join(", ")} has no Department Head yet`;
-      if (!ownerId) e.ownerId = headsMode ? "The chosen department has no Department Head yet" : "Pick who will do it";
+      if (!v.departmentId && !ownDept) e.departmentId = "Pick a department";
+      if (!ownerId) e.ownerId = headsMode && !v.departmentId ? "Pick the department first, then the person" : "Pick who will do it";
+      if (v.qcReviewerId && v.qcReviewerId === ownerId) e.qcReviewerId = "Pick someone other than the person doing it";
       if (!v.deadline) e.deadline = "Pick a deadline";
       if (needsPrePro && !v.preProduction) e.preProduction = `${eng?.client} is at ${eng?.gate}: tick Pre-production for planning or onboarding work`;
       if (v.repeat && !v.repeatEnd) e.repeatEnd = "Pick when the repeats end";
@@ -221,8 +224,8 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
         internal: v.internal,
         engagementId: v.internal ? null : v.engagementId || null,
         departmentId: ownDept?.id ?? v.departmentId,
-        departmentIds: headsMode && chosenDepts.length > 1 ? chosenDepts : undefined,
         ownerId,
+        qcReviewerId: v.qcReviewerId && v.qcReviewerId !== ownerId ? v.qcReviewerId : null,
         deadline: v.deadline,
         priority: v.priority as (typeof CORE_TASK_PRIORITIES)[number],
         description: v.description.trim() || undefined,
@@ -431,29 +434,15 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
           </div>
         </Field>
       )}
-      {headsMode && !prefill?.parentId ? (
-        <Field label="Departments" required error={errors.departmentId} hint="The task goes to each chosen department's Department Head. Pick several to send each head their own copy.">
-          <div className="grid max-h-48 gap-1 overflow-y-auto border border-border p-2 sm:grid-cols-2" data-testid="task-departments">
-            {opts?.departments.map((d) => (
-              <label key={d.id} className={`flex items-start gap-2 px-1 py-1 text-sm ${d.head ? "" : "text-ink-muted"}`}>
-                <input type="checkbox" className="mt-0.5" disabled={!d.head} checked={chosenDepts.includes(d.id)} onChange={() => toggleDept(d.id)} aria-label={d.name} />
-                <span>
-                  {d.name}
-                  <span className="block text-xs text-ink-muted">{d.head ? d.head.name : "No Department Head yet"}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </Field>
-      ) : ownDept ? (
+      {ownDept ? (
         <Field label="Department" required hint="Your department. Filled in for client work and internal tasks alike.">
           <p className="border border-border bg-canvas/40 px-3 py-2 text-sm" data-testid="task-own-department">
             {ownDept.name}
           </p>
         </Field>
       ) : (
-        <Field label="Department" required error={errors.departmentId}>
-          <select className={inputCls} value={v.departmentId} onChange={(e) => set("departmentId", e.target.value)} aria-label="Department">
+        <Field label="Department" required error={errors.departmentId} hint={headsMode ? "Then pick the person in it who will do the task." : undefined}>
+          <select className={inputCls} value={v.departmentId} onChange={(e) => pickDept(e.target.value)} aria-label="Department">
             <option value="">Pick a department…</option>
             {deptOptions.map((d) => (
               <option key={d.id} value={d.id}>
@@ -477,27 +466,51 @@ function CreateTaskDrawer({ open, onClose, prefill, onSaved }: NewDrawerProps) {
           </select>
         </Field>
       </div>
-      <Field label={headsMode && deptHeads.length > 1 ? "Assignees (one copy each)" : "Assignee"} required error={errors.ownerId} hint={opts && !opts.canAssignOthers ? "You can add tasks for yourself. Ask your department head to assign work to others." : headsMode ? "Department Heads then give the work to their team." : opts?.assignMode === "team" ? "Your team members, or yourself." : chosen ? `${chosen.name}: ${chosen.loadPct}% → ${chosen.loadAfterPct}% this week${chosen.onLeave ? `, ${chosen.leaveNote}` : ""}` : "Load % is this week's work against capacity, after adding this task."}>
+      <Field
+        label="Assignee"
+        required
+        error={errors.ownerId}
+        hint={
+          opts && !opts.canAssignOthers
+            ? "You can add tasks for yourself. Ask your department head to assign work to others."
+            : chosen
+              ? `${chosen.name}: ${chosen.loadPct}% → ${chosen.loadAfterPct}% this week${chosen.onLeave ? `, ${chosen.leaveNote}` : ""}`
+              : headsMode
+                ? "The people who work in the chosen department. Load % is this week's work against capacity."
+                : opts?.assignMode === "team"
+                  ? "Your team members, or yourself."
+                  : "Load % is this week's work against capacity, after adding this task."
+        }
+      >
         {opts && !opts.canAssignOthers ? (
           <p className="border border-border bg-canvas/40 px-3 py-2 text-sm">{opts.me.name} (you)</p>
-        ) : headsMode ? (
-          <div className="border border-border bg-canvas/40 px-3 py-2 text-sm" data-testid="task-heads">
-            {deptHeads.length ? (
-              deptHeads.map((d) => (
-                <div key={d.id}>
-                  {d.head ? d.head.name : "No Department Head yet"} <span className="text-ink-muted">· Department Head, {d.name}</span>
-                </div>
-              ))
-            ) : (
-              <span className="text-ink-muted">Pick the department(s) above; the task goes to their Department Head.</span>
-            )}
-          </div>
+        ) : headsMode && !v.departmentId ? (
+          <p className="border border-border bg-canvas/40 px-3 py-2 text-sm text-ink-muted" data-testid="task-pick-department-first">
+            Pick the department above to see the people who work in it.
+          </p>
         ) : cands ? (
-          <PersonPicker candidates={peopleInDept} value={ownerId} onChange={(id) => set("ownerId", id)} />
+          peopleInDept.length ? (
+            <PersonPicker candidates={peopleInDept} value={ownerId} onChange={(id) => set("ownerId", id)} />
+          ) : (
+            <p className="text-sm text-ink-muted">Nobody works in this department yet. Ask HR to add people to it.</p>
+          )
         ) : (
           <p className="text-sm text-ink-muted">Loading people…</p>
         )}
       </Field>
+      {!prefill?.parentId && (
+        <Field label="QC reviewer" error={errors.qcReviewerId} hint="Optional. Checks the quality when it is marked done: the task is done only once they pass it. If it doesn't pass, it goes back in progress with their notes.">
+          <select className={inputCls} value={v.qcReviewerId} onChange={(e) => set("qcReviewerId", e.target.value)} aria-label="QC reviewer" data-testid="task-qc-reviewer">
+            <option value="">No QC check</option>
+            {qcOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.departmentId ? ` · ${opts?.departments.find((d) => d.id === p.departmentId)?.name ?? ""}` : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Files" hint="Sent with the task: the person doing it (and watchers) find them on the task and in Files.">
         <div className="grid gap-2">
           <PendingFiles files={files} onRemove={(fid) => setFiles((x) => x.filter((y) => y.id !== fid))} />
@@ -522,7 +535,7 @@ function EditTaskDrawer({ open, onClose, onSaved, taskId }: NewDrawerProps & { t
   const [t, setT] = useState<CoreTaskDetail>();
   const [opts, setOpts] = useState<CoreTaskFormOptions>();
   const [loadError, setLoadError] = useState<string>();
-  const [v, setV] = useState({ title: "", description: "", brief: "", references: "", checklist: [] as { id: string; label: string; done: boolean }[], newItem: "", estimateHours: "", priority: "normal", departmentId: "", deliverableId: "" });
+  const [v, setV] = useState({ title: "", description: "", brief: "", references: "", checklist: [] as { id: string; label: string; done: boolean }[], newItem: "", estimateHours: "", priority: "normal", departmentId: "", deliverableId: "", qcReviewerId: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => {
@@ -532,7 +545,7 @@ function EditTaskDrawer({ open, onClose, onSaved, taskId }: NewDrawerProps & { t
         if (!live) return;
         setT(task);
         setOpts(o);
-        setV({ title: task.title, description: task.description ?? "", brief: task.brief ?? "", references: task.references.join("\n"), checklist: task.checklist, newItem: "", estimateHours: task.estimateHours ? String(task.estimateHours) : "", priority: task.priority, departmentId: task.departmentId ?? "", deliverableId: task.deliverable?.id ?? "" });
+        setV({ title: task.title, description: task.description ?? "", brief: task.brief ?? "", references: task.references.join("\n"), checklist: task.checklist, newItem: "", estimateHours: task.estimateHours ? String(task.estimateHours) : "", priority: task.priority, departmentId: task.departmentId ?? "", deliverableId: task.deliverable?.id ?? "", qcReviewerId: task.qc?.reviewer?.id ?? "" });
       })
       .catch((e: Error) => live && setLoadError(e.message));
     return () => {
@@ -547,7 +560,7 @@ function EditTaskDrawer({ open, onClose, onSaved, taskId }: NewDrawerProps & { t
     setSaving(true);
     try {
       const body = manager
-        ? { title: v.title.trim(), description: v.description, brief: v.brief, references: lines(v.references), checklist: v.checklist, estimateHours: v.estimateHours ? Number(v.estimateHours) : null, priority: v.priority as "normal", departmentId: v.departmentId || undefined, deliverableId: v.deliverableId || null }
+        ? { title: v.title.trim(), description: v.description, brief: v.brief, references: lines(v.references), checklist: v.checklist, estimateHours: v.estimateHours ? Number(v.estimateHours) : null, priority: v.priority as "normal", departmentId: v.departmentId || undefined, deliverableId: v.deliverableId || null, ...(v.qcReviewerId !== (t.qc?.reviewer?.id ?? "") ? { qcReviewerId: v.qcReviewerId || null } : {}) }
         : { description: v.description, brief: v.brief, references: lines(v.references), checklist: v.checklist, estimateHours: v.estimateHours ? Number(v.estimateHours) : null };
       const r = await api.coreTasks.edit(t.id, body);
       onSaved(t.id, r.message ?? "Saved", r.undo);
@@ -588,6 +601,22 @@ function EditTaskDrawer({ open, onClose, onSaved, taskId }: NewDrawerProps & { t
                 </select>
               </Field>
             </div>
+          )}
+          {manager && !t.parentId && t.kind === "work" && (
+            <Field label="QC reviewer" hint="Checks the quality when it is marked done. The task is done only once they pass it.">
+              <select className={inputCls} value={v.qcReviewerId} onChange={(e) => setV({ ...v, qcReviewerId: e.target.value })} aria-label="QC reviewer">
+                <option value="" disabled={t.status === "in_qc"}>
+                  No QC check
+                </option>
+                {(opts?.people ?? [])
+                  .filter((p) => p.id !== t.owner?.id)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
           )}
           <Field label="Description">
             <TextArea value={v.description} onChange={(e) => setV({ ...v, description: e.target.value })} aria-label="Description" />

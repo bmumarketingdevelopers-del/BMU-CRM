@@ -240,6 +240,25 @@ export class NotificationsService {
     return { sent, digests };
   }
 
+  /**
+   * v54: work meant for a client's Client Manager was made, but the client has none, so it has no owner. The CM Leads
+   * are told (else the Branch Managers, else the Founder) so someone assigns a Client Manager or the task.
+   */
+  async noClientManager(orgId: string, client: string, what: string, link: string) {
+    const by = (baseRole: string) =>
+      this.prisma.user.findMany({ where: { orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole } } } }, select: { id: true } });
+    let to = await by('am_lead');
+    if (!to.length) to = await by('admin');
+    if (!to.length) to = await by('founder');
+    await this.notify(orgId, to.map((u) => u.id), {
+      kind: 'task_assigned',
+      title: `${client} has no Client Manager`,
+      body: `${what} has nobody to do it. Give ${client} a Client Manager, or give the task to someone.`,
+      link,
+      critical: true,
+    });
+  }
+
   /** Client people who decide on work: owners and approvers of a client account. */
   async clientDeciders(clientOrgId: string) {
     const rows = await this.prisma.clientUser.findMany({ where: { clientOrgId, clientRole: { in: ['client_owner', 'client_approver'] } }, select: { userId: true } });

@@ -62,8 +62,8 @@ export function ErrorLine({ error }: { error?: string }) {
   return error ? <p className="mt-2 border border-red bg-red/10 px-3 py-2 text-sm">{error}</p> : null;
 }
 
-const nextTone: Record<CraftNextItem["kind"], "red" | "amber" | "dark" | "green"> = { overdue: "red", due_today: "amber", assigned: "green", feedback: "dark", blocked: "red" };
-const nextLabel: Record<CraftNextItem["kind"], string> = { overdue: "Overdue", due_today: "Due today", assigned: "New", feedback: "Feedback", blocked: "Blocked" };
+const nextTone: Record<CraftNextItem["kind"], "red" | "amber" | "dark" | "green"> = { overdue: "red", due_today: "amber", assigned: "green", feedback: "dark", blocked: "red", qc_failed: "red", qc_review: "amber" };
+const nextLabel: Record<CraftNextItem["kind"], string> = { overdue: "Overdue", due_today: "Due today", assigned: "New", feedback: "Feedback", blocked: "Blocked", qc_failed: "QC not passed", qc_review: "QC for you" };
 
 /** Prioritised "what to do next" list: overdue → due today → client feedback → blocked. */
 export function NextList({ items }: { items: CraftNextItem[] }) {

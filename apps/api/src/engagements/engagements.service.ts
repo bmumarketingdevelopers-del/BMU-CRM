@@ -259,6 +259,7 @@ export class EngagementsService {
     ]);
     await this.audit.log(me, 'gate.G1.passed', 'Engagement', e.id, { rcdAt: null }, { rcdAt: now.toISOString(), planningDue: planningDue.toISOString() }, ip);
     const planner = strategist?.id ?? e.amId;
+    if (!planner) await this.notifications.noClientManager(me.orgId, e.clientOrg.name, `Planning ${e.service.name}`, `/team/projects/${e.id}`);
     await this.notifications.notify(me.orgId, [planner === me.id ? null : planner], {
       kind: 'planning_assigned',
       title: `Plan ${e.service.name} for ${e.clientOrg.name}`,

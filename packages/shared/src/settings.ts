@@ -101,6 +101,8 @@ export const NOTIFICATION_KINDS: { key: string; label: string; audience: "client
   { key: "quote_decision", label: "Client approved or declined a quote", audience: "team" },
   { key: "payment_received", label: "Payment received / overdue alert", audience: "team" },
   { key: "task_assigned", label: "Task given to you", audience: "team" },
+  // v54
+  { key: "task_qc", label: "QC result on your task (passed, or not passed with notes)", audience: "team" },
   { key: "automation", label: "Automation alert", audience: "team" },
   // v17 communications
   { key: "inbox_message", label: "WhatsApp or email in the inbox", audience: "team" },

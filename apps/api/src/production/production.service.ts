@@ -356,13 +356,18 @@ export class ProductionService {
       const openSubs = await this.prisma.task.count({ where: { parentId: id, status: { in: ['todo', 'in_progress', 'blocked', 'waiting', 'in_qc'] }, archivedAt: null, isDraft: false } });
       if (openSubs) throw new BadRequestException(`${openSubs} subtask${openSubs > 1 ? 's are' : ' is'} still open. Finish or archive them first.`);
     }
+    // v54: a task with a QC reviewer is done only when they pass it: "Done" sends it to them.
+    const toQc = input.status === 'done' && task.kind === 'work' && !!task.qcReviewerId && task.qcReviewerId !== task.ownerId;
+    if (toQc && task.status === 'in_qc') throw new BadRequestException('Waiting for QC: the reviewer passes it to mark it done');
     const now = new Date();
     const data: Prisma.TaskUncheckedUpdateInput = {};
     if (input.status) {
-      data.status = input.status;
+      data.status = toQc ? 'in_qc' : input.status;
       data.blockedReason = input.status === 'blocked' ? input.blockedReason : null;
       if (input.status === 'in_progress' && !task.startedAt) data.startedAt = now;
-      if (input.status === 'done') data.completedAt = now;
+      if (input.status === 'done' && !toQc) data.completedAt = now;
+      if (toQc) Object.assign(data, { qcState: 'waiting', qcAt: now });
+      else if (task.status === 'in_qc' && task.qcState === 'waiting') data.qcState = null;
     }
     if (input.logMinutes) data.timeLoggedMin = { increment: input.logMinutes };
     if (input.ownerId) {
@@ -380,6 +385,16 @@ export class ProductionService {
       });
     }
     await this.audit.log(me, 'task.updated', 'Task', id, { status: task.status, ownerId: task.ownerId }, input, ip);
+    if (toQc) {
+      await this.audit.log(me, 'task.sent_for_qc', 'Task', id, { status: task.status }, { status: 'in_qc', qcReviewerId: task.qcReviewerId }, ip);
+      if (task.qcReviewerId !== me.id)
+        await this.notifications.notify(me.orgId, [task.qcReviewerId], {
+          kind: 'task_qc_waiting',
+          title: `QC needed: ${task.title}`,
+          body: `${task.owner?.name ?? me.name} has finished it${task.qcState === 'failed' ? ' (fixed after your notes)' : ''}. Pass it, or say what needs fixing.`,
+          link: `/team/tasks/${id}`,
+        });
+    }
     if (input.ownerId && input.ownerId !== task.ownerId) await this.reassignEngine.record(me, 'task', [{ id, fromUserId: task.ownerId, toUserId: input.ownerId }], 'other', 'Changed on the task board');
     return (await this.toTasks([updated]))[0];
   }
@@ -886,6 +901,12 @@ export class ProductionService {
     const todayStr = istDate(new Date());
     const dueToday = (t: TaskView) => !!t.deadline && istDate(new Date(t.deadline)) === todayStr;
     const qcWaiting = this.canQc(me) ? (await this.qcQueue(me)).length : 0;
+    // v54: my tasks sent back by QC, and tasks waiting for my QC check.
+    const [qcFailed, qcToReview] = await Promise.all([
+      this.prisma.task.findMany({ where: { orgId: me.orgId, ownerId: me.id, qcState: 'failed', status: { notIn: ['done', 'cancelled'] }, archivedAt: null }, select: { id: true, title: true, qcNote: true, qcReviewerId: true }, orderBy: { qcAt: 'desc' }, take: 10 }),
+      this.prisma.task.findMany({ where: { orgId: me.orgId, qcReviewerId: me.id, status: 'in_qc', archivedAt: null }, select: { id: true, title: true, owner: { select: { name: true } } }, orderBy: { qcAt: 'asc' }, take: 10 }),
+    ]);
+    const qcNames = new Map((await this.prisma.user.findMany({ where: { id: { in: qcFailed.map((t) => t.qcReviewerId).filter((x): x is string => !!x) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
     const sendToClientWaiting = await this.prisma.deliverable.count({
       where: { orgId: me.orgId, status: 'qc_passed', ...(isLeadership(me) ? {} : { cycle: { engagement: { amId: me.id } } }) },
     });
@@ -938,6 +959,10 @@ export class ProductionService {
       },
       qcWaiting,
       sendToClientWaiting,
+      taskQc: {
+        failed: qcFailed.map((t) => ({ id: t.id, title: t.title, note: t.qcNote, reviewer: (t.qcReviewerId && qcNames.get(t.qcReviewerId)) || null })),
+        toReview: qcToReview.map((t) => ({ id: t.id, title: t.title, owner: t.owner?.name ?? null })),
+      },
       deliverSla: (await this.sla.view(me, { mine: true })).items.slice(0, 12),
       eodExempt: eodExempt(me),
       teamReports: await this.teamReportCount(me, date),

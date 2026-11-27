@@ -1,5 +1,6 @@
-// v32: who may be given a task. Department Heads: their own team (or themselves). The Founder, Branch Manager and
-// client leads: only the chosen departments' heads, one copy each when several departments are picked.
+// v32: who may be given a task. Department Heads: their own team (or themselves). v54: the Founder, Branch Manager and
+// client leads pick the department, then anyone who works in it (also when it has no Department Head); several
+// departments with nobody picked still send each head their own copy.
 // Also: Founders don't ask for attendance corrections.
 import 'dotenv/config';
 import { Test } from '@nestjs/testing';
@@ -46,6 +47,7 @@ beforeAll(async () => {
   ids.headB = (await prisma.user.create({ data: { orgId: org.id, type: 'staff', name: tag('Head B'), email: `assign.headb.${stamp}@example.com`, status: 'active', branchId, roles: { create: { roleId: headRole.id } } } })).id;
   ids.deptB = (await prisma.department.create({ data: { orgId: org.id, branchId, name: tag('Dept B'), headUserId: ids.headB } })).id;
   ids.deptNone = (await prisma.department.create({ data: { orgId: org.id, branchId, name: tag('Dept None') } })).id;
+  ids.teamNone = (await prisma.user.create({ data: { orgId: org.id, type: 'staff', name: tag('Team None'), email: `assign.teamnone.${stamp}@example.com`, status: 'active', departmentId: ids.deptNone, roles: { create: { roleId: producerRole.id } } } })).id;
   await prisma.user.update({ where: { id: ids.headB }, data: { departmentId: ids.deptB } });
   ids.teamA = (await prisma.user.create({ data: { orgId: org.id, type: 'staff', name: tag('Team A'), email: `assign.teama.${stamp}@example.com`, status: 'active', departmentId: ids.deptA, roles: { create: { roleId: producerRole.id } } } })).id;
   ids.teamB = (await prisma.user.create({ data: { orgId: org.id, type: 'staff', name: tag('Team B'), email: `assign.teamb.${stamp}@example.com`, status: 'active', departmentId: ids.deptB, roles: { create: { roleId: producerRole.id } } } })).id;
@@ -78,9 +80,12 @@ describe('who can be given a task', () => {
     expect((await http().get('/tasks/form-options').set(as('am')).expect(200)).body.assignMode).toBe('heads');
   });
 
-  it('lists only the chosen department head for the Founder, and only the team for a Department Head', async () => {
+  it('lists the people of the chosen department for the Founder, and only the team for a Department Head', async () => {
     const f = (await http().get(`/actions/reassign/task/candidates?departmentId=${ids.deptB}`).set(as('founder')).expect(200)).body;
-    expect(f.candidates.map((c: { id: string }) => c.id)).toEqual([ids.headB]);
+    expect(f.candidates.map((c: { id: string }) => c.id).sort()).toEqual([ids.headB, ids.teamB].sort());
+    // A department with no head: its people are listed.
+    const none = (await http().get(`/actions/reassign/task/candidates?departmentId=${ids.deptNone}`).set(as('am')).expect(200)).body;
+    expect(none.candidates.map((c: { id: string }) => c.id)).toEqual([ids.teamNone]);
     const h = (await http().get(`/actions/reassign/task/candidates?departmentId=${ids.deptA}`).set(as('head')).expect(200)).body;
     const list = h.candidates.map((c: { id: string }) => c.id);
     expect(list).toContain(ids.teamA);
@@ -89,14 +94,23 @@ describe('who can be given a task', () => {
     expect(list).not.toContain(ids.headB);
   });
 
-  it('the Founder, Branch Manager and Client Managers give tasks only to Department Heads', async () => {
-    await http().post('/tasks').set(as('founder')).send(task('Founder to team', { departmentId: ids.deptB, ownerId: ids.teamB })).expect(403);
+  it('the Founder, Branch Manager and Client Managers give tasks to anyone in the chosen department', async () => {
+    const toTeam = (await http().post('/tasks').set(as('founder')).send(task('Founder to team', { departmentId: ids.deptB, ownerId: ids.teamB })).expect(201)).body;
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: toTeam.task.id } })).ownerId).toBe(ids.teamB);
+    const n = await prisma.notification.count({ where: { userId: ids.teamB, link: `/team/tasks/${toTeam.task.id}`, kind: 'task_assigned' } });
+    expect(n).toBe(1);
+    // Someone from another department: refused.
     await http().post('/tasks').set(as('founder')).send(task('Founder to wrong head', { departmentId: ids.deptB, ownerId: ids.head })).expect(403);
     const ok = (await http().post('/tasks').set(as('founder')).send(task('Founder to head', { departmentId: ids.deptB, ownerId: ids.headB })).expect(201)).body;
     expect(ok.task.owner?.id ?? (await prisma.task.findUniqueOrThrow({ where: { id: ok.task.id } })).ownerId).toBe(ids.headB);
-    await http().post('/tasks').set(as('admin')).send(task('Admin to team', { departmentId: ids.deptA, ownerId: ids.teamA })).expect(403);
-    await http().post('/tasks').set(as('am')).send(task('CM to team', { departmentId: ids.deptA, ownerId: ids.teamA })).expect(403);
-    await http().post('/tasks').set(as('founder')).send(task('No head', { departmentId: ids.deptNone, ownerId: ids.headB })).expect(400);
+    await http().post('/tasks').set(as('admin')).send(task('Admin to team', { departmentId: ids.deptA, ownerId: ids.teamA })).expect(201);
+    await http().post('/tasks').set(as('am')).send(task('CM to team', { departmentId: ids.deptA, ownerId: ids.teamA })).expect(201);
+    await http().post('/tasks').set(as('am')).send(task('CM to outsider', { departmentId: ids.deptA, ownerId: ids.teamB })).expect(403);
+    // A department with no Department Head still gets work: pick the person.
+    await http().post('/tasks').set(as('founder')).send(task('No head, wrong person', { departmentId: ids.deptNone, ownerId: ids.headB })).expect(403);
+    await http().post('/tasks').set(as('am')).send(task('No head', { departmentId: ids.deptNone, ownerId: ids.teamNone })).expect(201);
+    // Team members still only add tasks for themselves.
+    await http().post('/tasks').set(as('producer')).send(task('Producer to other', { departmentId: ids.deptA, ownerId: ids.teamA })).expect(403);
   });
 
   it('sends one copy to each chosen Department Head, all or none', async () => {
@@ -120,9 +134,10 @@ describe('who can be given a task', () => {
 
   it('reassigning follows the same rules', async () => {
     const t = await prisma.task.findFirstOrThrow({ where: { title: tag('Founder to head') } });
-    const pre = await http().post('/actions/reassign/task/preview').set(as('founder')).send({ ids: [t.id], toUserId: ids.teamB }).expect(400);
+    // Someone in the task's department: fine. Someone from another department: refused.
+    await http().post('/actions/reassign/task/preview').set(as('founder')).send({ ids: [t.id], toUserId: ids.teamB }).expect(200);
+    const pre = await http().post('/actions/reassign/task/preview').set(as('founder')).send({ ids: [t.id], toUserId: ids.teamA }).expect(400);
     expect(pre.body.message).toMatch(/can't take this kind of work/);
-    await http().patch(`/tasks/${t.id}`).set(as('founder')).send({ ownerId: ids.teamB }).expect(403);
   });
 });
 

@@ -35,6 +35,13 @@ const SERVICE_KIND_TO_GROUP: Record<string, string> = {
   payment_received: "payment_received",
   dunning_alert: "payment_received",
   task_assigned: "task_assigned",
+  // v54: planning tasks and plan-approval tasks are tasks given to you too (one setting covers them all).
+  tasks_assigned: "task_assigned",
+  planning_assigned: "task_assigned",
+  // v54: a task waiting for your QC check, and the QC result on your task.
+  task_qc_waiting: "qc_waiting",
+  task_qc_passed: "task_qc",
+  task_qc_failed: "task_qc",
   automation: "automation",
 };
 
