@@ -49,6 +49,9 @@ export async function clientServiceRows(db: Db, orgId: string, clientOrgId: stri
     const prices = sub?.prices ?? bundle?.prices;
     const plan = planOf(r.plan);
     const pricedPlan = prices ? (plan && prices[plan] != null ? plan : lowestPlan(prices)) : null;
+    // v56: no plan prices in the price list: the amount and billing agreed for this client, when set.
+    const custom = !pricedPlan && r.customPricePaise != null;
+    const adminBilling = (r.bundleId ? 'monthly' : (sub?.billing ?? 'monthly')) as SubServiceBilling;
     return {
       id: r.id,
       kind: r.bundleId ? 'bundle' : 'sub',
@@ -58,9 +61,10 @@ export async function clientServiceRows(db: Db, orgId: string, clientOrgId: stri
       plan,
       status: r.status as ClientServiceRow['status'],
       startDate: r.startDate?.toISOString().slice(0, 10) ?? null,
-      billing: (r.bundleId ? 'monthly' : (sub?.billing ?? 'monthly')) as SubServiceBilling,
-      pricePaise: prices && pricedPlan ? prices[pricedPlan] : null,
+      billing: !pricedPlan && r.customBilling ? (r.customBilling as SubServiceBilling) : adminBilling,
+      pricePaise: custom ? r.customPricePaise : prices && pricedPlan ? prices[pricedPlan] : null,
       pricedPlan,
+      custom,
       description: bundle ? bundle.subServiceIds.map((id) => subs.get(id)?.name).filter(Boolean).join(' + ') : (sub?.covers ?? ''),
     };
   });
@@ -81,6 +85,15 @@ export async function setClientServicesTx(tx: Prisma.TransactionClient, me: Me, 
   if ((await tx.subService.count({ where: { orgId: me.orgId, id: { in: subIds } } })) !== subIds.length) throw new BadRequestException('Some of the chosen sub services are not in the price list');
   if ((await tx.serviceBundle.count({ where: { orgId: me.orgId, id: { in: bundleIds } } })) !== bundleIds.length) throw new BadRequestException('Some of the chosen bundles are not in the price list');
   const plans = input.plans ?? {};
+  // v56: an item with no plan prices can carry its own amount and billing; items with plan prices never do.
+  const custom = input.custom ?? {};
+  const priced = (id: string) => Object.values(subs.get(id)?.prices ?? bundles.get(id)?.prices ?? {}).some((p) => p != null);
+  const customOf = (id: string) => {
+    if (priced(id)) return { customPricePaise: null, customBilling: null };
+    const c = custom[id];
+    const adminBilling = subs.get(id)?.billing;
+    return { customPricePaise: c?.pricePaise ?? null, customBilling: c?.billing ?? (adminBilling === 'one_time' ? 'one_time' : 'monthly') };
+  };
   const current = await tx.clientService.findMany({ where: { orgId: me.orgId, clientOrgId, status: { not: 'ended' } } });
   const chosen = [...subIds.map((id) => ({ kind: 'sub' as const, id })), ...bundleIds.map((id) => ({ kind: 'bundle' as const, id }))];
   const keyOf = (r: { subServiceId: string | null; bundleId: string | null }) => r.subServiceId ?? r.bundleId;
@@ -95,16 +108,18 @@ export async function setClientServicesTx(tx: Prisma.TransactionClient, me: Me, 
   for (const c of chosen) {
     const plan = planOf(plans[c.id]);
     const existing = current.find((r) => keyOf(r) === c.id);
+    const own = customOf(c.id);
     if (existing) {
-      if ((existing.plan ?? null) !== plan) {
-        const rows = await tx.clientService.updateManyAndReturn({ where: { id: existing.id, orgId: me.orgId, clientOrgId }, data: { plan } });
+      const repriced = (existing.customPricePaise ?? null) !== own.customPricePaise || (existing.customBilling ?? null) !== own.customBilling;
+      if ((existing.plan ?? null) !== plan || repriced) {
+        const rows = await tx.clientService.updateManyAndReturn({ where: { id: existing.id, orgId: me.orgId, clientOrgId }, data: { plan, ...own } });
         if (!rows.length) throw new ForbiddenException('You cannot change these services');
         replanned.push({ name: existing.name, from: existing.plan, to: plan });
       }
       continue;
     }
     const name = c.kind === 'sub' ? subs.get(c.id)!.name : bundles.get(c.id)!.name;
-    await tx.clientService.create({ data: { orgId: me.orgId, clientOrgId, subServiceId: c.kind === 'sub' ? c.id : null, bundleId: c.kind === 'bundle' ? c.id : null, plan, status: 'active', startDate: now, name, createdById: me.id } });
+    await tx.clientService.create({ data: { orgId: me.orgId, clientOrgId, subServiceId: c.kind === 'sub' ? c.id : null, bundleId: c.kind === 'bundle' ? c.id : null, plan, status: 'active', startDate: now, name, createdById: me.id, ...own } });
     added.push(name);
   }
   return { added, ended: ended.map((r) => r.name), replanned };
