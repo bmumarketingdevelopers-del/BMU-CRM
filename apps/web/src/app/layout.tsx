@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Albert_Sans, Zen_Dots } from "next/font/google";
-import { INSTALL_CATCHER } from "@/lib/install-app";
+import { StartupScripts } from "@/components/startup-scripts";
 import "./globals.css";
 
 const zenDots = Zen_Dots({ variable: "--font-zen-dots", weight: "400", subsets: ["latin"] });
@@ -15,10 +15,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en-IN" className={`${zenDots.variable} ${albertSans.variable} h-full antialiased`}>
+    <html lang="en-IN" className={`${zenDots.variable} ${albertSans.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col font-sans">
-        {/* v45: keeps Chrome's / Edge's "can be installed" signal for the Install BMU Hub app button (src/lib/install-app.ts). */}
-        <script dangerouslySetInnerHTML={{ __html: INSTALL_CATCHER }} />
+        {/* v45 install-app catcher + v54 theme setter: put in the page head by the server only, so they run before the
+            page paints and React never re-renders them in the browser (components/startup-scripts.tsx). */}
+        <StartupScripts />
         {children}
       </body>
     </html>

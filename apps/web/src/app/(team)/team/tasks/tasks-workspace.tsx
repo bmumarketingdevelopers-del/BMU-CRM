@@ -6,6 +6,9 @@ import { coreCanManageTasks, coreCanUseTemplates, taskStatusLabels, TASK_STATUSE
 import { CsvButton } from "@/components/charts";
 import { TaskBoard } from "@/components/task-list";
 import { Badge, PageTitle } from "@/components/ui";
+import { DesignDate } from "@/components/tasks/design-date";
+import { DesignSelect } from "@/components/tasks/design-select";
+import { DesignPage, designField, designGlass, InitialsAvatar, PillGroup, PillToggle, PrimaryPill, softPill, StatTile, StatusPill } from "@/components/tasks/task-design";
 import { api } from "@/lib/api";
 import { useActions, useActionShortcuts } from "@/components/actions/actions-provider";
 import { BulkBar, BulkButton, useSelection } from "@/components/actions/bulk-bar";
@@ -20,12 +23,13 @@ import { FilterPanel } from "@/components/filter-panel";
 type Filters = { q: string; scope: "mine" | "team"; show: "open" | "completed" | "drafts" | "archived"; ownerId: string; clientId: string; departmentId: string; status: string; from: string; to: string; tag: string };
 const EMPTY: Filters = { q: "", scope: "mine", show: "open", ownerId: "", clientId: "", departmentId: "", status: "", from: "", to: "", tag: "" };
 const day = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
-const statusTone = (s: string) => (s === "done" ? "green" : s === "blocked" ? "red" : s === "waiting" ? "amber" : s === "in_progress" ? "dark" : "neutral");
 const LAYOUT_KEY = "bmu.tasks.layout";
+// The original look (everyone not in the redesign preview).
+const statusTone = (s: string) => (s === "done" ? "green" : s === "blocked" ? "red" : s === "waiting" ? "amber" : s === "in_progress" ? "dark" : "neutral");
 const toggle = (active: boolean) => `border px-3 py-1 text-sm ${active ? "border-charcoal bg-charcoal text-ivory" : "border-border bg-surface-raised"}`;
 const selectCls = "border border-border bg-surface-raised px-2 py-1.5 text-sm";
 
-export function TasksWorkspace() {
+export function TasksWorkspace({ redesign = false }: { redesign?: boolean }) {
   const { me, openNew, openReassign, notify, version, changed, canNew } = useActions();
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [q, setQ] = useState("");
@@ -118,83 +122,418 @@ export function TasksWorkspace() {
     return m.task;
   }
 
-  return (
+  // v54 redesign: the big numbers, counted from the tasks already on the page (no extra loading).
+  const stats = useMemo(() => {
+    const list = rows ?? [];
+    return {
+      todo: list.filter((t) => t.status === "todo").length,
+      progress: list.filter((t) => t.status === "in_progress" || t.status === "in_qc").length,
+      overdue: list.filter((t) => t.overdue && !["done", "cancelled"].includes(t.status)).length,
+      done: list.filter((t) => t.status === "done").length,
+    };
+  }, [rows]);
+  // "Views" and "Export CSV" are shared buttons: shaped as soft pills from here, without changing them.
+  const pillWrap = "[&>button]:inline-flex [&>button]:h-10 [&>button]:items-center [&>button]:rounded-full [&>button]:border [&>button]:border-ui-card-border [&>button]:bg-ui-pill [&>button]:px-4 [&>button]:text-sm [&>button]:font-medium [&>button]:text-ui-pill-ink [&>button]:shadow-[var(--ui-card-shadow)] [&>button:hover]:bg-ui-accent-soft [&>div>button]:inline-flex [&>div>button]:h-10 [&>div>button]:items-center [&>div>button]:rounded-full [&>div>button]:border [&>div>button]:border-ui-card-border [&>div>button]:bg-ui-pill [&>div>button]:px-4 [&>div>button]:text-sm [&>div>button]:font-medium [&>div>button]:text-ui-pill-ink [&>div>button]:shadow-[var(--ui-card-shadow)] [&>div>button:hover]:bg-ui-accent-soft";
+
+  // v54: the bulk bar and dialogs are the same in both looks.
+  const shared = (
     <>
-      <PageTitle
-        title="Tasks"
-        subtitle="Your work and your team's: add, assign, reassign and track. Steps from department flows unlock when the one before is done."
-        action={
-          <div className="flex flex-wrap gap-2">
-            {canNew("task") && (
-              <button type="button" onClick={addTask} className="bg-charcoal px-3 py-1.5 text-sm font-medium text-ivory" data-testid="add-task">
+        <BulkBar count={sel.count} onClear={sel.clear} label="tasks">
+          {selected.some((t) => t.can.reassign) && <BulkButton onClick={() => openReassign({ type: "task", ids: selected.filter((t) => t.can.reassign).map((t) => t.id), title: `Reassign ${selected.length} tasks`, onDone: () => sel.clear() })}>Reassign</BulkButton>}
+          <BulkButton onClick={() => setBulk("status")}>Status</BulkButton>
+          {manager && <BulkButton onClick={() => setBulk("deadline")}>Deadline</BulkButton>}
+          {manager && <BulkButton onClick={() => setBulk("priority")}>Priority</BulkButton>}
+          <BulkButton onClick={() => setBulk("tag")}>Tag</BulkButton>
+          {selected.some((t) => t.can.archive) && <BulkButton onClick={() => setBulk("archive")}>Archive</BulkButton>}
+        </BulkBar>
+
+        {bulk && (
+          <BulkTaskDialog
+            redesign={redesign}
+            action={bulk}
+            ids={sel.ids}
+            onClose={() => setBulk(null)}
+            onDone={(message, undo) => {
+              setBulk(null);
+              sel.clear();
+              notify(message, undo);
+              changed();
+            }}
+          />
+        )}
+        {blocking && (
+          <BlockedDialog
+            task={blocking}
+            onClose={() => setBlocking(undefined)}
+            onDone={(m, u) => {
+              setBlocking(undefined);
+              notify(m, u);
+              reload();
+            }}
+          />
+        )}
+        {panel === "import" && <ImportWizard entity="tasks" open onClose={() => setPanel(null)} onDone={() => changed()} />}
+        {panel === "template" && (
+          <TemplateWizard
+            open
+            onClose={() => setPanel(null)}
+            onDone={(m, u) => {
+              setPanel(null);
+              notify(m, u);
+              changed();
+            }}
+          />
+        )}
+        {panel === "recurring" && (
+          <ActionDialog open title="Recurring tasks" onClose={() => setPanel(null)}>
+            <p className="text-xs text-ink-muted">Each rule creates its tasks 7 days ahead, skipping Sundays and holidays.</p>
+            <RecurringList onChanged={changed} />
+          </ActionDialog>
+        )}
+    </>
+  );
+
+  // v54 redesign preview: only the people in REDESIGN_PREVIEW_EMAILS see the new look; everyone else keeps the original.
+  if (!redesign)
+    return (
+      <>
+        <PageTitle
+          title="Tasks"
+          subtitle="Your work and your team's: add, assign, reassign and track. Steps from department flows unlock when the one before is done."
+          action={
+            <div className="flex flex-wrap gap-2">
+              {canNew("task") && (
+                <button type="button" onClick={addTask} className="bg-charcoal px-3 py-1.5 text-sm font-medium text-ivory" data-testid="add-task">
+                  + Add task
+                </button>
+              )}
+              {coreCanUseTemplates(me) && (
+                <button type="button" onClick={() => setPanel("template")} className="border border-border px-3 py-1.5 text-sm">
+                  From template
+                </button>
+              )}
+              {canImport && (
+                <button type="button" onClick={() => setPanel("import")} className="border border-border px-3 py-1.5 text-sm">
+                  Import
+                </button>
+              )}
+              {manager && (
+                <button type="button" onClick={() => setPanel("recurring")} className="border border-border px-3 py-1.5 text-sm">
+                  Recurring
+                </button>
+              )}
+            </div>
+          }
+        />
+
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tasks  /" aria-label="Search tasks" className="w-full border border-border bg-surface-raised px-3 py-1.5 text-sm sm:w-56" />
+          <button type="button" className={toggle(filters.scope === "mine")} onClick={() => set({ scope: "mine" })}>
+            Mine
+          </button>
+          <button type="button" className={toggle(filters.scope === "team")} onClick={() => set({ scope: "team" })}>
+            Everything I can see
+          </button>
+          {/* Completed work stays findable at any age (newest first); Mine / Everything I can see still apply. */}
+          <button type="button" className={toggle(filters.show === "completed")} aria-pressed={filters.show === "completed"} onClick={() => set({ show: filters.show === "completed" ? "open" : "completed" })}>
+            Completed
+          </button>
+          <span className="hidden w-2 sm:inline" />
+          <button type="button" className={toggle(layout === "board")} onClick={() => setLayoutSaved("board")}>
+            Board
+          </button>
+          <button type="button" className={toggle(layout === "list")} onClick={() => setLayoutSaved("list")}>
+            List
+          </button>
+          <span className="hidden w-2 sm:inline" />
+          <SavedViewsMenu entity="task" filters={filters} onApply={(f) => setFilters({ ...EMPTY, ...(f as Partial<Filters>) })} />
+          <CsvButton
+            filename="tasks.csv"
+            rows={rows ?? []}
+            columns={[
+              { header: "Task", value: (r) => r.title },
+              { header: "Client", value: (r) => r.client?.name ?? (r.isInternal ? "Internal" : "") },
+              { header: "Owner", value: (r) => r.owner?.name },
+              { header: "Department", value: (r) => r.department },
+              { header: "Status", value: (r) => taskStatusLabels[r.status] },
+              { header: "Priority", value: (r) => r.priority },
+              { header: "Deadline", value: (r) => r.deadline?.slice(0, 10) },
+              { header: "Tags", value: (r) => r.tags.map((t) => t.name).join("; ") },
+            ]}
+          />
+        </div>
+
+        <FilterPanel active={active} className="mb-4" testId="task-filters">
+          <select className={selectCls} value={filters.show} onChange={(e) => set({ show: e.target.value as Filters["show"] })} aria-label="Show">
+            <option value="open">Open and recent</option>
+            <option value="completed">Completed (all time)</option>
+            <option value="drafts">Drafts</option>
+            <option value="archived">Archived</option>
+          </select>
+          {!employee && (
+            <select className={selectCls} value={filters.ownerId} onChange={(e) => set({ ownerId: e.target.value, scope: e.target.value ? "team" : filters.scope })} aria-label="Owner">
+              <option value="">Any owner</option>
+              <option value="none">Unassigned</option>
+              {opts?.people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {/* Team members: only the clients they work on (the same list as the task form). */}
+          <select className={selectCls} value={filters.clientId} onChange={(e) => set({ clientId: e.target.value })} aria-label="Client">
+            <option value="">{employee ? "Client" : "Any client"}</option>
+            {!employee && <option value="internal">Internal</option>}
+            {clients.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+          {!employee && (
+            <select className={selectCls} value={filters.departmentId} onChange={(e) => set({ departmentId: e.target.value })} aria-label="Department">
+              <option value="">Any department</option>
+              {opts?.departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <select className={selectCls} value={filters.status} onChange={(e) => set({ status: e.target.value })} aria-label="Status">
+            <option value="">Any status</option>
+            <option value="overdue">Overdue</option>
+            {TASK_STATUSES.filter((s) => s !== "cancelled").map((s) => (
+              <option key={s} value={s}>
+                {taskStatusLabels[s]}
+              </option>
+            ))}
+          </select>
+          {employee ? (
+            <label className="flex items-center gap-2 text-xs">
+              Date
+              <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value, to: e.target.value })} aria-label="Due on" title="Tasks due on this day" />
+            </label>
+          ) : (
+            <>
+              <label className="flex items-center gap-2 text-xs">
+                Due from
+                <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value })} aria-label="Due from" />
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                to
+                <input type="date" className={`${selectCls} flex-1`} value={filters.to} onChange={(e) => set({ to: e.target.value })} aria-label="Due to" />
+              </label>
+            </>
+          )}
+          <input className={selectCls} value={filters.tag} onChange={(e) => set({ tag: e.target.value.trim() })} placeholder="Tag" aria-label="Tag" />
+          {active > 0 && (
+            <button type="button" className="text-left text-xs underline" onClick={() => setFilters((f) => ({ ...EMPTY, q: f.q, scope: f.scope }))}>
+              Clear filters
+            </button>
+          )}
+        </FilterPanel>
+
+        {error && (
+          <p role="alert" className="mb-3 border border-red bg-red/10 px-4 py-2 text-sm">
+            {error}{" "}
+            <button type="button" className="underline" onClick={reload}>
+              Try again
+            </button>
+          </p>
+        )}
+        {!rows && !error && <p className="py-8 text-center text-sm text-ink-muted">Loading tasks…</p>}
+        {rows && rows.length === 0 && (
+          <div className="border border-border bg-surface-raised px-4 py-10 text-center text-sm" data-testid="tasks-empty">
+            <p className="text-ink-muted">{filters.show === "archived" ? "Nothing archived." : filters.show === "drafts" ? "No drafts." : active || filters.q ? "No tasks match these filters." : "No tasks here yet."}</p>
+            {/* Team members who only add tasks for themselves use the "+ Add task" button at the top. */}
+            {canNew("task") && filters.show === "open" && coreCanManageTasks(me) && (
+              <button type="button" className="mt-3 bg-charcoal px-3 py-1.5 text-sm text-ivory" onClick={addTask}>
                 + Add task
               </button>
             )}
+          </div>
+        )}
+
+        {rows && rows.length > 0 && layout === "board" && filters.show === "open" && (
+          <TaskBoard
+            tasks={rows}
+            onChanged={() => reload()}
+            cardMenu={(t) => byId.get(t.id) && <TaskRowMenu task={byId.get(t.id)!} onChanged={reload} />}
+            cardHref={(t) => `/team/tasks/${t.id}`}
+            onAdd={canNew("task") ? () => addTask() : undefined}
+            onBlock={(t) => {
+              const row = byId.get(t.id);
+              if (row) setBlocking(row);
+            }}
+            onMove={move}
+          />
+        )}
+
+        {rows && rows.length > 0 && (layout === "list" || filters.show !== "open") && (
+          <div className="border border-border">
+            <div className="hidden grid-cols-[2rem_minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_6rem_7rem_2.5rem] gap-2 border-b border-border bg-canvas/50 px-3 py-2 text-xs text-ink-muted md:grid">
+              <input type="checkbox" checked={sel.allSelected} onChange={sel.toggleAll} aria-label="Select all" />
+              <span>Task</span>
+              <span>Client</span>
+              <span>Owner</span>
+              <span>Due</span>
+              <span>Status</span>
+              <span />
+            </div>
+            <ul>
+              {rows.map((t) => (
+                <li key={t.id} className="grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-start gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0 md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_6rem_7rem_2.5rem] md:items-center" data-task-row={t.id}>
+                  <input type="checkbox" checked={sel.has(t.id)} onChange={() => sel.toggle(t.id)} aria-label={`Select ${t.title}`} className="mt-1 md:mt-0" />
+                  <div className="min-w-0">
+                    <Link href={`/team/tasks/${t.id}`} className="font-medium hover:underline">
+                      {t.title}
+                    </Link>
+                    <p className="flex flex-wrap gap-x-2 text-xs text-ink-muted">
+                      {t.subtaskCount > 0 && (
+                        <span>
+                          {t.subtaskCount - t.subtasksOpen}/{t.subtaskCount} subtasks
+                        </span>
+                      )}
+                      {t.waitingOn.length > 0 && <span>Waiting on {t.waitingOn[0]}</span>}
+                      {t.isDraft && <span className="text-amber">Draft{t.draftReason === "out_of_scope" ? ": beyond scope" : ""}</span>}
+                      {t.archivedAt && <span>Archived: {t.archivedReason}</span>}
+                      {t.tags.map((g) => (
+                        <span key={g.id} className="border border-border px-1">
+                          {g.name}
+                        </span>
+                      ))}
+                    </p>
+                    <p className="text-xs text-ink-muted md:hidden">
+                      {[t.client?.name ?? (t.isInternal ? "Internal" : null), t.owner?.name ?? "Unassigned", t.deadline ? `Due ${day.format(new Date(t.deadline))}` : null, taskStatusLabels[t.status]].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                  <span className="hidden truncate text-ink-muted md:block">{t.client?.name ?? (t.isInternal ? "Internal" : "—")}</span>
+                  <span className="hidden truncate md:block">{t.owner?.name ?? <span className="text-ink-muted">Unassigned</span>}</span>
+                  <span className={`hidden md:block ${t.overdue ? "font-semibold text-red" : ""}`}>{t.deadline ? day.format(new Date(t.deadline)) : "—"}</span>
+                  <span className="hidden md:block">
+                    {t.qc?.mineToReview ? (
+                      <Badge tone="amber">QC for you</Badge>
+                    ) : t.qc?.state === "failed" && t.status !== "done" ? (
+                      <Badge tone="red">QC not passed</Badge>
+                    ) : (
+                      <Badge tone={statusTone(t.status)}>{taskStatusLabels[t.status]}</Badge>
+                    )}
+                  </span>
+                  <TaskRowMenu task={t} onChanged={reload} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {layout === "board" && filters.show === "open" && rows && rows.length > 0 && (
+          <p className="mt-2 text-xs text-ink-muted">
+            To select several tasks at once, switch to{" "}
+            <button type="button" className="underline" onClick={() => setLayoutSaved("list")}>
+              List
+            </button>
+            .
+          </p>
+        )}
+
+        {shared}
+      </>
+    );
+
+  return (
+    <DesignPage testId="tasks-page">
+      <header className="tasks-page-header flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <h1 className="design-heading-fill text-3xl font-bold tracking-tight sm:text-4xl">Tasks</h1>
+          <p className="mt-2 max-w-2xl text-sm text-ink-muted">Your work and your team&apos;s: add, assign, reassign and track. Steps from department flows unlock when the one before is done.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {canNew("task") && (
+              <PrimaryPill onClick={addTask} data-testid="add-task">
+                <span aria-hidden className="text-base leading-none">+</span> Add task
+              </PrimaryPill>
+            )}
             {coreCanUseTemplates(me) && (
-              <button type="button" onClick={() => setPanel("template")} className="border border-border px-3 py-1.5 text-sm">
+              <button type="button" onClick={() => setPanel("template")} className={softPill}>
                 From template
               </button>
             )}
             {canImport && (
-              <button type="button" onClick={() => setPanel("import")} className="border border-border px-3 py-1.5 text-sm">
+              <button type="button" onClick={() => setPanel("import")} className={softPill}>
                 Import
               </button>
             )}
             {manager && (
-              <button type="button" onClick={() => setPanel("recurring")} className="border border-border px-3 py-1.5 text-sm">
+              <button type="button" onClick={() => setPanel("recurring")} className={softPill}>
                 Recurring
               </button>
             )}
           </div>
-        }
-      />
+        </div>
+        <div className="tasks-stat-row grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4" data-testid="tasks-stats">
+          <StatTile value={stats.todo} label="To do" testId="tasks-stat-todo" />
+          <StatTile value={stats.progress} label="In progress" testId="tasks-stat-progress" />
+          <StatTile value={stats.overdue} label="Overdue" tone={stats.overdue ? "warn" : "default"} testId="tasks-stat-overdue" />
+          <StatTile value={stats.done} label="Done" testId="tasks-stat-done" />
+        </div>
+      </header>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tasks  /" aria-label="Search tasks" className="w-full border border-border bg-surface-raised px-3 py-1.5 text-sm sm:w-56" />
-        <button type="button" className={toggle(filters.scope === "mine")} onClick={() => set({ scope: "mine" })}>
-          Mine
-        </button>
-        <button type="button" className={toggle(filters.scope === "team")} onClick={() => set({ scope: "team" })}>
-          Everything I can see
-        </button>
-        {/* Completed work stays findable at any age (newest first); Mine / Everything I can see still apply. */}
-        <button type="button" className={toggle(filters.show === "completed")} aria-pressed={filters.show === "completed"} onClick={() => set({ show: filters.show === "completed" ? "open" : "completed" })}>
-          Completed
-        </button>
-        <span className="hidden w-2 sm:inline" />
-        <button type="button" className={toggle(layout === "board")} onClick={() => setLayoutSaved("board")}>
-          Board
-        </button>
-        <button type="button" className={toggle(layout === "list")} onClick={() => setLayoutSaved("list")}>
-          List
-        </button>
-        <span className="hidden w-2 sm:inline" />
-        <SavedViewsMenu entity="task" filters={filters} onApply={(f) => setFilters({ ...EMPTY, ...(f as Partial<Filters>) })} />
-        <CsvButton
-          filename="tasks.csv"
-          rows={rows ?? []}
-          columns={[
-            { header: "Task", value: (r) => r.title },
-            { header: "Client", value: (r) => r.client?.name ?? (r.isInternal ? "Internal" : "") },
-            { header: "Owner", value: (r) => r.owner?.name },
-            { header: "Department", value: (r) => r.department },
-            { header: "Status", value: (r) => taskStatusLabels[r.status] },
-            { header: "Priority", value: (r) => r.priority },
-            { header: "Deadline", value: (r) => r.deadline?.slice(0, 10) },
-            { header: "Tags", value: (r) => r.tags.map((t) => t.name).join("; ") },
-          ]}
-        />
+      <div className="tasks-toolbar mt-7 flex flex-wrap items-center gap-2">
+        <label className="relative w-full sm:w-64">
+          <svg viewBox="0 0 24 24" className="pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-ink-muted" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tasks  /" aria-label="Search tasks" className={`${designField} pl-10 shadow-[var(--ui-card-shadow)]`} />
+        </label>
+        <PillGroup label="Whose tasks">
+          <PillToggle active={filters.scope === "mine"} onClick={() => set({ scope: "mine" })}>
+            Mine
+          </PillToggle>
+          <PillToggle active={filters.scope === "team"} onClick={() => set({ scope: "team" })}>
+            Everything I can see
+          </PillToggle>
+          {/* Completed work stays findable at any age (newest first); Mine / Everything I can see still apply. */}
+          <PillToggle active={filters.show === "completed"} onClick={() => set({ show: filters.show === "completed" ? "open" : "completed" })}>
+            Completed
+          </PillToggle>
+        </PillGroup>
+        <PillGroup label="Layout">
+          <PillToggle active={layout === "board"} onClick={() => setLayoutSaved("board")}>
+            Board
+          </PillToggle>
+          <PillToggle active={layout === "list"} onClick={() => setLayoutSaved("list")}>
+            List
+          </PillToggle>
+        </PillGroup>
+        <span className={`tasks-toolbar-extras flex flex-wrap items-center gap-2 ${pillWrap}`}>
+          <SavedViewsMenu entity="task" filters={filters} onApply={(f) => setFilters({ ...EMPTY, ...(f as Partial<Filters>) })} />
+          <CsvButton
+            filename="tasks.csv"
+            rows={rows ?? []}
+            columns={[
+              { header: "Task", value: (r) => r.title },
+              { header: "Client", value: (r) => r.client?.name ?? (r.isInternal ? "Internal" : "") },
+              { header: "Owner", value: (r) => r.owner?.name },
+              { header: "Department", value: (r) => r.department },
+              { header: "Status", value: (r) => taskStatusLabels[r.status] },
+              { header: "Priority", value: (r) => r.priority },
+              { header: "Deadline", value: (r) => r.deadline?.slice(0, 10) },
+              { header: "Tags", value: (r) => r.tags.map((t) => t.name).join("; ") },
+            ]}
+          />
+        </span>
       </div>
 
-      <FilterPanel active={active} className="mb-4" testId="task-filters">
-        <select className={selectCls} value={filters.show} onChange={(e) => set({ show: e.target.value as Filters["show"] })} aria-label="Show">
+      <FilterPanel active={active} className={`tasks-filter-card mt-4 mb-5 overflow-hidden design-glass-panel rounded-3xl! [&>p]:px-5 [&>p]:pt-4 [&>div]:px-5 [&>div]:pb-5`} testId="task-filters">
+        <DesignSelect className={designField} value={filters.show} onChange={(v) => set({ show: v as Filters["show"] })} aria-label="Show">
           <option value="open">Open and recent</option>
           <option value="completed">Completed (all time)</option>
           <option value="drafts">Drafts</option>
           <option value="archived">Archived</option>
-        </select>
+        </DesignSelect>
         {!employee && (
-          <select className={selectCls} value={filters.ownerId} onChange={(e) => set({ ownerId: e.target.value, scope: e.target.value ? "team" : filters.scope })} aria-label="Owner">
+          <DesignSelect className={designField} value={filters.ownerId} onChange={(v) => set({ ownerId: v, scope: v ? "team" : filters.scope })} aria-label="Owner">
             <option value="">Any owner</option>
             <option value="none">Unassigned</option>
             {opts?.people.map((p) => (
@@ -202,10 +541,10 @@ export function TasksWorkspace() {
                 {p.name}
               </option>
             ))}
-          </select>
+          </DesignSelect>
         )}
         {/* Team members: only the clients they work on (the same list as the task form). */}
-        <select className={selectCls} value={filters.clientId} onChange={(e) => set({ clientId: e.target.value })} aria-label="Client">
+        <DesignSelect className={designField} value={filters.clientId} onChange={(v) => set({ clientId: v })} aria-label="Client">
           <option value="">{employee ? "Client" : "Any client"}</option>
           {!employee && <option value="internal">Internal</option>}
           {clients.map(([id, name]) => (
@@ -213,18 +552,18 @@ export function TasksWorkspace() {
               {name}
             </option>
           ))}
-        </select>
+        </DesignSelect>
         {!employee && (
-          <select className={selectCls} value={filters.departmentId} onChange={(e) => set({ departmentId: e.target.value })} aria-label="Department">
+          <DesignSelect className={designField} value={filters.departmentId} onChange={(v) => set({ departmentId: v })} aria-label="Department">
             <option value="">Any department</option>
             {opts?.departments.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
               </option>
             ))}
-          </select>
+          </DesignSelect>
         )}
-        <select className={selectCls} value={filters.status} onChange={(e) => set({ status: e.target.value })} aria-label="Status">
+        <DesignSelect className={designField} value={filters.status} onChange={(v) => set({ status: v })} aria-label="Status">
           <option value="">Any status</option>
           <option value="overdue">Overdue</option>
           {TASK_STATUSES.filter((s) => s !== "cancelled").map((s) => (
@@ -232,55 +571,62 @@ export function TasksWorkspace() {
               {taskStatusLabels[s]}
             </option>
           ))}
-        </select>
+        </DesignSelect>
         {employee ? (
-          <label className="flex items-center gap-2 text-xs">
+          <label className="flex items-center gap-2 text-xs text-ink-muted">
             Date
-            <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value, to: e.target.value })} aria-label="Due on" title="Tasks due on this day" />
+            <DesignDate className={`${designField} flex-1`} value={filters.from} onChange={(v) => set({ from: v, to: v })} aria-label="Due on" title="Tasks due on this day" />
           </label>
         ) : (
           <>
-            <label className="flex items-center gap-2 text-xs">
+            <label className="flex items-center gap-2 text-xs text-ink-muted">
               Due from
-              <input type="date" className={`${selectCls} flex-1`} value={filters.from} onChange={(e) => set({ from: e.target.value })} aria-label="Due from" />
+              <DesignDate className={`${designField} flex-1`} value={filters.from} onChange={(v) => set({ from: v })} aria-label="Due from" rangeStart={filters.from} rangeEnd={filters.to} />
             </label>
-            <label className="flex items-center gap-2 text-xs">
+            <label className="flex items-center gap-2 text-xs text-ink-muted">
               to
-              <input type="date" className={`${selectCls} flex-1`} value={filters.to} onChange={(e) => set({ to: e.target.value })} aria-label="Due to" />
+              <DesignDate className={`${designField} flex-1`} value={filters.to} onChange={(v) => set({ to: v })} aria-label="Due to" rangeStart={filters.from} rangeEnd={filters.to} />
             </label>
           </>
         )}
-        <input className={selectCls} value={filters.tag} onChange={(e) => set({ tag: e.target.value.trim() })} placeholder="Tag" aria-label="Tag" />
+        <input className={designField} value={filters.tag} onChange={(e) => set({ tag: e.target.value.trim() })} placeholder="Tag" aria-label="Tag" />
         {active > 0 && (
-          <button type="button" className="text-left text-xs underline" onClick={() => setFilters((f) => ({ ...EMPTY, q: f.q, scope: f.scope }))}>
+          <button type="button" className="self-center text-left text-xs font-medium text-ink underline" onClick={() => setFilters((f) => ({ ...EMPTY, q: f.q, scope: f.scope }))}>
             Clear filters
           </button>
         )}
       </FilterPanel>
 
       {error && (
-        <p role="alert" className="mb-3 border border-red bg-red/10 px-4 py-2 text-sm">
+        <p role="alert" className="mb-4 rounded-2xl border border-ui-danger/40 bg-ui-status-blocked px-4 py-3 text-sm text-ink">
           {error}{" "}
-          <button type="button" className="underline" onClick={reload}>
+          <button type="button" className="font-medium underline" onClick={reload}>
             Try again
           </button>
         </p>
       )}
-      {!rows && !error && <p className="py-8 text-center text-sm text-ink-muted">Loading tasks…</p>}
+      {!rows && !error && <p className="py-10 text-center text-sm text-ink-muted">Loading tasks…</p>}
       {rows && rows.length === 0 && (
-        <div className="border border-border bg-surface-raised px-4 py-10 text-center text-sm" data-testid="tasks-empty">
+        <div className={`${designGlass} tasks-empty-state flex flex-col items-center px-4 py-14 text-center text-sm`} data-testid="tasks-empty">
+          <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-ui-accent-soft text-ink" aria-hidden>
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="4" y="4" width="16" height="16" rx="4" />
+              <path d="m8.5 12 2.5 2.5 4.5-5" />
+            </svg>
+          </span>
           <p className="text-ink-muted">{filters.show === "archived" ? "Nothing archived." : filters.show === "drafts" ? "No drafts." : active || filters.q ? "No tasks match these filters." : "No tasks here yet."}</p>
           {/* Team members who only add tasks for themselves use the "+ Add task" button at the top. */}
           {canNew("task") && filters.show === "open" && coreCanManageTasks(me) && (
-            <button type="button" className="mt-3 bg-charcoal px-3 py-1.5 text-sm text-ivory" onClick={addTask}>
-              + Add task
-            </button>
+            <PrimaryPill className="mt-4" onClick={addTask}>
+              <span aria-hidden className="text-base leading-none">+</span> Add task
+            </PrimaryPill>
           )}
         </div>
       )}
 
       {rows && rows.length > 0 && layout === "board" && filters.show === "open" && (
         <TaskBoard
+          look="soft"
           tasks={rows}
           onChanged={() => reload()}
           cardMenu={(t) => byId.get(t.id) && <TaskRowMenu task={byId.get(t.id)!} onChanged={reload} />}
@@ -295,9 +641,9 @@ export function TasksWorkspace() {
       )}
 
       {rows && rows.length > 0 && (layout === "list" || filters.show !== "open") && (
-        <div className="border border-border">
-          <div className="hidden grid-cols-[2rem_minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_6rem_7rem_2.5rem] gap-2 border-b border-border bg-canvas/50 px-3 py-2 text-xs text-ink-muted md:grid">
-            <input type="checkbox" checked={sel.allSelected} onChange={sel.toggleAll} aria-label="Select all" />
+        <div className={`${designGlass} tasks-list-table overflow-hidden`}>
+          <div className="hidden grid-cols-[2rem_minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,1.4fr)_6rem_8rem_2.5rem] items-center gap-3 border-b border-ui-card-border px-5 py-3 text-xs font-medium text-ink-muted md:grid">
+            <input type="checkbox" checked={sel.allSelected} onChange={sel.toggleAll} aria-label="Select all" className="accent-[var(--ui-accent)]" />
             <span>Task</span>
             <span>Client</span>
             <span>Owner</span>
@@ -307,41 +653,50 @@ export function TasksWorkspace() {
           </div>
           <ul>
             {rows.map((t) => (
-              <li key={t.id} className="grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-start gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0 md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_6rem_7rem_2.5rem] md:items-center" data-task-row={t.id}>
-                <input type="checkbox" checked={sel.has(t.id)} onChange={() => sel.toggle(t.id)} aria-label={`Select ${t.title}`} className="mt-1 md:mt-0" />
+              <li
+                key={t.id}
+                className={`tasks-list-row grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-start gap-3 border-b border-ui-card-border px-5 py-3 text-sm transition-colors last:border-b-0 hover:bg-ui-accent-soft/40 md:grid-cols-[2rem_minmax(0,3fr)_minmax(0,1.5fr)_minmax(0,1.4fr)_6rem_8rem_2.5rem] md:items-center ${sel.has(t.id) ? "bg-ui-accent-soft/60" : ""}`}
+                data-task-row={t.id}
+              >
+                <input type="checkbox" checked={sel.has(t.id)} onChange={() => sel.toggle(t.id)} aria-label={`Select ${t.title}`} className="mt-1 accent-[var(--ui-accent)] md:mt-0" />
                 <div className="min-w-0">
-                  <Link href={`/team/tasks/${t.id}`} className="font-medium hover:underline">
+                  <Link href={`/team/tasks/${t.id}`} className="font-medium text-ink hover:underline">
                     {t.title}
                   </Link>
-                  <p className="flex flex-wrap gap-x-2 text-xs text-ink-muted">
+                  <p className="mt-0.5 flex flex-wrap gap-x-2 gap-y-1 text-xs text-ink-muted">
                     {t.subtaskCount > 0 && (
                       <span>
                         {t.subtaskCount - t.subtasksOpen}/{t.subtaskCount} subtasks
                       </span>
                     )}
                     {t.waitingOn.length > 0 && <span>Waiting on {t.waitingOn[0]}</span>}
-                    {t.isDraft && <span className="text-amber">Draft{t.draftReason === "out_of_scope" ? ": beyond scope" : ""}</span>}
+                    {t.isDraft && <span className="font-medium text-ink">Draft{t.draftReason === "out_of_scope" ? ": beyond scope" : ""}</span>}
                     {t.archivedAt && <span>Archived: {t.archivedReason}</span>}
                     {t.tags.map((g) => (
-                      <span key={g.id} className="border border-border px-1">
+                      <span key={g.id} className="rounded-full bg-ui-status-todo px-2">
                         {g.name}
                       </span>
                     ))}
                   </p>
-                  <p className="text-xs text-ink-muted md:hidden">
-                    {[t.client?.name ?? (t.isInternal ? "Internal" : null), t.owner?.name ?? "Unassigned", t.deadline ? `Due ${day.format(new Date(t.deadline))}` : null, taskStatusLabels[t.status]].filter(Boolean).join(" · ")}
+                  <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted md:hidden">
+                    <StatusPill status={t.status} label={taskStatusLabels[t.status]} />
+                    {[t.client?.name ?? (t.isInternal ? "Internal" : null), t.owner?.name ?? "Unassigned", t.deadline ? `Due ${day.format(new Date(t.deadline))}` : null].filter(Boolean).join(" · ")}
                   </p>
                 </div>
                 <span className="hidden truncate text-ink-muted md:block">{t.client?.name ?? (t.isInternal ? "Internal" : "—")}</span>
-                <span className="hidden truncate md:block">{t.owner?.name ?? <span className="text-ink-muted">Unassigned</span>}</span>
-                <span className={`hidden md:block ${t.overdue ? "font-semibold text-red" : ""}`}>{t.deadline ? day.format(new Date(t.deadline)) : "—"}</span>
+                <span className="hidden min-w-0 items-center gap-2 md:flex">
+                  <InitialsAvatar name={t.owner?.name} />
+                  <span className="truncate">{t.owner?.name ?? <span className="text-ink-muted">Unassigned</span>}</span>
+                </span>
+                <span className={`hidden md:block ${t.overdue ? "font-semibold text-ui-danger" : "text-ink"}`}>{t.deadline ? day.format(new Date(t.deadline)) : "—"}</span>
                 <span className="hidden md:block">
+                  {/* QC first (pbvinodshetty, v54 task QC), in the new pill style: amber = QC for you, coral = not passed. */}
                   {t.qc?.mineToReview ? (
-                    <Badge tone="amber">QC for you</Badge>
+                    <StatusPill status="waiting" label="QC for you" />
                   ) : t.qc?.state === "failed" && t.status !== "done" ? (
-                    <Badge tone="red">QC not passed</Badge>
+                    <StatusPill status="blocked" label="QC not passed" />
                   ) : (
-                    <Badge tone={statusTone(t.status)}>{taskStatusLabels[t.status]}</Badge>
+                    <StatusPill status={t.status} label={taskStatusLabels[t.status]} />
                   )}
                 </span>
                 <TaskRowMenu task={t} onChanged={reload} />
@@ -351,71 +706,21 @@ export function TasksWorkspace() {
         </div>
       )}
       {layout === "board" && filters.show === "open" && rows && rows.length > 0 && (
-        <p className="mt-2 text-xs text-ink-muted">
+        <p className="mt-3 text-xs text-ink-muted">
           To select several tasks at once, switch to{" "}
-          <button type="button" className="underline" onClick={() => setLayoutSaved("list")}>
+          <button type="button" className="font-medium text-ink underline" onClick={() => setLayoutSaved("list")}>
             List
           </button>
           .
         </p>
       )}
 
-      <BulkBar count={sel.count} onClear={sel.clear} label="tasks">
-        {selected.some((t) => t.can.reassign) && <BulkButton onClick={() => openReassign({ type: "task", ids: selected.filter((t) => t.can.reassign).map((t) => t.id), title: `Reassign ${selected.length} tasks`, onDone: () => sel.clear() })}>Reassign</BulkButton>}
-        <BulkButton onClick={() => setBulk("status")}>Status</BulkButton>
-        {manager && <BulkButton onClick={() => setBulk("deadline")}>Deadline</BulkButton>}
-        {manager && <BulkButton onClick={() => setBulk("priority")}>Priority</BulkButton>}
-        <BulkButton onClick={() => setBulk("tag")}>Tag</BulkButton>
-        {selected.some((t) => t.can.archive) && <BulkButton onClick={() => setBulk("archive")}>Archive</BulkButton>}
-      </BulkBar>
-
-      {bulk && (
-        <BulkTaskDialog
-          action={bulk}
-          ids={sel.ids}
-          onClose={() => setBulk(null)}
-          onDone={(message, undo) => {
-            setBulk(null);
-            sel.clear();
-            notify(message, undo);
-            changed();
-          }}
-        />
-      )}
-      {blocking && (
-        <BlockedDialog
-          task={blocking}
-          onClose={() => setBlocking(undefined)}
-          onDone={(m, u) => {
-            setBlocking(undefined);
-            notify(m, u);
-            reload();
-          }}
-        />
-      )}
-      {panel === "import" && <ImportWizard entity="tasks" open onClose={() => setPanel(null)} onDone={() => changed()} />}
-      {panel === "template" && (
-        <TemplateWizard
-          open
-          onClose={() => setPanel(null)}
-          onDone={(m, u) => {
-            setPanel(null);
-            notify(m, u);
-            changed();
-          }}
-        />
-      )}
-      {panel === "recurring" && (
-        <ActionDialog open title="Recurring tasks" onClose={() => setPanel(null)}>
-          <p className="text-xs text-ink-muted">Each rule creates its tasks 7 days ahead, skipping Sundays and holidays.</p>
-          <RecurringList onChanged={changed} />
-        </ActionDialog>
-      )}
-    </>
+      {shared}
+    </DesignPage>
   );
 }
 
-function BulkTaskDialog({ action, ids, onClose, onDone }: { action: "status" | "deadline" | "archive" | "tag" | "priority"; ids: string[]; onClose: () => void; onDone: (message: string, undo: Parameters<ReturnType<typeof useActions>["notify"]>[1]) => void }) {
+function BulkTaskDialog({ action, ids, onClose, onDone, redesign = false }: { redesign?: boolean; action: "status" | "deadline" | "archive" | "tag" | "priority"; ids: string[]; onClose: () => void; onDone: (message: string, undo: Parameters<ReturnType<typeof useActions>["notify"]>[1]) => void }) {
   const [status, setStatus] = useState<TaskStatus>("in_progress");
   const [deadline, setDeadline] = useState("");
   const [priority, setPriority] = useState("normal");
@@ -439,6 +744,17 @@ function BulkTaskDialog({ action, ids, onClose, onDone }: { action: "status" | "
       setBusy(false);
     }
   }
+  // The same choices for the classic dropdown and the v54 glass one.
+  const statusChoices = (["todo", "in_progress", "waiting", "done"] as TaskStatus[]).map((s) => (
+    <option key={s} value={s}>
+      {taskStatusLabels[s]}
+    </option>
+  ));
+  const priorityChoices = (["low", "normal", "high", "urgent"] as const).map((p) => (
+    <option key={p} value={p}>
+      {p[0]!.toUpperCase() + p.slice(1)}
+    </option>
+  ));
   return (
     <ActionDialog
       open
@@ -458,28 +774,37 @@ function BulkTaskDialog({ action, ids, onClose, onDone }: { action: "status" | "
     >
       {action === "status" && (
         <Field label="New status" required hint="To mark tasks blocked, do it one by one: each needs its own reason.">
-          <select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} aria-label="New status">
-            {(["todo", "in_progress", "waiting", "done"] as TaskStatus[]).map((s) => (
-              <option key={s} value={s}>
-                {taskStatusLabels[s]}
-              </option>
-            ))}
-          </select>
+          {redesign ? (
+            <DesignSelect className={inputCls} value={status} onChange={(v) => setStatus(v as TaskStatus)} aria-label="New status">
+              {statusChoices}
+            </DesignSelect>
+          ) : (
+            <select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} aria-label="New status">
+              {statusChoices}
+            </select>
+          )}
         </Field>
       )}
       {action === "deadline" && (
         <Field label="New deadline" required>
-          <input className={inputCls} type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} aria-label="New deadline" />
+          {redesign ? (
+            <DesignDate className={inputCls} value={deadline} onChange={setDeadline} aria-label="New deadline" />
+          ) : (
+            <input className={inputCls} type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} aria-label="New deadline" />
+          )}
         </Field>
       )}
       {action === "priority" && (
         <Field label="Priority" required>
-          <select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Priority">
-            <option value="low">Low</option>
-            <option value="normal">Normal</option>
-            <option value="high">High</option>
-            <option value="urgent">Urgent</option>
-          </select>
+          {redesign ? (
+            <DesignSelect className={inputCls} value={priority} onChange={setPriority} aria-label="Priority">
+              {priorityChoices}
+            </DesignSelect>
+          ) : (
+            <select className={inputCls} value={priority} onChange={(e) => setPriority(e.target.value)} aria-label="Priority">
+              {priorityChoices}
+            </select>
+          )}
         </Field>
       )}
       {action === "tag" && (

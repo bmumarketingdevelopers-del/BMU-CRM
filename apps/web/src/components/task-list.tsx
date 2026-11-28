@@ -5,6 +5,7 @@ import Link from "next/link";
 import { taskStatusLabels, type TaskStatus, type TaskView, type UpdateTask } from "@bmu/shared";
 import { Badge, Button, Input } from "@/components/ui";
 import { api } from "@/lib/api";
+import { InitialsAvatar, StatusPill } from "@/components/tasks/task-design";
 
 const day = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
 const statusTone = (s: string) => (s === "done" ? "green" : s === "blocked" ? "red" : s === "waiting" ? "amber" : s === "in_progress" ? "dark" : "neutral");
@@ -15,8 +16,9 @@ export const taskHref = (t: TaskView) => (t.deliverable ? `/team/deliverables/${
  * One task with its quick actions. Used by My Day, the task list/board and deliverable pages.
  * v11 options: `menu` (the ⋯ RowMenu), `href` (link the title to the task page), `onBlock` (open the Blocked details
  * dialog instead of the one-line reason), `onStatus` (save status changes through the task actions API).
+ * v54: `look="soft"` is the redesigned card (rounded, status pill, initials); pages not redesigned yet keep the classic one.
  */
-export function TaskCard({ t, compact = false, onChanged, menu, href: hrefOverride, onBlock, onStatus }: { t: TaskView; compact?: boolean; onChanged: (t: TaskView) => void; menu?: ReactNode; href?: string; onBlock?: () => void; onStatus?: (status: TaskStatus) => Promise<TaskView> }) {
+export function TaskCard({ t, compact = false, onChanged, menu, href: hrefOverride, onBlock, onStatus, look = "classic" }: { t: TaskView; compact?: boolean; onChanged: (t: TaskView) => void; menu?: ReactNode; href?: string; onBlock?: () => void; onStatus?: (status: TaskStatus) => Promise<TaskView>; look?: "classic" | "soft" }) {
   const [blocking, setBlocking] = useState(false);
   const [logging, setLogging] = useState(false);
   const [hours, setHours] = useState("1");
@@ -25,6 +27,10 @@ export function TaskCard({ t, compact = false, onChanged, menu, href: hrefOverri
   const [busy, setBusy] = useState(false);
   const manual = t.kind === "work" || t.kind === "planning";
   const href = hrefOverride ?? taskHref(t);
+  const soft = look === "soft";
+  const statusText = t.kind === "qc" && t.status === "todo" ? "QC" : t.kind === "client_review" && t.status === "in_progress" ? "With client" : taskStatusLabels[t.status];
+  // Quick-action buttons: rounded pills in the soft look.
+  const qa = soft ? "rounded-full px-3 py-1 text-xs" : "px-2 py-1 text-xs";
 
   async function update(input: UpdateTask) {
     setBusy(true);
@@ -41,7 +47,13 @@ export function TaskCard({ t, compact = false, onChanged, menu, href: hrefOverri
   }
 
   return (
-    <div className={`border border-l-2 border-border bg-surface-raised px-4 py-3 text-sm transition-colors hover:bg-canvas/30 ${t.overdue ? "border-l-red" : t.status === "blocked" ? "border-l-amber" : "border-l-border"}`}>
+    <div
+      className={
+        soft
+          ? `task-card-soft relative rounded-2xl border [background:var(--ui-card-fill)] px-4 py-3 text-sm shadow-[var(--ui-card-shadow)] transition-shadow hover:shadow-md ${t.overdue ? "border-ui-danger/50" : t.status === "blocked" ? "border-[var(--ui-status-waiting)]" : "border-ui-card-border"}`
+          : `border border-l-2 border-border bg-surface-raised px-4 py-3 text-sm transition-colors hover:bg-canvas/30 ${t.overdue ? "border-l-red" : t.status === "blocked" ? "border-l-amber" : "border-l-border"}`
+      }
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           {href ? (
@@ -54,46 +66,54 @@ export function TaskCard({ t, compact = false, onChanged, menu, href: hrefOverri
           {!compact && t.client && <p className="text-xs text-ink-muted">{t.client.name}</p>}
         </div>
         <span className="flex shrink-0 items-start gap-1">
-          <Badge tone={statusTone(t.status)}>{t.kind === "qc" && t.status === "todo" ? "QC" : t.kind === "client_review" && t.status === "in_progress" ? "With client" : taskStatusLabels[t.status]}</Badge>
+          {soft ? <StatusPill status={t.status} label={statusText} /> : <Badge tone={statusTone(t.status)}>{statusText}</Badge>}
           {menu}
         </span>
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-muted">
-        {t.owner && <span>{t.owner.name}</span>}
-        {t.deadline && <span className={t.overdue ? "font-semibold text-red" : ""}>Due {day.format(new Date(t.deadline))}{t.overdue ? " (late)" : ""}</span>}
+      <div className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-ink-muted ${soft ? "mt-2.5" : "mt-1.5"}`}>
+        {t.owner &&
+          (soft ? (
+            <span className="inline-flex items-center gap-1.5">
+              <InitialsAvatar name={t.owner.name} />
+              {t.owner.name}
+            </span>
+          ) : (
+            <span>{t.owner.name}</span>
+          ))}
+        {t.deadline && <span className={t.overdue ? (soft ? "font-semibold text-ui-danger" : "font-semibold text-red") : ""}>Due {day.format(new Date(t.deadline))}{t.overdue ? " (late)" : ""}</span>}
         {t.timeLoggedMin > 0 && <span>{Math.round((t.timeLoggedMin / 60) * 10) / 10}h logged</span>}
         {!t.ready && !["done", "cancelled"].includes(t.status) && <span>Waiting on previous step</span>}
       </div>
-      {t.status === "blocked" && t.blockedReason && <p className="mt-1 text-xs text-red">Blocked: {t.blockedReason}</p>}
+      {t.status === "blocked" && t.blockedReason && <p className={`mt-1 text-xs ${soft ? "text-ui-danger" : "text-red"}`}>Blocked: {t.blockedReason}</p>}
       {error && <p className="mt-1 text-xs text-red">{error}</p>}
 
       {manual && !["done", "cancelled"].includes(t.status) && !blocking && (
         <div className="mt-2 flex flex-wrap gap-1">
           {(t.status === "todo" || t.status === "blocked" || t.status === "waiting") && t.ready && (
-            <Button variant="secondary" className="px-2 py-1 text-xs" disabled={busy} onClick={() => update({ status: "in_progress" })}>
+            <Button variant="secondary" className={qa} disabled={busy} onClick={() => update({ status: "in_progress" })}>
               {t.status === "todo" ? "Start" : "Resume"}
             </Button>
           )}
           {t.status === "in_progress" && (
-            <Button className="px-2 py-1 text-xs" disabled={busy} onClick={() => update({ status: "done" })}>
+            <Button className={qa} disabled={busy} onClick={() => update({ status: "done" })}>
               Mark done
             </Button>
           )}
           {t.status !== "blocked" && (
-            <Button variant="ghost" className="px-2 py-1 text-xs" disabled={busy} onClick={() => (onBlock ? onBlock() : setBlocking(true))}>
+            <Button variant="ghost" className={qa} disabled={busy} onClick={() => (onBlock ? onBlock() : setBlocking(true))}>
               Blocked
             </Button>
           )}
-          <Button variant="ghost" className="px-2 py-1 text-xs" disabled={busy} onClick={() => update({ logMinutes: 30 })}>
+          <Button variant="ghost" className={qa} disabled={busy} onClick={() => update({ logMinutes: 30 })}>
             +30 min
           </Button>
-          <Button variant="ghost" className="px-2 py-1 text-xs" disabled={busy} onClick={() => setLogging(true)}>
+          <Button variant="ghost" className={qa} disabled={busy} onClick={() => setLogging(true)}>
             Log time
           </Button>
         </div>
       )}
       {t.kind === "qc" && t.status === "todo" && t.ready && href && (
-        <Link href={href} className="mt-2 inline-block bg-green px-2 py-1 text-xs font-semibold text-charcoal">
+        <Link href={href} className={`mt-2 inline-block bg-green px-2 py-1 text-xs font-semibold text-charcoal ${soft ? "rounded-full px-3" : ""}`}>
           Open QC checklist
         </Link>
       )}
@@ -109,7 +129,7 @@ export function TaskCard({ t, compact = false, onChanged, menu, href: hrefOverri
         >
           <Input className="w-24 py-1 text-xs" type="number" step="0.25" min="0.25" max="12" value={hours} onChange={(e) => setHours(e.target.value)} aria-label="Hours spent" autoFocus />
           <span className="text-xs text-ink-muted">hours</span>
-          <Button type="submit" className="px-2 py-1 text-xs" disabled={busy}>
+          <Button type="submit" className={qa} disabled={busy}>
             Log
           </Button>
           <Button type="button" variant="ghost" className="px-2 py-1 text-xs" onClick={() => setLogging(false)}>
@@ -126,7 +146,7 @@ export function TaskCard({ t, compact = false, onChanged, menu, href: hrefOverri
           }}
         >
           <Input className="py-1 text-xs" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why? (required)" minLength={3} required autoFocus />
-          <Button type="submit" className="px-2 py-1 text-xs" disabled={busy}>
+          <Button type="submit" className={qa} disabled={busy}>
             Save
           </Button>
           <Button type="button" variant="ghost" className="px-2 py-1 text-xs" onClick={() => setBlocking(false)}>
@@ -189,6 +209,7 @@ export function TaskBoard({
   onAdd,
   onBlock,
   onMove,
+  look = "classic",
 }: {
   tasks: TaskView[];
   onChanged: (t: TaskView) => void;
@@ -198,7 +219,10 @@ export function TaskBoard({
   onAdd?: (column: TaskStatus) => void;
   onBlock?: (t: TaskView) => void;
   onMove?: (t: TaskView, status: TaskStatus) => Promise<TaskView>;
+  /** v54: "soft" = the redesigned board (rounded columns and cards). */
+  look?: "classic" | "soft";
 }) {
+  const soft = look === "soft";
   const [moved, setMoved] = useState<Record<string, TaskView>>({});
   const [dragging, setDragging] = useState<string>();
   const [over, setOver] = useState<TaskStatus>();
@@ -235,7 +259,7 @@ export function TaskBoard({
   return (
     <>
       {error && (
-        <p role="alert" className="mb-4 flex items-start justify-between gap-3 border border-red bg-red/10 px-4 py-2 text-sm">
+        <p role="alert" className={`mb-4 flex items-start justify-between gap-3 px-4 py-2 text-sm ${soft ? "rounded-2xl border border-ui-danger/40 bg-ui-status-blocked text-ink" : "border border-red bg-red/10"}`}>
           <span>{error}</span>
           <button type="button" className="text-ink-muted hover:text-ink" onClick={() => setError(undefined)} aria-label="Dismiss">
             ✕
@@ -268,14 +292,19 @@ export function TaskBoard({
                 const t = rows.find((x) => x.id === id);
                 if (t && !c.statuses.includes(t.status)) move(t, c.target);
               }}
-              className={`bg-canvas/60 p-2 transition-colors ${target ? "bg-green/10 outline-1 outline-dashed outline-green" : ""}`}
+              className={
+                soft
+                  ? `task-board-column design-glass-panel rounded-3xl p-3 transition-colors ${target ? "[background:var(--ui-accent-soft)]! outline-2 outline-dashed outline-[var(--ui-accent)]" : ""}`
+                  : `bg-canvas/60 p-2 transition-colors ${target ? "bg-green/10 outline-1 outline-dashed outline-green" : ""}`
+              }
             >
-              <h2 className="mb-2 flex items-center justify-between px-1 text-sm font-semibold">
-                <span>
-                  {c.title} <span className="font-normal text-ink-muted">{items.length}</span>
+              <h2 className={`flex items-center justify-between px-1 text-sm font-semibold ${soft ? "mb-3" : "mb-2"}`}>
+                <span className={soft ? "inline-flex items-center gap-2" : ""}>
+                  {c.title}{" "}
+                  {soft ? <span className="task-board-count rounded-full bg-ui-pill px-2 py-0.5 text-xs font-medium text-ink-muted">{items.length}</span> : <span className="font-normal text-ink-muted">{items.length}</span>}
                 </span>
                 {onAdd && (c.target === "todo" || c.target === "in_progress") && (
-                  <button type="button" onClick={() => onAdd(c.target)} className="px-1 text-xs font-normal text-ink-muted hover:text-ink" aria-label={`Add a task to ${c.title}`}>
+                  <button type="button" onClick={() => onAdd(c.target)} className={soft ? "rounded-full bg-ui-pill px-2.5 py-0.5 text-xs font-medium text-ink-muted hover:text-ink" : "px-1 text-xs font-normal text-ink-muted hover:text-ink"} aria-label={`Add a task to ${c.title}`}>
                     + Add
                   </button>
                 )}
@@ -297,10 +326,10 @@ export function TaskBoard({
                     data-task={t.id}
                     className={`${draggableTask(t) ? "cursor-grab active:cursor-grabbing" : ""} ${dragging === t.id ? "opacity-50" : ""}`}
                   >
-                    <TaskCard t={t} onChanged={onChanged} menu={cardMenu?.(t)} href={cardHref?.(t)} onStatus={onMove ? (s) => onMove(t, s) : undefined} />
+                    <TaskCard t={t} look={look} onChanged={onChanged} menu={cardMenu?.(t)} href={cardHref?.(t)} onStatus={onMove ? (s) => onMove(t, s) : undefined} />
                   </div>
                 ))}
-                {items.length === 0 && <p className="py-4 text-center text-xs text-ink-muted">{dragging ? "Drop here" : "Nothing here"}</p>}
+                {items.length === 0 && <p className={`py-4 text-center text-xs text-ink-muted ${soft ? "rounded-2xl border border-dashed border-ui-card-border" : ""}`}>{dragging ? "Drop here" : "Nothing here"}</p>}
               </div>
             </section>
           );

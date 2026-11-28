@@ -39,3 +39,14 @@ export async function requireMe(allow?: Me["type"][]): Promise<Me> {
   if (allow && !allow.includes(me.type)) redirect(homePathFor(me));
   return me;
 }
+
+/**
+ * v54 redesign: whether this person gets the new look (and the theme switch). It started as a preview for listed
+ * people only; it is now on for every staff member.
+ */
+export function inRedesignPreview(me: Pick<Me, "email">): boolean {
+  // v54: the new design is on for every staff member (Hari, 28 Nov 2026). Emergency switch: REDESIGN=off on the server
+  // brings the classic look back for everyone, with no code change. (REDESIGN_PREVIEW_EMAILS is no longer used.)
+  void me;
+  return (process.env.REDESIGN ?? "").trim().toLowerCase() !== "off";
+}

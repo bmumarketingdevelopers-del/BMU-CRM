@@ -14,7 +14,9 @@ import { useLiveChanges } from "@/lib/live";
  * item deep-links to the exact screen. v44: also keeps this browser's notifications (Web Push) linked to who is signed in,
  * and offers to turn them on until the person has decided.
  */
-export function NotificationBell() {
+/** look "top" (v54 redesign preview): a round glass button in the top bar; the list opens at the right as a glass card. */
+export function NotificationBell({ look = "sidebar" }: { look?: "sidebar" | "top" }) {
+  const top = look === "top";
   const [data, setData] = useState<{ unread: number; items: NotificationView[] }>();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -55,7 +57,7 @@ export function NotificationBell() {
       <button
         aria-label={unread ? `${unread} unread notifications` : "Notifications"}
         onClick={() => (setOpen((o) => !o), refresh())}
-        className="relative flex h-9 w-9 items-center justify-center text-ink-muted hover:bg-canvas hover:text-ink"
+        className={top ? "top-bell-button relative flex h-9 w-9 items-center justify-center rounded-full border border-[var(--ui-glass-border)] bg-[var(--ui-glass)] text-ui-pill-ink shadow-[var(--ui-glass-shadow)] backdrop-blur-xl hover:bg-ui-accent-soft" : "relative flex h-9 w-9 items-center justify-center text-ink-muted hover:bg-canvas hover:text-ink"}
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
           <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -68,7 +70,7 @@ export function NotificationBell() {
         )}
       </button>
       {open && (
-        <div className="fixed left-4 right-4 top-16 z-50 border border-border bg-surface-raised text-ink shadow-xl sm:left-auto sm:right-4 sm:w-80 md:left-[15.5rem] md:right-auto md:top-4">
+        <div className={top ? "top-bell-list design-glass-menu fixed left-4 right-4 top-16 z-50 text-ink sm:left-auto sm:right-6 sm:w-80" : "fixed left-4 right-4 top-16 z-50 border border-border bg-surface-raised text-ink shadow-xl sm:left-auto sm:right-4 sm:w-80 md:left-[15.5rem] md:right-auto md:top-4"}>
           <div className="flex items-center justify-between border-b border-border px-3 py-2 text-sm">
             <span className="font-semibold">Notifications</span>
             {unread > 0 && (

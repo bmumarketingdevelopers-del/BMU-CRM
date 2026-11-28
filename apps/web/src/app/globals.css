@@ -27,7 +27,7 @@
 
 /* BMU design tokens (packages/shared/src/tokens.ts). Uploaded UX/UI files override these. */
 :root {
-  /* Light only, like bmumarketing.in: the app ignores the device's dark mode. */
+  /* Light by default, like bmumarketing.in (the device's dark mode is ignored); v54: the moon icon switches to the dark theme below. */
   color-scheme: light;
   --bmu-charcoal: #121f2f;
   --bmu-green: #8bb72c;
@@ -46,6 +46,405 @@
   --ink: var(--bmu-charcoal);
   --ink-muted: var(--bmu-muted);
   --border: var(--bmu-line);
+
+  /*
+   * v54 redesign (Tasks first). The page colour fills the whole work area (no card inside a card); outer layers are
+   * frosted glass, inner cards are solid. Light: calm BMU green and sky blue patches on off-white (office look, not a rainbow).
+   */
+  --ui-page-bg:
+    radial-gradient(45% 40% at 0% 0%, rgba(140, 198, 63, 0.26), transparent 70%),
+    radial-gradient(45% 45% at 100% 0%, rgba(124, 196, 255, 0.32), transparent 70%),
+    radial-gradient(40% 45% at 25% 75%, rgba(124, 196, 255, 0.24), transparent 70%),
+    radial-gradient(40% 45% at 80% 70%, rgba(140, 198, 63, 0.2), transparent 70%),
+    #f2f4f3;
+  /* Frosted glass (outer layers: board columns, filters, pill tracks, table). */
+  --ui-glass: rgba(255, 255, 255, 0.42);
+  --ui-glass-border: rgba(255, 255, 255, 0.75);
+  --ui-glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 10px 34px -14px rgba(18, 31, 47, 0.22);
+  /* Big glass panels (board columns, filters, table): a light sheen top-left fading to clear, a bright edge. */
+  --ui-glass-sheen: linear-gradient(160deg, rgba(255, 255, 255, 0.5) 0%, rgba(245, 247, 250, 0.22) 40%, rgba(232, 236, 242, 0.26) 100%);
+  --ui-glass-edge: rgba(255, 255, 255, 0.85);
+  /* Open dropdown lists and menus: glass, a little more solid so the words stay easy to read. */
+  --ui-menu: linear-gradient(160deg, rgba(255, 255, 255, 0.6) 0%, rgba(245, 248, 251, 0.34) 45%, rgba(232, 237, 243, 0.42) 100%);
+  --ui-menu-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.95), inset 0 0 24px rgba(255, 255, 255, 0.4), inset 0 -1px 0 rgba(18, 31, 47, 0.05), 0 24px 48px -18px rgba(18, 31, 47, 0.35);
+  --ui-menu-blur: blur(14px) saturate(180%);
+  /* The open search: a glossy bar with a soft BMU green + sky blue glow. */
+  --ui-search-bar: linear-gradient(160deg, rgba(255, 255, 255, 0.82), rgba(244, 248, 251, 0.62));
+  --ui-search-glow: inset 0 1px 1px rgba(255, 255, 255, 0.95), 0 0 0 1px rgba(140, 198, 63, 0.3), 0 0 28px -4px rgba(140, 198, 63, 0.5), 0 12px 40px -10px rgba(124, 196, 255, 0.6);
+  --ui-glass-panel-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.95), inset 0 0 28px rgba(255, 255, 255, 0.35), inset 0 -1px 0 rgba(18, 31, 47, 0.05), 0 24px 50px -26px rgba(18, 31, 47, 0.32);
+  /* Solid cards (inner layers: task cards). */
+  --ui-card: #ffffff;
+  --ui-card-fill: #ffffff;
+  --ui-card-border: rgba(18, 31, 47, 0.07);
+  --ui-card-shadow: 0 1px 2px rgba(18, 31, 47, 0.05), 0 10px 26px -14px rgba(18, 31, 47, 0.2);
+  /* Pills and buttons. */
+  --ui-pill: rgba(255, 255, 255, 0.55);
+  --ui-pill-ink: #121f2f;
+  --ui-primary-fill: #121f2f;
+  --ui-primary-border: transparent;
+  --ui-primary-shadow: 0 8px 20px -10px rgba(18, 31, 47, 0.55);
+  --ui-pill-active: #121f2f;
+  --ui-pill-active-ink: #ffffff;
+  --ui-field: rgba(255, 255, 255, 0.7);
+  --ui-heading-fill: linear-gradient(180deg, #121f2f 45%, #121f2f);
+  --ui-accent: #8cc63f;
+  --ui-accent-ink: #121f2f;
+  --ui-accent-soft: rgba(140, 198, 63, 0.18);
+  --ui-column: rgba(255, 255, 255, 0.42);
+  /* Status pills, the website's palette: blue, amber, coral, green. */
+  --ui-status-todo: rgba(18, 31, 47, 0.07);
+  --ui-status-progress: rgba(124, 196, 255, 0.32);
+  --ui-status-waiting: rgba(240, 181, 74, 0.32);
+  --ui-status-blocked: rgba(240, 126, 130, 0.28);
+  --ui-status-done: rgba(140, 198, 63, 0.3);
+  --ui-danger: #d4524a;
+  /* Sidebar icon colours: one per group (Work green, Plan sky blue, You peach, Admin ink); bg = the round bubble. */
+  --ui-tint-work-bg: rgba(140, 198, 63, 0.2);
+  --ui-tint-work-ink: #4f8a17;
+  --ui-tint-plan-bg: rgba(124, 196, 255, 0.24);
+  --ui-tint-plan-ink: #2f86cc;
+  --ui-tint-you-bg: rgba(255, 168, 120, 0.24);
+  --ui-tint-you-ink: #cc6431;
+  --ui-tint-admin-bg: rgba(18, 31, 47, 0.07);
+  --ui-tint-admin-ink: #121f2f;
+}
+
+/*
+ * v54 dark theme: the moon icon at the top right sets data-theme="dark" on <html> (kept in this browser).
+ * Pages built on these colour names (surface, ink, border, canvas and the --ui-* ones) follow it.
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* Charcoal and ivory swap: dark buttons with light text become light buttons with dark text; the sidebar turns dark. */
+  --bmu-charcoal: #eef1f5;
+  --bmu-ivory: #0a0b0d;
+  --bmu-canvas: #16181b;
+  --bmu-line: rgba(255, 255, 255, 0.09);
+  --bmu-muted: #b5bac2;
+  --bmu-paper: #111214;
+  --surface: #050607;
+  --surface-raised: #111214;
+  --ink: #eef1f5;
+  --ink-muted: #b5bac2;
+  --border: rgba(255, 255, 255, 0.09);
+
+  /* Like bmumarketing.in: pure black with soft green glows, near-black cards, white headings fading to grey. */
+  --ui-page-bg:
+    radial-gradient(80% 40% at 100% 0%, rgba(140, 198, 63, 0.11), transparent 70%),
+    radial-gradient(90% 38% at 50% 105%, rgba(140, 198, 63, 0.13), transparent 70%),
+    radial-gradient(45% 40% at 0% 0%, rgba(140, 198, 63, 0.06), transparent 70%),
+    #000000;
+  --ui-glass: rgba(255, 255, 255, 0.035);
+  --ui-glass-border: rgba(255, 255, 255, 0.09);
+  --ui-glass-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 40px 90px -30px rgba(0, 0, 0, 0.95);
+  --ui-glass-sheen: linear-gradient(140deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.025) 50%, rgba(255, 255, 255, 0.01) 100%);
+  --ui-glass-edge: rgba(255, 255, 255, 0.11);
+  --ui-menu: linear-gradient(160deg, rgba(30, 32, 36, 0.88), rgba(14, 15, 17, 0.84));
+  --ui-menu-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 0 26px -10px rgba(140, 198, 63, 0.25), 0 28px 60px -20px rgba(0, 0, 0, 0.95);
+  --ui-menu-blur: blur(24px) saturate(170%);
+  --ui-search-bar: linear-gradient(160deg, rgba(36, 38, 42, 0.86), rgba(12, 13, 15, 0.82));
+  --ui-search-glow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(140, 198, 63, 0.38), 0 0 30px -4px rgba(140, 198, 63, 0.45), 0 12px 40px -12px rgba(124, 196, 255, 0.32);
+  --ui-glass-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 40px 90px -30px rgba(0, 0, 0, 0.95);
+  --ui-card: #141518;
+  --ui-card-fill: radial-gradient(45% 70% at 0% 0%, rgba(140, 198, 63, 0.07), transparent 70%), linear-gradient(145deg, #1d1f22, #111214);
+  --ui-card-border: rgba(255, 255, 255, 0.09);
+  --ui-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px -22px rgba(0, 0, 0, 0.95);
+  --ui-pill: rgba(255, 255, 255, 0.04);
+  --ui-pill-ink: #ffffff;
+  /* The website's "Let's talk" button: dark gradient pill with a soft green glow. */
+  --ui-primary-fill: linear-gradient(180deg, #16181b, #08090a);
+  --ui-primary-border: rgba(140, 198, 63, 0.38);
+  --ui-primary-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 0 22px -6px rgba(140, 198, 63, 0.45), 0 12px 24px -12px rgba(0, 0, 0, 0.9);
+  --ui-pill-active: #16181b;
+  --ui-pill-active-ink: #ffffff;
+  --ui-field: rgba(255, 255, 255, 0.04);
+  --ui-heading-fill: linear-gradient(180deg, #ffffff 45%, rgba(255, 255, 255, 0.74));
+  --ui-accent: #8cc63f;
+  --ui-accent-ink: #0b0f14;
+  --ui-accent-soft: rgba(140, 198, 63, 0.14);
+  --ui-column: rgba(255, 255, 255, 0.035);
+  --ui-status-todo: rgba(255, 255, 255, 0.08);
+  --ui-status-progress: rgba(124, 196, 255, 0.18);
+  --ui-status-waiting: rgba(240, 181, 74, 0.2);
+  --ui-status-blocked: rgba(240, 126, 130, 0.2);
+  --ui-status-done: rgba(140, 198, 63, 0.2);
+  --ui-danger: #f07e82;
+  --ui-tint-work-bg: rgba(140, 198, 63, 0.16);
+  --ui-tint-work-ink: #a8e05f;
+  --ui-tint-plan-bg: rgba(124, 196, 255, 0.16);
+  --ui-tint-plan-ink: #8fd0ff;
+  --ui-tint-you-bg: rgba(255, 168, 120, 0.16);
+  --ui-tint-you-ink: #ffb48a;
+  --ui-tint-admin-bg: rgba(255, 255, 255, 0.08);
+  --ui-tint-admin-ink: #eef1f5;
+}
+
+/* v54 dark: the white logo replaces the dark one. */
+:root[data-theme="dark"] .logo-for-light-theme {
+  display: none;
+}
+:root[data-theme="dark"] .logo-for-dark-theme {
+  display: inline-block;
+}
+
+/*
+ * v54 redesign: a redesigned page's colour fills the whole work area, edge to edge (no white frame, no card inside a
+ * card). The page marks itself with data-design-page; the work area behind it takes the page colour.
+ */
+/* v54 preview shell: the page colour behind the floating sidebar too. */
+.design-shell {
+  background: var(--ui-page-bg);
+  background-attachment: fixed;
+}
+/*
+ * v54 sidebar background: soft layered BMU-green petals flowing in from the top-right and the bottom, with fine white
+ * light lines along their edges (a little sky blue in one petal). Drawn behind the menu; dimmer, glowing, in dark.
+ */
+.design-sidebar-leaves {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  --side-petals-top: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20240%20200'%3E%3Cdefs%3E%3ClinearGradient%20id%3D'p1'%20x1%3D'1'%20y1%3D'0'%20x2%3D'0'%20y2%3D'1'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%23a6d85a'%20stop-opacity%3D'0.55'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%238cc63f'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D'p2'%20x1%3D'1'%20y1%3D'0'%20x2%3D'0'%20y2%3D'1'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%23d4efa9'%20stop-opacity%3D'0.6'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%23ffffff'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D'p3'%20x1%3D'1'%20y1%3D'0'%20x2%3D'0'%20y2%3D'1'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%237cc4ff'%20stop-opacity%3D'0.3'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%237cc4ff'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Cpath%20d%3D'M240%200%20C180%206%20128%2046%20112%20116%20C150%2092%20196%2070%20240%2078Z'%20fill%3D'url(%23p1)'%2F%3E%3Cpath%20d%3D'M240%2052%20C192%2070%20160%20112%20156%20176%20C188%20146%20214%20128%20240%20134Z'%20fill%3D'url(%23p2)'%2F%3E%3Cpath%20d%3D'M240%20112%20C214%20124%20196%20148%20192%20184%20C210%20166%20226%20160%20240%20162Z'%20fill%3D'url(%23p3)'%2F%3E%3Cpath%20d%3D'M236%202%20C184%2018%20144%2056%20126%20108'%20fill%3D'none'%20stroke%3D'%23ffffff'%20stroke-opacity%3D'0.85'%20stroke-width%3D'1.3'%20stroke-linecap%3D'round'%2F%3E%3Cpath%20d%3D'M238%2058%20C200%2078%20174%20112%20166%20160'%20fill%3D'none'%20stroke%3D'%23ffffff'%20stroke-opacity%3D'0.68'%20stroke-width%3D'1'%20stroke-linecap%3D'round'%2F%3E%3C%2Fsvg%3E");
+  --side-petals-bottom: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20300%20300'%3E%3Cdefs%3E%3ClinearGradient%20id%3D'q1'%20x1%3D'1'%20y1%3D'1'%20x2%3D'0'%20y2%3D'0'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%238cc63f'%20stop-opacity%3D'0.5'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%23a6d85a'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D'q2'%20x1%3D'0'%20y1%3D'1'%20x2%3D'1'%20y2%3D'0'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%23b9e386'%20stop-opacity%3D'0.45'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%23ffffff'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Cpath%20d%3D'M300%20300%20L300%20120%20C246%20132%20196%20176%20176%20250%20C164%20276%20150%20292%20132%20300Z'%20fill%3D'url(%23q1)'%2F%3E%3Cpath%20d%3D'M0%20300%20L0%20196%20C46%20204%2086%20236%20104%20300Z'%20fill%3D'url(%23q2)'%2F%3E%3Cpath%20d%3D'M300%20168%20C252%20186%20214%20222%20196%20280'%20fill%3D'none'%20stroke%3D'%23ffffff'%20stroke-opacity%3D'0.8'%20stroke-width%3D'1.3'%20stroke-linecap%3D'round'%2F%3E%3Cpath%20d%3D'M2%20214%20C40%20224%2070%20250%2086%20296'%20fill%3D'none'%20stroke%3D'%23ffffff'%20stroke-opacity%3D'0.5599999999999999'%20stroke-width%3D'1'%20stroke-linecap%3D'round'%2F%3E%3C%2Fsvg%3E");
+}
+:root[data-theme="dark"] .design-sidebar-leaves {
+  --side-petals-top: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20240%20200'%3E%3Cdefs%3E%3ClinearGradient%20id%3D'p1'%20x1%3D'1'%20y1%3D'0'%20x2%3D'0'%20y2%3D'1'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%23a6d85a'%20stop-opacity%3D'0.32'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%238cc63f'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D'p2'%20x1%3D'1'%20y1%3D'0'%20x2%3D'0'%20y2%3D'1'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%23d4efa9'%20stop-opacity%3D'0.12'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%23ffffff'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D'p3'%20x1%3D'1'%20y1%3D'0'%20x2%3D'0'%20y2%3D'1'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%237cc4ff'%20stop-opacity%3D'0.06'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%237cc4ff'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Cpath%20d%3D'M240%200%20C180%206%20128%2046%20112%20116%20C150%2092%20196%2070%20240%2078Z'%20fill%3D'url(%23p1)'%2F%3E%3Cpath%20d%3D'M240%2052%20C192%2070%20160%20112%20156%20176%20C188%20146%20214%20128%20240%20134Z'%20fill%3D'url(%23p2)'%2F%3E%3Cpath%20d%3D'M240%20112%20C214%20124%20196%20148%20192%20184%20C210%20166%20226%20160%20240%20162Z'%20fill%3D'url(%23p3)'%2F%3E%3Cpath%20d%3D'M236%202%20C184%2018%20144%2056%20126%20108'%20fill%3D'none'%20stroke%3D'%23ffffff'%20stroke-opacity%3D'0.18'%20stroke-width%3D'1.3'%20stroke-linecap%3D'round'%2F%3E%3Cpath%20d%3D'M238%2058%20C200%2078%20174%20112%20166%20160'%20fill%3D'none'%20stroke%3D'%23ffffff'%20stroke-opacity%3D'0.144'%20stroke-width%3D'1'%20stroke-linecap%3D'round'%2F%3E%3C%2Fsvg%3E");
+  --side-petals-bottom: url("data:image/svg+xml;utf8,%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20300%20300'%3E%3Cdefs%3E%3ClinearGradient%20id%3D'q1'%20x1%3D'1'%20y1%3D'1'%20x2%3D'0'%20y2%3D'0'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%238cc63f'%20stop-opacity%3D'0.3'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%23a6d85a'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D'q2'%20x1%3D'0'%20y1%3D'1'%20x2%3D'1'%20y2%3D'0'%3E%3Cstop%20offset%3D'0'%20stop-color%3D'%23b9e386'%20stop-opacity%3D'0.14'%2F%3E%3Cstop%20offset%3D'1'%20stop-color%3D'%23ffffff'%20stop-opacity%3D'0'%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Cpath%20d%3D'M300%20300%20L300%20120%20C246%20132%20196%20176%20176%20250%20C164%20276%20150%20292%20132%20300Z'%20fill%3D'url(%23q1)'%2F%3E%3Cpath%20d%3D'M0%20300%20L0%20196%20C46%20204%2086%20236%20104%20300Z'%20fill%3D'url(%23q2)'%2F%3E%3Cpath%20d%3D'M300%20168%20C252%20186%20214%20222%20196%20280'%20fill%3D'none'%20stroke%3D'%23ffffff'%20stroke-opacity%3D'0.16'%20stroke-width%3D'1.3'%20stroke-linecap%3D'round'%2F%3E%3Cpath%20d%3D'M2%20214%20C40%20224%2070%20250%2086%20296'%20fill%3D'none'%20stroke%3D'%23ffffff'%20stroke-opacity%3D'0.11199999999999999'%20stroke-width%3D'1'%20stroke-linecap%3D'round'%2F%3E%3C%2Fsvg%3E");
+}
+.design-sidebar-leaves::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    var(--side-petals-top) top right / 240px auto no-repeat,
+    var(--side-petals-bottom) bottom right / 100% auto no-repeat;
+}
+/* v54 sidebar ("glow bar"): the open group is a BMU navy pill (white text, white icon); the current page glows green. */
+.design-side-nav,
+.design-side-nav-phone {
+  --glow: 140, 198, 63;
+}
+.design-nav-group-open {
+  background: linear-gradient(180deg, #1b2d42, #0f1b29);
+  color: #ffffff;
+  box-shadow: 0 10px 22px -10px rgba(15, 27, 41, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.design-nav-group-open .design-nav-tile {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+/* The current page: a full oval that glows green all round (a fine green edge and a soft green glow, like the dark
+   "Mine" pill); the same width as every other item. */
+.design-nav-current {
+  z-index: 1;
+  border: 1px solid rgba(var(--glow), 0.5);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(var(--glow), 0.3), rgba(var(--glow), 0.12));
+  box-shadow: 0 0 22px -6px rgba(var(--glow), 0.6), inset 0 0 14px -6px rgba(var(--glow), 0.45);
+  color: var(--ink);
+}
+.design-nav-current .design-nav-tile {
+  color: #4f8a17;
+}
+:root[data-theme="dark"] .design-nav-current {
+  background: linear-gradient(90deg, rgba(var(--glow), 0.24), rgba(var(--glow), 0.08));
+  color: #c9f08f;
+}
+:root[data-theme="dark"] .design-nav-current .design-nav-tile {
+  color: #a8e05f;
+}
+.design-sidebar-profile {
+  background: linear-gradient(135deg, rgba(140, 198, 63, 0.16), rgba(124, 196, 255, 0.16));
+}
+:root[data-theme="dark"] .design-sidebar-scroll:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+:root[data-theme="dark"] .design-sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+/* v54 sidebar chips: the Live pill (green; amber while reconnecting) with a soft pulsing dot. */
+.live-status-pill-ok {
+  --live: 140, 198, 63;
+  color: #4f8a17;
+}
+.live-status-pill-wait {
+  --live: 240, 181, 74;
+  color: #a86f0c;
+}
+:root[data-theme="dark"] .live-status-pill-ok {
+  color: #a8e05f;
+}
+:root[data-theme="dark"] .live-status-pill-wait {
+  color: #f0b54a;
+}
+:root[data-theme="dark"] .dark-ink-green {
+  color: #a8e05f;
+}
+.live-status-pill {
+  background: rgba(var(--live), 0.14);
+  border-color: rgba(var(--live), 0.4);
+}
+.live-status-dot {
+  background: rgb(var(--live));
+  box-shadow: 0 0 6px 1px rgba(var(--live), 0.7);
+}
+.live-status-ping {
+  background: rgba(var(--live), 0.55);
+  animation: live-status-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes live-status-ping {
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+/* v54 sidebar: the shrink / open button: just the icon (no circle), navy blue; soft light blue in dark. */
+.design-rail-button {
+  color: #1b2d42;
+}
+.design-rail-button:hover {
+  color: #0f1b29;
+}
+:root[data-theme="dark"] .design-rail-button {
+  color: #9cc9f0;
+}
+:root[data-theme="dark"] .design-rail-button:hover {
+  color: #c7e3fa;
+}
+/* v54 desktop: no scroll line on the sidebar menu (it still scrolls with the wheel or touch). */
+@media (min-width: 768px) {
+  .design-sidebar-scroll,
+  .design-sidebar-scroll:hover {
+    scrollbar-width: none;
+  }
+  .design-sidebar-scroll::-webkit-scrollbar {
+    width: 0;
+  }
+}
+/* Phone: the sidebar is the top bar, so no floating corners or side edges there. */
+@media (max-width: 767px) {
+  .design-sidebar-panel {
+    border-radius: 0;
+    border-width: 0 0 1px 0;
+  }
+}
+/* The sidebar's scroll line: hidden, a very thin line only while the pointer is on the menu. */
+.design-sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.design-sidebar-scroll:hover {
+  scrollbar-color: rgba(120, 130, 140, 0.35) transparent;
+}
+.design-sidebar-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+.design-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+.design-sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(120, 130, 140, 0.35);
+}
+main:has([data-design-page]) {
+  background: var(--ui-page-bg);
+  background-attachment: fixed;
+}
+/* v54 frosted glass panel: see-through sheen, strong blur that keeps the colours behind, bright edge. */
+.design-glass-panel {
+  background: var(--ui-glass-sheen);
+  border: 1px solid var(--ui-glass-edge);
+  box-shadow: var(--ui-glass-panel-shadow);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+}
+/*
+ * v54 glass list for every dropdown and menu on a redesigned page: the glass dropdowns, the Views menu and the
+ * task "…" menu (the last two keep their code; only their look changes here).
+ */
+.design-glass-menu,
+[data-design-page] [role="menu"],
+[data-design-page] [data-testid="saved-views"] + div {
+  background: var(--ui-menu);
+  border: 1px solid var(--ui-glass-edge);
+  border-radius: 18px;
+  box-shadow: var(--ui-menu-shadow);
+  -webkit-backdrop-filter: var(--ui-menu-blur);
+  backdrop-filter: var(--ui-menu-blur);
+  padding: 6px;
+}
+[data-design-page] [role="menu"] [role="menuitem"],
+[data-design-page] [data-testid="saved-views"] + div button:not([type="submit"]),
+[data-design-page] [data-testid="saved-views"] + div > div {
+  border-radius: 12px;
+}
+[data-design-page] [role="menu"] [role="menuitem"]:hover,
+[data-design-page] [data-testid="saved-views"] + div > button:hover,
+[data-design-page] [data-testid="saved-views"] + div > div:hover {
+  background: var(--ui-accent-soft);
+}
+[data-design-page] [data-testid="saved-views"] + div input:not([type="checkbox"]) {
+  border-radius: 999px;
+  padding-inline: 12px;
+  background: var(--ui-field);
+}
+[data-design-page] [data-testid="saved-views"] + div button[type="submit"] {
+  border-radius: 999px;
+  padding-inline: 12px;
+}
+/* v54 search card: no square green focus box around the typing line (it didn't match the rounded card). */
+.top-search-panel input:focus-visible {
+  outline: none;
+}
+/* v54 open search: the glowing bar (same spot and size as the pill) and the results card (drops in below it). */
+.top-search-bar {
+  background: var(--ui-search-bar);
+  border: 1px solid var(--ui-glass-edge);
+  border-radius: 999px;
+  box-shadow: var(--ui-search-glow);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+}
+.top-search-results {
+  animation: top-search-drop 260ms 60ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+/* The real cursor is hidden; the shining one below is drawn at the same spot. */
+.top-search-input {
+  caret-color: transparent;
+}
+/* The shining "|" cursor: thin, with a sky blue glow, blinking. */
+.top-search-caret {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 1.3rem;
+  border-radius: 2px;
+  transform: translateY(-50%);
+  /* Thin and light, glowing sky blue (Hari's pick over the green one). */
+  background: linear-gradient(180deg, #dff2ff, #4aa8f0);
+  box-shadow: 0 0 6px 1px rgba(74, 168, 240, 0.85), 0 0 16px 4px rgba(124, 196, 255, 0.55);
+  animation: top-search-blink 1.1s steps(1) infinite;
+  pointer-events: none;
+}
+@keyframes top-search-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+@keyframes top-search-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.design-heading-fill {
+  background: var(--ui-heading-fill);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 
@@ -66,6 +465,25 @@
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
   --color-border: var(--border);
+
+  /* v54 redesign colours as classes: bg-ui-card, text-ui-pill-ink, border-ui-card-border… */
+  --color-ui-card: var(--ui-card);
+  --color-ui-card-border: var(--ui-card-border);
+  --color-ui-pill: var(--ui-pill);
+  --color-ui-pill-ink: var(--ui-pill-ink);
+  --color-ui-pill-active: var(--ui-pill-active);
+  --color-ui-pill-active-ink: var(--ui-pill-active-ink);
+  --color-ui-field: var(--ui-field);
+  --color-ui-accent: var(--ui-accent);
+  --color-ui-accent-ink: var(--ui-accent-ink);
+  --color-ui-accent-soft: var(--ui-accent-soft);
+  --color-ui-column: var(--ui-column);
+  --color-ui-status-todo: var(--ui-status-todo);
+  --color-ui-status-progress: var(--ui-status-progress);
+  --color-ui-status-waiting: var(--ui-status-waiting);
+  --color-ui-status-blocked: var(--ui-status-blocked);
+  --color-ui-status-done: var(--ui-status-done);
+  --color-ui-danger: var(--ui-danger);
 
   /* Headings use the body face, tight and quiet; Zen Dots is kept for the wordmark only. */
   --font-display: var(--font-albert-sans);
@@ -100,5 +518,760 @@ body {
   * {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ================================================================================================================
+ * v54 redesign preview, EVERY page (only inside .design-scope, the wrapper only the preview account gets; see
+ * app-shell.tsx). Same pages, same controls, same data: only the look changes, following the Tasks page: glass outer
+ * layers, solid inner cards, pills, BMU navy + green, Outfit, light and dark.
+ * ================================================================================================================ */
+
+/* 1. The page colour behind every page, and softer colour names for the work area and pop-ups (glass surfaces). */
+.design-scope main {
+  background: var(--ui-page-bg);
+  background-attachment: fixed;
+  /* Long words (links, file names) wrap instead of pushing the page sideways on phones. */
+  overflow-wrap: break-word;
+}
+/* Grid columns may shrink to the screen (their long words then wrap), so nothing pushes the page sideways. */
+.design-scope main .grid > * {
+  min-width: 0;
+}
+/* Fields may shrink to their space in rows and grids (long option names used to push forms off the screen). */
+.design-scope :is(main, [role="dialog"]) :is(input, select, textarea) {
+  min-width: 0;
+}
+.design-scope main,
+.design-scope [role="dialog"] {
+  --surface-raised: rgba(255, 255, 255, 0.66);
+  --surface: rgba(255, 255, 255, 0.6);
+  --border: rgba(18, 31, 47, 0.08);
+  --bmu-line: rgba(18, 31, 47, 0.08);
+  --bmu-canvas: rgba(18, 31, 47, 0.045);
+  --design-field-border: rgba(18, 31, 47, 0.12);
+  --design-bar: linear-gradient(180deg, #2b4560, #121f2f);
+  --design-bar-x: linear-gradient(90deg, #2b4560, #121f2f);
+  --design-hatch: repeating-linear-gradient(135deg, rgba(18, 31, 47, 0.16) 0 3px, transparent 3px 7px);
+}
+:root[data-theme="dark"] .design-scope main,
+:root[data-theme="dark"] .design-scope [role="dialog"] {
+  --surface-raised: rgba(255, 255, 255, 0.045);
+  --surface: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.09);
+  --bmu-line: rgba(255, 255, 255, 0.09);
+  --bmu-canvas: rgba(255, 255, 255, 0.06);
+  --design-field-border: rgba(255, 255, 255, 0.12);
+  --design-bar: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.32));
+  --design-bar-x: linear-gradient(90deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.82));
+  --design-hatch: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0 3px, transparent 3px 7px);
+}
+/* Pop-ups (dialogs, drawers) are more solid than page cards, so what is behind them never gets in the way. */
+.design-scope [role="dialog"] {
+  --surface: rgba(250, 252, 249, 0.985);
+  --surface-raised: rgba(255, 255, 255, 0.82);
+}
+:root[data-theme="dark"] .design-scope [role="dialog"] {
+  --surface: rgba(16, 17, 19, 0.985);
+  --surface-raised: rgba(255, 255, 255, 0.05);
+}
+
+/* 2. Every fully bordered box gets soft corners (cards, lists, small panels); square ticks and radios stay as they are. */
+.design-scope :is(main, [role="dialog"]) .border:not([type="checkbox"]):not([type="radio"]) {
+  border-radius: 14px;
+}
+/* Cards on the page: frosted glass (fields and buttons keep their own look, below). */
+.design-scope :is(main, [role="dialog"]) :is(.bg-surface-raised, .bg-surface).border:not(input):not(select):not(textarea):not(button) {
+  border-radius: 20px;
+  border-color: var(--ui-glass-edge);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: var(--ui-glass-shadow);
+}
+/* Cards inside a panel or card: solid, like the task cards on the board (outer glass, inner solid). */
+.design-scope :is(.dash-panel, .ui-card) :is(.bg-surface-raised, .bg-surface).border:not(input):not(select):not(textarea):not(button) {
+  border-radius: 16px;
+  border-color: var(--ui-card-border);
+  background: var(--ui-card-fill);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--ui-card-shadow);
+}
+
+/* 3. Page titles: big, bold, no rule under them (like "Tasks"). */
+.design-scope .page-title {
+  margin-bottom: 1.75rem;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.design-scope .page-title-heading {
+  font-size: 1.875rem;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  background: var(--ui-heading-fill);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@media (min-width: 640px) {
+  .design-scope .page-title-heading {
+    font-size: 2.25rem;
+  }
+}
+.design-scope .page-title-subtitle {
+  margin-top: 0.5rem;
+  max-width: 48rem;
+}
+
+/* 4. Buttons. The main action (ink buttons) is the navy pill with a soft shadow (green glow in dark), like
+      "+ Add task"; other buttons are glass pills. */
+.design-scope :is(main, [role="dialog"]) :is(button, a).bg-charcoal,
+.design-scope .ui-button-primary {
+  border-radius: 999px;
+  border: 1px solid var(--ui-primary-border);
+  background: var(--ui-primary-fill);
+  color: var(--ui-pill-active-ink);
+  box-shadow: var(--ui-primary-shadow);
+}
+.design-scope :is(main, [role="dialog"]) :is(button, a):is(.bg-red, .bg-green) {
+  border-radius: 999px;
+}
+.design-scope .ui-button-secondary {
+  border-radius: 999px;
+  border-color: var(--ui-glass-edge);
+  background: var(--ui-glass);
+  box-shadow: var(--ui-glass-shadow);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.design-scope .ui-button-ghost {
+  border-radius: 999px;
+}
+.design-scope .ui-button-ghost:hover {
+  background: var(--ui-accent-soft);
+}
+
+/* 5. Fields: rounded, glassy, with a soft edge; dropdowns get a tidy chevron (the list itself is the browser's). */
+.design-scope :is(main, [role="dialog"]) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), select, textarea).border {
+  border-radius: 12px;
+  border-color: var(--design-field-border);
+  background-color: var(--ui-field);
+}
+.design-scope :is(main, [role="dialog"]) textarea.border {
+  border-radius: 14px;
+}
+.design-scope :is(main, [role="dialog"]) select.border {
+  -webkit-appearance: none;
+  appearance: none;
+  /* Never wider than its space (a long task name used to push the page sideways on phones and tablets). */
+  max-width: 100%;
+  text-overflow: ellipsis;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%235e6672' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 14px;
+}
+:root[data-theme="dark"] .design-scope :is(main, [role="dialog"]) select.border {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23b5bac2' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+}
+
+/* 6. Badges: soft pills in the status colours of the Tasks page. */
+.design-scope .ui-badge {
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-weight: 500;
+}
+.design-scope .ui-badge-neutral {
+  background: var(--ui-status-todo);
+}
+.design-scope .ui-badge-green {
+  background: var(--ui-status-done);
+}
+.design-scope .ui-badge-amber {
+  background: var(--ui-status-waiting);
+}
+.design-scope .ui-badge-red {
+  background: var(--ui-status-blocked);
+}
+.design-scope .ui-badge-dark {
+  border-color: var(--design-field-border);
+}
+
+/* 7. Stat tiles: separate glass cards with big numbers; the first one in a row is the highlighted solid green card. */
+.design-scope .stat-row {
+  gap: 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.design-scope .stat-tile {
+  border: 1px solid var(--ui-glass-edge);
+  border-radius: 22px;
+  padding: 1.2rem 1.35rem;
+  background: var(--ui-glass-sheen);
+  box-shadow: var(--ui-glass-panel-shadow);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  transition: transform 0.2s ease;
+}
+a.stat-tile:hover {
+  transform: translateY(-2px);
+}
+.design-scope .stat-tile-value {
+  font-size: 2.25rem;
+  font-weight: 700;
+}
+.design-scope .stat-row > .stat-tile:first-child {
+  border-color: rgba(140, 198, 63, 0.55);
+  background: linear-gradient(150deg, #6fae2a 0%, #3f7a12 100%);
+  box-shadow: 0 18px 36px -18px rgba(63, 122, 18, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.design-scope .stat-row > .stat-tile:first-child * {
+  color: #ffffff;
+}
+.design-scope .stat-row > .stat-tile:first-child .stat-tile-label {
+  color: rgba(255, 255, 255, 0.85);
+}
+:root[data-theme="dark"] .design-scope .stat-row > .stat-tile:first-child {
+  background: linear-gradient(150deg, #5c9a1c 0%, #2c5a0d 100%);
+  box-shadow: 0 0 30px -8px rgba(140, 198, 63, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* 8. Panels and cards: frosted glass, big rounded corners, a quiet header line. */
+.design-scope .dash-panel,
+.design-scope .ui-card {
+  border-radius: 24px;
+  border-color: var(--ui-glass-edge);
+  background: var(--ui-glass-sheen);
+  box-shadow: var(--ui-glass-panel-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(22px) saturate(170%);
+}
+.design-scope .dash-panel-header {
+  padding: 1.05rem 1.35rem 0.85rem;
+}
+.design-scope .dash-panel-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* 9. Tables: roomy rows with a soft green hover. */
+.design-scope .data-table-head {
+  letter-spacing: 0.08em;
+}
+.design-scope .data-table-row:hover {
+  background: var(--ui-accent-soft);
+}
+
+/* 10. Tabs: a glass pill track; the chosen tab is the navy pill (green glow in dark). */
+.design-scope .ui-tabs {
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  border-color: var(--ui-glass-edge);
+  background: var(--ui-glass);
+  box-shadow: var(--ui-glass-shadow);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.design-scope .ui-tab {
+  border-radius: 999px;
+  padding: 0.35rem 0.95rem;
+}
+.design-scope .ui-tab-active {
+  background: var(--ui-primary-fill);
+  color: var(--ui-pill-active-ink);
+  box-shadow: var(--ui-primary-shadow);
+}
+
+/* 11. Charts. Bar lists: rounded pill bars (navy; the one to notice in green with a glow). */
+.design-scope .bar-list-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ui-status-todo);
+}
+.design-scope .bar-list-fill {
+  border-radius: 999px;
+  background: var(--design-bar-x);
+}
+.design-scope .bar-list-fill-highlight {
+  background: linear-gradient(90deg, #a6d85a, #6fae2a);
+  box-shadow: 0 0 12px -2px rgba(140, 198, 63, 0.7);
+}
+/* Column charts: full pill bars; the latest in glowing green; the comparison bars striped. */
+.design-scope .column-chart {
+  gap: 10px;
+}
+.design-scope .column-chart-bar {
+  border-radius: 999px;
+  background: var(--design-bar);
+}
+.design-scope .column-chart-bar-highlight {
+  background: linear-gradient(180deg, #b6e07a, #6fae2a);
+  box-shadow: 0 10px 24px -8px rgba(111, 174, 42, 0.75);
+}
+.design-scope .column-chart-bar-secondary {
+  border-radius: 999px;
+  background: var(--design-hatch);
+  border: 1px solid var(--design-field-border);
+}
+.design-scope .column-chart-tip {
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  background: var(--ui-primary-fill);
+  box-shadow: var(--ui-primary-shadow);
+}
+/* Meters and stacked bars: rounded, with gradient fills. */
+.design-scope .meter-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--ui-status-todo);
+}
+.design-scope .meter-fill {
+  border-radius: 999px;
+}
+.design-scope .meter-fill-default {
+  background: var(--design-bar-x);
+}
+.design-scope .meter-fill-good {
+  background: linear-gradient(90deg, #a6d85a, #6fae2a);
+}
+.design-scope .meter-fill-warn {
+  background: linear-gradient(90deg, #f7cf7a, #e0a43a);
+}
+.design-scope .meter-fill-bad {
+  background: linear-gradient(90deg, #f6a3a6, #e46b6f);
+}
+.design-scope .stack-bar {
+  gap: 3px;
+  height: 12px;
+  border-radius: 999px;
+  background: transparent;
+}
+.design-scope .stack-bar > * {
+  border-radius: 999px;
+}
+.design-scope .stack-bar-dot {
+  border-radius: 999px;
+}
+/* Line charts, donuts and heat maps (drawn with fixed colours): readable colours in dark, BMU green everywhere. */
+.design-scope svg [stroke="#8BB72C" i] {
+  stroke: #8cc63f;
+}
+.design-scope svg [fill="#8BB72C" i] {
+  fill: #8cc63f;
+}
+:root[data-theme="dark"] .design-scope svg [stroke="#121F2F" i] {
+  stroke: #eef1f5;
+}
+:root[data-theme="dark"] .design-scope svg [fill="#121F2F" i] {
+  fill: #eef1f5;
+}
+:root[data-theme="dark"] .design-scope svg [stroke="#ebeae6" i] {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+:root[data-theme="dark"] .design-scope svg [fill="#f6f5f1" i] {
+  fill: rgba(255, 255, 255, 0.04);
+}
+
+/* 12. Pop-up windows and side drawers: soft glass with big rounded corners. */
+.design-scope [role="dialog"].border {
+  border-radius: 24px;
+  border-color: var(--ui-glass-edge);
+  box-shadow: 0 30px 80px -30px rgba(18, 31, 47, 0.45);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+}
+:root[data-theme="dark"] .design-scope [role="dialog"].border {
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* 13. Grids split by thin lines (calendars, the My workspace strip, tile grids) become separate rounded tiles with a
+       small gap, like the day tiles in the calendar samples. */
+.design-scope main .grid.gap-px.bg-border {
+  gap: 8px;
+  background: transparent;
+}
+.design-scope main .grid.gap-px.bg-border.border {
+  border-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.design-scope main .grid.gap-px.bg-border:not(.border) {
+  padding: 8px;
+}
+.design-scope main .grid.gap-px.bg-border > * {
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--ui-glass-edge);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+/* Calendars: today is a glowing green circle; event markers and legend keys are round dots. */
+.design-scope main .grid-cols-7 .bg-green.h-6.w-6 {
+  border-radius: 999px;
+  color: #0f1b29;
+  box-shadow: 0 0 12px -2px rgba(140, 198, 63, 0.85);
+}
+.design-scope main :is(.inline-block.h-1\.5.w-1\.5, .inline-block.h-2.w-2) {
+  border-radius: 999px;
+}
+/* Attendance month: rounded day tiles; present days in glossy green. */
+.design-scope main .grid-cols-7 > span.h-8.w-8 {
+  border-radius: 10px;
+}
+.design-scope main .grid-cols-7 > span.h-8.w-8.bg-green {
+  background: linear-gradient(160deg, #a6d85a, #6fae2a);
+  color: #ffffff;
+}
+
+/* 14. Side drawers (Add task, Edit…): full height at the right, with soft rounded corners on their open side. */
+.design-scope .fixed.inset-0.justify-end > [role="dialog"] {
+  border-top-left-radius: 24px;
+  border-bottom-left-radius: 24px;
+  box-shadow: -30px 0 80px -30px rgba(18, 31, 47, 0.45);
+}
+:root[data-theme="dark"] .design-scope .fixed.inset-0.justify-end > [role="dialog"] {
+  box-shadow: -30px 0 80px -30px rgba(0, 0, 0, 0.9), -1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+/* 15. Ask BMU mascot (preview): the robot head itself is the floating button (no circle), with a soft shadow and a
+       green online dot. Moods follow data-mood: idle, happy on hover, sad for a moment after. The "Ask BMU · Ctrl J"
+       label shows on hover. */
+.copilot-robot {
+  background: transparent;
+  border: 0;
+  animation: copilot-robot-float 3.2s ease-in-out infinite;
+  transition: transform 0.2s ease;
+}
+.copilot-robot:hover {
+  transform: scale(1.06);
+  animation-play-state: paused;
+}
+.copilot-robot-dot {
+  position: absolute;
+  top: 7px;
+  right: 1px;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: #8cc63f;
+  box-shadow: 0 0 0 2px #ffffff, 0 0 8px 1px rgba(140, 198, 63, 0.9);
+}
+:root[data-theme="dark"] .copilot-robot-dot {
+  box-shadow: 0 0 0 2px #0b0c0e, 0 0 8px 1px rgba(140, 198, 63, 0.9);
+}
+.copilot-robot-label {
+  position: absolute;
+  right: -6px;
+  bottom: calc(100% + 16px);
+  /* A speech bubble above the robot's head: an oval with a small tail pointing down at it (::after). */
+  padding: 10px 22px;
+  border-radius: 50%;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  /* A glossy BMU-green glass pill with dark navy text: a bright shine over the top half, a white edge, a soft green glow. */
+  color: #1b2d42;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.25) 48%, rgba(255, 255, 255, 0) 52%),
+    linear-gradient(135deg, rgba(140, 198, 63, 0.75) 0%, rgba(226, 244, 200, 0.88) 55%, rgba(140, 198, 63, 0.55) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 22px -8px rgba(92, 154, 28, 0.65), inset 0 1px 1px #ffffff, inset 0 -2px 6px rgba(92, 154, 28, 0.25);
+  -webkit-backdrop-filter: blur(16px) saturate(170%);
+  backdrop-filter: blur(16px) saturate(170%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.copilot-robot-label::after {
+  content: "";
+  position: absolute;
+  right: 24px;
+  bottom: -11px;
+  width: 16px;
+  height: 13px;
+  background: linear-gradient(180deg, rgba(140, 198, 63, 0.62), rgba(140, 198, 63, 0.5));
+  clip-path: polygon(0 0, 100% 0, 30% 100%);
+  filter: drop-shadow(0 2px 3px rgba(92, 154, 28, 0.35));
+}
+:root[data-theme="dark"] .copilot-robot-label::after {
+  background: linear-gradient(135deg, rgba(140, 198, 63, 0.5), rgba(140, 198, 63, 0.38));
+}
+:root[data-theme="dark"] .copilot-robot-label {
+  color: #eef1f5;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.05) 48%, rgba(255, 255, 255, 0) 52%),
+    linear-gradient(135deg, rgba(140, 198, 63, 0.5) 0%, rgba(22, 30, 16, 0.88) 60%, rgba(140, 198, 63, 0.38) 100%);
+  border-color: rgba(168, 224, 95, 0.35);
+  box-shadow: 0 0 18px -4px rgba(140, 198, 63, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.copilot-robot:hover .copilot-robot-label,
+.copilot-robot:focus-visible .copilot-robot-label {
+  opacity: 1;
+  transform: translateY(0);
+}
+/* The robot. */
+.rb-face {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 84px;
+  height: 84px;
+  overflow: visible;
+  transform: translate(-50%, -54%);
+  filter: drop-shadow(0 8px 10px rgba(15, 27, 41, 0.35));
+}
+:root[data-theme="dark"] .rb-face {
+  filter: drop-shadow(0 0 14px rgba(140, 198, 63, 0.35)) drop-shadow(0 8px 10px rgba(0, 0, 0, 0.6));
+}
+.rb-face * {
+  transform-box: view-box;
+}
+.rb-body {
+  transform-origin: 32px 52px;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.copilot-robot[data-mood="happy"] .rb-body {
+  transform: translateY(-3px) rotate(-5deg);
+}
+.copilot-robot[data-mood="sad"] .rb-body {
+  transform: translateY(2px) rotate(4deg);
+}
+.rb-glow {
+  filter: drop-shadow(0 0 1.6px rgba(159, 230, 255, 0.95));
+}
+/* Faces: only the parts of the current mood show. */
+.rb-happy,
+.rb-sad {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.rb-idle,
+.rb-eyes-open {
+  transition: opacity 0.2s ease, transform 0.3s ease;
+}
+.copilot-robot[data-mood="happy"] .rb-happy,
+.copilot-robot[data-mood="sad"] .rb-sad {
+  opacity: 1;
+}
+.copilot-robot[data-mood="happy"] :is(.rb-idle, .rb-eyes-open),
+.copilot-robot[data-mood="sad"] .rb-idle {
+  opacity: 0;
+}
+.copilot-robot[data-mood="sad"] .rb-eyes-open {
+  transform: translateY(1.4px) scaleY(0.85);
+  transform-origin: 32px 30px;
+}
+/* Blinks every few seconds. */
+.rb-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rb-blink 4.4s infinite;
+}
+/* Antenna: the ball glows and pulses when happy; the stem droops when sad. */
+.rb-antenna {
+  transform-origin: 32px 13.5px;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.rb-antenna-ball {
+  filter: drop-shadow(0 0 2.5px rgba(168, 224, 95, 0.95));
+}
+.copilot-robot[data-mood="happy"] .rb-antenna-ball {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rb-pulse 0.9s ease-in-out infinite;
+}
+.copilot-robot[data-mood="sad"] .rb-antenna {
+  transform: rotate(28deg);
+}
+/* Heart bubble pops up when happy. */
+.rb-heart {
+  transform-origin: 7px 14px;
+  transform: scale(0.4) translateY(6px);
+  transition: opacity 0.2s ease, transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.copilot-robot[data-mood="happy"] .rb-heart {
+  transform: scale(1) translateY(0);
+}
+.copilot-robot[data-mood="sad"] .rb-tear {
+  animation: rb-tear 1.3s ease-in infinite;
+}
+@keyframes copilot-robot-float {
+  50% {
+    translate: 0 -4px;
+  }
+}
+@keyframes rb-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.08);
+  }
+}
+@keyframes rb-pulse {
+  50% {
+    transform: scale(1.3);
+  }
+}
+@keyframes rb-tear {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(5px);
+    opacity: 0;
+  }
+}
+
+/* 16. Ask BMU chat (robot look): a floating glass card at the bottom right: a soft green glow at the top, the robot in a
+       glowing circle, example questions as rounded cards with icons, a rounded question field with a send button. */
+.copilot-card {
+  width: min(400px, calc(100vw - 1.5rem));
+  max-height: min(680px, calc(100vh - 1.5rem));
+  border-radius: 28px;
+  /* Glossy frosted glass: see-through (the page shows, blurred), a bright shine across the top, a white glass edge. */
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0) 16%),
+    radial-gradient(120% 42% at 50% 0%, rgba(140, 198, 63, 0.3), transparent 70%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.72) 0%, rgba(246, 250, 244, 0.5) 45%, rgba(234, 240, 246, 0.58) 100%);
+  box-shadow: 0 30px 70px -24px rgba(18, 31, 47, 0.45), inset 0 1px 1px #ffffff, inset 0 0 32px rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(18, 31, 47, 0.05);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  animation: copilot-card-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+:root[data-theme="dark"] .copilot-card {
+  border-color: rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 16%),
+    radial-gradient(120% 42% at 50% 0%, rgba(140, 198, 63, 0.24), transparent 70%),
+    linear-gradient(160deg, rgba(30, 33, 36, 0.82) 0%, rgba(14, 15, 17, 0.86) 100%);
+  box-shadow: 0 30px 80px -24px rgba(0, 0, 0, 0.9), 0 0 30px -12px rgba(140, 198, 63, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.copilot-card-icon {
+  display: inline-flex;
+  height: 40px;
+  width: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  color: var(--ink);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.5));
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 6px 14px -8px rgba(18, 31, 47, 0.35), inset 0 1px 0 #ffffff;
+  transition: background 0.15s ease;
+}
+.copilot-card-icon:hover,
+.copilot-card-icon[aria-pressed="true"] {
+  background: var(--ui-accent-soft);
+}
+/* The robot, big, in a glowing circle. */
+.copilot-robot.copilot-card-avatar {
+  position: relative;
+  height: 112px;
+  width: 112px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, rgba(214, 240, 176, 0.95), rgba(140, 198, 63, 0.55) 60%, rgba(124, 196, 255, 0.4));
+  box-shadow: 0 18px 34px -16px rgba(92, 154, 28, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+:root[data-theme="dark"] .copilot-robot.copilot-card-avatar {
+  background: radial-gradient(circle at 35% 30%, rgba(140, 198, 63, 0.45), rgba(27, 45, 66, 0.9) 70%);
+  box-shadow: 0 0 34px -10px rgba(140, 198, 63, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.copilot-card-avatar .rb-face {
+  width: 96px;
+  height: 96px;
+  transform: translate(-50%, -50%);
+}
+.copilot-card-example {
+  border-radius: 18px;
+  color: var(--ink);
+  /* Glossy glass cards: a shine at the top fading into soft see-through white. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.62) 55%, rgba(255, 255, 255, 0.5) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.95);
+  box-shadow: 0 10px 22px -14px rgba(18, 31, 47, 0.4), inset 0 1px 0 #ffffff;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.copilot-card-example:hover {
+  transform: translateY(-1px);
+  border-color: rgba(140, 198, 63, 0.6);
+}
+.copilot-card-example svg {
+  color: #4f8a17;
+}
+:root[data-theme="dark"] .copilot-card-example svg {
+  color: #a8e05f;
+}
+.copilot-card-row {
+  border-radius: 14px;
+  background: var(--ui-glass);
+  border: 1px solid var(--ui-glass-edge);
+}
+/* The person's own messages: soft green bubbles on the right. */
+.copilot-card-mine {
+  border-radius: 18px 18px 6px 18px;
+  background: var(--ui-accent-soft);
+  border: 1px solid rgba(140, 198, 63, 0.35);
+}
+.copilot-card-input {
+  border-radius: 22px;
+  border: 1.5px solid rgba(92, 154, 28, 0.75);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
+  box-shadow: 0 0 0 4px rgba(140, 198, 63, 0.1);
+}
+.copilot-card-input:focus-within {
+  border-color: #6fae2a;
+  box-shadow: 0 0 0 4px rgba(140, 198, 63, 0.22);
+}
+.copilot-card-input textarea:focus-visible {
+  outline: none;
+}
+.copilot-card-send {
+  display: inline-flex;
+  height: 40px;
+  width: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  color: var(--ui-pill-active-ink);
+  background: var(--ui-primary-fill);
+  box-shadow: var(--ui-primary-shadow);
+  transition: opacity 0.15s ease;
+}
+.copilot-card-send:disabled {
+  color: var(--ink-muted);
+  background: var(--ui-status-todo);
+  box-shadow: none;
+}
+/* Dark: the same pieces as dark glass. */
+:root[data-theme="dark"] :is(.copilot-card-icon, .copilot-card-example) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.03));
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 22px -14px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+:root[data-theme="dark"] .copilot-card-input {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
+}
+@keyframes copilot-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
   }
 }
