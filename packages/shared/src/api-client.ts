@@ -271,7 +271,7 @@ export function createApiClient(baseUrl: string, options: Options = {}) {
     createEnquiry: (input: EnquiryInput) => post<{ id: string }>("/leads/enquiry", input),
 
     auth: {
-      requestOtp: (identifier: string) => post<{ sent: true; devCode?: string }>("/auth/otp/request", { identifier }),
+      requestOtp: (identifier: string) => post<{ sent: true; devCode?: string; /** v58: seconds before another code can be sent */ resendInSec?: number }>("/auth/otp/request", { identifier }),
       verifyOtp: (identifier: string, code: string) => post<SignInResult>("/auth/otp/verify", { identifier, code }),
       me: () => request<Me>("/auth/me"),
       /** Sign-in methods this server offers, e.g. { google: true } when "Continue with Google" is set up. */
