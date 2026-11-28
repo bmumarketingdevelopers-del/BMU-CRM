@@ -33,6 +33,7 @@ export type CopilotTool = {
 const day = (iso: string | null | undefined) =>
   iso ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null;
 const day_ = (iso: string | null | undefined) => (iso ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null);
+const time = (iso: string | null | undefined) => (iso ? new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null);
 const has = (hay: string | null | undefined, needle?: string) => !needle || (hay ?? '').toLowerCase().includes(needle.toLowerCase());
 const get = <T>(ref: ModuleRef, cls: new (...args: never[]) => T): T => ref.get(cls as never, { strict: false }) as T;
 
@@ -245,7 +246,7 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
     {
       name: 'my_week',
       description:
-        "This person's own week, from their own dashboard: their open, overdue, due-today, due-this-week and blocked tasks, tasks done this week, QC checks waiting for them, the clients they manage with open requests, their open leads and follow-ups (sales), and delivery steps at risk. Any team member can use it; use it for 'summary of the week', 'my tasks', 'what should I do' when the company-wide summary is not allowed.",
+        "This person's own week, from their own dashboard (My Day): their open, overdue, due-today, due-this-week and blocked tasks, tasks done this week, QC checks waiting for them, work waiting to be sent to the client, the clients they manage with open requests, their open leads and follow-ups (sales), delivery steps at risk, today's attendance (check-in/out, late, working hours, holiday, leave, work from home), their end-of-day report and how many of their team filed theirs. Any team member can use it; use it for 'summary of the week', 'my tasks', 'what should I do', attendance and EOD questions, and when the company-wide summary is not allowed.",
       schema: z.object({}),
       properties: {},
       status: 'Reading your week…',
@@ -297,7 +298,22 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
             openRequests: requests ? { count: openRequests.length, replyOverdue: openRequests.filter((r) => r.sla.state === 'overdue').length } : undefined,
             leads: leads ? { open: myLeads.length, followUpsThisWeek: followUps.map((l) => ({ name: l.contact.company || l.contact.name, due: day_(l.nextFollowUpAt ?? null), link: `/team/leads/${l.id}` })) } : undefined,
             deliveryAtRisk: (day.deliverSla ?? []).slice(0, 8).map((s) => ({ title: s.title, state: s.state, client: s.client.name })),
+            sendToClientWaiting: day.sendToClientWaiting,
             onLeave: day.onLeave ?? null,
+            attendance: {
+              workday: day.workday?.kind ?? 'working',
+              holiday: day.workday?.kind === 'holiday' ? day.workday.label : null,
+              checkIn: time(day.checkIn),
+              checkOut: time(day.checkOut),
+              late: !!day.late,
+              wfh: !!day.wfh,
+              workingHours: day.workingHours ? `${day.workingHours.start}–${day.workingHours.end} (${day.workingHours.graceMinutes} min grace)` : null,
+              missedCheckOut: day_(day.missedCheckOut ?? null),
+              nextCheckIn: day_(day.nextCheckIn ?? null),
+              leaveDecision: day.leaveNotice ? { status: day.leaveNotice.status, title: day.leaveNotice.title } : null,
+            },
+            eod: { submitted: day.eod.submitted, exempt: !!day.eodExempt, completed: day.eod.completed.length, pending: day.eod.pending.length, blocked: day.eod.blocked.length, waiting: day.eod.waiting.length },
+            teamReports: day.teamReports ?? null,
           },
           citations: [{ label: 'My Day', href: '/team' }, { label: 'My tasks', href: '/team/tasks' }],
         };
@@ -367,7 +383,7 @@ function rawClientTools(ref: ModuleRef, me: Me): CopilotTool[] {
   return [
     {
       name: 'my_account',
-      description: 'The client’s services, milestones (gates), requirements still pending, client manager and invoices due (if they may see billing).',
+      description: 'The client’s services, milestones (gates), requirements still pending, client manager (name, email, phone) and invoices due (if they may see billing).',
       schema: z.object({}),
       properties: {},
       status: 'Opening your account…',
@@ -378,7 +394,8 @@ function rawClientTools(ref: ModuleRef, me: Me): CopilotTool[] {
             data: {
               company: o.clientOrg.name,
               accountManager: o.accountManager?.name ?? null,
-              services: o.engagements.map((e) => ({ service: e.serviceName, status: e.status, milestone: e.currentGate, requirementsPending: e.requirementsPending })),
+              accountManagerContact: o.accountManager ? { email: o.accountManager.email, phone: o.accountManager.phone } : null,
+              services: o.engagements.map((e) => ({ service: e.serviceName, status: e.status, milestone: e.currentGate, requirementsPending: e.requirementsPending, accessPending: e.accessPending })),
               invoicesDue: o.invoicesDue.map((i) => ({ number: i.number, total: formatINR(i.totalPaise), paid: formatINR(i.paidPaise), due: day(i.dueDate), status: i.status })),
             },
             citations: [{ label: 'Home', href: '/client' }],
@@ -424,6 +441,40 @@ function rawClientTools(ref: ModuleRef, me: Me): CopilotTool[] {
           return {
             data: rows.map((d) => ({ title: d.title, service: d.serviceName, status: d.statusLabel, waitingOnYou: d.waitingOnYou, link: `/client/reviews/${d.id}` })),
             citations: rows.filter((d) => d.waitingOnYou).slice(0, 6).map((d) => ({ label: d.title, href: `/client/reviews/${d.id}` })),
+          };
+        }),
+    },
+    {
+      name: 'my_requirements',
+      description: 'The onboarding checklist: what BMU still needs from the client for each service (documents, logins, brand files, approvals), with status pending, waiting, blocked or received.',
+      schema: z.object({}),
+      properties: {},
+      status: 'Checking what we need from you…',
+      run: () =>
+        guarded(async () => {
+          const o = await get(ref, ClientPortalController).onboarding(me);
+          return {
+            data: o.engagements.map((e) => ({
+              service: e.serviceName,
+              needed: e.requirements.filter((r) => r.status !== 'received').map((r) => ({ item: r.label, status: r.status, note: r.blockedReason ?? r.waitingFor })),
+              received: e.requirements.filter((r) => r.status === 'received').length,
+            })),
+            citations: [{ label: 'Onboarding', href: '/client/onboarding' }],
+          };
+        }),
+    },
+    {
+      name: 'my_plans',
+      description: 'Monthly content plans and project plans BMU has sent to the client, and whether each is waiting for their approval, has changes requested or is approved.',
+      schema: z.object({}),
+      properties: {},
+      status: 'Checking your plans…',
+      run: () =>
+        guarded(async () => {
+          const rows = await get(ref, ClientPortalController).plans(me);
+          return {
+            data: rows.map((p) => ({ service: p.serviceName, period: p.period ?? null, status: p.plan.status, youApproved: !!p.youApproved, approvedAt: day(p.plan.approvedAt) })),
+            citations: [{ label: 'Approvals', href: '/client/approvals' }],
           };
         }),
     },

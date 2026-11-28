@@ -5,8 +5,37 @@ signed-in person is allowed to see. It drafts things and never sends anything to
 reviews the draft and sends it.
 
 When no API key has been added, it runs in **basic mode**. Every feature still works, using ready-made suggestions
-built from your data, and is marked "Basic suggestions — connect AI in Command Centre → AI Copilot for smarter
-results".
+built from your data, and is labelled **Basic**. Only the Founder and Branch Managers also see the note "Basic
+suggestions — connect AI in Command Centre → AI Copilot for smarter results".
+
+In basic mode, Ask BMU picks its answer from keywords in the question (`STAFF_KEYWORDS` and `CLIENT_KEYWORDS` in
+`apps/api/src/ai/ai-copilot.ts`, tested in `ai-keywords.spec.ts`). The keyword groups follow what each dashboard shows:
+
+- **Team (My Day and Command Centre)**:
+  - attendance and leave (check-in, late, holiday, WFH, leave decision)
+  - end-of-day report and the team's reports
+  - QC sent back, checks waiting, work ready to send to the client
+  - tasks overdue, due today, due this week, blocked or done
+  - delivery steps at risk
+  - my day or week
+  - clients at risk, the client list, one client by name
+  - invoices and money owed
+  - leads, follow-ups and proposals
+  - requests and reply times
+  - sales scorecard and target
+  - team performance and workload, and what one person is working on
+  - the weekly summary
+- **Client portal**:
+  - client manager and how to reach them
+  - monthly plans
+  - what BMU still needs (onboarding checklist)
+  - drafts waiting for approval
+  - invoices and payments
+  - requests
+  - services and milestones (the default answer)
+
+A question that matches nothing gets a list of what it can answer. With an AI key, the model answers instead, using
+the same tools.
 
 - Journey scripts (basic mode): `apps/web/e2e/ai/*.mjs`, run with `BASE_URL=http://localhost:3000 node apps/web/e2e/ai/copilot.mjs`.
   The other two are `sales-delivery.mjs` and `service-management.mjs`. Screenshots are saved to `/tmp/claude-0/ai-shots/`.
@@ -45,7 +74,7 @@ it into chat or messages.
 | Where | What |
 |---|---|
 | Every staff page (except creators) | **Ask BMU** side panel: a button at the bottom right, or Ctrl/Cmd + J. Asks questions about clients, leads, invoices, tasks, requests, the week and team performance. Answers link to the records they came from (only links that came from tool results are kept). Conversation history, New chat and Delete are included. |
-| Client portal | **Ask about your account**: invoices, requests, approvals waiting, account summary. Only that client's own data. |
+| Client portal | **Ask about your account**: invoices, requests, approvals waiting, plans, what BMU still needs, the client manager's contact details, account summary. Only that client's own data. |
 | Lead page | **Lead brief**: who they are, why the score is what it is, and the next best action. **Follow-up draft** for email or WhatsApp: open in WhatsApp or email, then "Log as sent". **Meeting notes**: becomes a summary, action items and a follow-up date; "Save to timeline" logs a meeting with that follow-up date. |
 | New proposal | **Proposal intro & scope** from the lead and the picked services. Copy only: proposals have no intro field. |
 | Project page (strategist) | **Draft the plan with AI**: "Fill the plan form" fills objectives, audience, pillars, direction and deliverables. Nothing is saved until Save. |

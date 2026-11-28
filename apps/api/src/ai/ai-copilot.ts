@@ -3,7 +3,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { type AiAskInput, type AiChatMessage, type AiCitation, type AiConversationSummary, type AiConversationView, type AiResult, type AiStreamEvent, type Me } from '@bmu/shared';
+import { formatINR, type AiAskInput, type AiChatMessage, type AiCitation, type AiConversationSummary, type AiConversationView, type AiResult, type AiStreamEvent, type Me } from '@bmu/shared';
 import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SAFETY_RULES } from './ai-safety.js';
@@ -184,9 +184,30 @@ export class AiCopilotService {
 ${text}` : text, citations: out.citations };
     };
     const deny = (what: string, who = 'the Founder, a Branch Manager or Finance') => mine(`Your role can't see ${what} (${who} can). Here is what you can see, from your own work:`);
+    // One My Day lookup per question, shared by the dashboard answers below.
+    let weekOut: ToolOutput | undefined;
+    const fromMyDay = async (render: (w: MyWeek) => string): Promise<AiOut> => {
+      weekOut ??= await this.call(tools, 'my_week', {}, emit);
+      return { text: render(weekOut.data as MyWeek), citations: weekOut.citations };
+    };
+    const other = person && person.name !== me.name ? person : undefined;
+    const aboutTasks = STAFF_KEYWORDS.tasks.test(q);
 
-    if (/\b(my (tasks?|work|day|week|clients?|leads?|summary)|what should i|what do i have|my to ?do|pending for me|on my plate)\b/.test(q)) return mine();
-    if (/\b(risk|health|churn|unhappy|at-risk)\b/.test(q)) {
+    if (STAFF_KEYWORDS.help.test(q)) return { text: staffHelp(clientList[0]?.name, staff[0]?.name), citations: [] };
+    if (STAFF_KEYWORDS.attendance.test(q)) return fromMyDay(attendanceText);
+    if (STAFF_KEYWORDS.eod.test(q)) return fromMyDay(eodText);
+    if (STAFF_KEYWORDS.qc.test(q) && !other) return fromMyDay(qcText);
+    if (STAFF_KEYWORDS.sendToClient.test(q)) return fromMyDay((w) => (w.sendToClientWaiting ? `${w.sendToClientWaiting} version${w.sendToClientWaiting === 1 ? '' : 's'} passed QC and ${w.sendToClientWaiting === 1 ? 'is' : 'are'} ready to send to the client. Open [Review Studio](/team/reviews).` : 'Nothing is waiting to be sent to a client right now.'));
+    if (!other && !client) {
+      if (aboutTasks && /\b(overdue|late|missed|past due|delayed|behind)\b/.test(q)) return fromMyDay((w) => taskList('Overdue', w.tasks.overdue, 'Nothing of yours is overdue. Well done!'));
+      if (aboutTasks && /\b(blocked|stuck|on hold|can'?t (start|continue))\b/.test(q)) return fromMyDay((w) => taskList('Blocked', w.tasks.blocked, 'None of your tasks is blocked.'));
+      if (aboutTasks && /\b(done|completed|finished|closed)\b/.test(q)) return fromMyDay((w) => `You finished ${w.tasks.doneRecently} task${w.tasks.doneRecently === 1 ? '' : 's'} in the last 2 weeks, and have ${w.tasks.open} open. See [My tasks](/team/tasks).`);
+      if ((aboutTasks || /\bdue\b/.test(q)) && /\b(today|tonight|now)\b/.test(q)) return fromMyDay((w) => taskList('Due today', w.tasks.dueToday, 'Nothing of yours is due today.'));
+      if ((aboutTasks || /\bdue\b/.test(q)) && /\b(this week|upcoming|coming up|next (few |7 )?days|tomorrow|soon|deadlines?)\b/.test(q)) return fromMyDay((w) => taskList('Due in the next 7 days', w.tasks.dueThisWeek, 'Nothing of yours is due in the next 7 days.'));
+      if (STAFF_KEYWORDS.delivery.test(q)) return fromMyDay(deliveryText);
+    }
+    if (STAFF_KEYWORDS.mine.test(q) && !other) return mine();
+    if (/\b(risk|risky|health|healthy|churn|unhappy|at-risk|red|amber|need(s)? attention|losing|leaving)\b/.test(q)) {
       const out = await this.call(tools, 'clients_at_risk', {}, emit);
       if (notAllowed(out)) {
         const amber = clientList.filter((c) => c.health !== 'green');
@@ -198,7 +219,7 @@ ${text}` : text, citations: out.citations };
       const lines = d.atRiskOrWatch.map((c) => `- [${c.name}](${c.link}) — health ${c.score}/100 (${c.risk === 'at_risk' ? 'at risk' : 'watch'}): ${c.reasons.join('; ') || 'no specific reason'}`);
       return { text: `${d.atRiskOrWatch.filter((c) => c.risk === 'at_risk').length} at risk, ${d.atRiskOrWatch.filter((c) => c.risk === 'watch').length} to watch:\n${lines.join('\n')}`, citations: out.citations };
     }
-    if (/\b(overdue|owe|owes|outstanding|invoice|invoices|payment|payments|due|collect)\b/.test(q) && !/\btask/.test(q)) {
+    if (STAFF_KEYWORDS.money.test(q) && !aboutTasks && !/\b(requests?|tickets?|repl(y|ies))\b/.test(q)) {
       const out = await this.call(tools, 'find_invoices', { client: client?.name, status: q.includes('overdue') ? 'overdue' : undefined }, emit);
       if (notAllowed(out)) return deny('invoices');
       const d = out.data as { count: number; totalOwed: string; invoices: { number: string; client: string; status: string; balance: string; due: string; link: string }[] };
@@ -208,7 +229,8 @@ ${text}` : text, citations: out.citations };
         citations: out.citations,
       };
     }
-    if (person && /\b(working|work|tasks?|doing|busy|plate|assigned)\b/.test(q)) {
+    if (other && /\b(working|work|tasks?|doing|busy|plate|assigned|up to|handling|workload|load|overdue|pending|deadlines?|free|available)\b/.test(q)) {
+      const person = other;
       const out = await this.call(tools, 'find_tasks', { person: person.name.split(/\s+/)[0] }, emit);
       if (notAllowed(out)) return deny("other people's tasks", 'their Department Head');
       const rows = out.data as { title: string; client: string | null; status: string; due: string | null; overdue: boolean; link: string }[];
@@ -218,7 +240,7 @@ ${text}` : text, citations: out.citations };
         citations: out.citations,
       };
     }
-    if (/\b(lead|leads|pipeline|follow|prospect)/.test(q)) {
+    if (STAFF_KEYWORDS.leads.test(q)) {
       const out = await this.call(tools, 'find_leads', {}, emit);
       if (notAllowed(out)) return deny('leads', 'the sales team');
       const rows = (out.data as { name: string; company: string | null; stage: string; score: number; nextFollowUp: string | null; link: string }[]).filter((l) => !['Won', 'Lost'].includes(l.stage));
@@ -227,7 +249,7 @@ ${text}` : text, citations: out.citations };
         citations: out.citations,
       };
     }
-    if (/\brequests?\b/.test(q)) {
+    if (STAFF_KEYWORDS.requests.test(q)) {
       const out = await this.call(tools, 'find_requests', { client: client?.name }, emit);
       if (notAllowed(out)) return deny('the requests desk', 'Client Managers and leadership');
       const rows = out.data as { client: string; type: string; status: string; text: string; replyTime: string; link: string }[];
@@ -246,7 +268,37 @@ ${text}` : text, citations: out.citations };
         citations: out.citations,
       };
     }
-    if (/\b(week|summary|how are we|revenue|business|numbers|overview)\b/.test(q)) {
+    if (STAFF_KEYWORDS.sales.test(q)) {
+      const out = await this.call(tools, 'sales_numbers', {}, emit);
+      if (notAllowed(out)) return deny('the sales scorecard');
+      const d = out.data as { month: { revenue: string; target: string; projected: string }; kpis: { label: string; value: number | null; previous: number | null; unit: string }[] };
+      const kpi = (v: number | null, unit: string) =>
+        v === null || v === undefined ? '—' : unit === 'paise' ? formatINR(v) : unit === 'pct' ? `${Math.round(v)}%` : unit === 'days' ? `${Math.round(v * 10) / 10} days` : unit === 'ratio' ? `${Math.round(v * 100) / 100}×` : String(v);
+      return {
+        text: `This month: revenue ${d.month.revenue} against a target of ${d.month.target}, heading for ${d.month.projected}.\n${d.kpis.slice(0, 8).map((k) => `- ${k.label}: ${kpi(k.value, k.unit)} (before: ${kpi(k.previous, k.unit)})`).join('\n')}\nSee the [Scorecard](/admin/analytics).`,
+        citations: out.citations,
+      };
+    }
+    if (STAFF_KEYWORDS.team.test(q)) {
+      const out = await this.call(tools, 'team_performance', {}, emit);
+      if (notAllowed(out)) return deny('team performance', 'the Founder, a Branch Manager or a Department Head');
+      const d = out.data as { totals: { overdueNow: number; completed: { value: number | null }; onTimePct: { value: number | null } }; people: { name: string; completed: number; onTimePct: number | null; utilisation: number; overdueNow: number; openTasks: number }[] };
+      const pct = (n: number | null) => (n === null ? '—' : `${Math.round(n)}%`);
+      const busiest = [...d.people].sort((a, b) => b.utilisation - a.utilisation);
+      return {
+        text: `Last 30 days: ${d.totals.completed.value ?? 0} tasks completed, ${pct(d.totals.onTimePct.value)} on time, ${d.totals.overdueNow} overdue now.\nBy use of time (busiest first):\n${busiest.slice(0, 10).map((p) => `- ${p.name}: ${pct(p.utilisation)} used, ${p.openTasks} open (${p.overdueNow} overdue), ${p.completed} done, ${pct(p.onTimePct)} on time`).join('\n')}\nSee [Team Performance](/admin/analytics/team).`,
+        citations: out.citations,
+      };
+    }
+    if (STAFF_KEYWORDS.clients.test(q) && /\b(list|all|how many|which|show|active|count|total|my|our)\b/.test(q)) {
+      if (!clientList.length) return { text: 'You have no clients you can see yet.', citations: [] };
+      const byHealth = (h: string) => clientList.filter((c) => c.health === h).length;
+      return {
+        text: `${clientList.length} client${clientList.length === 1 ? '' : 's'} you can see (${byHealth('green')} green, ${byHealth('amber')} amber, ${byHealth('red')} red):\n${clientList.slice(0, 20).map((c) => `- [${c.name}](${c.link}) · ${c.health}${c.am ? ` · CM ${c.am}` : ''}`).join('\n')}`,
+        citations: clientList.slice(0, 10).map((c) => ({ label: c.name, href: c.link })),
+      };
+    }
+    if (STAFF_KEYWORDS.summary.test(q)) {
       const out = await this.call(tools, 'business_summary', {}, emit);
       // v55: everyone gets a summary: the company's for those who can see it, otherwise their own week.
       if (notAllowed(out)) return mine();
@@ -270,31 +322,61 @@ ${text}` : text, citations: out.citations };
             : `${d.activeClients} active clients, ${d.openTasks ?? 0} open tasks`;
       return { text: `${money}${head}, ${d.overdueTasks} overdue tasks, ${d.replyTimeBreachesThisWeek} reply-time misses this week. See the [Weekly Review](/admin).`, citations: out.citations };
     }
-    return {
-      text: `In basic mode I can answer questions like:\n- Summary of the week (your own work, or the business for leadership)\n- What are my tasks? What should I do today?\n- Which clients are at risk this month and why?\n- How much is overdue from ${clientList[0]?.name ?? 'Metro Dental'}?\n- What is ${staff[0]?.name.split(' ')[0] ?? 'Meera'} working on?\n- Show open leads / open requests\n- Summary of the week`,
-      citations: [],
-    };
+    // A question about the person's own day that matched nothing more specific: answer from My Day.
+    if (/\b(today|tomorrow|this week|pending|priority|priorities|important|urgent|update|status)\b/.test(q) && !other) return mine();
+    return { text: staffHelp(clientList[0]?.name, staff[0]?.name), citations: [] };
   }
 
   private async basicClient(question: string, tools: CopilotTool[], emit: Emit): Promise<AiOut> {
     const q = question.toLowerCase();
-    if (/\b(invoice|invoices|pay|paid|payment|due|bill|billing|owe)\b/.test(q)) {
+    if (CLIENT_KEYWORDS.help.test(q)) return { text: CLIENT_HELP, citations: [] };
+    if (CLIENT_KEYWORDS.contact.test(q)) {
+      const out = await this.call(tools, 'my_account', {}, emit);
+      const d = out.data as { accountManager: string | null; accountManagerContact: { email: string | null; phone: string | null } | null };
+      if (!d.accountManager) return { text: 'Your client manager is being assigned. Meanwhile, write to us from [Messages](/client/messages).', citations: [{ label: 'Messages', href: '/client/messages' }] };
+      const ways = [d.accountManagerContact?.email && `email ${d.accountManagerContact.email}`, d.accountManagerContact?.phone && `phone ${d.accountManagerContact.phone}`].filter(Boolean).join(', ');
+      return { text: `Your client manager is ${d.accountManager}${ways ? ` (${ways})` : ''}. You can also write to them from [Messages](/client/messages) or book a call from [Meetings](/client/meetings).`, citations: [{ label: 'Messages', href: '/client/messages' }, { label: 'Meetings', href: '/client/meetings' }] };
+    }
+    if (CLIENT_KEYWORDS.plans.test(q)) {
+      const out = await this.call(tools, 'my_plans', {}, emit);
+      const rows = out.data as { service: string; period: string | null; status: string; youApproved: boolean }[];
+      if (!rows.length) return { text: 'No plan has been shared with you yet. Your client manager will send it for your approval when it is ready.', citations: out.citations };
+      const label = (r: (typeof rows)[number]) => (r.status === 'approved' ? 'approved' : r.status === 'changes_requested' ? 'changes requested, BMU is updating it' : r.youApproved ? 'you approved it, waiting for the other approvers' : 'waiting for your approval');
+      const waiting = rows.filter((r) => r.status === 'sent_to_client' && !r.youApproved).length;
+      return { text: `${waiting ? `${waiting} plan${waiting === 1 ? ' is' : 's are'} waiting for your approval.\n` : ''}${rows.map((r) => `- ${r.service}${r.period && r.period !== 'project' ? ` (${r.period})` : ''}: ${label(r)}`).join('\n')}\nSee [Approvals](/client/approvals).`, citations: out.citations };
+    }
+    if (CLIENT_KEYWORDS.requirements.test(q)) {
+      const out = await this.call(tools, 'my_requirements', {}, emit);
+      const rows = out.data as { service: string; needed: { item: string; status: string; note: string | null }[]; received: number }[];
+      const needed = rows.filter((r) => r.needed.length);
+      if (!needed.length) return { text: 'We have everything we need from you right now. Thank you!', citations: out.citations };
+      return { text: `What we still need from you:\n${needed.map((r) => `**${r.service}**\n${r.needed.map((n) => `- ${n.item}${n.status !== 'pending' ? ` (${n.status})` : ''}${n.note ? `: ${n.note}` : ''}`).join('\n')}`).join('\n')}\nSend them from [Onboarding](/client/onboarding) or [Files](/client/files).`, citations: [...out.citations, { label: 'Files', href: '/client/files' }] };
+    }
+    if (CLIENT_KEYWORDS.approvals.test(q) && !CLIENT_KEYWORDS.money.test(q)) {
+      const out = await this.call(tools, 'my_reviews', {}, emit);
+      const all = out.data as { title: string; status: string; waitingOnYou: boolean; link: string }[];
+      const rows = all.filter((d) => d.waitingOnYou);
+      if (/\b(all|list|how many|recent|status)\b/.test(q) && !rows.length && all.length) return { text: `Your recent work:\n${all.slice(0, 10).map((d) => `- [${d.title}](${d.link}): ${d.status}`).join('\n')}\nNothing is waiting for your approval right now.`, citations: out.citations };
+      return { text: rows.length ? `${rows.length} draft${rows.length === 1 ? ' is' : 's are'} waiting for your approval:\n${rows.map((d) => `- [${d.title}](${d.link})`).join('\n')}` : 'Nothing is waiting for your approval right now.', citations: out.citations };
+    }
+    if (CLIENT_KEYWORDS.money.test(q)) {
       const out = await this.call(tools, 'my_invoices', {}, emit);
       if ((out.data as { notAllowed?: boolean }).notAllowed) return { text: 'Your user role cannot see billing. Your account owner can, or ask your client manager in [Messages](/client/messages).', citations: [{ label: 'Messages', href: '/client/messages' }] };
       const rows = out.data as { number: string; status: string; total: string; paid: string; due: string }[];
       const open = rows.filter((r) => !['paid', 'void', 'credit_noted'].includes(r.status));
       return { text: open.length ? `You have ${open.length} invoice${open.length === 1 ? '' : 's'} to pay:\n${open.map((r) => `- ${r.number}: ${r.total} (paid ${r.paid}), due ${r.due}`).join('\n')}\nPay from [Billing](/client/billing).` : 'All your invoices are paid. Thank you!', citations: [{ label: 'Billing', href: '/client/billing' }] };
     }
-    if (/\brequests?\b/.test(q)) {
+    if (CLIENT_KEYWORDS.requests.test(q)) {
       const out = await this.call(tools, 'my_requests', {}, emit);
       const rows = out.data as { status: string; text: string; link: string }[];
       return { text: rows.length ? `Your requests:\n${rows.slice(0, 8).map((r) => `- [${r.text.slice(0, 60)}](${r.link}): ${r.status.replace('_', ' ')}`).join('\n')}` : 'You have no requests yet.', citations: out.citations };
     }
-    if (/\b(approve|approval|draft|drafts|review|waiting)\b/.test(q)) {
+    if (/\bwaiting\b/.test(q)) {
       const out = await this.call(tools, 'my_reviews', {}, emit);
       const rows = (out.data as { title: string; status: string; waitingOnYou: boolean; link: string }[]).filter((d) => d.waitingOnYou);
       return { text: rows.length ? `${rows.length} draft${rows.length === 1 ? ' is' : 's are'} waiting for your approval:\n${rows.map((d) => `- [${d.title}](${d.link})`).join('\n')}` : 'Nothing is waiting for your approval right now.', citations: out.citations };
     }
+    // Services, progress, milestones, "how is my project going" and anything else: the account overview.
     const out = await this.call(tools, 'my_account', {}, emit);
     const d = out.data as { company: string; accountManager: string | null; services: { service: string; status: string; milestone: string; requirementsPending: number }[]; invoicesDue: { number: string; total: string }[] };
     return {
@@ -313,8 +395,131 @@ type MyWeek = {
   openRequests?: { count: number; replyOverdue: number };
   leads?: { open: number; followUpsThisWeek: { name: string; due: string | null; link: string }[] };
   deliveryAtRisk: { title: string; state: string; client: string }[];
+  sendToClientWaiting: number;
   onLeave: { label: string; until: string } | null;
+  attendance: {
+    workday: 'working' | 'weekend' | 'holiday';
+    holiday: string | null;
+    checkIn: string | null;
+    checkOut: string | null;
+    late: boolean;
+    wfh: boolean;
+    workingHours: string | null;
+    missedCheckOut: string | null;
+    nextCheckIn: string | null;
+    leaveDecision: { status: 'approved' | 'rejected'; title: string } | null;
+  };
+  eod: { submitted: boolean; exempt: boolean; completed: number; pending: number; blocked: number; waiting: number };
+  teamReports: { submitted: number; total: number } | null;
 };
+
+/**
+ * Basic-mode (no AI key) keywords, one group per part of the team dashboard. The order the groups are checked in
+ * lives in basicStaff; a question that fits nothing gets the help list.
+ */
+export const STAFF_KEYWORDS = {
+  help: /^(hi|hello|hey|help|menu|hii+)\b|\bwhat (can|do) you (do|answer|know)\b|\bhow (do|can) i use (you|this)\b|\bwhat (questions|can i ask)\b/,
+  attendance:
+    /\b(check[- ]?ins?|checked (in|out)|check[- ]?outs?|attendance|punch(ed)?( in| out)?|clock(ed)?[- ]?(in|out)|late (today|mark|coming)|was i late|am i late|came late|working hours|office (hours|timings?|time)|shift|holidays?|weekly off|day off|week ?off|wfh|work(ing)? from home|leaves?|on leave|time off|vacation|sick)\b/,
+  eod: /\b(eod|end[- ]of[- ](the[- ])?day|daily (report|update|status)s?|day report|stand-?up|team reports?|who (has |have )?(filed|submitted|sent))\b/,
+  qc: /\b(qc|quality( checks?)?|sent back|send back|rework|redo|rejected by qc|review queue|to review|checks? (waiting|pending)|my checks?)\b/,
+  sendToClient: /\b(ready to send|send(ing)? to (the )?clients?|sent to (the )?clients?|share with (the )?clients?|waiting to (be )?sen[dt])\b/,
+  tasks: /\b(tasks?|to ?dos?|work|assignments?|jobs?|deadlines?|plate|pending)\b/,
+  delivery: /\b(deliver(y|ies|ables?)|delayed|behind schedule|due soon|milestones?|at risk delivery|slipping)\b/,
+  mine: /\b(my (tasks?|work|day|week|clients?|leads?|summary|dashboard|status|update|pending|follow[- ]?ups?|plan|priorities|schedule|agenda)|what should i|what do i have|what('s| is) (on|in) my|my to ?do|pending (for|on) me|on my plate|what (do|should) i (do|work on|focus on)|what to do (today|next|now)|plan for (today|the day)|good morning)\b/,
+  money:
+    /\b(overdue|owe|owes|owed|outstanding|invoices?|payments?|due|collect(ion|ions)?|bills?|billing|receivables?|dues|unpaid|pending (payments?|amount)|money|balance|gst|paid|receipts?|cash ?flow|amount (due|pending))\b/,
+  leads: /\b(leads?|pipeline|follow[- ]?ups?|follow up|prospects?|deals?|enquir(y|ies)|inquir(y|ies)|opportunit(y|ies)|proposals?|quotes?|quotations?|hot|cold|won|lost|new business|conversion)\b/,
+  requests: /\b(requests?|tickets?|complaints?|escalations?|change requests?|quer(y|ies)|issues?|support|reply time|first reply|sla|unanswered)\b/,
+  sales: /\b(target|targets|scorecard|kpis?|projection|projected|forecast|sales (numbers|figures|this month|performance|report)|run rate|how (are|is) (we|sales) doing)\b/,
+  team: /\b(team performance|performance|utili[sz]ation|productivity|on[- ]time|who (is|are) (busy|free|overloaded|available)|capacity|workload|top performers?|hours logged|team (load|status))\b/,
+  clients: /\b(clients?|accounts?|customers?|brands?)\b/,
+  summary: /\b(week|weekly|summary|summarise|summarize|how are we|revenue|business|numbers|overview|dashboard|recap|highlights|this month|monthly|what('s| is) happening|anything important|report)\b/,
+};
+
+export const CLIENT_KEYWORDS = {
+  help: /^(hi|hello|hey|help|menu|hii+)\b|\bwhat (can|do) you (do|answer|know)\b|\bwhat (questions|can i ask)\b/,
+  contact:
+    /\b(client manager|account manager|my manager|contact|reach|call (you|bmu|them|my)|phone( number)?|contact number|email|e-mail|who (is|handles|manages|looks after)|talk to|speak to|whatsapp|meeting|book a call)\b/,
+  plans: /\b(plans?|content calendar|calendar|monthly plan|strategy|schedule|posting schedule)\b/,
+  requirements:
+    /\b(requirements?|checklist|onboarding|documents?|docs|logins?|access|credentials|passwords?|what do you need|need from (me|us)|pending from (me|us)|send you|upload|brand (files|assets|kit)|materials?|assets)\b/,
+  approvals:
+    /\b(approv(e|al|als|ed)|drafts?|reviews?|feedback|sign[- ]?off|creatives?|designs?|posts?|videos?|reels?|deliverables?|revisions?|changes to|content)\b/,
+  money:
+    /\b(invoices?|pay|paid|payments?|due|bills?|billing|owe|amount|balance|receipts?|gst|outstanding|charges|fees|price|cost|refund|pending amount|dues)\b/,
+  requests: /\b(requests?|tickets?|complaints?|issues?|problems?|change requests?|asked for|quer(y|ies)|support)\b/,
+};
+
+const CLIENT_HELP = `I can help with your account. Try asking:
+- What is waiting for my approval?
+- Do I have any invoices due? / What have I paid?
+- What do you still need from me?
+- Is my monthly plan ready?
+- What is the status of my requests?
+- How is my project going? Which milestone are we at?
+- Who is my client manager and how do I reach them?`;
+
+function staffHelp(client?: string, person?: string) {
+  return `In basic mode I can answer questions about what is on your dashboard:
+- **Your day:** What should I do today? What is overdue? What is due this week? Anything blocked?
+- **Attendance and leave:** Did I check in today? Was I late? Is today a holiday? Is my leave approved?
+- **End-of-day report:** Have I filed my EOD? How many of my team filed theirs?
+- **QC:** What was sent back by QC? What is waiting for my check? What is ready to send to the client?
+- **Delivery:** Which deliverables are at risk?
+- **Clients:** List my clients. Which clients are at risk and why? Tell me about ${client ?? 'Metro Dental'}.
+- **Money** (Founder, Branch Manager, Finance): How much is overdue from ${client ?? 'Metro Dental'}?
+- **Sales:** Show open leads and follow-ups. How are we doing against target?
+- **Requests:** Show open requests. Which replies are overdue?
+- **Team** (leadership): What is ${person?.split(' ')[0] ?? 'Meera'} working on? Team performance and workload.
+- **Summary of the week**`;
+}
+
+const TaskLineText = (x: TaskLine) => `- [${x.title}](${x.link})${x.client ? ` · ${x.client}` : ''}${x.due ? ` · due ${x.due}` : ''}${x.reason ? ` · ${x.reason}` : ''}`;
+
+function taskList(title: string, rows: TaskLine[], empty: string) {
+  if (!rows.length) return empty;
+  return `${title} (${rows.length}):\n${rows.slice(0, 12).map(TaskLineText).join('\n')}${rows.length > 12 ? `\n…and ${rows.length - 12} more in [My tasks](/team/tasks).` : ''}`;
+}
+
+function attendanceText(d: MyWeek) {
+  const a = d.attendance;
+  const out: string[] = [];
+  if (d.onLeave) out.push(`You are on ${d.onLeave.label.toLowerCase()} until ${d.onLeave.until}, so check-in is closed.`);
+  else if (a.workday === 'holiday') out.push(`Today is a holiday${a.holiday ? ` (${a.holiday})` : ''}.${a.nextCheckIn ? ` Check-in opens again on ${a.nextCheckIn}.` : ''}`);
+  else if (a.workday === 'weekend') out.push(`Today is your weekly off.${a.nextCheckIn ? ` Check-in opens again on ${a.nextCheckIn}.` : ''}`);
+  else if (a.checkIn) out.push(`You checked in at ${a.checkIn}${a.late ? ' (marked late)' : ' (on time)'}${a.wfh ? ', working from home' : ''}.${a.checkOut ? ` You checked out at ${a.checkOut}.` : ' You have not checked out yet.'}`);
+  else out.push(`You have not checked in today.${a.wfh ? ' You are working from home today.' : ''} Check in from [My Day](/team).`);
+  if (a.workingHours) out.push(`Working hours: ${a.workingHours}.`);
+  if (a.missedCheckOut) out.push(`You missed checking out on ${a.missedCheckOut}. Ask for a correction from [My Day](/team).`);
+  if (a.leaveDecision) out.push(`Your leave request "${a.leaveDecision.title}" was ${a.leaveDecision.status}. See [Leave](/team/leave).`);
+  else out.push('Leave requests and balances are on [Leave](/team/leave).');
+  return out.join('\n');
+}
+
+function eodText(d: MyWeek) {
+  const e = d.eod;
+  const out: string[] = [];
+  if (e.exempt) out.push('You do not need to file an end-of-day report.');
+  else if (e.submitted) out.push(`You have filed today's end-of-day report: ${e.completed} done, ${e.pending} pending, ${e.blocked} blocked, ${e.waiting} waiting on others.`);
+  else out.push(`You have not filed today's end-of-day report yet${e.completed + e.pending + e.blocked + e.waiting ? ` (draft: ${e.completed} done, ${e.pending} pending, ${e.blocked} blocked)` : ''}. File it from [My Day](/team).`);
+  if (d.teamReports) out.push(`Your team: ${d.teamReports.submitted} of ${d.teamReports.total} have filed today's report. See [Daily reports](/team/reports).`);
+  return out.join('\n');
+}
+
+function qcText(d: MyWeek) {
+  const out: string[] = [];
+  if (d.qc.sentBackToMe.length) out.push(`Sent back to you by QC:\n${d.qc.sentBackToMe.map((x) => `- [${x.title}](/team/tasks/${x.id})${x.note ? ` · ${x.reviewer ? `${x.reviewer}: ` : ''}${x.note.slice(0, 120)}` : ''}`).join('\n')}`);
+  if (d.qc.waitingForMyCheck.length) out.push(`Waiting for your QC check:\n${d.qc.waitingForMyCheck.map((x) => `- [${x.title}](/team/tasks/${x.id})${x.owner ? ` · done by ${x.owner}` : ''}`).join('\n')}`);
+  if (d.qc.versionsWaitingForQc) out.push(`${d.qc.versionsWaitingForQc} version${d.qc.versionsWaitingForQc === 1 ? ' is' : 's are'} waiting in the [QC queue](/team/qc).`);
+  if (d.sendToClientWaiting) out.push(`${d.sendToClientWaiting} passed QC and ${d.sendToClientWaiting === 1 ? 'is' : 'are'} ready to send to the client ([Review Studio](/team/reviews)).`);
+  return out.length ? out.join('\n\n') : 'Nothing is waiting on QC for you: no tasks sent back and no checks to do.';
+}
+
+function deliveryText(d: MyWeek) {
+  if (!d.deliveryAtRisk.length) return 'No delivery step of yours is late or due soon.';
+  return `Delivery steps to watch:\n${d.deliveryAtRisk.map((x) => `- ${x.title} · ${x.client} · ${x.state === 'overdue' ? 'late' : 'due soon'}`).join('\n')}`;
+}
 
 /** v55: "Summary of the week" for anyone: their own tasks, QC, clients, requests and leads (what My Day shows). */
 export function myWeekText(d: MyWeek): string {
