@@ -157,6 +157,8 @@ export type AiStatus = {
   features: Record<AiFeatureGroup, boolean>;
   canManage: boolean;
   notice: string | null;
+  /** Starter questions for Ask BMU, only about what this person's own dashboard has. */
+  examples?: string[];
 };
 
 export type AiLogRow = {

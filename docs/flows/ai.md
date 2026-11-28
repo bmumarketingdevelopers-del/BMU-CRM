@@ -5,8 +5,66 @@ signed-in person is allowed to see. It drafts things and never sends anything to
 reviews the draft and sends it.
 
 When no API key has been added, it runs in **basic mode**. Every feature still works, using ready-made suggestions
-built from your data, and is marked "Basic suggestions — connect AI in Command Centre → AI Copilot for smarter
-results".
+built from your data, and is labelled **Basic**. Only the Founder and Branch Managers also see the note "Basic
+suggestions — connect AI in Command Centre → AI Copilot for smarter results".
+
+In basic mode, Ask BMU picks its answer from keywords in the question (`STAFF_KEYWORDS` and `CLIENT_KEYWORDS` in
+`apps/api/src/ai/ai-copilot.ts`, tested in `ai-keywords.spec.ts`). The keyword groups follow what each dashboard shows:
+
+- **Team (My Day and Command Centre)**:
+  - attendance and leave (check-in, late, holiday, WFH, leave decision)
+  - end-of-day report and the team's reports
+  - QC sent back, checks waiting, work ready to send to the client
+  - tasks overdue, due today, due this week, blocked or done
+  - delivery steps at risk
+  - my day or week
+  - clients at risk, the client list, one client by name
+  - invoices and money owed
+  - leads, follow-ups and proposals
+  - requests and reply times
+  - sales scorecard and target
+  - team performance and workload, and what one person is working on
+  - the weekly summary
+- **Client portal**:
+  - client manager and how to reach them
+  - monthly plans
+  - what BMU still needs (onboarding checklist)
+  - drafts waiting for approval
+  - invoices and payments
+  - requests
+  - services and milestones (the default answer)
+
+Everything in a person's menu can be asked about:
+- **Answered with data:** goals, meetings, leave balance and requests, timesheet, expenses, approvals waiting, my
+  performance (tools `my_goals`, `my_meetings`, `my_leave`, `my_timesheet`, `my_expenses`, `my_approvals`,
+  `my_performance`).
+- **Answered with what the page holds and a link:** other pages such as Documents, SOP library, Files, Brand kits,
+  Content calendar and Capacity.
+
+**Only what the person has.** `apps/api/src/ai/ai-topics.ts` follows the same rules as the team and client menus:
+- The help list, the starter questions in the panel (`AiStatus.examples`) and the page answers include only what that
+  person's role can open. A producer is never offered money, sales, team or client questions.
+- Examples use a real client and a real colleague, never a system account.
+- A page the person doesn't have is answered plainly: "Quotations is not on your dashboard".
+- Tests: `ai-topics.spec.ts` and `ai-routing.spec.ts`.
+
+**Every tab in the menu** (Team app, Command Centre and client portal) is a page skill in `apps/api/src/ai/pages/`:
+- Each skill has `label`, `href`, `can(me)` (the same rule as the menu, from `access.ts`), keywords, example
+  questions, a read-only `load` through the page's own service with the person's scope, and a basic-mode `answer`.
+- The files are grouped: `team-work`, `team-clients`, `admin-command`, `admin-org`, `admin-catalogue`,
+  `admin-finance` and `client`.
+- The same skills are the model's tools in AI mode, so the model also sees only that person's tabs.
+- Command Centre access rules live in `packages/shared/src/admin-nav-rules.ts`, shared with the menu.
+- When two tabs match, the most specific phrase wins: "capacity by department" (Command Centre) beats "capacity"
+  (Team app).
+- `pages/skills.spec.ts` checks:
+  - every skill follows the contract
+  - every example question reaches its own tab, for someone who has it
+  - the core questions still reach the core answers
+- **Adding a tab to a menu means adding its skill.**
+
+A question that matches nothing gets that person's own help list. With an AI key, the model answers instead, using
+the same tools.
 
 - Journey scripts (basic mode): `apps/web/e2e/ai/*.mjs`, run with `BASE_URL=http://localhost:3000 node apps/web/e2e/ai/copilot.mjs`.
   The other two are `sales-delivery.mjs` and `service-management.mjs`. Screenshots are saved to `/tmp/claude-0/ai-shots/`.
@@ -45,7 +103,7 @@ it into chat or messages.
 | Where | What |
 |---|---|
 | Every staff page (except creators) | **Ask BMU** side panel: a button at the bottom right, or Ctrl/Cmd + J. Asks questions about clients, leads, invoices, tasks, requests, the week and team performance. Answers link to the records they came from (only links that came from tool results are kept). Conversation history, New chat and Delete are included. |
-| Client portal | **Ask about your account**: invoices, requests, approvals waiting, account summary. Only that client's own data. |
+| Client portal | **Ask about your account**: invoices, requests, approvals waiting, plans, what BMU still needs, the client manager's contact details, account summary. Only that client's own data. |
 | Lead page | **Lead brief**: who they are, why the score is what it is, and the next best action. **Follow-up draft** for email or WhatsApp: open in WhatsApp or email, then "Log as sent". **Meeting notes**: becomes a summary, action items and a follow-up date; "Save to timeline" logs a meeting with that follow-up date. |
 | New proposal | **Proposal intro & scope** from the lead and the picked services. Copy only: proposals have no intro field. |
 | Project page (strategist) | **Draft the plan with AI**: "Fill the plan form" fills objectives, audience, pillars, direction and deliverables. Nothing is saved until Save. |

@@ -9,11 +9,20 @@ import { AiText } from "./ai-text";
 import { ChartLineUp, ClockCounterClockwise, CurrencyInr, NotePencil, PaperPlaneRight, Receipt, SealCheck, Tray, UserCircle, Warning, X, type IconProps } from "@phosphor-icons/react";
 import type { ComponentType } from "react";
 
-const STAFF_EXAMPLES = ["Which clients are at risk this month and why?", "How much is overdue from Metro Dental?", "What is Meera working on?", "Summary of the week"];
-/** v54 chat card: an icon for each example question (same order as the lists below). */
-const STAFF_EXAMPLE_ICONS: ComponentType<IconProps>[] = [Warning, CurrencyInr, UserCircle, ChartLineUp];
-const CLIENT_EXAMPLE_ICONS: ComponentType<IconProps>[] = [SealCheck, Receipt, Tray];
-const CLIENT_EXAMPLES = ["What is waiting for my approval?", "Do I have any invoices due?", "What is the status of my requests?"];
+// The server sends starter questions that fit this person's own dashboard (AiStatus.examples); these are only a fallback.
+const STAFF_EXAMPLES = ["What should I do today?", "List my goals", "Summary of the week"];
+const CLIENT_EXAMPLES = ["What is waiting for my approval?", "What is the status of my requests?"];
+
+/** v54 chat card: an icon for each starter question, picked by what it is about (the questions differ per role). */
+function exampleIcon(question: string, client: boolean): ComponentType<IconProps> {
+  const q = question.toLowerCase();
+  if (/approv/.test(q)) return SealCheck;
+  if (/invoice|overdue|paid|payment|money|owe/.test(q)) return client ? Receipt : CurrencyInr;
+  if (/request|need from me|follow-up/.test(q)) return Tray;
+  if (/risk|attention|check in|late/.test(q)) return Warning;
+  if (/manager|working on|who /.test(q)) return UserCircle;
+  return ChartLineUp;
+}
 
 /** Ask BMU: a side panel opened with the button or Ctrl/Cmd + J. Staff ask about the CRM; clients about their own account. */
 /** look "robot" (v54 redesign preview): the launcher is a round robot button (no text); the panel is the same. */
@@ -113,8 +122,7 @@ export function Copilot({ audience, look = "classic" }: { audience: "staff" | "c
   }
 
   if (!enabled) return null;
-  const examples = audience === "client" ? CLIENT_EXAMPLES : STAFF_EXAMPLES;
-  const exampleIcons = audience === "client" ? CLIENT_EXAMPLE_ICONS : STAFF_EXAMPLE_ICONS;
+  const examples = status?.examples?.length ? status.examples : audience === "client" ? CLIENT_EXAMPLES : STAFF_EXAMPLES;
   const title = audience === "client" ? "Ask about your account" : "Ask BMU";
   const newChat = () => {
     setMessages([]);
@@ -186,8 +194,8 @@ export function Copilot({ audience, look = "classic" }: { audience: "staff" | "c
               <h2 className="mt-5 text-[22px] leading-tight font-semibold">What can I help you with?</h2>
               <p className="mt-1.5 text-sm text-ink-muted">{audience === "client" ? "Answers use only your company's data." : "Answers use only what your role can see."}</p>
               <div className="mt-5 grid w-full gap-2.5 sm:grid-cols-2">
-                {examples.map((ex, i) => {
-                  const Icon = exampleIcons[i] ?? ChartLineUp;
+                {examples.map((ex) => {
+                  const Icon = exampleIcon(ex, audience === "client");
                   return (
                     <button key={ex} type="button" onClick={() => ask(ex)} className="copilot-card-example flex items-center gap-2.5 px-3.5 py-3 text-left text-sm">
                       <Icon size={20} weight="duotone" className="shrink-0" aria-hidden />

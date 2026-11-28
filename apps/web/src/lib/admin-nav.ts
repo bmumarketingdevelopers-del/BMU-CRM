@@ -1,3 +1,4 @@
+import { adminPageAllowed } from "@bmu/shared";
 import type { NavSection } from "@/components/side-nav";
 
 // admin_panel.navigation from the spec. Every item is built.
@@ -131,91 +132,11 @@ export const adminNav: NavSection[] = [
   })),
 ];
 
-// Pages limited to some roles (the API enforces the same rules); everything else is open to every Command Centre user.
-const FA = ["founder", "admin"];
-const MONEY = [...FA, "finance"];
-const NOT_HR = [...FA, "finance", "am_lead", "department_head"];
-const PEOPLE = [...FA, "hr_ops", "department_head"];
-const CLIENT_OPS = [...FA, "am_lead"];
-const LEADERS = [...FA, "am_lead", "department_head"];
-const restricted: Record<string, string[]> = {
-  Revenue: MONEY,
-  Collections: MONEY,
-  Scorecard: MONEY,
-  "Sales Funnel": MONEY,
-  "Revenue Forecast": MONEY,
-  "MRR & Retention": MONEY,
-  Profitability: MONEY,
-  Invoices: MONEY,
-  Payments: MONEY,
-  "Credit Notes": MONEY,
-  "Creator Payouts": MONEY,
-  "GST & Invoice Settings": MONEY,
-  "Accounting Sync": MONEY,
-  "Payments to Match": MONEY,
-  "Invoice Plans": MONEY,
-  "Expenses & Bills": MONEY,
-  "Cash Flow": MONEY,
-  Profit: [...FA, "finance", "am_lead"],
-  Capacity: NOT_HR,
-  // v53: HR can read QC pass rates (read-only page).
-  Quality: [...NOT_HR, "hr_ops"],
-  "Client Health": NOT_HR,
-  // v53: HR adds clients and sees every client.
-  Clients: [...NOT_HR, "hr_ops"],
-  "Delivery Speed": NOT_HR,
-  "SLA & Response": NOT_HR,
-  "Report Builder": NOT_HR,
-  Automations: NOT_HR,
-  "Automation Log": NOT_HR,
-  "Team Performance": LEADERS,
-  "Business Flow Map": LEADERS,
-  "Hierarchy Tree": [...PEOPLE, "am_lead"],
-  Users: PEOPLE,
-  "Roles & Permissions": PEOPLE,
-  "Departments & Teams": PEOPLE,
-  Branches: PEOPLE,
-  "Attendance & Leave": PEOPLE,
-  "Onboarding & Offboarding": PEOPLE,
-  Timesheets: PEOPLE,
-  "HR Issues": ["hr_ops"],
-  "CM Assignment": CLIENT_OPS,
-  Engagements: CLIENT_OPS,
-  Offboarding: CLIENT_OPS,
-  "Requests & Add-ons": [...FA, "am_lead", "finance"],
-  "Services & Tiers": FA,
-  "Quotation Templates": CLIENT_OPS,
-  Quotations: [...CLIENT_OPS, "finance"],
-  Bundles: FA,
-  "Add-ons": FA,
-  "Discount Limits": FA,
-  "Audit Log": FA,
-  Integrations: FA,
-  // v43: client data and privacy: the Founder and the Client Manager Lead here (all clients); Client Managers in the Team app (their own).
-  "Data Export / Deletion (DPDP)": ["founder", "am_lead"],
-  "Tenant Settings": FA,
-  "Billing Run": MONEY,
-  Outbox: FA,
-  "AI Copilot": FA,
-  Approvals: LEADERS,
-  "Dashboard Studio": FA,
-  "System Health": FA,
-  Workflows: NOT_HR,
-  "Workflow Runs": NOT_HR,
-  "Custom Fields": FA,
-  Forms: [...FA, "sales_manager"],
-  "Pipeline Settings": FA,
-  "AI Agents": FA,
-  "Agent Run Log": FA,
-  "API & Webhooks": FA,
-  Security: FA,
-  "Privacy (DPDP)": ["founder", "am_lead"],
-  "Forecast & Risks": NOT_HR,
-  Metrics: NOT_HR,
-};
-
+// Pages limited to some roles live in @bmu/shared (ADMIN_PAGE_ROLES), shared with Ask BMU; the API enforces the same rules.
 /** The Command Centre menu for this person: hides pages their role can't open. */
 export function adminNavFor(roles: string[]): NavSection[] {
-  const hidden = new Set(Object.entries(restricted).filter(([, allowed]) => !roles.some((r) => allowed.includes(r))).map(([label]) => built[label]));
-  return adminNav.map((s) => ({ ...s, items: s.items.filter((i) => !hidden.has(i.href ?? "")) })).filter((s) => s.items.length > 0);
+  const labelOf = new Map(Object.entries(built).map(([label, href]) => [href, label]));
+  // The Switch link back to the Team app has no label in `built`; every other item follows the shared rules.
+  const allowed = (href: string) => !labelOf.has(href) || adminPageAllowed(roles, labelOf.get(href)!);
+  return adminNav.map((s) => ({ ...s, items: s.items.filter((i) => allowed(i.href ?? "")) })).filter((s) => s.items.length > 0);
 }

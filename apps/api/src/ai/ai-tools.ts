@@ -17,6 +17,13 @@ import { RequestsService } from '../requests/requests.service.js';
 import { SellService } from '../sell/sell.service.js';
 import { TeamWorkspaceService } from '../workspace/team.service.js';
 import { FieldAccessService } from '../security/field-access.service.js';
+import { skillTools } from './pages/index.js';
+import { ApprovalsService } from '../actions/approvals.service.js';
+import { MeetingsService } from '../comms/meetings.service.js';
+import { GoalsService } from '../intelligence/goals.service.js';
+import { ExpensesService } from '../money/expenses.service.js';
+import { OpsSelfService } from '../ops-analytics/self.service.js';
+import { TimesheetsService } from '../team-flows/timesheets.service.js';
 import { redact } from './ai-safety.js';
 
 export type ToolOutput = { data: unknown; citations: AiCitation[] };
@@ -33,6 +40,7 @@ export type CopilotTool = {
 const day = (iso: string | null | undefined) =>
   iso ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null;
 const day_ = (iso: string | null | undefined) => (iso ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null);
+const time = (iso: string | null | undefined) => (iso ? new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null);
 const has = (hay: string | null | undefined, needle?: string) => !needle || (hay ?? '').toLowerCase().includes(needle.toLowerCase());
 const get = <T>(ref: ModuleRef, cls: new (...args: never[]) => T): T => ref.get(cls as never, { strict: false }) as T;
 
@@ -62,12 +70,14 @@ function fieldSafe(ref: ModuleRef, me: Me, tools: CopilotTool[]): CopilotTool[] 
   }));
 }
 
+/** Staff tools: the core lookups plus one per tab in this person's Team app and Command Centre menus. */
 export function staffTools(ref: ModuleRef, me: Me): CopilotTool[] {
-  return fieldSafe(ref, me, rawStaffTools(ref, me));
+  return fieldSafe(ref, me, [...rawStaffTools(ref, me), ...skillTools(ref, me)]);
 }
 
+/** Client tools: their own account plus one per tab in their portal menu. */
 export function clientTools(ref: ModuleRef, me: Me): CopilotTool[] {
-  return fieldSafe(ref, me, rawClientTools(ref, me));
+  return fieldSafe(ref, me, [...rawClientTools(ref, me), ...skillTools(ref, me)]);
 }
 
 function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
@@ -245,7 +255,7 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
     {
       name: 'my_week',
       description:
-        "This person's own week, from their own dashboard: their open, overdue, due-today, due-this-week and blocked tasks, tasks done this week, QC checks waiting for them, the clients they manage with open requests, their open leads and follow-ups (sales), and delivery steps at risk. Any team member can use it; use it for 'summary of the week', 'my tasks', 'what should I do' when the company-wide summary is not allowed.",
+        "This person's own week, from their own dashboard (My Day): their open, overdue, due-today, due-this-week and blocked tasks, tasks done this week, QC checks waiting for them, work waiting to be sent to the client, the clients they manage with open requests, their open leads and follow-ups (sales), delivery steps at risk, today's attendance (check-in/out, late, working hours, holiday, leave, work from home), their end-of-day report and how many of their team filed theirs. Any team member can use it; use it for 'summary of the week', 'my tasks', 'what should I do', attendance and EOD questions, and when the company-wide summary is not allowed.",
       schema: z.object({}),
       properties: {},
       status: 'Reading your week…',
@@ -297,12 +307,28 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
             openRequests: requests ? { count: openRequests.length, replyOverdue: openRequests.filter((r) => r.sla.state === 'overdue').length } : undefined,
             leads: leads ? { open: myLeads.length, followUpsThisWeek: followUps.map((l) => ({ name: l.contact.company || l.contact.name, due: day_(l.nextFollowUpAt ?? null), link: `/team/leads/${l.id}` })) } : undefined,
             deliveryAtRisk: (day.deliverSla ?? []).slice(0, 8).map((s) => ({ title: s.title, state: s.state, client: s.client.name })),
+            sendToClientWaiting: day.sendToClientWaiting,
             onLeave: day.onLeave ?? null,
+            attendance: {
+              workday: day.workday?.kind ?? 'working',
+              holiday: day.workday?.kind === 'holiday' ? day.workday.label : null,
+              checkIn: time(day.checkIn),
+              checkOut: time(day.checkOut),
+              late: !!day.late,
+              wfh: !!day.wfh,
+              workingHours: day.workingHours ? `${day.workingHours.start}–${day.workingHours.end} (${day.workingHours.graceMinutes} min grace)` : null,
+              missedCheckOut: day_(day.missedCheckOut ?? null),
+              nextCheckIn: day_(day.nextCheckIn ?? null),
+              leaveDecision: day.leaveNotice ? { status: day.leaveNotice.status, title: day.leaveNotice.title } : null,
+            },
+            eod: { submitted: day.eod.submitted, exempt: !!day.eodExempt, completed: day.eod.completed.length, pending: day.eod.pending.length, blocked: day.eod.blocked.length, waiting: day.eod.waiting.length },
+            teamReports: day.teamReports ?? null,
           },
           citations: [{ label: 'My Day', href: '/team' }, { label: 'My tasks', href: '/team/tasks' }],
         };
       },
     },
+    ...pageTools(ref, me),
     {
       name: 'business_summary',
       description: "This week's Weekly Review: revenue this vs last month (money roles only), active clients, open leads, overdue tasks, reply-time breaches, QC pass rate and what needs attention. Command Centre roles only.",
@@ -362,12 +388,120 @@ function rawStaffTools(ref: ModuleRef, me: Me): CopilotTool[] {
   ];
 }
 
+/** Pages in the team menu that everyone has (You section, Goals, Meetings), read with the person's own scope. */
+function pageTools(ref: ModuleRef, me: Me): CopilotTool[] {
+  const none = { schema: z.object({}), properties: {} };
+  return [
+    {
+      name: 'my_goals',
+      ...none,
+      description: 'Goals this person can see on the Goals page (company, department and their own): progress, current value against target, status (on track, at risk, behind, done, missed) and end date.',
+      status: 'Reading your goals…',
+      run: () =>
+        guarded(async () => {
+          const { goals } = await get(ref, GoalsService).list(me, {});
+          return {
+            data: goals.slice(0, 25).map((g) => ({ title: g.title, level: g.level, owner: g.owner?.name ?? null, department: g.department?.name ?? null, mine: g.owner?.id === me.id, current: g.display.current, target: g.display.target, progressPct: Math.round(g.progress), status: g.status, ends: day(g.endDate), link: '/team/goals' })),
+            citations: [{ label: 'Goals', href: '/team/goals' }],
+          };
+        }),
+    },
+    {
+      name: 'my_meetings',
+      ...none,
+      description: 'Meetings this person hosts or attends: upcoming ones (date, time, client or lead, place), requests still being arranged, and recent past meetings.',
+      status: 'Checking your meetings…',
+      run: () =>
+        guarded(async () => {
+          const svc = get(ref, MeetingsService);
+          const m = me.type === 'client' ? await svc.clientList(me) : await svc.list(me);
+          const row = (x: (typeof m.upcoming)[number]) => ({ title: x.title, when: `${day_(x.startAt)} ${time(x.startAt)}`, with: x.client?.name ?? x.lead?.name ?? x.guest.name ?? null, host: x.host.name, place: x.location, status: x.status });
+          return { data: { upcoming: m.upcoming.slice(0, 10).map(row), beingArranged: m.requests.slice(0, 10).map(row), recent: m.past.slice(0, 5).map(row) }, citations: [{ label: 'Meetings', href: me.type === 'client' ? '/client/meetings' : '/team/meetings' }] };
+        }),
+    },
+    {
+      name: 'my_leave',
+      ...none,
+      description: "This person's leave balance (casual and sick: allowed, used, pending, left), unpaid days, work-from-home days, their leave requests and status, this month's attendance (days present, hours) and upcoming holidays.",
+      status: 'Reading your leave and attendance…',
+      run: () =>
+        guarded(async () => {
+          const p = await get(ref, TeamWorkspaceService).profile(me);
+          const today = new Date().toISOString().slice(0, 10);
+          return {
+            data: {
+              balance: p.leave.balance,
+              unpaidUsed: p.leave.unpaidUsed,
+              wfhDays: p.leave.wfhDays ?? 0,
+              canApply: p.leave.canApply !== false,
+              requests: p.leave.requests.slice(0, 8).map((r) => ({ from: day_(r.from), to: day_(r.to), type: r.type, days: r.days, status: r.status })),
+              attendanceThisMonth: { daysPresent: p.attendance.daysPresent, workingDaysSoFar: p.attendance.workingDaysSoFar, totalHours: Math.round(p.attendance.totalHours * 10) / 10 },
+              upcomingHolidays: p.holidays.filter((h) => h.date >= today).slice(0, 5).map((h) => ({ date: day(h.date), name: h.name })),
+            },
+            citations: [{ label: 'Profile, leave & attendance', href: '/team/profile' }],
+          };
+        }),
+    },
+    {
+      name: 'my_timesheet',
+      ...none,
+      description: "This person's timesheet for the current week: hours logged in total and per day, by category, and whether it is submitted, approved or sent back.",
+      status: 'Reading your timesheet…',
+      run: () =>
+        guarded(async () => {
+          const t = await get(ref, TimesheetsService).week(me);
+          const h = (min: number) => Math.round((min / 60) * 10) / 10;
+          return {
+            data: { week: `${day_(t.weekStart)} – ${day_(t.weekEnd)}`, status: t.status, hours: h(t.totalMinutes), byDay: t.days.filter((d) => d.workingDay).map((d) => ({ date: day_(d.date), hours: h(d.taskMinutes + d.otherMinutes) })), byCategory: t.byCategory.map((c) => ({ category: c.category, hours: h(c.minutes) })), comment: t.comment, canSubmit: t.canSubmit },
+            citations: [{ label: 'My timesheet', href: '/team/timesheet' }],
+          };
+        }),
+    },
+    {
+      name: 'my_expenses',
+      ...none,
+      description: "Expense claims this person submitted: amount, what for, date and status (submitted, approved, rejected, paid), with totals waiting and approved but unpaid.",
+      status: 'Checking your expenses…',
+      run: () =>
+        guarded(async () => {
+          const e = await get(ref, ExpensesService).list(me, { mine: '1' });
+          return {
+            data: { waiting: formatINR(e.totals.waitingPaise), approvedUnpaid: formatINR(e.totals.approvedUnpaidPaise), claims: e.rows.slice(0, 12).map((r) => ({ what: redact(r.description).slice(0, 80), amount: formatINR(r.amountPaise + r.gstPaise), date: day_(r.date), status: r.status })) },
+            citations: [{ label: 'My expenses', href: '/team/expenses' }],
+          };
+        }),
+    },
+    {
+      name: 'my_approvals',
+      ...none,
+      description: 'How many approval requests are waiting for this person to decide (Approvals page).',
+      status: 'Checking approvals…',
+      run: () => guarded(async () => ({ data: await get(ref, ApprovalsService).count(me), citations: [{ label: 'Approvals', href: '/team/approvals' }] })),
+    },
+    {
+      name: 'my_performance',
+      ...none,
+      description: "This person's own performance for the last 30 days (My performance page): tasks completed, on-time %, hours, QC first-pass %, streak, compared with the previous period and the team average, and upcoming deadlines.",
+      status: 'Reading your performance…',
+      run: () =>
+        guarded(async () => {
+          const p = await get(ref, OpsSelfService).me(me, {});
+          return {
+            data: { stats: p.stats, teamAverage: p.teamAverage, upcoming: p.upcoming.tasks.slice(0, 6).map((t) => ({ title: t.title, client: t.client, due: day_(t.deadline) })), insights: p.insights.slice(0, 3) },
+            citations: [{ label: 'My performance', href: '/team/performance' }],
+          };
+        }),
+    },
+  ];
+}
+
 /** Client app assistant: only the signed-in client's own account, through the client-facing services. */
 function rawClientTools(ref: ModuleRef, me: Me): CopilotTool[] {
   return [
+    ...pageTools(ref, me).filter((t) => t.name === 'my_meetings'),
     {
       name: 'my_account',
-      description: 'The client’s services, milestones (gates), requirements still pending, client manager and invoices due (if they may see billing).',
+      description: 'The client’s services, milestones (gates), requirements still pending, client manager (name, email, phone) and invoices due (if they may see billing).',
       schema: z.object({}),
       properties: {},
       status: 'Opening your account…',
@@ -378,7 +512,8 @@ function rawClientTools(ref: ModuleRef, me: Me): CopilotTool[] {
             data: {
               company: o.clientOrg.name,
               accountManager: o.accountManager?.name ?? null,
-              services: o.engagements.map((e) => ({ service: e.serviceName, status: e.status, milestone: e.currentGate, requirementsPending: e.requirementsPending })),
+              accountManagerContact: o.accountManager ? { email: o.accountManager.email, phone: o.accountManager.phone } : null,
+              services: o.engagements.map((e) => ({ service: e.serviceName, status: e.status, milestone: e.currentGate, requirementsPending: e.requirementsPending, accessPending: e.accessPending })),
               invoicesDue: o.invoicesDue.map((i) => ({ number: i.number, total: formatINR(i.totalPaise), paid: formatINR(i.paidPaise), due: day(i.dueDate), status: i.status })),
             },
             citations: [{ label: 'Home', href: '/client' }],
@@ -424,6 +559,40 @@ function rawClientTools(ref: ModuleRef, me: Me): CopilotTool[] {
           return {
             data: rows.map((d) => ({ title: d.title, service: d.serviceName, status: d.statusLabel, waitingOnYou: d.waitingOnYou, link: `/client/reviews/${d.id}` })),
             citations: rows.filter((d) => d.waitingOnYou).slice(0, 6).map((d) => ({ label: d.title, href: `/client/reviews/${d.id}` })),
+          };
+        }),
+    },
+    {
+      name: 'my_requirements',
+      description: 'The onboarding checklist: what BMU still needs from the client for each service (documents, logins, brand files, approvals), with status pending, waiting, blocked or received.',
+      schema: z.object({}),
+      properties: {},
+      status: 'Checking what we need from you…',
+      run: () =>
+        guarded(async () => {
+          const o = await get(ref, ClientPortalController).onboarding(me);
+          return {
+            data: o.engagements.map((e) => ({
+              service: e.serviceName,
+              needed: e.requirements.filter((r) => r.status !== 'received').map((r) => ({ item: r.label, status: r.status, note: r.blockedReason ?? r.waitingFor })),
+              received: e.requirements.filter((r) => r.status === 'received').length,
+            })),
+            citations: [{ label: 'Onboarding', href: '/client/onboarding' }],
+          };
+        }),
+    },
+    {
+      name: 'my_plans',
+      description: 'Monthly content plans and project plans BMU has sent to the client, and whether each is waiting for their approval, has changes requested or is approved.',
+      schema: z.object({}),
+      properties: {},
+      status: 'Checking your plans…',
+      run: () =>
+        guarded(async () => {
+          const rows = await get(ref, ClientPortalController).plans(me);
+          return {
+            data: rows.map((p) => ({ service: p.serviceName, period: p.period ?? null, status: p.plan.status, youApproved: !!p.youApproved, approvedAt: day(p.plan.approvedAt) })),
+            citations: [{ label: 'Approvals', href: '/client/approvals' }],
           };
         }),
     },
