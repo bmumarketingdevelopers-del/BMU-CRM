@@ -8,12 +8,16 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SAFETY_RULES } from './ai-safety.js';
 import { clientTools, staffTools, toolDefs, type CopilotTool, type ToolOutput } from './ai-tools.js';
+import { runSkill, skillFor, skillsFor } from './pages/index.js';
+import type { PageSkill } from './pages/types.js';
+import { clientHelpFor, clientPageFor, pageAnswer, staffAccess, staffHelpFor, staffPageFor } from './ai-topics.js';
 import { AiRefusal, AiService, textOf, type AiOut, type AiRunner } from './ai.service.js';
 
 type Emit = (e: AiStreamEvent) => void;
 
 const STAFF_SYSTEM = `You are "Ask BMU", the assistant inside BMU Hub, the CRM of BMU Marketing, a marketing agency in Bengaluru (social media, branding, web, video, SEO, ads; monthly retainers and one-time projects with five milestones G1-G5).
-You answer questions from the BMU team about their clients, leads, invoices, tasks, requests and business numbers.
+You answer questions from the BMU team about anything on their own dashboard and menu: their day and tasks, attendance, leave, end-of-day report, QC, goals, meetings, timesheet, expenses, approvals and performance, and (where their role allows) clients, leads, invoices, requests, team performance and business numbers.
+For a page you have no tool for, say what it holds and link it only if the person has it; never suggest pages or numbers their role cannot open.
 
 How to work:
 - Use the tools to look things up. They only return what the person asking is allowed to see. Call several tools when a question needs it.
@@ -25,7 +29,7 @@ How to work:
 ${SAFETY_RULES}`;
 
 const CLIENT_SYSTEM = `You are the assistant in the BMU Hub client app. BMU Marketing is the client's marketing agency.
-You answer the client's questions about their own account only: services and milestones, drafts waiting for approval, requests and invoices.
+You answer the client's questions about their own account only: services and milestones, drafts waiting for approval, monthly plans, what BMU still needs from them, requests, meetings, their client manager and invoices (if their role may see billing).
 
 How to work:
 - Use the tools; they only return this client's own data. If a tool says "not allowed", explain that their user role cannot see it and that the account owner can.
@@ -97,7 +101,7 @@ export class AiCopilotService {
 
     const result = await this.ai.execute({ orgId: me.orgId, userId: me.id, me }, feature, {
       target: convo ? { type: 'AiConversation', id: convo.id } : undefined,
-      basic: () => (client ? this.basicClient(input.question, tools, emit) : this.basicStaff(me, input.question, tools, emit)),
+      basic: () => (client ? this.basicClient(me, input.question, tools, emit) : this.basicStaff(me, input.question, tools, emit)),
       ai: (run) => this.loop(me, client, input.question, history, tools, run, emit),
     });
 
@@ -160,6 +164,16 @@ export class AiCopilotService {
 
   // ------------------------------------------------------------------ basic mode
 
+  /** Answers from one tab's data (page skill), or says plainly why it can't. */
+  private async answerSkill(me: Me, s: PageSkill, tools: CopilotTool[], question: string, emit: Emit): Promise<AiOut> {
+    // staffTools/clientTools already hold a tool for every tab this person has; run it directly if a caller passed fewer.
+    const out = tools.some((t) => t.name === s.name) ? await this.call(tools, s.name, {}, emit) : await runSkill(this.ref, me, s);
+    const d = out.data as { notAllowed?: boolean; notFound?: boolean; message?: string } | null;
+    if (d?.notAllowed) return { text: `${s.label}: ${d.message ?? 'not available for your role'}.`, citations: [] };
+    if (d?.notFound) return { text: `${s.label}: ${d.message ?? 'nothing found'}.`, citations: [{ label: s.label, href: s.href }] };
+    return { text: s.answer(out.data as never, question.toLowerCase()), citations: out.citations };
+  }
+
   private async call(tools: CopilotTool[], name: string, input: Record<string, unknown>, emit: Emit): Promise<ToolOutput> {
     const t = tools.find((x) => x.name === name)!;
     emit({ t: 'status', text: t.status });
@@ -172,7 +186,7 @@ export class AiCopilotService {
     const clientsOut = await this.call(tools, 'find_clients', {}, () => {});
     const clientList = (Array.isArray(clientsOut.data) ? clientsOut.data : []) as { id: string; name: string; health: string; am: string | null; link: string }[];
     const client = clientList.find((c) => q.includes(c.name.toLowerCase())) ?? clientList.find((c) => c.name.split(/\s+/).some((w) => w.length > 3 && q.includes(w.toLowerCase())));
-    const staff = await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null }, select: { name: true } });
+    const staff = await this.prisma.user.findMany({ where: { orgId: me.orgId, type: 'staff', deletedAt: null }, select: { id: true, name: true, status: true } });
     const person = staff.find((u) => q.includes(u.name.toLowerCase())) ?? staff.find((u) => u.name.split(/\s+/)[0].length > 2 && new RegExp(`\\b${u.name.split(/\s+/)[0].toLowerCase()}\\b`).test(q));
     const notAllowed = (o: ToolOutput) => (o.data as { notAllowed?: boolean; message?: string })?.notAllowed;
     // v55: anything the role can't see is said once, then the answer comes from the person's own work (My Day).
@@ -191,11 +205,32 @@ ${text}` : text, citations: out.citations };
       return { text: render(weekOut.data as MyWeek), citations: weekOut.citations };
     };
     const other = person && person.name !== me.name ? person : undefined;
-    const aboutTasks = STAFF_KEYWORDS.tasks.test(q);
+    // "What is overdue?" means invoices only to people who can see money; for everyone else it is their own tasks.
+    const aboutTasks = STAFF_KEYWORDS.tasks.test(q) || (/\boverdue\b/.test(q) && !staffAccess(me).money && !/\b(invoices?|payments?|bills?|owes?|amount|money|dues|how much)\b/.test(q));
 
-    if (STAFF_KEYWORDS.help.test(q)) return { text: staffHelp(clientList[0]?.name, staff[0]?.name), citations: [] };
-    if (STAFF_KEYWORDS.attendance.test(q)) return fromMyDay(attendanceText);
+    // Help suggests only what this person has, with a real client and a real colleague (never a system account).
+    const colleague = staff.find((u) => u.id !== me.id && u.status === 'active' && /\s/.test(u.name.trim()) && !/^bmu\b/i.test(u.name))?.name.split(/\s+/)[0];
+    const help = (): AiOut => ({ text: staffHelpFor(me, { client: clientList[0]?.name, colleague }, skillsFor(me).map((s) => s.label)), citations: [] });
+    const access = staffAccess(me);
+    const page = async (name: string, render: (d: never) => string): Promise<AiOut> => {
+      const out = await this.call(tools, name, {}, emit);
+      if (notAllowed(out)) return { text: (out.data as { message: string }).message.replace(/^Not allowed for this person's role: /, ''), citations: [] };
+      return { text: render(out.data as never), citations: out.citations };
+    };
+
+    if (STAFF_KEYWORDS.help.test(q)) return help();
+    // Personal pages answer about the person asking; "who is on leave", "team timesheets", "company bills" belong to
+    // the team-wide tabs (page skills) of the people who have them.
+    const aboutOthers = /\b(who|whose|team|teams|everyone|everybody|staff|departments?|employees|people|company|org|organisation)\b/.test(q);
+    if (STAFF_KEYWORDS.leave.test(q) && !other && !aboutOthers) return page('my_leave', leaveText);
+    if (STAFF_KEYWORDS.attendance.test(q) && !aboutOthers) return fromMyDay(attendanceText);
     if (STAFF_KEYWORDS.eod.test(q)) return fromMyDay(eodText);
+    if (STAFF_KEYWORDS.goals.test(q)) return page('my_goals', (g: GoalRow[]) => goalsText(g, /\b(my|mine)\b/.test(q)));
+    if (STAFF_KEYWORDS.meetings.test(q)) return page('my_meetings', meetingsText);
+    if (STAFF_KEYWORDS.timesheet.test(q) && !aboutOthers && !/\bapprov/.test(q)) return page('my_timesheet', timesheetText);
+    if (STAFF_KEYWORDS.expenses.test(q) && !aboutOthers && !/\b(bills?|vendors?|payables?)\b/.test(q)) return page('my_expenses', expensesText);
+    if (STAFF_KEYWORDS.approvals.test(q) && !/\bdiscounts?\b/.test(q)) return page('my_approvals', (d: { pending: number }) => (d.pending ? `${d.pending} approval request${d.pending === 1 ? ' is' : 's are'} waiting for your decision. Open [Approvals](/team/approvals).` : 'Nothing is waiting for your approval right now.'));
+    if (STAFF_KEYWORDS.performance.test(q) && !other) return page('my_performance', performanceText);
     if (STAFF_KEYWORDS.qc.test(q) && !other) return fromMyDay(qcText);
     if (STAFF_KEYWORDS.sendToClient.test(q)) return fromMyDay((w) => (w.sendToClientWaiting ? `${w.sendToClientWaiting} version${w.sendToClientWaiting === 1 ? '' : 's'} passed QC and ${w.sendToClientWaiting === 1 ? 'is' : 'are'} ready to send to the client. Open [Review Studio](/team/reviews).` : 'Nothing is waiting to be sent to a client right now.'));
     if (!other && !client) {
@@ -207,6 +242,9 @@ ${text}` : text, citations: out.citations };
       if (STAFF_KEYWORDS.delivery.test(q)) return fromMyDay(deliveryText);
     }
     if (STAFF_KEYWORDS.mine.test(q) && !other) return mine();
+    // A tab in their Team app or Command Centre menu, answered with that page's data for this person.
+    const skill = skillFor(me, q);
+    if (skill.mine) return this.answerSkill(me, skill.mine, tools, q, emit);
     if (/\b(risk|risky|health|healthy|churn|unhappy|at-risk|red|amber|need(s)? attention|losing|leaving)\b/.test(q)) {
       const out = await this.call(tools, 'clients_at_risk', {}, emit);
       if (notAllowed(out)) {
@@ -219,9 +257,14 @@ ${text}` : text, citations: out.citations };
       const lines = d.atRiskOrWatch.map((c) => `- [${c.name}](${c.link}) — health ${c.score}/100 (${c.risk === 'at_risk' ? 'at risk' : 'watch'}): ${c.reasons.join('; ') || 'no specific reason'}`);
       return { text: `${d.atRiskOrWatch.filter((c) => c.risk === 'at_risk').length} at risk, ${d.atRiskOrWatch.filter((c) => c.risk === 'watch').length} to watch:\n${lines.join('\n')}`, citations: out.citations };
     }
-    if (STAFF_KEYWORDS.money.test(q) && !aboutTasks && !/\b(requests?|tickets?|repl(y|ies))\b/.test(q)) {
+    // "Follow-ups due" and "replies overdue" are about leads and requests, not money.
+    if (STAFF_KEYWORDS.money.test(q) && !aboutTasks && !/\b(requests?|tickets?|repl(y|ies)|follow[- ]?ups?|leads?)\b/.test(q)) {
       const out = await this.call(tools, 'find_invoices', { client: client?.name, status: q.includes('overdue') ? 'overdue' : undefined }, emit);
-      if (notAllowed(out)) return deny('invoices');
+      if (notAllowed(out)) {
+        // Client Managers have their own clients' invoices on their Invoices page.
+        if (access.cmInvoices) return { text: "Your clients' invoices are on [Invoices](/team/invoices), where you create, sign and send them.", citations: [{ label: 'Invoices', href: '/team/invoices' }] };
+        return deny('invoices');
+      }
       const d = out.data as { count: number; totalOwed: string; invoices: { number: string; client: string; status: string; balance: string; due: string; link: string }[] };
       if (!d.count) return { text: `Nothing ${q.includes('overdue') ? 'overdue' : 'owed'}${client ? ` from ${client.name}` : ''} right now.`, citations: [] };
       return {
@@ -279,7 +322,7 @@ ${text}` : text, citations: out.citations };
         citations: out.citations,
       };
     }
-    if (STAFF_KEYWORDS.team.test(q)) {
+    if (STAFF_KEYWORDS.team.test(q) && access.teamReader) {
       const out = await this.call(tools, 'team_performance', {}, emit);
       if (notAllowed(out)) return deny('team performance', 'the Founder, a Branch Manager or a Department Head');
       const d = out.data as { totals: { overdueNow: number; completed: { value: number | null }; onTimePct: { value: number | null } }; people: { name: string; completed: number; onTimePct: number | null; utilisation: number; overdueNow: number; openTasks: number }[] };
@@ -323,13 +366,24 @@ ${text}` : text, citations: out.citations };
       return { text: `${money}${head}, ${d.overdueTasks} overdue tasks, ${d.replyTimeBreachesThisWeek} reply-time misses this week. See the [Weekly Review](/admin).`, citations: out.citations };
     }
     // A question about the person's own day that matched nothing more specific: answer from My Day.
+    // A page in their menu: say what is there and link it. A page they don't have: say so plainly.
+    const where = staffPageFor(me, q);
+    if (where.mine) return { text: pageAnswer(where.mine), citations: [{ label: where.mine.label, href: where.mine.href }] };
     if (/\b(today|tomorrow|this week|pending|priority|priorities|important|urgent|update|status)\b/.test(q) && !other) return mine();
-    return { text: staffHelp(clientList[0]?.name, staff[0]?.name), citations: [] };
+    const notMine = skill.notMine ?? where.notMine;
+    if (notMine) return { text: `${notMine.label} is not on your dashboard, so I can't answer that for your role.\n\n${help().text}`, citations: [] };
+    return help();
   }
 
-  private async basicClient(question: string, tools: CopilotTool[], emit: Emit): Promise<AiOut> {
+  private async basicClient(me: Me, question: string, tools: CopilotTool[], emit: Emit): Promise<AiOut> {
     const q = question.toLowerCase();
-    if (CLIENT_KEYWORDS.help.test(q)) return { text: CLIENT_HELP, citations: [] };
+    const clientHelp = () => clientHelpFor(me, skillsFor(me).map((s) => s.label));
+    if (CLIENT_KEYWORDS.help.test(q)) return { text: clientHelp(), citations: [] };
+    if (CLIENT_KEYWORDS.meetings.test(q)) {
+      const out = await this.call(tools, 'my_meetings', {}, emit);
+      if ((out.data as { notAllowed?: boolean }).notAllowed) return { text: 'You can book a call with your client manager from [Meetings](/client/meetings).', citations: [{ label: 'Meetings', href: '/client/meetings' }] };
+      return { text: meetingsText(out.data as MeetingsData).replace('/team/meetings', '/client/meetings'), citations: out.citations };
+    }
     if (CLIENT_KEYWORDS.contact.test(q)) {
       const out = await this.call(tools, 'my_account', {}, emit);
       const d = out.data as { accountManager: string | null; accountManagerContact: { email: string | null; phone: string | null } | null };
@@ -376,6 +430,13 @@ ${text}` : text, citations: out.citations };
       const rows = (out.data as { title: string; status: string; waitingOnYou: boolean; link: string }[]).filter((d) => d.waitingOnYou);
       return { text: rows.length ? `${rows.length} draft${rows.length === 1 ? ' is' : 's are'} waiting for your approval:\n${rows.map((d) => `- [${d.title}](${d.link})`).join('\n')}` : 'Nothing is waiting for your approval right now.', citations: out.citations };
     }
+    // A tab in their portal menu, answered with that page's data for their own company.
+    const skill = skillFor(me, q);
+    if (skill.mine) return this.answerSkill(me, skill.mine, tools, q, emit);
+    if (skill.notMine) return { text: `${skill.notMine.label} is not available for your user role. Your account owner can see it.`, citations: [] };
+    const where = clientPageFor(me, q);
+    if (where.mine) return { text: pageAnswer(where.mine), citations: [{ label: where.mine.label, href: where.mine.href }] };
+    if (where.notMine) return { text: `${where.notMine.label} is not available for your user role. Your account owner can see it.`, citations: [] };
     // Services, progress, milestones, "how is my project going" and anything else: the account overview.
     const out = await this.call(tools, 'my_account', {}, emit);
     const d = out.data as { company: string; accountManager: string | null; services: { service: string; status: string; milestone: string; requirementsPending: number }[]; invoicesDue: { number: string; total: string }[] };
@@ -420,7 +481,15 @@ type MyWeek = {
 export const STAFF_KEYWORDS = {
   help: /^(hi|hello|hey|help|menu|hii+)\b|\bwhat (can|do) you (do|answer|know)\b|\bhow (do|can) i use (you|this)\b|\bwhat (questions|can i ask)\b/,
   attendance:
-    /\b(check[- ]?ins?|checked (in|out)|check[- ]?outs?|attendance|punch(ed)?( in| out)?|clock(ed)?[- ]?(in|out)|late (today|mark|coming)|was i late|am i late|came late|working hours|office (hours|timings?|time)|shift|holidays?|weekly off|day off|week ?off|wfh|work(ing)? from home|leaves?|on leave|time off|vacation|sick)\b/,
+    /\b(check[- ]?ins?|checked (in|out)|check[- ]?outs?|attendance|punch(ed)?( in| out)?|clock(ed)?[- ]?(in|out)|late (today|mark|coming)|was i late|am i late|came late|working hours|office (hours|timings?|time)|shift|today a holiday|weekly off|day off|week ?off|wfh today|work(ing)? from home today|on leave today)\b/,
+  leave:
+    /\b(leaves?|leave balance|time off|vacation|sick|casual leave|holidays|holiday list|next holiday|upcoming holidays?|tomorrow a holiday|wfh days|work from home days|loss of pay|lop|days present|present days)\b/,
+  goals: /\b(goals?|okrs?|objectives?|targets? for me|my targets?|key results?)\b/,
+  meetings: /\b(meetings?|calls? (today|tomorrow|this week|scheduled|booked)|appointments?|booked calls?)\b/,
+  timesheet: /\b(timesheets?|time ?sheets?|hours (have i |i )?logged|logged hours|my hours|time logged|time entries)\b/,
+  expenses: /\b(expenses?|expense claims?|reimburse(ment|ments)?|claims?)\b/,
+  approvals: /\b(approvals?|approve|waiting for my (decision|approval)|pending approvals?)\b/,
+  performance: /\b(my performance|how am i (doing|performing)|my (stats|numbers|on[- ]time|productivity|streak)|my (qc )?pass rate)\b/,
   eod: /\b(eod|end[- ]of[- ](the[- ])?day|daily (report|update|status)s?|day report|stand-?up|team reports?|who (has |have )?(filed|submitted|sent))\b/,
   qc: /\b(qc|quality( checks?)?|sent back|send back|rework|redo|rejected by qc|review queue|to review|checks? (waiting|pending)|my checks?)\b/,
   sendToClient: /\b(ready to send|send(ing)? to (the )?clients?|sent to (the )?clients?|share with (the )?clients?|waiting to (be )?sen[dt])\b/,
@@ -429,8 +498,8 @@ export const STAFF_KEYWORDS = {
   mine: /\b(my (tasks?|work|day|week|clients?|leads?|summary|dashboard|status|update|pending|follow[- ]?ups?|plan|priorities|schedule|agenda)|what should i|what do i have|what('s| is) (on|in) my|my to ?do|pending (for|on) me|on my plate|what (do|should) i (do|work on|focus on)|what to do (today|next|now)|plan for (today|the day)|good morning)\b/,
   money:
     /\b(overdue|owe|owes|owed|outstanding|invoices?|payments?|due|collect(ion|ions)?|bills?|billing|receivables?|dues|unpaid|pending (payments?|amount)|money|balance|gst|paid|receipts?|cash ?flow|amount (due|pending))\b/,
-  leads: /\b(leads?|pipeline|follow[- ]?ups?|follow up|prospects?|deals?|enquir(y|ies)|inquir(y|ies)|opportunit(y|ies)|proposals?|quotes?|quotations?|hot|cold|won|lost|new business|conversion)\b/,
-  requests: /\b(requests?|tickets?|complaints?|escalations?|change requests?|quer(y|ies)|issues?|support|reply time|first reply|sla|unanswered)\b/,
+  leads: /\b(leads?|pipeline|follow[- ]?ups?|follow up|prospects?|deals?|enquir(y|ies)|inquir(y|ies)|opportunit(y|ies)|proposals?|hot|cold|won|lost|new business|conversion)\b/,
+  requests: /\b(requests?|tickets?|complaints?|escalations?|change requests?|quer(y|ies)|issues?|support|reply time|first reply|repl(y|ies)|sla|unanswered)\b/,
   sales: /\b(target|targets|scorecard|kpis?|projection|projected|forecast|sales (numbers|figures|this month|performance|report)|run rate|how (are|is) (we|sales) doing)\b/,
   team: /\b(team performance|performance|utili[sz]ation|productivity|on[- ]time|who (is|are) (busy|free|overloaded|available)|capacity|workload|top performers?|hours logged|team (load|status))\b/,
   clients: /\b(clients?|accounts?|customers?|brands?)\b/,
@@ -440,10 +509,11 @@ export const STAFF_KEYWORDS = {
 export const CLIENT_KEYWORDS = {
   help: /^(hi|hello|hey|help|menu|hii+)\b|\bwhat (can|do) you (do|answer|know)\b|\bwhat (questions|can i ask)\b/,
   contact:
-    /\b(client manager|account manager|my manager|contact|reach|call (you|bmu|them|my)|phone( number)?|contact number|email|e-mail|who (is|handles|manages|looks after)|talk to|speak to|whatsapp|meeting|book a call)\b/,
-  plans: /\b(plans?|content calendar|calendar|monthly plan|strategy|schedule|posting schedule)\b/,
+    /\b(client manager|account manager|my manager|contact|reach|call (you|bmu|them|my)|phone( number)?|contact number|email|e-mail|who (is|handles|manages|looks after)|talk to|speak to|whatsapp)\b/,
+  meetings: /\b(meetings?|book a call|calls? (today|tomorrow|this week|scheduled|booked)|appointments?)\b/,
+  plans: /\b(plans?|monthly plan|strategy|posting schedule)\b/,
   requirements:
-    /\b(requirements?|checklist|onboarding|documents?|docs|logins?|access|credentials|passwords?|what do you need|need from (me|us)|pending from (me|us)|send you|upload|brand (files|assets|kit)|materials?|assets)\b/,
+    /\b(requirements?|checklist|onboarding|logins?|access|credentials|what do you need|need from (me|us)|pending from (me|us)|send you|upload|brand (files|assets)|materials?)\b/,
   approvals:
     /\b(approv(e|al|als|ed)|drafts?|reviews?|feedback|sign[- ]?off|creatives?|designs?|posts?|videos?|reels?|deliverables?|revisions?|changes to|content)\b/,
   money:
@@ -451,28 +521,53 @@ export const CLIENT_KEYWORDS = {
   requests: /\b(requests?|tickets?|complaints?|issues?|problems?|change requests?|asked for|quer(y|ies)|support)\b/,
 };
 
-const CLIENT_HELP = `I can help with your account. Try asking:
-- What is waiting for my approval?
-- Do I have any invoices due? / What have I paid?
-- What do you still need from me?
-- Is my monthly plan ready?
-- What is the status of my requests?
-- How is my project going? Which milestone are we at?
-- Who is my client manager and how do I reach them?`;
+type GoalRow = { title: string; level: string; owner: string | null; department: string | null; mine: boolean; current: string; target: string; progressPct: number; status: string; ends: string | null };
+type MeetingRow = { title: string; when: string; with: string | null; host: string; place: string | null; status: string };
+type MeetingsData = { upcoming: MeetingRow[]; beingArranged: MeetingRow[]; recent: MeetingRow[] };
+const goalStatus: Record<string, string> = { on_track: 'on track', at_risk: 'at risk', behind: 'behind', done: 'done', missed: 'missed' };
 
-function staffHelp(client?: string, person?: string) {
-  return `In basic mode I can answer questions about what is on your dashboard:
-- **Your day:** What should I do today? What is overdue? What is due this week? Anything blocked?
-- **Attendance and leave:** Did I check in today? Was I late? Is today a holiday? Is my leave approved?
-- **End-of-day report:** Have I filed my EOD? How many of my team filed theirs?
-- **QC:** What was sent back by QC? What is waiting for my check? What is ready to send to the client?
-- **Delivery:** Which deliverables are at risk?
-- **Clients:** List my clients. Which clients are at risk and why? Tell me about ${client ?? 'Metro Dental'}.
-- **Money** (Founder, Branch Manager, Finance): How much is overdue from ${client ?? 'Metro Dental'}?
-- **Sales:** Show open leads and follow-ups. How are we doing against target?
-- **Requests:** Show open requests. Which replies are overdue?
-- **Team** (leadership): What is ${person?.split(' ')[0] ?? 'Meera'} working on? Team performance and workload.
-- **Summary of the week**`;
+function goalsText(all: GoalRow[], onlyMine: boolean) {
+  const rows = onlyMine && all.some((g) => g.mine) ? all.filter((g) => g.mine) : all;
+  if (!rows.length) return 'There are no goals for you yet. Goals are set on [Goals](/team/goals).';
+  const behind = rows.filter((g) => ['behind', 'at_risk'].includes(g.status)).length;
+  return `${rows.length} goal${rows.length === 1 ? '' : 's'}${behind ? `, ${behind} behind or at risk` : ''}:\n${rows
+    .slice(0, 15)
+    .map((g) => `- ${g.title}${g.owner && !g.mine ? ` (${g.owner})` : g.department ? ` (${g.department})` : ''}: ${g.current} of ${g.target}, ${g.progressPct}% · ${goalStatus[g.status] ?? g.status}${g.ends ? ` · ends ${g.ends}` : ''}`)
+    .join('\n')}\nSee [Goals](/team/goals).`;
+}
+
+function meetingsText(m: MeetingsData) {
+  const line = (x: MeetingRow) => `- ${x.when}: ${x.title}${x.with ? ` with ${x.with}` : ''}${x.place ? ` · ${x.place}` : ''}`;
+  const out: string[] = [];
+  out.push(m.upcoming.length ? `Coming up:\n${m.upcoming.map(line).join('\n')}` : 'No meetings coming up.');
+  if (m.beingArranged.length) out.push(`Being arranged:\n${m.beingArranged.map(line).join('\n')}`);
+  return `${out.join('\n\n')}\nSee [Meetings](/team/meetings).`;
+}
+
+function leaveText(d: { balance: { type: string; allowed: number; used: number; pending: number; left: number }[]; unpaidUsed: number; wfhDays: number; canApply: boolean; requests: { from: string; to: string; type: string; days: number; status: string }[]; attendanceThisMonth: { daysPresent: number; workingDaysSoFar: number; totalHours: number }; upcomingHolidays: { date: string; name: string }[] }) {
+  const out: string[] = [];
+  if (d.canApply && d.balance.length) out.push(`Leave left this year: ${d.balance.map((b) => `${b.left} ${b.type} (used ${b.used}${b.pending ? `, ${b.pending} pending` : ''})`).join(', ')}.${d.unpaidUsed ? ` ${d.unpaidUsed} unpaid day${d.unpaidUsed === 1 ? '' : 's'} taken.` : ''}${d.wfhDays ? ` ${d.wfhDays} work-from-home day${d.wfhDays === 1 ? '' : 's'}.` : ''}`);
+  if (d.requests.length) out.push(`Your leave requests:\n${d.requests.slice(0, 5).map((r) => `- ${r.from}${r.to !== r.from ? ` – ${r.to}` : ''}: ${r.type}, ${r.days} day${r.days === 1 ? '' : 's'} · ${r.status}`).join('\n')}`);
+  out.push(`This month you were present ${d.attendanceThisMonth.daysPresent} of ${d.attendanceThisMonth.workingDaysSoFar} working days (${d.attendanceThisMonth.totalHours} hours).`);
+  if (d.upcomingHolidays.length) out.push(`Next holidays: ${d.upcomingHolidays.map((h) => `${h.name} (${h.date})`).join(', ')}.`);
+  return `${out.join('\n\n')}\nApply for leave or see more on [Profile, leave & attendance](/team/profile).`;
+}
+
+function timesheetText(t: { week: string; status: string; hours: number; byDay: { date: string; hours: number }[]; comment: string | null; canSubmit: boolean }) {
+  const status = t.status === 'draft' ? (t.canSubmit ? 'not submitted yet' : 'in progress') : t.status.replaceAll('_', ' ');
+  return `This week (${t.week}): ${t.hours} hours logged, timesheet ${status}.${t.comment ? ` Note from your approver: ${t.comment}` : ''}\n${t.byDay.map((d) => `- ${d.date}: ${d.hours} h`).join('\n')}\nSee [My timesheet](/team/timesheet).`;
+}
+
+function expensesText(e: { waiting: string; approvedUnpaid: string; claims: { what: string; amount: string; date: string | null; status: string }[] }) {
+  if (!e.claims.length) return 'You have no expense claims. Add one from [My expenses](/team/expenses).';
+  return `Waiting for approval: ${e.waiting}. Approved, not paid yet: ${e.approvedUnpaid}.\n${e.claims.slice(0, 8).map((c) => `- ${c.date ?? ''} ${c.what}: ${c.amount} · ${c.status}`).join('\n')}\nSee [My expenses](/team/expenses).`;
+}
+
+type Cmp = { value: number | null; prev: number | null };
+function performanceText(p: { stats: { completed: Cmp; onTimePct: Cmp; hours: Cmp; qcFirstPassPct: Cmp; streakDays: number }; teamAverage: { completed: number | null; onTimePct: number | null }; upcoming: { title: string; due: string | null }[] }) {
+  const s = p.stats;
+  const pct = (n: number | null) => (n === null ? '—' : `${Math.round(n)}%`);
+  return `Last 30 days: ${s.completed.value ?? 0} tasks completed (before: ${s.completed.prev ?? 0}; team average ${p.teamAverage.completed ?? '—'}), ${pct(s.onTimePct.value)} on time (team ${pct(p.teamAverage.onTimePct)}), ${Math.round(s.hours.value ?? 0)} hours logged, ${pct(s.qcFirstPassPct.value)} passed QC first time.${s.streakDays ? ` On-time streak: ${s.streakDays} days.` : ''}${p.upcoming.length ? `\nComing up: ${p.upcoming.map((t) => `${t.title}${t.due ? ` (${t.due})` : ''}`).join('; ')}.` : ''}\nSee [My performance](/team/performance).`;
 }
 
 const TaskLineText = (x: TaskLine) => `- [${x.title}](${x.link})${x.client ? ` · ${x.client}` : ''}${x.due ? ` · due ${x.due}` : ''}${x.reason ? ` · ${x.reason}` : ''}`;

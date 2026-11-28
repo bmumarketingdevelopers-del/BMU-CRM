@@ -18,7 +18,8 @@ const panel = founder.getByRole("dialog", { name: "Ask BMU" });
 await panel.waitFor();
 check(await panel.getByText("Answers use only what your role can see").isVisible(), "panel says answers follow the role");
 await shot(founder, "01-copilot-empty");
-await panel.getByRole("button", { name: "Which clients are at risk this month and why?" }).click();
+check(!(await panel.getByRole("button", { name: /Metro Dental|Meera/ }).count()), "starter questions only use what this person's dashboard has");
+await panel.getByRole("button", { name: "Summary of the week" }).click();
 await panel.getByText("Basic", { exact: true }).first().waitFor();
 const answer = await panel.locator("ol > li").nth(1).innerText();
 check(answer.length > 40, "a basic answer arrives");
@@ -34,7 +35,7 @@ check((await panel.locator("ol > li").count()) >= 4, "second answer is added to 
 await panel.getByRole("button", { name: "History" }).click();
 await panel.getByText("Recent conversations").waitFor();
 await panel.locator("ul li").first().waitFor();
-check(await panel.getByRole("button", { name: "Which clients are at risk this month and why?" }).first().isVisible(), "conversation shows in history");
+check(await panel.getByRole("button", { name: "Summary of the week" }).first().isVisible(), "conversation shows in history");
 await shot(founder, "03-copilot-history");
 await founder.keyboard.press("Escape");
 

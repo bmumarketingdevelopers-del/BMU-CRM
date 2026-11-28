@@ -61,3 +61,4 @@ export * from "./api/quotations.js";
 export * from "./hr-issues.js";
 export * from "./org-charts.js";
 export * from "./api/hr-issues.js";
+export * from "./admin-nav-rules.js";

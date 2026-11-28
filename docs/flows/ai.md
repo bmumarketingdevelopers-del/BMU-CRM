@@ -34,7 +34,36 @@ In basic mode, Ask BMU picks its answer from keywords in the question (`STAFF_KE
   - requests
   - services and milestones (the default answer)
 
-A question that matches nothing gets a list of what it can answer. With an AI key, the model answers instead, using
+Everything in a person's menu can be asked about:
+- **Answered with data:** goals, meetings, leave balance and requests, timesheet, expenses, approvals waiting, my
+  performance (tools `my_goals`, `my_meetings`, `my_leave`, `my_timesheet`, `my_expenses`, `my_approvals`,
+  `my_performance`).
+- **Answered with what the page holds and a link:** other pages such as Documents, SOP library, Files, Brand kits,
+  Content calendar and Capacity.
+
+**Only what the person has.** `apps/api/src/ai/ai-topics.ts` follows the same rules as the team and client menus:
+- The help list, the starter questions in the panel (`AiStatus.examples`) and the page answers include only what that
+  person's role can open. A producer is never offered money, sales, team or client questions.
+- Examples use a real client and a real colleague, never a system account.
+- A page the person doesn't have is answered plainly: "Quotations is not on your dashboard".
+- Tests: `ai-topics.spec.ts` and `ai-routing.spec.ts`.
+
+**Every tab in the menu** (Team app, Command Centre and client portal) is a page skill in `apps/api/src/ai/pages/`:
+- Each skill has `label`, `href`, `can(me)` (the same rule as the menu, from `access.ts`), keywords, example
+  questions, a read-only `load` through the page's own service with the person's scope, and a basic-mode `answer`.
+- The files are grouped: `team-work`, `team-clients`, `admin-command`, `admin-org`, `admin-catalogue`,
+  `admin-finance` and `client`.
+- The same skills are the model's tools in AI mode, so the model also sees only that person's tabs.
+- Command Centre access rules live in `packages/shared/src/admin-nav-rules.ts`, shared with the menu.
+- When two tabs match, the most specific phrase wins: "capacity by department" (Command Centre) beats "capacity"
+  (Team app).
+- `pages/skills.spec.ts` checks:
+  - every skill follows the contract
+  - every example question reaches its own tab, for someone who has it
+  - the core questions still reach the core answers
+- **Adding a tab to a menu means adding its skill.**
+
+A question that matches nothing gets that person's own help list. With an AI key, the model answers instead, using
 the same tools.
 
 - Journey scripts (basic mode): `apps/web/e2e/ai/*.mjs`, run with `BASE_URL=http://localhost:3000 node apps/web/e2e/ai/copilot.mjs`.

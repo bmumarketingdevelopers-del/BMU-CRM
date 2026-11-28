@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { CLIENT_KEYWORDS, STAFF_KEYWORDS } from './ai-copilot.js';
 
 const staff: [keyof typeof STAFF_KEYWORDS, string[]][] = [
-  ['attendance', ['Did I check in today?', 'Was I late today?', 'Is tomorrow a holiday?', 'Is my leave approved?', 'What are my office timings?', 'Am I working from home today?']],
+  ['attendance', ['Did I check in today?', 'Was I late today?', 'Is today a holiday?', 'What are my office timings?', 'Am I working from home today?']],
+  ['leave', ['Is my leave approved?', 'How many leaves do I have left?', 'When is the next holiday?', 'Is tomorrow a holiday?']],
+  ['goals', ['List my goals', 'Which goals are behind?', 'How are my OKRs?']],
+  ['meetings', ['What meetings do I have coming up?', 'Any calls today?']],
+  ['timesheet', ['How many hours have I logged this week?', 'Is my timesheet submitted?']],
+  ['expenses', ['What is the status of my expenses?', 'Has my reimbursement been paid?']],
+  ['approvals', ['Do I have approvals waiting?']],
+  ['performance', ['How am I performing this month?', 'My performance']],
   ['eod', ['Have I submitted my EOD?', 'Did I file my end of day report?', 'How many of my team filed their daily report?']],
   ['qc', ['What did QC send back?', 'What is waiting for my QC check?', 'Anything for rework?']],
   ['sendToClient', ['What is ready to send to the client?']],
@@ -18,8 +25,9 @@ const staff: [keyof typeof STAFF_KEYWORDS, string[]][] = [
 ];
 
 const client: [keyof typeof CLIENT_KEYWORDS, string[]][] = [
-  ['contact', ['Who is my client manager?', 'What is the phone number of my manager?', 'How do I book a call?']],
-  ['plans', ['Is my monthly plan ready?', 'Show the content calendar']],
+  ['contact', ['Who is my client manager?', 'What is the phone number of my manager?']],
+  ['meetings', ['Do I have a meeting coming up?', 'How do I book a call?']],
+  ['plans', ['Is my monthly plan ready?']],
   ['requirements', ['What do you still need from me?', 'Do you need any logins?', 'Where do I upload brand files?']],
   ['approvals', ['What is waiting for my approval?', 'Any new designs to review?', 'Give feedback on the reel']],
   ['money', ['Do I have any invoices due?', 'How much have I paid?', 'Send me the GST receipt']],

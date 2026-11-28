@@ -7,8 +7,8 @@ import { aiStream, useAiStatus } from "@/lib/ai";
 import { AiNotice } from "./ai-panel";
 import { AiText } from "./ai-text";
 
-const STAFF_EXAMPLES = ["Which clients are at risk this month and why?", "How much is overdue from Metro Dental?", "What is Meera working on?", "Summary of the week"];
-const CLIENT_EXAMPLES = ["What is waiting for my approval?", "Do I have any invoices due?", "What is the status of my requests?"];
+const STAFF_EXAMPLES = ["What should I do today?", "List my goals", "Summary of the week"];
+const CLIENT_EXAMPLES = ["What is waiting for my approval?", "What is the status of my requests?"];
 
 /** Ask BMU: a side panel opened with the button or Ctrl/Cmd + J. Staff ask about the CRM; clients about their own account. */
 export function Copilot({ audience }: { audience: "staff" | "client" }) {
@@ -92,7 +92,8 @@ export function Copilot({ audience }: { audience: "staff" | "client" }) {
   }
 
   if (!enabled) return null;
-  const examples = audience === "client" ? CLIENT_EXAMPLES : STAFF_EXAMPLES;
+  // The server picks starter questions from what this person's dashboard has; the fixed lists are only a fallback.
+  const examples = status?.examples?.length ? status.examples : audience === "client" ? CLIENT_EXAMPLES : STAFF_EXAMPLES;
 
   return (
     <>

@@ -19,6 +19,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { startOfMonth } from '../insights/ist.js';
+import { starterQuestions } from './ai-topics.js';
 import { AI_CLIENT, aiFastModel, aiModel, estimateCostPaise, type AiClient, type AiRunParams } from './ai-client.js';
 
 export type AiWho = { orgId: string; userId: string | null; me?: Me };
@@ -95,6 +96,7 @@ export class AiService {
       features,
       canManage: this.canManage(me),
       notice: !s.enabled ? 'AI Copilot is switched off for your organisation.' : connected ? null : this.noticeFor(me, AI_BASIC_NOTICE),
+      examples: starterQuestions(me),
     };
   }
 
