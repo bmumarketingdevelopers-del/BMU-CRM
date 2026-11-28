@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { craftSpecialtyLabel, craftWorkspace, isCraftManager } from "@bmu/shared";
+import { craftSpecialtyLabel, isCraftManager, opensCraftWorkspace } from "@bmu/shared";
 import { CraftDashboard } from "@/components/craft/craft-dashboard";
 import { ManagerDashboard } from "@/components/craft/manager-dashboard";
 import { CustomiseLink } from "@/components/dashboards/customise-link";
@@ -25,12 +25,16 @@ export default async function MyDay() {
   if (dash && !dash.builtin) return <CustomDashboard view={dash} />;
   const layout = dash?.layout;
   // v10 craft: specialists get their own workspace (My Day essentials stay as a strip on top).
-  if (craftWorkspace(me.specialty)) {
+  // v62: interns too (their job role's panels if they have one, else the shared workspace).
+  if (opensCraftWorkspace(me)) {
+    const intern = me.roles.includes("intern");
+    const job = craftSpecialtyLabel(me.specialty).toLowerCase();
+    const what = intern ? (job ? `${job} intern` : "intern") : job;
     return (
       <>
         <PageTitle
           title={`${greeting()}, ${me.name.split(" ")[0]}`}
-          subtitle={`${today.format(new Date())}. Your ${craftSpecialtyLabel(me.specialty).toLowerCase()} workspace: what to do next, client feedback and how your work is trending.`}
+          subtitle={`${today.format(new Date())}. Your ${what} workspace: what to do next, ${intern && !job ? "your deadlines" : "client feedback"} and how your work is trending.`}
           action={
             <div className="flex gap-4 text-sm">
               <Link href="/team/tasks" className="text-ink-muted hover:text-ink">

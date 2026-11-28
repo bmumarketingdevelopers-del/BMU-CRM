@@ -1,7 +1,7 @@
-import { canOpenCraftManager, craftWorkspace, isCraftManager } from "@bmu/shared";
+import { canOpenCraftManager, isCraftManager, opensCraftWorkspace } from "@bmu/shared";
 import { AppShell } from "@/components/app-shell";
 import type { NavSection } from "@/components/side-nav";
-import { requireMe, serverApi } from "@/lib/session";
+import { inRedesignPreview, requireMe, serverApi } from "@/lib/session";
 
 export default async function TeamLayout({ children }: { children: React.ReactNode }) {
   const me = await requireMe(["staff"]);
@@ -18,7 +18,7 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
     {
       section: "Work",
       items: [
-        { label: craftWorkspace(me.specialty) || isCraftManager(me) ? "My workspace" : "My Day", href: "/team" },
+        { label: opensCraftWorkspace(me) || isCraftManager(me) ? "My workspace" : "My Day", href: "/team" },
         ...(canOpenCraftManager(me) && !isCraftManager(me) ? [{ label: "Manager workspace", href: "/team/manager" }] : []),
         // v50: end-of-day reports from the people who report to them (and their department, for Department Heads).
         ...(me.leadsPeople ? [{ label: "Daily reports", href: "/team/reports" }] : []),
@@ -71,7 +71,7 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
     ...(isAdmin ? [{ section: "Admin", items: [{ label: "Command Centre", href: "/admin" }, ...(isStudio ? [{ label: "Dashboard Studio", href: "/admin/dashboards" }] : [])] }] : []),
   ];
   return (
-    <AppShell me={me} surface="Team app" nav={nav}>
+    <AppShell me={me} surface="Team app" nav={nav} themeSwitch={inRedesignPreview(me)}>
       {children}
     </AppShell>
   );

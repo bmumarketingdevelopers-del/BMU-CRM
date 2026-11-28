@@ -3,6 +3,7 @@ import { personRoleTitle, formatINR, searchNormalise, type Me, type TeamSearchIt
 import type { Prisma } from '../generated/prisma/client.js';
 import { headScope, isLeadership, visibleEngagementWhere } from '../engagements/engagement-access.js';
 import { FlagsService } from '../platform/flags.service.js';
+import { fileScope, fileWhere } from '../ops-actions/file-access.js';
 import { SearchIndexService, type IndexedKind } from '../platform/search-index.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { capable, hasRole, isStaff } from './access.js';
@@ -18,12 +19,16 @@ const LABELS: Record<TeamSearchKind, string> = {
   project: 'Projects',
   request: 'Requests',
   creator: 'Creators',
+  file: 'Files',
 };
 const TAKE = 6;
 /** Rows fetched per kind before ranking (plain matches plus smart-search candidates). */
 const FETCH = 20;
-const ORDER: TeamSearchKind[] = ['client', 'lead', 'project', 'proposal', 'request', 'invoice', 'task', 'person', 'creator', 'sop'];
-const INDEXED: IndexedKind[] = ['client', 'lead', 'invoice', 'task', 'person', 'sop', 'project', 'request', 'creator'];
+const ORDER: TeamSearchKind[] = ['client', 'lead', 'project', 'proposal', 'request', 'invoice', 'task', 'file', 'person', 'creator', 'sop'];
+const INDEXED: IndexedKind[] = ['client', 'lead', 'invoice', 'task', 'person', 'sop', 'project', 'request', 'creator', 'file'];
+/** v61: never search results: invoice signatures and seals (settings images). Payment proofs: money roles only. */
+const HIDDEN_FILE_TAGS = ['invoice-signature', 'invoice-seal', 'cm-signature'];
+const PROOF_ROLES = ['founder', 'admin', 'am_lead', 'finance'];
 
 /** Smart-search candidates for one kind: ids to include and their scores. */
 type Hits = { ids: string[]; score: Map<string, number> };
@@ -66,11 +71,12 @@ export class SearchService {
       want('request') ? this.requests(me, like, hits('request')) : skip,
       want('invoice') ? this.invoices(me, like, hits('invoice')) : skip,
       want('task') ? this.tasks(me, like, hits('task')) : skip,
+      want('file') ? this.files(me, like, hits('file')) : skip,
       want('person') ? this.people(me, like, admin, hits('person')) : skip,
       want('creator') ? this.creators(me, like, hits('creator')) : skip,
       want('sop') ? this.sops(me, like, admin, hits('sop')) : skip,
     ]);
-    const scores: Record<string, Hits> = { client: hits('client'), lead: hits('lead'), project: hits('project'), proposal: NO_HITS, request: hits('request'), invoice: hits('invoice'), task: hits('task'), person: hits('person'), creator: hits('creator'), sop: hits('sop') };
+    const scores: Record<string, Hits> = { client: hits('client'), lead: hits('lead'), project: hits('project'), proposal: NO_HITS, request: hits('request'), invoice: hits('invoice'), task: hits('task'), file: hits('file'), person: hits('person'), creator: hits('creator'), sop: hits('sop') };
     const needle = searchNormalise(q);
     const out = ORDER.map((kind, i) => {
       const ranked = groups[i]
@@ -227,6 +233,44 @@ export class SearchService {
       title: t.title,
       sub: [t.deliverable?.cycle.engagement.clientOrg.name, t.owner?.name ?? 'Unassigned', t.status.replace('_', ' ')].filter(Boolean).join(' · '),
       href: t.deliverableId ? `/team/deliverables/${t.deliverableId}` : t.engagementId ? `/team/projects/${t.engagementId}` : '/team/tasks',
+    }));
+  }
+
+  /**
+   * v61: files in Files, by name (and client or tag). Same access as the Files page (file-access.ts): files sent in a
+   * discussion or on a task only for the people they were sent to. Opens Files filtered to that name.
+   */
+  private async files(me: Me, like: Prisma.StringFilter, h: Hits): Promise<TeamSearchItem[]> {
+    const [scope, named] = await Promise.all([
+      fileScope(this.prisma, me),
+      // Files have no link to their client in the schema: match the client's name through its id.
+      this.prisma.clientOrg.findMany({ where: { orgId: me.orgId, name: like }, select: { id: true }, take: 50 }),
+    ]);
+    const rows = await this.prisma.file.findMany({
+      where: {
+        AND: [
+          { orgId: me.orgId, archivedAt: null, name: { not: null }, NOT: { tags: { hasSome: HIDDEN_FILE_TAGS } } },
+          hasRole(me, ...PROOF_ROLES) ? {} : { NOT: { tags: { has: 'payment-proof' } } },
+          fileWhere(me, scope),
+          { OR: this.or<Prisma.FileWhereInput>([{ name: like }, ...(named.length ? [{ clientOrgId: { in: named.map((c) => c.id) } }] : [])], h) },
+        ],
+      },
+      take: FETCH,
+      orderBy: { createdAt: 'desc' },
+    });
+    const clientIds = [...new Set(rows.map((f) => f.clientOrgId).filter((x): x is string => !!x))];
+    const userIds = [...new Set(rows.map((f) => f.uploadedById).filter((x): x is string => !!x))];
+    const [clients, users] = await Promise.all([
+      clientIds.length ? this.prisma.clientOrg.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } }) : [],
+      userIds.length ? this.prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } }) : [],
+    ]);
+    const day = (d: Date) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+    return rows.map((f) => ({
+      kind: 'file',
+      id: f.id,
+      title: f.name!,
+      sub: [clients.find((c) => c.id === f.clientOrgId)?.name ?? 'No client', users.find((u) => u.id === f.uploadedById)?.name, day(f.createdAt)].filter(Boolean).join(' · '),
+      href: `/team/files?q=${encodeURIComponent(f.name!)}`,
     }));
   }
 

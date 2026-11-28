@@ -17,7 +17,7 @@ import {
   dashboardUpdateSchema,
   hierarchyData,
   isCraftManager,
-  craftWorkspace,
+  opensCraftWorkspace,
   isDashboardBuiltinKey,
   type DashboardAudience,
   type DashboardBuiltinKey,
@@ -230,7 +230,7 @@ export class DashboardsService {
       .filter((x) => x.d.placement === placement && x.rank >= 0)
       .sort((a, b) => b.rank - a.rank || b.d.updatedAt.getTime() - a.d.updatedAt.getTime());
     if (overrides[0]) return this.viewWithName(me, overrides[0].d);
-    const key: DashboardBuiltinKey = surface === 'admin' ? 'command_centre' : craftWorkspace(me.specialty) ? 'specialist' : isCraftManager(me) ? 'manager' : 'my_day';
+    const key: DashboardBuiltinKey = surface === 'admin' ? 'command_centre' : opensCraftWorkspace(me) ? 'specialist' : isCraftManager(me) ? 'manager' : 'my_day';
     return this.viewWithName(me, await this.builtinRow(me.orgId, key));
   }
 

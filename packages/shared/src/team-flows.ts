@@ -196,7 +196,8 @@ export type TeamWhoIsOut = { date: string; people: (Ref & { type: string; to: st
 // ---------------------------------------------------------------------------
 // Global search
 
-export type TeamSearchKind = "client" | "lead" | "proposal" | "invoice" | "task" | "person" | "sop" | "project" | "request" | "creator";
+/** v61: "file" = a file in Files (only the ones the person may see there). */
+export type TeamSearchKind = "client" | "lead" | "proposal" | "invoice" | "task" | "person" | "sop" | "project" | "request" | "creator" | "file";
 /** v13: `fuzzy` marks a result found despite a typo or partial name (smart search). */
 export type TeamSearchItem = { kind: TeamSearchKind; id: string; title: string; sub: string | null; href: string; fuzzy?: boolean };
 export type TeamSearchResult = { q: string; groups: { kind: TeamSearchKind; label: string; items: TeamSearchItem[] }[] };

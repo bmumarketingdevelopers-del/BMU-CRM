@@ -456,8 +456,17 @@ export const CRAFT_MANAGER_ROLES = ["account_manager", "am_lead", "department_he
 export const CRAFT_MANAGER_ACCESS_ROLES = [...CRAFT_MANAGER_ROLES, "founder", "admin"] as const;
 
 /** Whether this person's /team home is the Manager workspace. A maker specialty wins over the manager role. */
+/**
+ * v62: whether the team home is the specialist workspace ("My workspace"): everyone whose job role opens one, and every
+ * intern (an intern with a job role gets that role's panels; one without gets the shared workspace: attendance, KPIs,
+ * what to do next and workload). Used by the home page, the menu and the Dashboard Studio, so they always agree.
+ */
+export function opensCraftWorkspace(me: { roles: string[]; specialty?: string | null }): boolean {
+  return !!craftWorkspace(me.specialty) || me.roles.includes("intern");
+}
+
 export function isCraftManager(me: { roles: string[]; specialty?: string | null }): boolean {
-  if (craftWorkspace(me.specialty)) return false;
+  if (opensCraftWorkspace(me)) return false;
   if (me.specialty === CRAFT_PROJECT_MANAGER.id) return true;
   return me.roles.some((r) => (CRAFT_MANAGER_ROLES as readonly string[]).includes(r));
 }

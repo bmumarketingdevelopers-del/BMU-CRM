@@ -101,7 +101,7 @@ export type HrIssuesData = {
   answers: boolean;
   inbox: { subject: string; from: string | null; category: string; status: string; raised: string | null }[];
 };
-export type DiscussionsData = { total: number; unreadThreads: number; unreadMessages: number; threads: { title: string; client: string; unread: number; last: { author: string; at: string | null; body: string } | null; link: string }[] };
+export type DiscussionsData = { total: number; unreadThreads: number; unreadMessages: number; threads: { title: string; client: string | null; unread: number; last: { author: string; at: string | null; body: string } | null; link: string }[] };
 export type SopsData = { count: number; sops: { title: string; department: string; version: number; link: string }[] };
 export type DocsData = { count: number; docs: { title: string; kind: string; client: string | null; updatedBy: string | null; updated: string | null; clientVisible: boolean; link: string }[] };
 
@@ -567,7 +567,8 @@ export const SKILLS: PageSkill[] = [
         unreadMessages: rows.reduce((n, t) => n + (t.unread ?? 0), 0),
         threads: sorted.slice(0, 10).map((t) => ({
           title: redact(t.title),
-          client: t.client.name,
+          // Internal discussions have no client.
+          client: t.client?.name ?? null,
           unread: t.unread ?? 0,
           last: t.lastMessage ? { author: t.lastMessage.author, at: dayShort(t.lastMessage.at), body: cut(redact(t.lastMessage.body), 100) } : null,
           link: `/team/discussions/${t.id}`,
@@ -579,7 +580,7 @@ export const SKILLS: PageSkill[] = [
       if (!d.total) return `You are not in any discussions yet. ${page}`;
       const unreadOnly = /\bunread\b/.test(q);
       const rows = (unreadOnly ? d.threads.filter((t) => t.unread) : d.threads).map(
-        (t) => `${link(t.title, t.link)} · ${t.client}${t.unread ? ` · ${t.unread} unread` : ''}${t.last ? `: ${t.last.author} (${t.last.at}): "${t.last.body}"` : ''}`,
+        (t) => `${link(t.title, t.link)} · ${t.client ?? 'internal'}${t.unread ? ` · ${t.unread} unread` : ''}${t.last ? `: ${t.last.author} (${t.last.at}): "${t.last.body}"` : ''}`,
       );
       return [
         d.unreadThreads ? `${plural(d.unreadMessages, 'unread message')} in ${plural(d.unreadThreads, 'discussion')} (of ${d.total}).` : `No unread messages in your ${plural(d.total, 'discussion')}.`,

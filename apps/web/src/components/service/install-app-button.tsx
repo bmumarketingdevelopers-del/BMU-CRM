@@ -8,7 +8,9 @@ import { INSTALL_READY, installMode, promptInstall } from "@/lib/install-app";
  * then runs in its own window with a desktop and taskbar icon. iPhone / iPad and Safari on Mac: the steps to follow.
  * Hidden once installed, inside the installed app, and in browsers that can't install sites.
  */
-export function InstallAppButton() {
+/** look "glass": v54 redesign preview (a small glass card in the new sidebar); same install steps. */
+export function InstallAppButton({ look = "classic" }: { look?: "classic" | "glass" }) {
+  const glass = look === "glass";
   const [mode, setMode] = useState<ReturnType<typeof installMode>>(null);
   const [steps, setSteps] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -28,13 +30,13 @@ export function InstallAppButton() {
     setBusy(false);
   };
   return (
-    <div className="px-5 pb-3 md:pb-4 print:hidden" data-testid="install-app">
+    <div className={glass ? "hidden px-3 pb-2 md:block print:hidden" : "px-5 pb-3 md:pb-4 print:hidden"} data-testid="install-app">
       <button
         type="button"
         onClick={click}
         disabled={busy}
         aria-expanded={mode === "prompt" ? undefined : steps}
-        className="flex w-full items-center gap-2 border border-border bg-surface px-3 py-2 text-left text-xs text-ink hover:border-ink-muted disabled:opacity-60"
+        className={glass ? "flex w-full items-center gap-2.5 rounded-2xl border border-[var(--ui-glass-edge)] bg-[var(--ui-glass)] px-3 py-2.5 text-left text-xs text-ink transition-colors hover:bg-ui-accent-soft disabled:opacity-60" : "flex w-full items-center gap-2 border border-border bg-surface px-3 py-2 text-left text-xs text-ink hover:border-ink-muted disabled:opacity-60"}
       >
         <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-ink-muted" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
           <rect x="3" y="4" width="18" height="13" rx="1.5" />

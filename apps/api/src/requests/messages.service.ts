@@ -32,6 +32,12 @@ export function clientStaffWhere(me: Me): Prisma.ThreadWhereInput {
   return { ...base, OR: [{ createdById: me.id }, { participantIds: { has: me.id } }, { clientOrg: { amUserId: me.id } }] };
 }
 
+/** v59: a client conversation's client. Every thread this service handles has one; an internal discussion without a client never gets here. */
+function clientOf<T>(t: { clientOrg: T | null }): T {
+  if (!t.clientOrg) throw new NotFoundException('Thread not found');
+  return t.clientOrg;
+}
+
 /** v53: how long a heartbeat counts as "has it open" (the screen sends one every few seconds). */
 const VIEWING_MS = 20_000;
 
@@ -45,8 +51,9 @@ export async function viewingNow(prisma: PrismaService, threadId: string, userId
 /** Staff who see client threads: their own clients for CMs, every client for leadership. Owner chats: Founder only. */
 export async function threadScope(me: Me): Promise<Prisma.ThreadWhereInput> {
   if (me.type !== 'staff') throw new ForbiddenException();
-  if (isFounder(me)) return { orgId: me.orgId };
-  if (isLeadership(me)) return { orgId: me.orgId, type: { not: OWNER_THREAD } };
+  // v59: only conversations with a client (an internal discussion may have none and is never a client thread).
+  if (isFounder(me)) return { orgId: me.orgId, clientOrgId: { not: null } };
+  if (isLeadership(me)) return { orgId: me.orgId, type: { not: OWNER_THREAD }, clientOrgId: { not: null } };
   if (me.roles.includes('account_manager')) return { orgId: me.orgId, type: { not: OWNER_THREAD }, clientOrg: { amUserId: me.id } };
   throw new ForbiddenException('Client threads are for Client Managers and leadership');
 }
@@ -149,7 +156,7 @@ export class MessagesService {
       create: { threadId: t.id, userId: me.id, orgId: t.orgId, lastReadAt: new Date() },
       update: { lastReadAt: new Date() },
     });
-    return { id: t.id, kind: t.type === OWNER_THREAD ? OWNER_THREAD : t.type === CLIENT_STAFF_THREAD ? CLIENT_STAFF_THREAD : CM_THREAD, client: { id: t.clientOrg.id, name: t.clientOrg.name }, am: t.clientOrg.am?.name ?? null, messages: msgs, awaitingReply: me.type === 'staff' ? await this.awaiting(t, authors) : null, unread };
+    return { id: t.id, kind: t.type === OWNER_THREAD ? OWNER_THREAD : t.type === CLIENT_STAFF_THREAD ? CLIENT_STAFF_THREAD : CM_THREAD, client: { id: clientOf(t).id, name: clientOf(t).name }, am: clientOf(t).am?.name ?? null, messages: msgs, awaitingReply: me.type === 'staff' ? await this.awaiting(t, authors) : null, unread };
   }
 
   private async clientThread(me: Me) {
@@ -219,7 +226,7 @@ export class MessagesService {
     staff.sort((a, b) => (b.lastMessage?.at ?? '').localeCompare(a.lastMessage?.at ?? ''));
     return {
       owner: owner ? await summary(owner) : null,
-      am: { name: cm.clientOrg.am?.name ?? null, ...(await summary(cm)) },
+      am: { name: clientOf(cm).am?.name ?? null, ...(await summary(cm)) },
       staff,
     };
   }
@@ -252,7 +259,7 @@ export class MessagesService {
       out.push({
         id: t.id,
         kind: t.type === OWNER_THREAD ? OWNER_THREAD : CM_THREAD,
-        client: { id: t.clientOrg.id, name: t.clientOrg.name },
+        client: { id: clientOf(t).id, name: clientOf(t).name },
         lastMessage: last ? { body: (last.body || (last.attachments.length ? 'Sent an attachment' : '')).slice(0, 140), author: a?.name ?? '', at: last.createdAt.toISOString(), isClient: a?.type === 'client' } : null,
         awaitingReply: await this.awaiting(t, authors),
         unread: unread.get(t.id) ?? 0,
@@ -333,15 +340,15 @@ export class MessagesService {
       // v53: a reply in a chat a team member started: the people in it, except those reading it right now.
       const team = [...new Set([t.createdById, ...t.participantIds])].filter((x): x is string => !!x);
       const reading = await viewingNow(this.prisma, t.id, team);
-      await this.notifications.notify(t.orgId, team.filter((x) => !reading.has(x)), { kind: 'message', title: `Message from ${me.name} (${t.clientOrg.name})`, body: preview, link: `/team/discussions/${t.id}` });
+      await this.notifications.notify(t.orgId, team.filter((x) => !reading.has(x)), { kind: 'message', title: `Message from ${me.name} (${clientOf(t).name})`, body: preview, link: `/team/discussions/${t.id}` });
     } else if (me.type === 'client') {
       // Owner chat → the Founder(s); Client Manager chat → the client's CM.
       const to = isOwnerChat
         ? (await this.prisma.user.findMany({ where: { orgId: t.orgId, type: 'staff', status: 'active', deletedAt: null, roles: { some: { role: { baseRole: 'founder' } } } }, select: { id: true } })).map((u) => u.id)
-        : [t.clientOrg.am?.id];
-      await this.notifications.notify(t.orgId, to, { kind: 'message', title: `Message from ${me.name} (${t.clientOrg.name})`, body: preview, link: `/team/messages/${t.id}` });
+        : [clientOf(t).am?.id];
+      await this.notifications.notify(t.orgId, to, { kind: 'message', title: `Message from ${me.name} (${clientOf(t).name})`, body: preview, link: `/team/messages/${t.id}` });
     } else if (!isInternal) {
-      const clientUsers = await this.prisma.clientUser.findMany({ where: { clientOrgId: t.clientOrgId }, select: { userId: true } });
+      const clientUsers = await this.prisma.clientUser.findMany({ where: { clientOrgId: clientOf(t).id }, select: { userId: true } });
       await this.notifications.notify(t.orgId, clientUsers.map((c) => c.userId), { kind: 'message', title: `New message from ${me.name}`, body: preview, link: isOwnerChat ? '/client/messages?chat=owner' : '/client/messages' });
     }
     const fresh = await this.prisma.thread.findUniqueOrThrow({ where: { id: t.id }, include });

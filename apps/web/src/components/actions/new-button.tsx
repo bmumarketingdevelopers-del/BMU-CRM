@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useActions } from "./actions-provider";
 import { newEntriesFor } from "./new-registry";
 
-export function NewButton() {
+/** look "top" (v54 redesign preview): a round pill in the top bar next to the moon icon; same menu, same entries. */
+export function NewButton({ look = "sidebar" }: { look?: "sidebar" | "top" }) {
+  const top = look === "top";
   const { me, surface, openNew } = useActions();
   const entries = useMemo(() => newEntriesFor(me, surface), [me, surface]);
   const [open, setOpen] = useState(false);
@@ -24,12 +26,12 @@ export function NewButton() {
   }, [open]);
   if (!entries.length) return null;
   return (
-    <div ref={box} className="relative px-5 pb-3">
-      <button type="button" data-new-button aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="w-full bg-charcoal px-3 py-2 text-left text-sm font-medium text-ivory hover:opacity-90" title="New (N)">
+    <div ref={box} className={top ? "top-new-button-box relative" : "relative px-5 pb-3"}>
+      <button type="button" data-new-button aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)} className={top ? "top-new-button inline-flex h-9 items-center rounded-full border border-[var(--ui-primary-border)] px-4 text-sm font-semibold text-ui-pill-active-ink shadow-[var(--ui-primary-shadow)] [background:var(--ui-primary-fill)] hover:opacity-90" : "w-full bg-charcoal px-3 py-2 text-left text-sm font-medium text-ivory hover:opacity-90"} title="New (N)">
         + New
       </button>
       {open && (
-        <div role="menu" aria-label="Create new" className="absolute left-5 right-5 top-full z-50 -mt-2 border border-border bg-surface py-1 shadow-lg">
+        <div role="menu" aria-label="Create new" className={top ? "top-new-menu design-glass-menu absolute right-0 top-full z-50 mt-2 w-72 text-ink" : "absolute left-5 right-5 top-full z-50 -mt-2 border border-border bg-surface py-1 shadow-lg"}>
           {entries.map((e) => (
             <button
               key={e.id}
@@ -47,7 +49,7 @@ export function NewButton() {
                   els[(at + (ev.key === "ArrowDown" ? 1 : -1) + els.length) % els.length]?.focus();
                 }
               }}
-              className="flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-canvas focus:bg-canvas focus:outline-none"
+              className={`flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm focus:outline-none ${top ? "rounded-xl hover:bg-ui-accent-soft focus:bg-ui-accent-soft" : "hover:bg-canvas focus:bg-canvas"}`}
             >
               <span className="font-medium">{e.label}</span>
               {e.hint && <span className="truncate text-xs text-ink-muted">{e.hint}</span>}
