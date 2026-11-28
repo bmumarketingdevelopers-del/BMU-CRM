@@ -141,6 +141,23 @@ describe('Field-level permissions', () => {
   });
 });
 
+describe('Sign-in codes (v58)', () => {
+  it('any code still valid works once; a wrong guess counts against them all; the others retire', async () => {
+    const email = 'producer@bmu.demo';
+    const first = (await http().post('/auth/otp/request').send({ identifier: email }).expect(200)).body as { devCode: string; resendInSec: number };
+    const second = (await http().post('/auth/otp/request').send({ identifier: email }).expect(200)).body as { devCode: string };
+    expect(first.resendInSec).toBe(60);
+    const wrong = String((Number(first.devCode) + 1) % 1_000_000).padStart(6, '0');
+    if (wrong !== second.devCode) await http().post('/auth/otp/verify').send({ identifier: email, code: wrong }).expect(400);
+    const open = await prisma.otpCode.findMany({ where: { identifier: email, usedAt: null, expiresAt: { gt: new Date() } } });
+    if (wrong !== second.devCode) expect(open.every((o) => o.attempts >= 1)).toBe(true);
+    // The first email's code still signs in, even though a newer one was sent.
+    await http().post('/auth/otp/verify').send({ identifier: email, code: first.devCode }).expect(200);
+    // After signing in, the other code no longer works.
+    if (second.devCode !== first.devCode) await http().post('/auth/otp/verify').send({ identifier: email, code: second.devCode }).expect(400);
+  });
+});
+
 describe('Sessions and two-factor', () => {
   it('lists device sessions, signs out the others and the old token stops working', async () => {
     const second = await signIn('admin@bmu.demo');

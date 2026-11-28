@@ -1280,8 +1280,11 @@ model OtpCode {
   attempts   Int       @default(0)
   usedAt     DateTime?
   createdAt  DateTime  @default(now())
+  /// v58: the network (IP) that asked for the code, for the per-network limit kept in the database.
+  ip         String?
 
   @@index([identifier, createdAt])
+  @@index([ip, createdAt])
   @@map("otp_codes")
 }
 

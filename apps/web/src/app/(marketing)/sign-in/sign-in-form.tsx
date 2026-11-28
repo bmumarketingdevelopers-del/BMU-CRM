@@ -27,6 +27,20 @@ export function SignInForm({ me: signedIn }: { me?: Me }) {
   const [challenge, setChallenge] = useState<SecondFactorChallenge>();
   const [second, setSecond] = useState("");
   const [devCode, setDevCode] = useState<string>();
+  // v58: "Send a new code" waits until the server allows another code (once a minute).
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    if (!resendAt) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [resendAt]);
+  const resendWait = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  const waitFor = (sec: number) => {
+    const t = Date.now();
+    setNow(t);
+    setResendAt(t + sec * 1000);
+  };
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [demo, setDemo] = useState<Demo[]>([]);
@@ -110,8 +124,19 @@ export function SignInForm({ me: signedIn }: { me?: Me }) {
       setDevCode(res.devCode);
       setCode(res.devCode ?? "");
       setStep("code");
+      waitFor(res.resendInSec ?? 60);
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setError(message);
+      // v58: a code was sent moments ago (another tab, a double click): go to the code box, it still works.
+      const wait = /in (\d+) seconds/.exec(message);
+      if (wait) {
+        waitFor(Number(wait[1]));
+        if (/A code was just sent/.test(message)) {
+          setIdentifier(id);
+          setStep("code");
+        }
+      }
     } finally {
       setBusy(false);
     }
@@ -280,8 +305,8 @@ export function SignInForm({ me: signedIn }: { me?: Me }) {
               Change
             </button>{" "}
             ·{" "}
-            <button type="button" className="underline" disabled={busy} onClick={() => requestCode(identifier)}>
-              Send a new code
+            <button type="button" className="underline disabled:no-underline disabled:opacity-60" disabled={busy || resendWait > 0} onClick={() => requestCode(identifier)}>
+              {resendWait > 0 ? `Send a new code in ${resendWait} s` : "Send a new code"}
             </button>
           </p>
           {devCode && (
