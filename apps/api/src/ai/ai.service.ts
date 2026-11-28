@@ -70,6 +70,15 @@ export class AiService {
     return me.type === 'staff' && me.roles.some((r) => MANAGERS.includes(r));
   }
 
+  /**
+   * The "connect AI in Command Centre" notice is only useful to the people who can act on it (Founder, Branch
+   * Manager). Everyone else gets basic answers without it. Other notices (budget used up, hourly limit) stay for all.
+   * With no `me` (background jobs, agents) the notice is kept: those results are only shown on admin pages.
+   */
+  noticeFor(me: Me | undefined, notice: string | null): string | null {
+    return notice === AI_BASIC_NOTICE && me && !this.canManage(me) ? null : notice;
+  }
+
   async status(me: Me): Promise<AiStatus> {
     const s = await this.settings(me.orgId);
     const connected = this.connected();
@@ -85,7 +94,7 @@ export class AiService {
       fastModel: aiFastModel(),
       features,
       canManage: this.canManage(me),
-      notice: !s.enabled ? 'AI Copilot is switched off for your organisation.' : connected ? null : AI_BASIC_NOTICE,
+      notice: !s.enabled ? 'AI Copilot is switched off for your organisation.' : connected ? null : this.noticeFor(me, AI_BASIC_NOTICE),
     };
   }
 
@@ -152,7 +161,7 @@ export class AiService {
           error: error ?? null,
         },
       });
-      return { feature, mode: 'basic', text: out.text, data: out.data ?? null, citations: out.citations ?? [], notice, logId: row.id };
+      return { feature, mode: 'basic', text: out.text, data: out.data ?? null, citations: out.citations ?? [], notice: this.noticeFor(who.me, notice), logId: row.id };
     };
 
     // v15: a caller-side limit (e.g. an agent's own monthly budget) keeps this call in basic mode.

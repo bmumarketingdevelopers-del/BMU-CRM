@@ -18,7 +18,7 @@ await brief.getByRole("button", { name: "Write brief" }).click();
 await brief.getByRole("button", { name: "Regenerate" }).first().waitFor();
 const briefText = await brief.innerText();
 check(/next best action/i.test(briefText), "lead brief includes a next best action");
-check(/Basic suggestions/.test(briefText), "brief is labelled as a basic suggestion");
+check(/\bBasic\b/.test(briefText) && !/connect AI in Command Centre/.test(briefText), "brief is labelled Basic, without the admin-only 'connect AI' notice");
 await shot(mgr, "05-lead-brief");
 
 await mgr.getByRole("tab", { name: "Follow-up draft" }).click();
