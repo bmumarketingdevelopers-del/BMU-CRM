@@ -1063,7 +1063,8 @@ model Payment {
 model Thread {
   id             String   @id @default(cuid())
   orgId          String
-  clientOrgId    String
+  /// v59: empty for an internal discussion that is not about a client
+  clientOrgId    String?
   engagementId   String?
   type           String   @default("client_am")
   /// v11 ops: project threads and internal discussions (team only): a title, who started it and who is in it
@@ -1072,7 +1073,7 @@ model Thread {
   participantIds String[] @default([])
   createdAt      DateTime @default(now())
 
-  clientOrg  ClientOrg   @relation(fields: [clientOrgId], references: [id])
+  clientOrg  ClientOrg?  @relation(fields: [clientOrgId], references: [id])
   engagement Engagement? @relation(fields: [engagementId], references: [id])
   messages   Message[]
 

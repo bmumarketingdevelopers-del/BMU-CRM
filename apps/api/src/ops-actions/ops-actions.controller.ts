@@ -311,6 +311,12 @@ export class OpsCommsController {
     return this.comms.link(me, id, body, ip);
   }
 
+  /** v60: a file already in the CRM's Files, to send with the next message. */
+  @Post('threads/:id/crm-files')
+  crmFile(@CurrentUser() me: Me, @Param('id') id: string, @Body() body: unknown, @ClientIp() ip?: string) {
+    return this.comms.crmFile(me, id, body, ip);
+  }
+
   @Post('messages/to-request')
   toRequest(@CurrentUser() me: Me, @Body() body: unknown, @ClientIp() ip?: string) {
     return this.comms.toRequest(me, body, ip);

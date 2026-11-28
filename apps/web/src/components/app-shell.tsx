@@ -60,7 +60,8 @@ export function AppShell({ me, surface, nav, children, brand, themeSwitch = fals
         </div>
         {/* The single "+ New" button (create a task, lead, client…): top of the sidebar, same spot on every page. */}
         {me.type === "staff" && !toolsOnTop && <NewButton />}
-        {me.type === "staff" && !toolsOnTop && <GlobalSearch surface={surface === "Command Centre" ? "admin" : "team"} />}
+        {/* v61: the search also finds the pages in this menu (already limited to what this person may open). */}
+        {me.type === "staff" && !toolsOnTop && <GlobalSearch surface={surface === "Command Centre" ? "admin" : "team"} pages={nav} />}
         <SideNav sections={nav} />
         <InstallAppButton />
         {/* On a phone too (the website, the Android app and the installed app): Sign out is the only way to sign out. */}
@@ -89,7 +90,7 @@ export function AppShell({ me, surface, nav, children, brand, themeSwitch = fals
               tools={
                 toolsOnTop ? (
                   <>
-                    <GlobalSearch surface={surface === "Command Centre" ? "admin" : "team"} look="top" />
+                    <GlobalSearch surface={surface === "Command Centre" ? "admin" : "team"} look="top" pages={nav} />
                     <NewButton look="top" />
                     <NotificationBell look="top" />
                   </>

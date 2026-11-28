@@ -114,15 +114,70 @@ const MenuIconLink = () => (
     <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
   </svg>
 );
+/** v60: CRM files (a folder). */
+const MenuIconFolder = () => (
+  <svg className={svg} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+    <path d="M3 6a2 2 0 0 1 2-2h4.2l2 2.2H19a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z" />
+  </svg>
+);
 
 /**
- * The + menu (like WhatsApp's attach menu): Document, Photos & videos and Link.
+ * v60: "CRM files": pick a file that is already in Files (only the ones this person may see there). Starts on this
+ * discussion's client when it has one; "All files" shows everything they can see. Search by name, client or uploader.
+ */
+function CrmFilePicker({ clientId, clientName, pick, onBack }: { clientId: string | null; clientName: string | null; pick: (fileId: string) => void; onBack: () => void }) {
+  const [onlyClient, setOnlyClient] = useState(!!clientId);
+  const [q, setQ] = useState("");
+  // Every file this person may see in Files, loaded once; "This client" narrows it here.
+  const list = useLoad(() => api.ops.files.list(), { live: false });
+  const needle = q.trim().toLowerCase();
+  const rows = (list.data?.rows ?? []).filter((f) => (!onlyClient || !clientId || f.client?.id === clientId) && f.source !== "payment_proof").filter((f) => !needle || [f.name, f.client?.name, f.uploadedBy, f.engagement?.name].some((x) => x?.toLowerCase().includes(needle)));
+  const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+  return (
+    <div className="grid gap-2 p-2" data-testid="crm-file-picker">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold text-charcoal">CRM files</span>
+        <button type="button" onClick={onBack} className="px-1 text-sm text-ink-muted hover:text-ink">
+          Back
+        </button>
+      </div>
+      <input autoFocus className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm" placeholder="Search files" aria-label="Search CRM files" value={q} onChange={(e) => setQ(e.target.value)} />
+      {clientId && (
+        <div className="flex gap-1 text-xs" role="radiogroup" aria-label="Which files">
+          {[true, false].map((only) => (
+            <button key={String(only)} type="button" role="radio" aria-checked={onlyClient === only} onClick={() => setOnlyClient(only)} className={`rounded-full border px-2.5 py-1 ${onlyClient === only ? "border-charcoal bg-charcoal text-ivory" : "border-border text-ink-muted"}`}>
+              {only ? clientName ?? "This client" : "All files"}
+            </button>
+          ))}
+        </div>
+      )}
+      <ul className="max-h-72 overflow-y-auto" aria-label="Files you can send">
+        {list.loading && <li className="px-2 py-3 text-sm text-ink-muted">Loading files…</li>}
+        {list.error && <li className="px-2 py-3 text-sm text-[#b4432c]">{list.error}</li>}
+        {!list.loading && !list.error && rows.length === 0 && <li className="px-2 py-3 text-sm text-ink-muted">{needle ? "No files match your search." : "No files here yet."}</li>}
+        {rows.slice(0, 60).map((f) => (
+          <li key={f.id}>
+            <button type="button" onClick={() => pick(f.id)} className="flex w-full flex-col rounded-lg px-2 py-2 text-left hover:bg-canvas" data-testid="crm-file-option">
+              <span className="truncate text-sm text-charcoal">{f.name}</span>
+              <span className="truncate text-[11px] text-ink-muted">{[f.client?.name ?? "No client", f.uploadedBy, day(f.createdAt)].filter(Boolean).join(" · ")}</span>
+            </button>
+          </li>
+        ))}
+        {rows.length > 60 && <li className="px-2 py-2 text-[11px] text-ink-muted">Showing 60 of {rows.length}. Search to narrow it down.</li>}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The + menu (like WhatsApp's attach menu): Document, Photos & videos, Link and v60 CRM files.
  * Uploads go through the same discussion upload as before; files over 200 MB are refused with a hint to send a link.
  */
 function AttachMenu({
   limit,
   upload,
   addLink,
+  crm,
   onAdded,
   onError,
   onClose,
@@ -130,6 +185,8 @@ function AttachMenu({
   limit: number;
   upload: (f: File) => Promise<SentFile | void>;
   addLink: (url: string) => Promise<SentFile | void>;
+  /** v60: "CRM files" (team discussions only). */
+  crm?: { clientId: string | null; clientName: string | null; pick: (fileId: string) => Promise<SentFile | void> };
   onAdded: (f: SentFile) => void;
   onError: (message: string | undefined) => void;
   onClose: () => void;
@@ -137,6 +194,22 @@ function AttachMenu({
   const box = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [linking, setLinking] = useState(false);
+  const [picking, setPicking] = useState(false);
+
+  async function pickCrm(fileId: string) {
+    if (!crm) return;
+    setBusy(true);
+    onError(undefined);
+    try {
+      const r = await crm.pick(fileId);
+      if (r) onAdded(r);
+      onClose();
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   const [url, setUrl] = useState("");
   const documentPicker = useRef<HTMLInputElement>(null);
   const mediaPicker = useRef<HTMLInputElement>(null);
@@ -190,9 +263,11 @@ function AttachMenu({
   const full = limit <= 0;
   const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-charcoal hover:bg-canvas disabled:opacity-50";
   return (
-    <div ref={box} role="menu" aria-label="Attach" className="absolute bottom-full left-0 z-20 mb-2 w-64 rounded-xl border border-border bg-paper p-1.5 shadow-lg" data-testid="discussion-attach-menu">
+    <div ref={box} role="menu" aria-label="Attach" className={`absolute bottom-full left-0 z-20 mb-2 ${picking ? "w-[min(22rem,calc(100vw-2rem))]" : "w-64"} rounded-xl border border-border bg-paper p-1.5 shadow-lg`} data-testid="discussion-attach-menu">
       {busy ? (
-        <p className="px-3 py-2.5 text-sm text-ink-muted">Uploading…</p>
+        <p className="px-3 py-2.5 text-sm text-ink-muted">{picking ? "Adding…" : "Uploading…"}</p>
+      ) : picking && crm ? (
+        <CrmFilePicker clientId={crm.clientId} clientName={crm.clientName} pick={pickCrm} onBack={() => setPicking(false)} />
       ) : linking ? (
         <div className="grid gap-2 p-2">
           <input
@@ -239,6 +314,14 @@ function AttachMenu({
             </span>
             Link <span className="ml-auto text-[11px] text-ink-muted">Drive, over 200 MB</span>
           </button>
+          {crm && (
+            <button type="button" role="menuitem" className={item} disabled={full} onClick={() => setPicking(true)} data-testid="attach-crm-files">
+              <span className="text-[#c98a00]">
+                <MenuIconFolder />
+              </span>
+              CRM files <span className="ml-auto text-[11px] text-ink-muted">From Files</span>
+            </button>
+          )}
           {full && <p className="px-3 pb-1 text-[11px] text-ink-muted">Up to 5 files per message.</p>}
         </>
       )}
@@ -292,7 +375,7 @@ export function DiscussionsLayout({ openId, startNew = false }: { openId?: strin
     return () => clearInterval(t);
   }, [refreshList]);
 
-  const rows = (list.data ?? []).filter((t) => (!kind || t.kind === kind) && (!q.trim() || [t.title, t.client.name, t.engagement].some((x) => x?.toLowerCase().includes(q.trim().toLowerCase()))));
+  const rows = (list.data ?? []).filter((t) => (!kind || t.kind === kind) && (!q.trim() || [t.title, t.client?.name, t.engagement].some((x) => x?.toLowerCase().includes(q.trim().toLowerCase()))));
 
   /** Opens a discussion without reloading the page; the address follows so it can be shared or refreshed. */
   function open(id?: string) {
@@ -407,8 +490,8 @@ function DiscussionRow({ t, active, onOpen }: { t: OpsThreadSummary; active: boo
           )}
         </span>
         <span className="block truncate text-[11px] text-ink-muted">
-          {t.client.name}
-          {t.engagement ? ` · ${t.engagement}` : ""} · {kindLabel(t.kind)}
+          {/* v59: an internal discussion may have no client: it just reads "Internal". */}
+          {[t.client?.name, t.engagement, kindLabel(t.kind)].filter(Boolean).join(" · ")}
         </span>
       </span>
     </button>
@@ -553,7 +636,8 @@ function DiscussionInfo({ t, meId, onClose, onChanged }: { t: OpsThreadView; meI
             </h3>
           )}
           <p className="text-sm text-ink-muted">
-            {t.kind === "internal" ? "Internal discussion" : t.kind === "client_staff" ? "Chat with the client" : "Project discussion"} · {t.client.name}
+            {t.kind === "internal" ? "Internal discussion" : t.kind === "client_staff" ? "Chat with the client" : "Project discussion"}
+            {t.client ? ` · ${t.client.name}` : " · Not linked to a client"}
             {t.engagement ? ` · ${t.engagement}` : ""}
           </p>
           {t.startedBy && (
@@ -609,8 +693,8 @@ function DiscussionInfo({ t, meId, onClose, onChanged }: { t: OpsThreadView; meI
               </button>
             )}
           </div>
-          {t.kind === "project" && <p className="mb-2 text-xs text-ink-muted">Everyone on {t.client.name}&apos;s team can also read this discussion.</p>}
-          {t.kind === "client_staff" && <p className="mb-2 text-xs text-ink-muted">{t.client.name} reads and replies to this chat in their Messages. Their Client Manager can read it too.</p>}
+          {t.kind === "project" && <p className="mb-2 text-xs text-ink-muted">Everyone on {t.client?.name ?? "the client"}&apos;s team can also read this discussion.</p>}
+          {t.kind === "client_staff" && <p className="mb-2 text-xs text-ink-muted">{t.client?.name ?? "The client"} reads and replies to this chat in their Messages. Their Client Manager can read it too.</p>}
 
           {adding && (
             <div className="mb-3 rounded-lg border border-border bg-canvas/50 p-3" data-testid="discussion-add-panel">
@@ -703,6 +787,8 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
   const [toRequest, setToRequest] = useState<{ id: string; body: string }>();
   const { me, canNew, openNew, notify } = useActions();
   const canRequest = me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager"].includes(r));
+  // v60: "Open Client 360" only for the people who have Client 360 in their menu (same roles as the team layout).
+  const canClient360 = me.roles.some((r) => ["founder", "admin", "am_lead", "account_manager", "finance"].includes(r));
   const end = useRef<HTMLLIElement>(null);
   const t = fresh ?? loaded.data;
 
@@ -829,10 +915,10 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
   const people = t.participants.length;
   const subtitle =
     t.kind === "client_staff"
-      ? `Chat with ${t.client.name} · they see every message here`
+      ? `Chat with ${t.client?.name ?? "the client"} · they see every message here`
       : t.kind === "internal"
-      ? `Internal · ${people} ${people === 1 ? "person" : "people"}${people ? `: ${t.participants.join(", ")}` : ""}`
-      : `Project · ${t.client.name}${t.engagement ? ` · ${t.engagement}` : ""} · the client's team can read this`;
+      ? `Internal${t.client ? ` · ${t.client.name}` : ""} · ${people} ${people === 1 ? "person" : "people"}${people ? `: ${t.participants.join(", ")}` : ""}`
+      : `Project · ${t.client?.name ?? ""}${t.engagement ? ` · ${t.engagement}` : ""} · the client's team can read this`;
   const shown = find.trim() ? t.messages.filter((m) => m.body.toLowerCase().includes(find.trim().toLowerCase()) || m.author.toLowerCase().includes(find.trim().toLowerCase())) : t.messages;
 
   return (
@@ -854,7 +940,7 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
         >
           <IconSearch />
         </button>
-        <RowMenu label="Discussion options" items={[{ key: "client", label: "Open Client 360", href: `/team/clients/${t.client.id}` }]} />
+        {t.client && canClient360 && <RowMenu label="Discussion options" items={[{ key: "client", label: "Open Client 360", href: `/team/clients/${t.client.id}` }]} />}
       </div>
       {searchOpen && (
         <div className="border-b border-border px-4 py-2">
@@ -871,7 +957,7 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
               {!m.mine && (
                 <p className="mb-0.5 text-xs font-semibold text-charcoal">
                   {m.author}
-                  {m.fromClient && <span className="ml-1 font-normal text-ink-muted">· {t.client.name}</span>}
+                  {m.fromClient && <span className="ml-1 font-normal text-ink-muted">· {t.client?.name}</span>}
                 </p>
               )}
               {!!m.attachments?.length && (
@@ -890,8 +976,8 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
                   className="align-middle"
                   align={m.mine ? "right" : "left"}
                   items={[
-                    { key: "task", label: "Create task", hidden: !canNew("task"), onSelect: () => openNew("task", { title: m.body.split("\n")[0].slice(0, 120), description: m.body, source: `message:${m.id}`, clientId: t.client.id }) },
-                    { key: "request", label: "Create request", hidden: !canRequest || t.kind === "internal", onSelect: () => setToRequest({ id: m.id, body: m.body }) },
+                    { key: "task", label: "Create task", hidden: !canNew("task"), onSelect: () => openNew("task", { title: m.body.split("\n")[0].slice(0, 120), description: m.body, source: `message:${m.id}`, clientId: t.client?.id }) },
+                    { key: "request", label: "Create request", hidden: !canRequest || t.kind === "internal" || !t.client, onSelect: () => setToRequest({ id: m.id, body: m.body }) },
                   ]}
                 />
               </div>
@@ -926,6 +1012,8 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
                   limit={5 - files.length}
                   upload={(f) => api.ops.threads.attach(id, f)}
                   addLink={(url) => api.ops.threads.link(id, { url })}
+                  // v60: CRM files in team discussions only (never sends an internal file to a client chat).
+                  crm={t.kind === "client_staff" ? undefined : { clientId: t.client?.id ?? null, clientName: t.client?.name ?? null, pick: (fileId) => api.ops.threads.crmFile(id, { fileId }) }}
                   onAdded={(f) => setFiles((x) => [...x, f])}
                   onError={setError}
                   onClose={() => setAttachOpen(false)}
@@ -957,7 +1045,7 @@ function DiscussionPanel({ id, onBack, onPosted, onOpened }: { id: string; onBac
       ) : (
         <p className="border-t border-border p-4 text-sm text-ink-muted">You can read this discussion but not post in it.</p>
       )}
-      {toRequest && <MessageToRequestDrawer message={toRequest} clientId={t.client.id} onClose={() => setToRequest(undefined)} onDone={(m) => (notify(m), loaded.reload(), setFresh(undefined))} />}
+      {toRequest && t.client && <MessageToRequestDrawer message={toRequest} clientId={t.client.id} onClose={() => setToRequest(undefined)} onDone={(m) => (notify(m), loaded.reload(), setFresh(undefined))} />}
       {infoOpen && (
         <DiscussionInfo
           t={t}
