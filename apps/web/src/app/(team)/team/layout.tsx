@@ -1,7 +1,7 @@
 import { canOpenCraftManager, craftWorkspace, isCraftManager } from "@bmu/shared";
 import { AppShell } from "@/components/app-shell";
 import type { NavSection } from "@/components/side-nav";
-import { requireMe, serverApi } from "@/lib/session";
+import { inRedesignPreview, requireMe, serverApi } from "@/lib/session";
 
 export default async function TeamLayout({ children }: { children: React.ReactNode }) {
   const me = await requireMe(["staff"]);
@@ -71,7 +71,7 @@ export default async function TeamLayout({ children }: { children: React.ReactNo
     ...(isAdmin ? [{ section: "Admin", items: [{ label: "Command Centre", href: "/admin" }, ...(isStudio ? [{ label: "Dashboard Studio", href: "/admin/dashboards" }] : [])] }] : []),
   ];
   return (
-    <AppShell me={me} surface="Team app" nav={nav}>
+    <AppShell me={me} surface="Team app" nav={nav} themeSwitch={inRedesignPreview(me)}>
       {children}
     </AppShell>
   );

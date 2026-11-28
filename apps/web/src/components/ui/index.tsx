@@ -1,4 +1,5 @@
 // Small shared UI pieces: square corners, one green primary action, charcoal for status.
+// v54: each piece also carries a descriptive class (ui-button, ui-card, page-title…) that only the redesign preview styles.
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { Presence } from "../live/presence";
 
@@ -8,28 +9,28 @@ export function Button({ variant = "primary", className = "", ...props }: Button
     secondary: "border border-border text-ink hover:border-ink",
     ghost: "text-ink-muted hover:text-ink",
   }[variant];
-  return <button className={`px-4 py-2 text-sm transition disabled:opacity-40 ${styles} ${className}`} {...props} />;
+  return <button className={`ui-button ui-button-${variant} px-4 py-2 text-sm transition disabled:opacity-40 ${styles} ${className}`} {...props} />;
 }
 
 export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={`w-full border border-border bg-surface-raised px-3 py-2 text-sm ${className}`} {...props} />;
+  return <input className={`ui-input w-full border border-border bg-surface-raised px-3 py-2 text-sm ${className}`} {...props} />;
 }
 
 export function Select({ className = "", ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={`border border-border bg-surface-raised px-2 py-1.5 text-sm ${className}`} {...props} />;
+  return <select className={`ui-select border border-border bg-surface-raised px-2 py-1.5 text-sm ${className}`} {...props} />;
 }
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`border border-border bg-surface-raised p-6 ${className}`}>{children}</div>;
+  return <div className={`ui-card border border-border bg-surface-raised p-6 ${className}`}>{children}</div>;
 }
 
 /** `presence` (v13) shows teammates looking at the same record, e.g. presence={{ entity: "Lead", id }}. */
 export function PageTitle({ title, subtitle, action, presence }: { title: string; subtitle?: string; action?: ReactNode; presence?: { entity: string; id: string } }) {
   return (
-    <div className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
+    <div className="page-title mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-border pb-6">
       <div>
-        <h1 className="font-display text-2xl sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-ink-muted">{subtitle}</p>}
+        <h1 className="page-title-heading font-display text-2xl sm:text-3xl">{title}</h1>
+        {subtitle && <p className="page-title-subtitle mt-1 text-sm text-ink-muted">{subtitle}</p>}
         {presence && <Presence entity={presence.entity} id={presence.id} className="mt-2" />}
       </div>
       {action}
@@ -45,11 +46,11 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
     red: "bg-red/20 text-ink",
     dark: "border border-border text-ink",
   }[tone];
-  return <span className={`inline-block shrink-0 whitespace-nowrap px-2 py-0.5 text-xs ${styles}`}>{children}</span>;
+  return <span className={`ui-badge ui-badge-${tone} inline-block shrink-0 whitespace-nowrap px-2 py-0.5 text-xs ${styles}`}>{children}</span>;
 }
 
 export function LoadState({ loading, error }: { loading: boolean; error?: string }) {
-  if (error) return <p className="border border-red bg-red/10 px-4 py-3 text-sm">{error}</p>;
+  if (error) return <p className="ui-load-error border border-red bg-red/10 px-4 py-3 text-sm">{error}</p>;
   if (loading) return <p className="text-sm text-ink-muted">Loading…</p>;
   return null;
 }
