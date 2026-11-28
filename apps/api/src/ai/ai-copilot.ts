@@ -74,7 +74,9 @@ export class AiCopilotService {
 
   async conversation(me: Me, id: string): Promise<AiConversationView> {
     const c = await this.own(me, id);
-    return { id: c.id, title: c.title, updatedAt: c.updatedAt.toISOString(), messages: c.messages as AiChatMessage[] };
+    // Older conversations saved the "connect AI" notice for everyone; only Founder / Branch Manager see it now.
+    const messages = (c.messages as AiChatMessage[]).map((m) => (m.notice ? { ...m, notice: this.ai.noticeFor(me, m.notice) } : m));
+    return { id: c.id, title: c.title, updatedAt: c.updatedAt.toISOString(), messages };
   }
 
   async remove(me: Me, id: string) {

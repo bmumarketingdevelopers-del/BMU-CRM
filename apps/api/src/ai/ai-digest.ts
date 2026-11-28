@@ -76,9 +76,10 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
 
   // ---------------------------------------------------------------- digest
 
-  private view(d: { id: string; text: string; mode: string; createdAt: Date; weekStart: Date; data: unknown }): AiDigestView {
+  private view(me: Me, d: { id: string; text: string; mode: string; createdAt: Date; weekStart: Date; data: unknown }): AiDigestView {
     const data = (d.data ?? {}) as { citations?: AiCitation[]; notice?: string | null };
-    return { id: d.id, text: d.text, mode: d.mode === 'ai' ? 'ai' : 'basic', createdAt: d.createdAt.toISOString(), weekStart: d.weekStart.toISOString(), citations: data.citations ?? [], notice: data.notice ?? null };
+    // A digest written by a Founder keeps the "connect AI" notice; other readers don't see it.
+    return { id: d.id, text: d.text, mode: d.mode === 'ai' ? 'ai' : 'basic', createdAt: d.createdAt.toISOString(), weekStart: d.weekStart.toISOString(), citations: data.citations ?? [], notice: this.ai.noticeFor(me, data.notice ?? null) };
   }
 
   private assertReader(me: Me) {
@@ -92,7 +93,7 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
     const scope = await get(this.ref, InsightsService).weeklyScope(me);
     const rows = await this.prisma.aiDigest.findMany({ where: { orgId: me.orgId, ...(scope === 'department' ? { createdById: me.id } : {}) }, orderBy: { createdAt: 'desc' }, take: 30 });
     const d = rows.find((r) => audienceOf(r.data) === scope);
-    return d ? this.view(d) : null;
+    return d ? this.view(me, d) : null;
   }
 
   async make(me: Me): Promise<AiDigestView> {
@@ -116,7 +117,7 @@ export class AiDigestService implements OnModuleInit, OnModuleDestroy {
         data: { citations: result.citations, notice: result.notice, audience: facts.audience },
       },
     });
-    return this.view(d);
+    return this.view(me, d);
   }
 
   /** The numbers behind the digest, read with the person's own permissions. */

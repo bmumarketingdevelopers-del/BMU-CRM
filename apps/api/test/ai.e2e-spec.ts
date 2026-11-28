@@ -150,6 +150,21 @@ describe('basic mode (no API key)', () => {
     expect(convo.body.messages).toHaveLength(2);
   });
 
+  it('the "connect AI" notice is for Founder / Branch Manager only', async () => {
+    const admin = await http().get('/ai/status').set(as('admin')).expect(200);
+    expect(admin.body.notice).toBe(AI_BASIC_NOTICE);
+    for (const who of ['producer', 'am', 'client_a']) {
+      const s = await http().get('/ai/status').set(as(who)).expect(200);
+      expect(s.body.mode).toBe('basic');
+      expect(s.body.notice).toBeNull();
+    }
+    const staff = await http().post('/ai/ask').set(as('producer')).send({ question: 'Summary of the week' }).expect(200);
+    expect(staff.body.mode).toBe('basic');
+    expect(staff.body.notice).toBeNull();
+    const client = await http().post('/ai/client/ask').set(as('client_a')).send({ question: 'Do I have any invoices due?' }).expect(200);
+    expect(client.body.notice).toBeNull();
+  });
+
   it('streams NDJSON and ends with the result', async () => {
     const r = await http().post('/ai/ask/stream').set(as('founder')).send({ question: 'Summary of the week' }).buffer(true).parse((res, cb) => {
       let data = '';
