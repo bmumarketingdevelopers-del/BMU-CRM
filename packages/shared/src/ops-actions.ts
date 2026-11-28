@@ -339,15 +339,18 @@ export type OpsPublicShare = { name: string; mimeType: string | null; sizeBytes:
 
 /** v53: client_staff = a team member talking with the client directly (the client sees it in Messages). */
 export const OPS_THREAD_KINDS = ["project", "internal", "client_staff"] as const;
-export const opsThreadCreateSchema = z.object({
-  kind: z.enum(OPS_THREAD_KINDS),
-  clientOrgId: z.string().min(1, "Pick the client"),
-  engagementId: z.string().optional(),
-  title: z.string().trim().min(3, "Give the discussion a title").max(160),
-  participantIds: z.array(z.string()).max(30).default([]),
-  /** Optional: the website starts an empty discussion and people write inside it. */
-  message: z.string().trim().max(4000).default(""),
-});
+/** v59: an internal discussion may be linked to a client or to none; project threads and client chats always need one. */
+export const opsThreadCreateSchema = z
+  .object({
+    kind: z.enum(OPS_THREAD_KINDS),
+    clientOrgId: z.string().optional(),
+    engagementId: z.string().optional(),
+    title: z.string().trim().min(3, "Give the discussion a title").max(160),
+    participantIds: z.array(z.string()).max(30).default([]),
+    /** Optional: the website starts an empty discussion and people write inside it. */
+    message: z.string().trim().max(4000).default(""),
+  })
+  .refine((v) => v.kind === "internal" || !!v.clientOrgId, { message: "Pick the client", path: ["clientOrgId"] });
 export type OpsThreadCreate = z.input<typeof opsThreadCreateSchema>;
 /** Discussion info: change the title, add people, remove people (the person who started it, Founder or Admin). */
 export const opsThreadUpdateSchema = z.object({
@@ -356,7 +359,7 @@ export const opsThreadUpdateSchema = z.object({
   removeIds: z.array(z.string()).max(30).default([]),
 });
 export type OpsThreadUpdate = z.input<typeof opsThreadUpdateSchema>;
-export type OpsThreadSummary = { id: string; /** Messages from other people since you last opened it. */ unread?: number; kind: string; title: string; client: { id: string; name: string }; engagement: string | null; participants: string[]; lastMessage: { body: string; author: string; at: string } | null; createdAt: string };
+export type OpsThreadSummary = { id: string; /** Messages from other people since you last opened it. */ unread?: number; kind: string; title: string; /** v59: null for an internal discussion not linked to a client. */ client: { id: string; name: string } | null; engagement: string | null; participants: string[]; lastMessage: { body: string; author: string; at: string } | null; createdAt: string };
 /** v38: a file sent in a discussion or on a task. */
 export type SentFile = { id: string; name: string; url: string; mimeType: string | null; sizeBytes: number | null; by?: string; at?: string; /** "link": a Drive (or other) link instead of an upload. */ kind?: string };
 /** v39: a Drive (or any) link sent instead of a file, e.g. when the file is over the upload limit. */
@@ -369,6 +372,9 @@ export const sentLinkSchema = z.object({
   name: z.string().trim().max(200).optional(),
 });
 export type SentLink = z.input<typeof sentLinkSchema>;
+/** v60: send a file that is already in the CRM's Files (one the person may see) in a discussion. */
+export const crmFilePickSchema = z.object({ fileId: z.string().min(1, "Pick a file") });
+export type CrmFilePick = z.input<typeof crmFilePickSchema>;
 /** A readable name for a link: "Google Drive link", else the site's name. */
 export const sentLinkName = (url: string) => {
   const host = url.replace(/^https?:\/\//i, "").split(/[/?#]/)[0].toLowerCase().replace(/^www\./, "");

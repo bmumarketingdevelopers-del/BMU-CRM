@@ -2,22 +2,45 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { coreParsePaletteIntent, type CorePaletteResult, type TeamSearchItem, type TeamSearchKind, type TeamSearchResult } from "@bmu/shared";
+import { coreParsePaletteIntent, SEARCH_MIN_SCORE, searchScore, type CorePaletteResult, type TeamSearchItem, type TeamSearchKind, type TeamSearchResult } from "@bmu/shared";
 import { api } from "@/lib/api";
 import { useActionsMaybe } from "./actions/actions-provider";
+import type { NavSection } from "./side-nav";
 
-const KIND_HINT: Record<string, string> = { client: "Client", lead: "Lead", proposal: "Proposal", invoice: "Invoice", task: "Task", person: "Person", sop: "SOP", project: "Project", request: "Request", creator: "Creator" };
-/** v13 filter chips. */
-const FILTERS: { kind: TeamSearchKind | null; label: string }[] = [
+const KIND_HINT: Record<string, string> = { page: "Page", client: "Client", lead: "Lead", proposal: "Proposal", invoice: "Invoice", task: "Task", person: "Person", sop: "SOP", project: "Project", request: "Request", creator: "Creator", file: "File" };
+/** v61: "page" = a page from this person's menu, found in the browser (no server call). */
+type FilterKind = TeamSearchKind | "page";
+/** v13 filter chips. v61: Pages and Files. */
+const FILTERS: { kind: FilterKind | null; label: string }[] = [
   { kind: null, label: "All" },
+  { kind: "page", label: "Pages" },
   { kind: "client", label: "Clients" },
   { kind: "lead", label: "Leads" },
   { kind: "project", label: "Projects" },
   { kind: "task", label: "Tasks" },
   { kind: "request", label: "Requests" },
   { kind: "invoice", label: "Invoices" },
+  { kind: "file", label: "Files" },
   { kind: "person", label: "People" },
 ];
+/** v61: pages that are not in the menu but people look for. */
+const EXTRA_PAGES: { label: string; href: string; section: string; words?: string }[] = [
+  { label: "My profile", href: "/team/profile", section: "You", words: "leave attendance holidays notifications settings" },
+  { label: "Sign-in security", href: "/security", section: "You", words: "password login sessions google two factor" },
+];
+const MAX_PAGES = 6;
+
+/** v61: the menu's pages that match, best first (typos and partial words are fine, like the rest of search). */
+function matchPages(term: string, sections: NavSection[]): TeamSearchItem[] {
+  const seen = new Set<string>();
+  const all = [...sections.flatMap((s) => s.items.filter((i) => i.href).map((i) => ({ label: i.label, href: i.href!, section: s.section, words: "" }))), ...EXTRA_PAGES.map((p) => ({ words: "", ...p }))].filter((p) => !seen.has(p.href) && seen.add(p.href));
+  return all
+    .map((p) => ({ p, score: Math.max(searchScore(term, p.label), searchScore(term, `${p.section} ${p.label}`) * 0.9, p.words ? searchScore(term, p.words) * 0.85 : 0) }))
+    .filter((x) => x.score >= SEARCH_MIN_SCORE)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, MAX_PAGES)
+    .map(({ p }) => ({ kind: "page" as TeamSearchKind, id: p.href, title: p.label, sub: p.section, href: p.href }));
+}
 const RECENT_KEY = "bmu.search.recent";
 const readRecent = (): TeamSearchItem[] => {
   try {
@@ -44,7 +67,7 @@ type PaletteAction = CorePaletteResult["actions"][number];
  * v13: smart search finds typos and partial names, adds projects, requests and creators, filter chips and recent items.
  */
 /** look "top" (v54 redesign preview): a glass pill in the top bar that opens the search inside its own box; the search itself is unchanged. */
-export function GlobalSearch({ surface, look = "sidebar" }: { surface: "team" | "admin"; look?: "sidebar" | "top" }) {
+export function GlobalSearch({ surface, look = "sidebar", pages = [] }: { surface: "team" | "admin"; look?: "sidebar" | "top"; /** v61: this person's menu. */ pages?: NavSection[] }) {
   const router = useRouter();
   const actions = useActionsMaybe();
   const [palette, setPalette] = useState<PaletteAction[]>([]);
@@ -54,7 +77,7 @@ export function GlobalSearch({ surface, look = "sidebar" }: { surface: "team" | 
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState(0);
-  const [kind, setKind] = useState<TeamSearchKind | null>(null);
+  const [kind, setKind] = useState<FilterKind | null>(null);
   const [recent, setRecent] = useState<TeamSearchItem[]>([]);
   const input = useRef<HTMLInputElement>(null);
   // v54 top look: the shining cursor is drawn by us (a real cursor can't glow), placed where the real one would be.
@@ -80,9 +103,12 @@ export function GlobalSearch({ surface, look = "sidebar" }: { surface: "team" | 
   const intent = term.length >= 2 ? coreParsePaletteIntent(term) : null;
   const hasIntent = !!intent;
   const acts = useMemo(() => (hasIntent ? palette : []), [hasIntent, palette]);
-  const found = useMemo<TeamSearchItem[]>(() => shown?.groups.flatMap((g) => g.items) ?? [], [shown]);
+  // v61: pages from the menu, shown above the records (only on "All" and "Pages").
+  const pageHits = useMemo(() => (term.length >= 2 && (kind === null || kind === "page") ? matchPages(term, pages) : []), [term, kind, pages]);
+  const serverKind = kind === "page" ? null : kind;
+  const found = useMemo<TeamSearchItem[]>(() => (kind === "page" ? [] : (shown?.groups.flatMap((g) => g.items) ?? [])), [shown, kind]);
   const showRecent = useMemo(() => (term.length < 2 ? recent : []), [term, recent]);
-  const items = useMemo(() => [...acts.map((a, i) => ({ kind: "action", id: String(i), title: a.label, sub: a.hint, href: a.href ?? "", act: a }) as unknown as TeamSearchItem & { act?: PaletteAction }), ...showRecent, ...found], [acts, showRecent, found]);
+  const items = useMemo(() => [...acts.map((a, i) => ({ kind: "action", id: String(i), title: a.label, sub: a.hint, href: a.href ?? "", act: a }) as unknown as TeamSearchItem & { act?: PaletteAction }), ...showRecent, ...pageHits, ...found], [acts, showRecent, pageHits, found]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -119,12 +145,13 @@ export function GlobalSearch({ surface, look = "sidebar" }: { surface: "team" | 
   }, [term]);
 
   useEffect(() => {
-    if (term.length < 2) return;
+    // v61: the Pages filter is answered in the browser.
+    if (term.length < 2 || kind === "page") return;
     const id = ++seq.current;
     const t = setTimeout(() => {
       setLoading(true);
       api.teamFlows
-        .search(term, surface, kind ?? undefined)
+        .search(term, surface, serverKind ?? undefined)
         .then((r) => {
           if (id !== seq.current) return;
           setResult(r);
@@ -135,7 +162,7 @@ export function GlobalSearch({ surface, look = "sidebar" }: { surface: "team" | 
         .finally(() => id === seq.current && setLoading(false));
     }, 180);
     return () => clearTimeout(t);
-  }, [term, surface, kind]);
+  }, [term, surface, kind, serverKind]);
 
   // Puts the shining cursor where the typing point is (after typing, arrow keys, clicks); hidden while text is selected.
   const placeCaret = useCallback(() => {
@@ -336,7 +363,7 @@ export function GlobalSearch({ surface, look = "sidebar" }: { surface: "team" | 
         </div>
       )}
       <div id="global-search-results" role="listbox" className={top ? "max-h-[60vh] overflow-y-auto p-2" : "max-h-[60vh] overflow-y-auto"}>
-        {q.trim().length < 2 && <p className="px-4 py-4 text-sm text-ink-muted">Type at least 2 letters. Typos are fine. Use ↑ ↓ to move and Enter to open. Esc closes.</p>}
+        {q.trim().length < 2 && <p className="px-4 py-4 text-sm text-ink-muted">Find pages, clients, projects, tasks, files, people and more. Type at least 2 letters; typos are fine. Use ↑ ↓ to move and Enter to open. Esc closes.</p>}
         {showRecent.length > 0 && (
           <div className={top ? "" : "border-b border-border"} data-testid="search-recent">
             <p className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-[0.12em] text-ink-muted">Recent</p>
@@ -359,8 +386,8 @@ export function GlobalSearch({ surface, look = "sidebar" }: { surface: "team" | 
           </div>
         )}
         {error && term.length >= 2 && <p className="px-4 py-4 text-sm text-red">{error}</p>}
-        {!error && term.length >= 2 && !loading && shown && found.length === 0 && !acts.length && <p className="px-4 py-4 text-sm text-ink-muted">Nothing found for “{q.trim()}” that you can open.</p>}
-        {loading && !shown && term.length >= 2 && <p className="px-4 py-4 text-sm text-ink-muted">Searching…</p>}
+        {!error && term.length >= 2 && (kind === "page" || (!loading && shown)) && found.length === 0 && !acts.length && !pageHits.length && <p className="px-4 py-4 text-sm text-ink-muted">Nothing found for “{q.trim()}” that you can open.</p>}
+        {loading && !shown && term.length >= 2 && kind !== "page" && !pageHits.length && <p className="px-4 py-4 text-sm text-ink-muted">Searching…</p>}
         {acts.length > 0 && (
           <div className={top ? "" : "border-b border-border"} data-testid="palette-actions">
             <p className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-[0.12em] text-ink-muted">Actions</p>
@@ -383,13 +410,36 @@ export function GlobalSearch({ surface, look = "sidebar" }: { surface: "team" | 
             </ul>
           </div>
         )}
-        {shown?.groups.map((g) => (
+        {pageHits.length > 0 && (
+          <div className={top ? "" : "border-b border-border"} data-testid="search-pages">
+            <p className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-[0.12em] text-ink-muted">Pages</p>
+            <ul>
+              {pageHits.map((item, n) => {
+                // v61: pages come right after the actions in the keyboard order (recents only show before typing).
+                const i = acts.length + n;
+                return (
+                  <li key={`page-${item.id}`} role="option" aria-selected={i === active}>
+                    <button type="button" onMouseEnter={() => setActive(i)} onClick={() => go(item)} className={`flex w-full items-baseline justify-between gap-3 px-4 py-2 text-left text-sm ${top ? "rounded-xl" : ""} ${i === active ? activeRow : ""}`}>
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">{item.title}</span>
+                        {item.sub && <span className="block truncate text-xs text-ink-muted">{item.sub}</span>}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-ink-muted">Page</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        {kind !== "page" && shown?.groups.map((g) => (
           <div key={g.kind} className={top ? "" : "border-b border-border last:border-b-0"}>
             <p className="px-4 pt-3 pb-1 text-[11px] uppercase tracking-[0.12em] text-ink-muted">{g.label}</p>
             <ul>
               {g.items.map((item) => {
                 index += 1;
-                const i = index;
+                // v61: after the actions and the Pages group.
+                const i = index + pageHits.length;
                 return (
                   <li key={`${item.kind}-${item.id}`} role="option" aria-selected={i === active}>
                     <button

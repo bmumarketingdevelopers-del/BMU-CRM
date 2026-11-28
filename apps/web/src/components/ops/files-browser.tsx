@@ -24,10 +24,10 @@ type Shared = "" | "clients" | "to_client" | "from_client" | "internal";
 type F = { q: string; folder: "" | OpsFileFolder; client: string; project: string; archived: boolean; shared?: Shared; dept?: string };
 const DIRECTION_TONE = { to_client: "green", from_client: "amber", internal: "neutral" } as const;
 
-export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "" }: { clientOrgId?: string; engagementId?: string; compact?: boolean; shared?: Shared }) {
+export function FilesBrowser({ clientOrgId, engagementId, compact, shared = "", q = "" }: { clientOrgId?: string; engagementId?: string; compact?: boolean; shared?: Shared; /** v61: start already searched (from Ctrl/Cmd+K). */ q?: string }) {
   const { openNew, canNew, notify, version, changed } = useActions();
   const EMPTY: F = { q: "", folder: "", client: clientOrgId ?? "", project: engagementId ?? "", archived: false, shared };
-  const [f, setF] = useState<F>(EMPTY);
+  const [f, setF] = useState<F>({ ...EMPTY, q });
   const archivedRef = useRef(false);
   const list = useLoad(() => api.ops.files.list({ clientOrgId, engagementId, archived: archivedRef.current ? "1" : undefined }));
   const [editing, setEditing] = useState<OpsFileRow | null>(null);

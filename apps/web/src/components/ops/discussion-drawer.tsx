@@ -22,7 +22,8 @@ export function DiscussionDrawer({ open, onClose, onSaved, prefill }: { open: bo
 
   async function save() {
     const e: Record<string, string> = {};
-    if (!clientOrgId) e.client = "Pick the client";
+    // v59: an internal discussion does not need a client; project threads and client chats do.
+    if (!clientOrgId && kind !== "internal") e.client = "Pick the client";
     if (kind !== "client_staff" && title.trim().length < 3) e.title = "Give the discussion a title";
     if (kind === "internal" && !people.length) e.people = "Add at least one person";
     setErrors(e);
@@ -30,7 +31,8 @@ export function DiscussionDrawer({ open, onClose, onSaved, prefill }: { open: bo
     setSaving(true);
     setError(undefined);
     try {
-      const r = await api.ops.threads.create({ kind, clientOrgId, engagementId: engagementId || undefined, title: kind === "client_staff" ? `Chat with ${client?.name ?? "the client"}` : title.trim(), participantIds: people });
+      const linked = kind !== "internal" && clientOrgId;
+      const r = await api.ops.threads.create({ kind, clientOrgId: linked || undefined, engagementId: (linked && engagementId) || undefined, title: kind === "client_staff" ? `Chat with ${client?.name ?? "the client"}` : title.trim(), participantIds: people });
       onSaved(r.id, r.message);
       setTitle("");
       setPeople([]);
@@ -47,23 +49,26 @@ export function DiscussionDrawer({ open, onClose, onSaved, prefill }: { open: bo
       <Field label="Type" required>
         <div className="flex gap-1" role="radiogroup" aria-label="Discussion type">
           {(["project", "internal", "client_staff"] as const).map((k) => (
-            <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)} className={`border px-3 py-1.5 text-sm ${kind === k ? "border-charcoal bg-charcoal text-ivory" : "border-border"}`}>
+            <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => (setKind(k), setErrors({}), k === "internal" && (setClient(""), setEngagement("")))} className={`border px-3 py-1.5 text-sm ${kind === k ? "border-charcoal bg-charcoal text-ivory" : "border-border"}`}>
               {k === "project" ? "Project (team)" : k === "internal" ? "Internal (people you add)" : "Talk to the client"}
             </button>
           ))}
         </div>
       </Field>
-      <Field label="Client" required error={errors.client}>
-        <select className={inputCls} value={clientOrgId} onChange={(e) => (setClient(e.target.value), setEngagement(""))} aria-label="Client">
-          <option value="">{opts.loading ? "Loading…" : "Pick a client…"}</option>
-          {opts.data?.clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </Field>
-      {client && client.engagements.length > 0 && (
+      {/* v59: internal discussions are team-only and have no client. */}
+      {kind !== "internal" && (
+        <Field label="Client" required error={errors.client}>
+          <select className={inputCls} value={clientOrgId} onChange={(e) => (setClient(e.target.value), setEngagement(""))} aria-label="Client">
+            <option value="">{opts.loading ? "Loading…" : "Pick a client…"}</option>
+            {opts.data?.clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {kind !== "internal" && client && client.engagements.length > 0 && (
         <Field label="Project">
           <select className={inputCls} value={engagementId} onChange={(e) => setEngagement(e.target.value)} aria-label="Project">
             <option value="">The whole account</option>

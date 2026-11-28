@@ -40,6 +40,7 @@ import type {
   OpsThreadView,
   SentFile,
   SentLink,
+  CrmFilePick,
 } from "../ops-actions.js";
 
 const qs = (params: Record<string, string | undefined>) => {
@@ -149,6 +150,8 @@ export const opsActionsApi = (t: Transport) => ({
       },
       /** v39: a Drive (or any) link to send with the next message, for files over the upload limit. */
       link: (id: string, body: SentLink) => t.post<SentFile>(`/ops/threads/${id}/links`, body),
+      /** v60: a file already in the CRM's Files, to send with the next message. */
+      crmFile: (id: string, body: CrmFilePick) => t.post<SentFile>(`/ops/threads/${id}/crm-files`, body),
       toRequest: (body: OpsMessageToRequest) => t.post<Msg & { id: string; href: string }>("/ops/messages/to-request", body),
       /** Discussion info: change the title, add or remove people. Returns the updated discussion. */
       update: (id: string, body: OpsThreadUpdate) => t.patch<OpsThreadView>(`/ops/threads/${id}`, body),

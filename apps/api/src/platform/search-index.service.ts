@@ -15,7 +15,7 @@ export type IndexedKind = Exclude<TeamSearchKind, 'proposal'>;
 
 /** Which change events touch which kind (a client rename also renames its projects, requests and invoices). */
 const ENTITY_KINDS: Record<string, IndexedKind[]> = {
-  ClientOrg: ['client', 'project', 'invoice', 'request'],
+  ClientOrg: ['client', 'project', 'invoice', 'request', 'file'],
   Lead: ['lead'],
   Invoice: ['invoice'],
   Task: ['task'],
@@ -24,8 +24,12 @@ const ENTITY_KINDS: Record<string, IndexedKind[]> = {
   Engagement: ['project', 'request'],
   Request: ['request'],
   Creator: ['creator'],
+  // v61: files in Files (a client rename is picked up through the ClientOrg refresh below).
+  File: ['file'],
 };
-const KINDS: IndexedKind[] = ['client', 'lead', 'invoice', 'task', 'person', 'sop', 'project', 'request', 'creator'];
+const KINDS: IndexedKind[] = ['client', 'lead', 'invoice', 'task', 'person', 'sop', 'project', 'request', 'creator', 'file'];
+/** v61: settings images (invoice signatures and seals), never search results. */
+const HIDDEN_FILE_TAGS = ['invoice-signature', 'invoice-seal', 'cm-signature'];
 const join = (...xs: (string | null | undefined)[]) => xs.filter(Boolean).join(' ');
 
 @Injectable()
@@ -105,6 +109,12 @@ export class SearchIndexService implements OnModuleInit, OnModuleDestroy {
             const kind = r.kind as IndexedKind;
             if (!org.has(kind)) org.set(kind, new Map());
             org.get(kind)!.set(r.entityId, { kind, entityId: r.entityId, title: r.title, keywords: r.keywords });
+          }
+          // v61: an index saved before a kind existed (e.g. files) gets that kind now, without a full rebuild.
+          for (const kind of KINDS.filter((k) => !org.has(k))) {
+            const docs = await this.load(orgId, kind, null);
+            if (docs.length) await this.prisma.searchDoc.createMany({ data: docs.map((d) => ({ orgId, ...d })), skipDuplicates: true });
+            org.set(kind, new Map(docs.map((d) => [d.entityId, d])));
           }
           this.mem.set(orgId, org);
         }
@@ -245,6 +255,13 @@ export class SearchIndexService implements OnModuleInit, OnModuleDestroy {
         // Creator ids are indexed; a User change (rename) refreshes the whole kind.
         const rows = await this.prisma.creator.findMany({ where: { orgId, user: { deletedAt: null }, ...idf }, select: { id: true, handle: true, city: true, niche: true, user: { select: { name: true } } } });
         return rows.map((r) => ({ kind, entityId: r.id, title: r.user.name, keywords: join(r.handle ? `@${r.handle}` : null, r.handle, r.city, r.niche.join(' ')) }));
+      }
+      case 'file': {
+        // v61: live files by name, with their client and tags; who may open which is decided per search (file-access.ts).
+        const rows = await this.prisma.file.findMany({ where: { orgId, archivedAt: null, name: { not: null }, NOT: { tags: { hasSome: HIDDEN_FILE_TAGS } }, ...idf }, select: { id: true, name: true, tags: true, clientOrgId: true } });
+        const clientIds = [...new Set(rows.map((r) => r.clientOrgId).filter((x): x is string => !!x))];
+        const clients = new Map((clientIds.length ? await this.prisma.clientOrg.findMany({ where: { id: { in: clientIds } }, select: { id: true, name: true } }) : []).map((c) => [c.id, c.name]));
+        return rows.map((r) => ({ kind, entityId: r.id, title: r.name!, keywords: join(r.clientOrgId ? clients.get(r.clientOrgId) : null, r.tags.join(' ')) }));
       }
     }
   }

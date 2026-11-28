@@ -161,7 +161,8 @@ export async function seedServiceThreadReads(prisma: PrismaClient, orgId: string
   const threads = await prisma.thread.findMany({ where: { orgId }, include: { clientOrg: { select: { amUserId: true, users: { select: { userId: true } } } } } });
   for (const t of threads) {
     if (await prisma.threadRead.count({ where: { threadId: t.id } })) continue;
-    const people = [t.clientOrg.amUserId, ...t.clientOrg.users.map((u) => u.userId)].filter((x): x is string => !!x);
+    // v59: an internal discussion may have no client.
+    const people = [t.clientOrg?.amUserId, ...(t.clientOrg?.users ?? []).map((u) => u.userId)].filter((x): x is string => !!x);
     await prisma.threadRead.createMany({ data: people.map((userId) => ({ threadId: t.id, userId, orgId })), skipDuplicates: true });
   }
 }

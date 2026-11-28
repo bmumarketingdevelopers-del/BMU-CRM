@@ -513,6 +513,53 @@ describe('communication', () => {
     expect(list.map((t) => t.id)).toEqual(expect.arrayContaining([p.body.id, i.body.id]));
   });
 
+  it('v59: an internal discussion needs no client; project threads and client chats still do', async () => {
+    await http().post('/ops/threads').set(as('am')).send({ kind: 'project', title: `No client ${stamp}`, participantIds: [ids.producer] }).expect(400);
+    await http().post('/ops/threads').set(as('am')).send({ kind: 'client_staff', title: 'Chat' }).expect(400);
+    const i = await http().post('/ops/threads').set(as('am')).send({ kind: 'internal', title: `Team only ${stamp}`, message: 'Q4 planning', participantIds: [ids.head] }).expect(201);
+    expect((await prisma.thread.findUniqueOrThrow({ where: { id: i.body.id } })).clientOrgId).toBeNull();
+    expect(await prisma.notification.count({ where: { userId: ids.head, link: `/team/discussions/${i.body.id}`, body: 'Internal discussion: Q4 planning' } })).toBe(1);
+    // Only the people in it (and leadership) see it; it reads "no client" everywhere.
+    await http().get(`/ops/threads/${i.body.id}`).set(as('producer')).expect(404);
+    const v = await http().post(`/ops/threads/${i.body.id}/messages`).set(as('head')).send({ body: 'Agree' }).expect(201);
+    expect(v.body.client).toBeNull();
+    expect(v.body.messages).toHaveLength(2);
+    const mine = (await http().get('/ops/threads').set(as('am')).expect(200)).body as { id: string; client: unknown }[];
+    expect(mine.find((t) => t.id === i.body.id)?.client).toBeNull();
+    // Never shows up among client conversations (the Founder sees every client thread there).
+    await http().get(`/threads/${i.body.id}`).set(as('founder')).expect(404);
+  });
+
+  it('v60: CRM files: send a file from Files that you may see; the people in the discussion can open it', async () => {
+    // No client and no department: in Files only for the person who uploaded it and leadership.
+    const src = await prisma.file.create({ data: { orgId: ids.org, path: `crm-${stamp}.pdf`, kind: 'document', name: `Brief ${stamp}.pdf`, mimeType: 'application/pdf', sizeBytes: 1200, folder: 'general', uploadedById: ids.am } });
+    const i = (await http().post('/ops/threads').set(as('am')).send({ kind: 'internal', title: `Files ${stamp}`, participantIds: [ids.head] }).expect(201)).body;
+    // Someone who can't see the file in Files can't send it.
+    const other = (await http().post('/ops/threads').set(as('head')).send({ kind: 'internal', title: `Other ${stamp}`, participantIds: [ids.producer] }).expect(201)).body;
+    await http().post(`/ops/threads/${other.id}/crm-files`).set(as('producer')).send({ fileId: src.id }).expect(404);
+    const sent = (await http().post(`/ops/threads/${i.id}/crm-files`).set(as('am')).send({ fileId: src.id }).expect(201)).body;
+    expect(sent.name).toBe(`Brief ${stamp}.pdf`);
+    const copy = await prisma.file.findUniqueOrThrow({ where: { id: sent.id } });
+    expect(copy.path).toBe(src.path);
+    expect(copy.tags).toContain('discussion-file');
+    const v = (await http().post(`/ops/threads/${i.id}/messages`).set(as('am')).send({ body: 'Here it is', attachmentIds: [sent.id] }).expect(201)).body;
+    expect(v.messages.at(-1).attachments[0].id).toBe(sent.id);
+    // Not in chats with the client.
+    const chat = (await http().post('/ops/threads').set(as('am')).send({ kind: 'client_staff', clientOrgId: ids.sunrise, title: 'Chat' }).expect(201)).body;
+    await http().post(`/ops/threads/${chat.id}/crm-files`).set(as('am')).send({ fileId: src.id }).expect(400);
+  });
+
+  it('v61: search finds files by name, only for people who may see them in Files', async () => {
+    // No client and no department: in Files only for the person who uploaded it and leadership.
+    const f = await prisma.file.create({ data: { orgId: ids.org, path: `search-${stamp}.pdf`, kind: 'document', name: `Quarterly moodboard ${stamp}.pdf`, mimeType: 'application/pdf', folder: 'general', uploadedById: ids.am } });
+    const find = async (who: string, q: string) => ((await http().get(`/team-flows/search?q=${encodeURIComponent(q)}&kinds=file`).set(as(who)).expect(200)).body.groups as { kind: string; items: { id: string; href: string }[] }[]).flatMap((g) => g.items);
+    const mine = await find('am', `moodboard ${stamp}`);
+    expect(mine.map((x) => x.id)).toContain(f.id);
+    expect(mine.find((x) => x.id === f.id)?.href).toBe(`/team/files?q=${encodeURIComponent(`Quarterly moodboard ${stamp}.pdf`)}`);
+    expect((await find('founder', `moodboard ${stamp}`)).map((x) => x.id)).toContain(f.id);
+    expect((await find('producer', `moodboard ${stamp}`)).map((x) => x.id)).not.toContain(f.id);
+  });
+
   it('convert a client message into a request (linked to the message)', async () => {
     const thread = (await prisma.thread.findFirst({ where: { clientOrgId: ids.sunrise, type: 'client_am' } })) ?? (await prisma.thread.create({ data: { orgId: ids.org, clientOrgId: ids.sunrise, type: 'client_am' } }));
     const msg = await prisma.message.create({ data: { orgId: ids.org, threadId: thread.id, authorId: ids.client, body: `Please change the banner colour ${stamp}` } });
